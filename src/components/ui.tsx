@@ -61,7 +61,7 @@ export function StatCard({
 }
 
 const buttonVariants = {
-  primary: "bg-slate-900 text-white hover:bg-slate-700",
+  primary: "bg-blue-700 text-white hover:bg-blue-600",
   secondary: "bg-white text-slate-700 border border-slate-300 hover:bg-slate-50",
   danger: "bg-rose-600 text-white hover:bg-rose-500",
   ghost: "text-slate-600 hover:bg-slate-100",
@@ -125,7 +125,7 @@ export function Field({ label, children, required }: { label: string; children: 
 }
 
 const controlClass =
-  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-slate-500 focus:outline-none focus:ring-1 focus:ring-slate-500 disabled:bg-slate-50 disabled:text-slate-500";
+  "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500";
 
 export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={clsx(controlClass, props.className)} {...props} />;

@@ -7,6 +7,7 @@ import {
   markPayablePaid,
   markReceivableReceived,
   createManualPayable,
+  addVehicleCostWithPayable,
 } from "../src/lib/finance";
 
 function daysAgo(n: number) {
@@ -19,6 +20,7 @@ function daysFromNow(n: number) {
 
 async function main() {
   console.log("Limpando banco de dados...");
+  await prisma.vehicleCost.deleteMany();
   await prisma.receivable.deleteMany();
   await prisma.payable.deleteMany();
   await prisma.partSale.deleteMany();
@@ -142,6 +144,41 @@ async function main() {
     supplierId: fornecedorB.id,
     alreadyPaid: false,
     dueDate: daysFromNow(15),
+  });
+
+  console.log("Lançando custos de preparação dos veículos...");
+  await addVehicleCostWithPayable({
+    vehicleId: vGol.id,
+    description: "Revisão e troca de óleo",
+    category: "MECANICA",
+    amount: 450,
+    date: daysAgo(28),
+    alreadyPaid: true,
+  });
+  await addVehicleCostWithPayable({
+    vehicleId: vGol.id,
+    description: "Transferência e documentação",
+    category: "DOCUMENTACAO",
+    amount: 380,
+    date: daysAgo(26),
+    alreadyPaid: true,
+  });
+  await addVehicleCostWithPayable({
+    vehicleId: vCorolla.id,
+    description: "Polimento e higienização interna",
+    category: "ESTETICA",
+    amount: 900,
+    date: daysAgo(7),
+    alreadyPaid: true,
+  });
+  await addVehicleCostWithPayable({
+    vehicleId: vCorolla.id,
+    description: "Troca de pneus dianteiros",
+    category: "PREPARACAO",
+    amount: 1400,
+    date: daysAgo(4),
+    alreadyPaid: false,
+    dueDate: daysFromNow(20),
   });
 
   console.log("Registrando vendas de veículos...");

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type {
+  CategoriaCustoVeiculo,
   CategoriaPagar,
   FormaPagamento,
   Prisma,
@@ -98,6 +99,66 @@ export async function createVehicleWithPayable(input: {
     }
 
     return vehicle;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Custos por veículo -> Contas a Pagar
+// ---------------------------------------------------------------------------
+
+export async function addVehicleCostWithPayable(input: {
+  vehicleId: string;
+  description: string;
+  category: CategoriaCustoVeiculo;
+  amount: number;
+  date: Date;
+  notes?: string | null;
+  supplierId?: string | null;
+  alreadyPaid: boolean;
+  dueDate?: Date | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const vehicle = await tx.vehicle.findUniqueOrThrow({
+      where: { id: input.vehicleId },
+    });
+
+    const payable = await tx.payable.create({
+      data: {
+        description: `${input.description} - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+        category: "DESPESA_OPERACIONAL",
+        amount: input.amount,
+        dueDate: input.alreadyPaid ? input.date : input.dueDate || input.date,
+        paymentDate: input.alreadyPaid ? input.date : null,
+        status: input.alreadyPaid ? "PAGO" : "PENDENTE",
+        supplierId: input.supplierId || null,
+        vehicleId: vehicle.id,
+        notes: input.notes || null,
+      },
+    });
+
+    return tx.vehicleCost.create({
+      data: {
+        vehicleId: vehicle.id,
+        description: input.description,
+        category: input.category,
+        amount: input.amount,
+        date: input.date,
+        notes: input.notes || null,
+        payableId: payable.id,
+      },
+    });
+  });
+}
+
+export async function deleteVehicleCost(costId: string) {
+  return prisma.$transaction(async (tx) => {
+    const cost = await tx.vehicleCost.findUniqueOrThrow({
+      where: { id: costId },
+    });
+    await tx.vehicleCost.delete({ where: { id: costId } });
+    if (cost.payableId) {
+      await tx.payable.delete({ where: { id: cost.payableId } });
+    }
   });
 }
 

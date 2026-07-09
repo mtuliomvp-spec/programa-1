@@ -1,4 +1,4 @@
-# AutoVendas — Gestão de Loja de Veículos Seminovos
+# MVP Veículos — Sistema de Gestão
 
 Sistema web para lojas de veículos seminovos com **estoque, vendas,
 peças e financeiro totalmente integrados**: ao comprar um veículo ou

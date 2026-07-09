@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
+import { getPerformanceStats } from "@/lib/reports";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
@@ -7,10 +8,11 @@ import CashFlowChart from "@/components/CashFlowChart";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const [stats, upcoming, monthly] = await Promise.all([
+  const [stats, upcoming, monthly, perf] = await Promise.all([
     getDashboardStats(),
     getUpcomingDue(7),
     getCashFlowLastMonths(6),
+    getPerformanceStats(),
   ]);
 
   type UpcomingItem = {
@@ -43,7 +45,15 @@ export default async function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Dashboard" description="Visão geral da loja: estoque, vendas e financeiro" />
+      <PageHeader
+        title="Dashboard"
+        description="Visão geral da MVP Veículos: estoque, vendas e financeiro"
+        action={
+          <Link href="/relatorios" className="text-sm font-medium text-blue-700 hover:underline">
+            Ver relatórios completos →
+          </Link>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
@@ -68,6 +78,26 @@ export default async function DashboardPage() {
           value={formatCurrency(stats.receivablesPendingTotal)}
           hint={stats.receivablesOverdueCount > 0 ? `${stats.receivablesOverdueCount} atrasada(s) · ${formatCurrency(stats.receivablesOverdueTotal)}` : `${stats.receivablesPendingCount} pendente(s)`}
           tone={stats.receivablesOverdueCount > 0 ? "negative" : "default"}
+        />
+      </div>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Lucro do mês (veículos)"
+          value={formatCurrency(perf.profitThisMonth)}
+          tone={perf.profitThisMonth >= 0 ? "positive" : "negative"}
+          hint="vendas menos compra + custos"
+        />
+        <StatCard label="Ticket médio do mês" value={formatCurrency(perf.avgTicket)} />
+        <StatCard
+          label="Capital imobilizado"
+          value={formatCurrency(perf.investedInStock)}
+          hint="investido nos veículos em estoque"
+        />
+        <StatCard
+          label="Tempo médio em estoque"
+          value={`${perf.avgDaysInStock} dias`}
+          tone={perf.avgDaysInStock > 60 ? "warning" : "default"}
         />
       </div>
 

@@ -4,7 +4,11 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { createVehicleWithPayable } from "@/lib/finance";
+import {
+  addVehicleCostWithPayable,
+  createVehicleWithPayable,
+  deleteVehicleCost,
+} from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
 const vehicleSchema = z.object({
@@ -131,6 +135,64 @@ export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RE
   await prisma.vehicle.update({ where: { id }, data: { status } });
   revalidatePath("/estoque");
   revalidatePath(`/estoque/${id}`);
+  revalidatePath("/");
+}
+
+const costSchema = z.object({
+  vehicleId: z.string().min(1),
+  description: z.string().min(1, "Descreva o custo"),
+  category: z.enum([
+    "PREPARACAO",
+    "DOCUMENTACAO",
+    "MECANICA",
+    "FUNILARIA_PINTURA",
+    "ESTETICA",
+    "FRETE",
+    "OUTROS",
+  ]),
+  amount: z.coerce.number().positive("Informe um valor maior que zero"),
+  date: z.string().min(1),
+  alreadyPaid: z.coerce.boolean().optional(),
+  dueDate: z.string().optional(),
+});
+
+export type CostFormState = { error?: string; success?: boolean };
+
+export async function addVehicleCostAction(
+  _prevState: CostFormState,
+  formData: FormData,
+): Promise<CostFormState> {
+  const parsed = costSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  }
+  const data = parsed.data;
+
+  try {
+    await addVehicleCostWithPayable({
+      vehicleId: data.vehicleId,
+      description: data.description,
+      category: data.category,
+      amount: data.amount,
+      date: parseDateInput(data.date),
+      alreadyPaid: Boolean(data.alreadyPaid),
+      dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
+    });
+  } catch {
+    return { error: "Não foi possível lançar o custo. Tente novamente." };
+  }
+  revalidatePath(`/estoque/${data.vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/");
+  return { success: true };
+}
+
+export async function deleteVehicleCostAction(costId: string, vehicleId: string) {
+  await deleteVehicleCost(costId);
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
 }
 

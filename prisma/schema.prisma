@@ -55,6 +55,16 @@ enum StatusVenda {
   CANCELADA
 }
 
+enum CategoriaCustoVeiculo {
+  PREPARACAO
+  DOCUMENTACAO
+  MECANICA
+  FUNILARIA_PINTURA
+  ESTETICA
+  FRETE
+  OUTROS
+}
+
 model Supplier {
   id        String     @id @default(cuid())
   name      String
@@ -111,11 +121,31 @@ model Vehicle {
   supplierId       String?
   supplier         Supplier?     @relation(fields: [supplierId], references: [id])
   payables         Payable[]
+  costs            VehicleCost[]
   sale             Sale?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   @@map("vehicles")
+}
+
+// Custo lançado sobre um veículo específico (preparação, documentação,
+// mecânica...). Sempre gera uma conta a pagar vinculada, mantendo o
+// financeiro integrado; a soma entra no custo total e na margem real.
+model VehicleCost {
+  id          String                @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle               @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description String
+  category    CategoriaCustoVeiculo
+  amount      Float
+  date        DateTime              @default(now())
+  notes       String?
+  payableId   String?               @unique
+  payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  createdAt   DateTime              @default(now())
+
+  @@map("vehicle_costs")
 }
 
 model Sale {
@@ -189,6 +219,7 @@ model Payable {
   vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
   partId      String?
   part        Part?          @relation(fields: [partId], references: [id])
+  vehicleCost VehicleCost?
   notes       String?
   createdAt   DateTime       @default(now())
   updatedAt   DateTime       @updatedAt
