@@ -10,7 +10,7 @@ recebido.
 ## Stack
 
 - [Next.js](https://nextjs.org) 16 (App Router, Server Actions) + TypeScript
-- [Prisma](https://www.prisma.io) + SQLite (fácil de rodar localmente; troque o `provider`/`DATABASE_URL` para Postgres/MySQL em produção se preferir)
+- [Prisma](https://www.prisma.io) + PostgreSQL (Neon, Supabase ou qualquer Postgres)
 - Tailwind CSS 4
 - Zod para validação de formulários
 
@@ -23,11 +23,34 @@ recebido.
 - **Financeiro** — Contas a pagar, Contas a receber (com baixa manual e status "atrasado" automático) e Fluxo de caixa consolidado.
 - **Clientes e Fornecedores** — cadastros de apoio usados em vendas e compras.
 
+## Deploy na Vercel (recomendado)
+
+1. Acesse [vercel.com](https://vercel.com) e entre com sua conta do GitHub.
+2. **Add New → Project** e importe o repositório `programa-1`.
+3. Antes (ou depois) do primeiro deploy, na aba **Storage** do projeto,
+   clique em **Create Database → Neon (Postgres)** e aceite os padrões.
+   Isso cria o banco gratuito e já configura as variáveis
+   `DATABASE_URL` e `DATABASE_URL_UNPOOLED` automaticamente.
+4. Faça o **Deploy** (ou **Redeploy** se o banco foi criado depois).
+   O build roda `prisma migrate deploy` e cria as tabelas sozinho.
+
+Pronto: o site fica disponível em `https://<seu-projeto>.vercel.app`.
+
+Para popular o banco de produção com dados de demonstração (opcional),
+rode localmente apontando para o banco da Vercel:
+
+```bash
+DATABASE_URL="<url do Neon>" npm run db:seed
+```
+
 ## Rodando localmente
+
+Crie um arquivo `.env` a partir do `.env.example` com a URL de um
+Postgres (pode ser o mesmo banco Neon criado na Vercel) e:
 
 ```bash
 npm install                 # instala dependências (gera o Prisma Client via postinstall)
-npm run db:migrate          # cria o banco SQLite local (prisma/dev.db) e aplica as migrations
+npm run db:migrate          # aplica as migrations no banco
 npm run db:seed             # popula o banco com dados de demonstração (opcional)
 npm run dev                 # inicia o servidor em http://localhost:3000
 ```
@@ -35,10 +58,11 @@ npm run dev                 # inicia o servidor em http://localhost:3000
 Outros comandos úteis:
 
 ```bash
-npm run build      # build de produção
-npm run start       # roda o build de produção
-npm run lint        # lint
-npm run db:reset    # reseta o banco (apaga tudo, reaplica migrations e roda o seed)
+npm run build        # build de produção (aplica migrations + next build)
+npm run build:local  # build sem aplicar migrations
+npm run start        # roda o build de produção
+npm run lint         # lint
+npm run db:reset     # reseta o banco (apaga tudo, reaplica migrations e roda o seed)
 ```
 
 ## Estrutura
