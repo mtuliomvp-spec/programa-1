@@ -1,0 +1,33 @@
+import { prisma } from "@/lib/prisma";
+import { Card, CardHeader, PageHeader } from "@/components/ui";
+import SaleForm from "../SaleForm";
+
+export const dynamic = "force-dynamic";
+
+export default async function NovaVendaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ vehicleId?: string }>;
+}) {
+  const { vehicleId } = await searchParams;
+  const [vehicles, customers] = await Promise.all([
+    prisma.vehicle.findMany({
+      where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, brand: true, model: true, plate: true, salePrice: true },
+    }),
+    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader title="Nova venda" description="Registrar a venda de um veículo do estoque" />
+      <Card>
+        <CardHeader title="Dados da venda" />
+        <div className="p-5">
+          <SaleForm vehicles={vehicles} customers={customers} preselectedVehicleId={vehicleId} />
+        </div>
+      </Card>
+    </div>
+  );
+}

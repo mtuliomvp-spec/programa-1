@@ -1,0 +1,147 @@
+"use server";
+
+import { z } from "zod";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { createVehicleWithPayable } from "@/lib/finance";
+import { parseDateInput } from "@/lib/format";
+
+const vehicleSchema = z.object({
+  brand: z.string().min(1, "Informe a marca"),
+  model: z.string().min(1, "Informe o modelo"),
+  version: z.string().optional(),
+  manufactureYear: z.coerce.number().int().min(1950).max(2100),
+  modelYear: z.coerce.number().int().min(1950).max(2100),
+  plate: z.string().min(1, "Informe a placa"),
+  chassi: z.string().optional(),
+  color: z.string().optional(),
+  km: z.coerce.number().int().min(0).default(0),
+  fuel: z.string().optional(),
+  transmission: z.string().optional(),
+  purchasePrice: z.coerce.number().min(0),
+  salePrice: z.coerce.number().min(0),
+  entryDate: z.string().min(1),
+  notes: z.string().optional(),
+  supplierId: z.string().optional(),
+  alreadyPaid: z.coerce.boolean().optional(),
+  dueDate: z.string().optional(),
+});
+
+export type VehicleFormState = { error?: string };
+
+export async function createVehicleAction(
+  _prevState: VehicleFormState,
+  formData: FormData,
+): Promise<VehicleFormState> {
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = vehicleSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  }
+  const data = parsed.data;
+
+  const existing = await prisma.vehicle.findUnique({ where: { plate: data.plate.toUpperCase() } });
+  if (existing) {
+    return { error: "Já existe um veículo cadastrado com essa placa." };
+  }
+
+  try {
+    const vehicle = await createVehicleWithPayable({
+      brand: data.brand,
+      model: data.model,
+      version: data.version || null,
+      manufactureYear: data.manufactureYear,
+      modelYear: data.modelYear,
+      plate: data.plate.toUpperCase(),
+      chassi: data.chassi || null,
+      color: data.color || null,
+      km: data.km,
+      fuel: data.fuel || null,
+      transmission: data.transmission || null,
+      purchasePrice: data.purchasePrice,
+      salePrice: data.salePrice,
+      entryDate: parseDateInput(data.entryDate),
+      notes: data.notes || null,
+      supplierId: data.supplierId || null,
+      alreadyPaid: Boolean(data.alreadyPaid),
+      dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
+    });
+    revalidatePath("/estoque");
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/");
+    redirect(`/estoque/${vehicle.id}`);
+  } catch (err) {
+    if (err instanceof Error && err.message === "NEXT_REDIRECT") throw err;
+    return { error: "Não foi possível salvar o veículo. Tente novamente." };
+  }
+  return {};
+}
+
+const updateSchema = vehicleSchema.extend({ id: z.string().min(1) });
+
+export async function updateVehicleAction(
+  _prevState: VehicleFormState,
+  formData: FormData,
+): Promise<VehicleFormState> {
+  const raw = Object.fromEntries(formData.entries());
+  const parsed = updateSchema.safeParse(raw);
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  }
+  const data = parsed.data;
+
+  const existing = await prisma.vehicle.findUnique({ where: { plate: data.plate.toUpperCase() } });
+  if (existing && existing.id !== data.id) {
+    return { error: "Já existe outro veículo cadastrado com essa placa." };
+  }
+
+  try {
+    await prisma.vehicle.update({
+      where: { id: data.id },
+      data: {
+        brand: data.brand,
+        model: data.model,
+        version: data.version || null,
+        manufactureYear: data.manufactureYear,
+        modelYear: data.modelYear,
+        plate: data.plate.toUpperCase(),
+        chassi: data.chassi || null,
+        color: data.color || null,
+        km: data.km,
+        fuel: data.fuel || null,
+        transmission: data.transmission || null,
+        purchasePrice: data.purchasePrice,
+        salePrice: data.salePrice,
+        entryDate: parseDateInput(data.entryDate),
+        notes: data.notes || null,
+        supplierId: data.supplierId || null,
+      },
+    });
+    revalidatePath("/estoque");
+    revalidatePath(`/estoque/${data.id}`);
+    revalidatePath("/");
+  } catch {
+    return { error: "Não foi possível atualizar o veículo." };
+  }
+  redirect(`/estoque/${data.id}`);
+}
+
+export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RESERVADO") {
+  await prisma.vehicle.update({ where: { id }, data: { status } });
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${id}`);
+  revalidatePath("/");
+}
+
+export async function deleteVehicleAction(id: string) {
+  const sale = await prisma.sale.findUnique({ where: { vehicleId: id } });
+  if (sale) {
+    throw new Error("Não é possível excluir um veículo que já possui venda registrada.");
+  }
+  await prisma.payable.deleteMany({ where: { vehicleId: id } });
+  await prisma.vehicle.delete({ where: { id } });
+  revalidatePath("/estoque");
+  revalidatePath("/");
+  redirect("/estoque");
+}

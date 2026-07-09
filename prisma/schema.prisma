@@ -1,0 +1,219 @@
+// Prisma schema - Sistema de Gestão para Loja de Veículos Seminovos
+// Estoque de veículos, peças, vendas e financeiro (contas a pagar/receber)
+// totalmente integrados.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum StatusVeiculo {
+  ESTOQUE
+  RESERVADO
+  VENDIDO
+}
+
+enum FormaPagamento {
+  A_VISTA
+  PARCELADO
+  FINANCIADO
+}
+
+enum StatusConta {
+  PENDENTE
+  PAGO
+  ATRASADO
+}
+
+enum StatusRecebimento {
+  PENDENTE
+  RECEBIDO
+  ATRASADO
+}
+
+enum CategoriaPagar {
+  COMPRA_VEICULO
+  COMPRA_PECA
+  DESPESA_OPERACIONAL
+  COMISSAO
+  OUTROS
+}
+
+enum CategoriaReceber {
+  VENDA_VEICULO
+  VENDA_PECA
+  OUTROS
+}
+
+enum StatusVenda {
+  CONCLUIDA
+  CANCELADA
+}
+
+model Supplier {
+  id        String     @id @default(cuid())
+  name      String
+  document  String?
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  vehicles  Vehicle[]
+  parts     Part[]
+  payables  Payable[]
+
+  @@map("suppliers")
+}
+
+model Customer {
+  id          String       @id @default(cuid())
+  name        String
+  document    String?
+  phone       String?
+  email       String?
+  address     String?
+  notes       String?
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  sales       Sale[]
+  partSales   PartSale[]
+  receivables Receivable[]
+
+  @@map("customers")
+}
+
+model Vehicle {
+  id               String        @id @default(cuid())
+  brand            String
+  model            String
+  version          String?
+  manufactureYear  Int
+  modelYear        Int
+  plate            String        @unique
+  chassi           String?       @unique
+  color            String?
+  km               Int           @default(0)
+  fuel             String?
+  transmission     String?
+  purchasePrice    Float
+  salePrice        Float
+  status           StatusVeiculo @default(ESTOQUE)
+  entryDate        DateTime      @default(now())
+  photoUrl         String?
+  notes            String?
+  supplierId       String?
+  supplier         Supplier?     @relation(fields: [supplierId], references: [id])
+  payables         Payable[]
+  sale             Sale?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@map("vehicles")
+}
+
+model Sale {
+  id                String         @id @default(cuid())
+  vehicleId         String         @unique
+  vehicle           Vehicle        @relation(fields: [vehicleId], references: [id])
+  customerId        String
+  customer          Customer       @relation(fields: [customerId], references: [id])
+  saleDate          DateTime       @default(now())
+  totalAmount       Float
+  downPayment        Float          @default(0)
+  installmentsCount Int            @default(0)
+  paymentMethod     FormaPagamento
+  sellerName        String?
+  notes             String?
+  status            StatusVenda    @default(CONCLUIDA)
+  receivables       Receivable[]
+  createdAt         DateTime       @default(now())
+
+  @@map("sales")
+}
+
+model Part {
+  id          String     @id @default(cuid())
+  code        String     @unique
+  name        String
+  description String?
+  quantity    Int        @default(0)
+  minQuantity Int        @default(0)
+  costPrice   Float
+  salePrice   Float
+  supplierId  String?
+  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
+  payables    Payable[]
+  partSales   PartSale[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  @@map("parts")
+}
+
+model PartSale {
+  id            String         @id @default(cuid())
+  partId        String
+  part          Part           @relation(fields: [partId], references: [id])
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  quantity      Int
+  unitPrice     Float
+  totalAmount   Float
+  saleDate      DateTime       @default(now())
+  paymentMethod FormaPagamento
+  notes         String?
+  receivables   Receivable[]
+  createdAt     DateTime       @default(now())
+
+  @@map("part_sales")
+}
+
+model Payable {
+  id          String         @id @default(cuid())
+  description String
+  category    CategoriaPagar
+  amount      Float
+  dueDate     DateTime
+  paymentDate DateTime?
+  status      StatusConta    @default(PENDENTE)
+  supplierId  String?
+  supplier    Supplier?      @relation(fields: [supplierId], references: [id])
+  vehicleId   String?
+  vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
+  partId      String?
+  part        Part?          @relation(fields: [partId], references: [id])
+  notes       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  @@map("payables")
+}
+
+model Receivable {
+  id                String            @id @default(cuid())
+  description       String
+  category          CategoriaReceber
+  amount            Float
+  dueDate           DateTime
+  receivedDate      DateTime?
+  status            StatusRecebimento @default(PENDENTE)
+  customerId        String?
+  customer          Customer?         @relation(fields: [customerId], references: [id])
+  saleId            String?
+  sale              Sale?             @relation(fields: [saleId], references: [id])
+  partSaleId        String?
+  partSale          PartSale?         @relation(fields: [partSaleId], references: [id])
+  installmentNumber Int?
+  totalInstallments Int?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  @@map("receivables")
+}
