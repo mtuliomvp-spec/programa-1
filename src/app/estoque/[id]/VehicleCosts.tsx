@@ -106,10 +106,13 @@ export default function VehicleCosts({
               <Field label="Data" required>
                 <Input name="date" type="date" defaultValue={toDateInputValue(new Date())} required />
               </Field>
+              <Field label="Parcelas (IPVA, multas...)">
+                <Input name="installments" type="number" min={1} max={60} defaultValue={1} />
+              </Field>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
               <input type="checkbox" name="alreadyPaid" value="true" defaultChecked className="h-4 w-4 rounded border-slate-300" />
-              Já foi pago (senão, entra como conta a pagar pendente)
+              Já foi pago (senão, entra como conta a pagar pendente; parcelado sempre gera parcelas pendentes)
             </label>
             {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
             <div className="flex gap-2">

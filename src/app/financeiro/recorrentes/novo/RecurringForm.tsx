@@ -54,6 +54,8 @@ export default function RecurringForm({
               <Select name="categoryPagar" defaultValue="DESPESA_OPERACIONAL">
                 <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
                 <option value="COMISSAO">Comissão</option>
+                <option value="SALARIO">Salário</option>
+                <option value="COMBUSTIVEL">Combustível</option>
                 <option value="OUTROS">Outros</option>
               </Select>
             </Field>

@@ -7,5 +7,8 @@ export const VEHICLE_COST_CATEGORY_LABEL: Record<CategoriaCustoVeiculo, string> 
   FUNILARIA_PINTURA: "Funilaria e pintura",
   ESTETICA: "Estética",
   FRETE: "Frete",
+  IPVA: "IPVA",
+  MULTA: "Multa",
+  LICENCIAMENTO: "Licenciamento",
   OUTROS: "Outros",
 };

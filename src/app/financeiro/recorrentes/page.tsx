@@ -11,6 +11,8 @@ const categoryLabel: Record<string, string> = {
   COMPRA_PECA: "Compra de peças",
   DESPESA_OPERACIONAL: "Despesa operacional",
   COMISSAO: "Comissão",
+  SALARIO: "Salário",
+  COMBUSTIVEL: "Combustível",
   VENDA_VEICULO: "Venda de veículo",
   VENDA_PECA: "Venda de peças",
   OUTROS: "Outros",

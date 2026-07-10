@@ -26,6 +26,14 @@ export const NAV_GROUPS: {
     ],
   },
   {
+    title: "Administrativo",
+    items: [
+      { href: "/folha", label: "Folha de pagamento", icon: "👥" },
+      { href: "/capital", label: "Capital dos sócios", icon: "💼" },
+      { href: "/combustiveis", label: "Combustíveis", icon: "⛽" },
+    ],
+  },
+  {
     title: "Relatórios",
     items: [
       { href: "/relatorios", label: "Central de relatórios", icon: "📈" },

@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Badge, Card, CardHeader, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CancelSaleButton from "./CancelSaleButton";
 
 export const dynamic = "force-dynamic";
@@ -33,8 +33,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         title={`Venda - ${sale.vehicle.brand} ${sale.vehicle.model}`}
         description={`Cliente: ${sale.customer.name} · ${formatDate(sale.saleDate)}`}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge tone={statusTone[sale.status]}>{statusLabel[sale.status]}</Badge>
+            <LinkButton href={`/vendas/${sale.id}/documento`} variant="secondary">
+              📄 Ordem de venda
+            </LinkButton>
             {sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
           </div>
         }

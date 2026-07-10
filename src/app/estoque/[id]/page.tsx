@@ -48,7 +48,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         title={`${vehicle.brand} ${vehicle.model}`}
         description={`Placa ${vehicle.plate} · ${vehicle.manufactureYear}/${vehicle.modelYear}`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href={`/estoque/${vehicle.id}/ordem-compra`} variant="secondary">
+              📄 Ordem de compra
+            </LinkButton>
             {vehicle.status !== "VENDIDO" ? (
               <LinkButton href={`/vendas/novo?vehicleId=${vehicle.id}`} variant="primary">
                 Vender veículo

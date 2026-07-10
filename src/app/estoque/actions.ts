@@ -153,12 +153,16 @@ const costSchema = z.object({
     "FUNILARIA_PINTURA",
     "ESTETICA",
     "FRETE",
+    "IPVA",
+    "MULTA",
+    "LICENCIAMENTO",
     "OUTROS",
   ]),
   amount: z.coerce.number().positive("Informe um valor maior que zero"),
   date: z.string().min(1),
   alreadyPaid: z.coerce.boolean().optional(),
   dueDate: z.string().optional(),
+  installments: z.coerce.number().int().min(1).max(60).optional(),
 });
 
 export type CostFormState = { error?: string; success?: boolean };
@@ -182,6 +186,7 @@ export async function addVehicleCostAction(
       date: parseDateInput(data.date),
       alreadyPaid: Boolean(data.alreadyPaid),
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
+      installments: data.installments ?? 1,
     });
   } catch {
     return { error: "Não foi possível lançar o custo. Tente novamente." };

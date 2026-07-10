@@ -12,6 +12,8 @@ const categoryLabel = {
   COMPRA_PECA: "Compra de peças",
   DESPESA_OPERACIONAL: "Despesa operacional",
   COMISSAO: "Comissão",
+  SALARIO: "Salário",
+  COMBUSTIVEL: "Combustível",
   OUTROS: "Outros",
 } as const;
 

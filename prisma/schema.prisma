@@ -41,6 +41,8 @@ enum CategoriaPagar {
   COMPRA_PECA
   DESPESA_OPERACIONAL
   COMISSAO
+  SALARIO
+  COMBUSTIVEL
   OUTROS
 }
 
@@ -67,7 +69,16 @@ enum CategoriaCustoVeiculo {
   FUNILARIA_PINTURA
   ESTETICA
   FRETE
+  IPVA
+  MULTA
+  LICENCIAMENTO
   OUTROS
+}
+
+enum TipoCapital {
+  APORTE
+  RETIRADA
+  PRO_LABORE
 }
 
 model Supplier {
@@ -129,6 +140,7 @@ model Vehicle {
   supplier         Supplier?     @relation(fields: [supplierId], references: [id])
   payables         Payable[]
   costs            VehicleCost[]
+  fuelEntries      FuelEntry[]
   sale             Sale?
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
@@ -231,6 +243,7 @@ model Payable {
   recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   reconciledAt DateTime?
   bankRef      String?
+  employeeId   String?
   notes        String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -263,6 +276,76 @@ model Receivable {
   updatedAt         DateTime          @updatedAt
 
   @@map("receivables")
+}
+
+// Sócio/investidor da empresa: acompanha aportes, retiradas e pró-labore.
+model CapitalBeneficiary {
+  id           String               @id @default(cuid())
+  name         String
+  proLabore    Float                @default(0)
+  active       Boolean              @default(true)
+  notes        String?
+  transactions CapitalTransaction[]
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  @@map("capital_beneficiaries")
+}
+
+// Movimentação de capital: aportes entram no caixa (conta a receber
+// recebida) e retiradas/pró-labore saem (conta a pagar paga).
+model CapitalTransaction {
+  id            String             @id @default(cuid())
+  beneficiaryId String
+  beneficiary   CapitalBeneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  kind          TipoCapital
+  amount        Float
+  date          DateTime           @default(now())
+  description   String?
+  payableId     String?
+  receivableId  String?
+  createdAt     DateTime           @default(now())
+
+  @@map("capital_transactions")
+}
+
+// Funcionário da loja (folha de pagamento simplificada).
+model Employee {
+  id            String    @id @default(cuid())
+  name          String
+  role          String?
+  cpf           String?
+  pixKey        String?
+  salary        Float
+  admissionDate DateTime  @default(now())
+  dismissalDate DateTime?
+  active        Boolean   @default(true)
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@map("employees")
+}
+
+// Abastecimento de combustível da frota (guincho, test-drive...).
+model FuelEntry {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  vehicleId     String?
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  plate         String?
+  driver        String?
+  station       String?
+  fuelType      String?
+  liters        Float
+  pricePerLiter Float
+  total         Float
+  km            Int?
+  notes         String?
+  payableId     String?
+  createdAt     DateTime @default(now())
+
+  @@map("fuel_entries")
 }
 
 // Lançamento recorrente: gera automaticamente uma conta a pagar ou a

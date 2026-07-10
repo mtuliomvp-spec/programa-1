@@ -13,7 +13,7 @@ const recurringSchema = z.object({
   amount: z.coerce.number().positive("Informe um valor maior que zero"),
   dayOfMonth: z.coerce.number().int().min(1, "Dia entre 1 e 31").max(31, "Dia entre 1 e 31"),
   categoryPagar: z
-    .enum(["COMPRA_VEICULO", "COMPRA_PECA", "DESPESA_OPERACIONAL", "COMISSAO", "OUTROS"])
+    .enum(["COMPRA_VEICULO", "COMPRA_PECA", "DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"])
     .optional(),
   categoryReceber: z.enum(["VENDA_VEICULO", "VENDA_PECA", "OUTROS"]).optional(),
   supplierId: z.string().optional(),

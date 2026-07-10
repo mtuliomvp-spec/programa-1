@@ -116,37 +116,56 @@ export async function addVehicleCostWithPayable(input: {
   supplierId?: string | null;
   alreadyPaid: boolean;
   dueDate?: Date | null;
+  installments?: number;
 }) {
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
     });
+    const suffix = `${vehicle.brand} ${vehicle.model} (${vehicle.plate})`;
+    const count = Math.max(1, input.installments ?? 1);
+    const firstDue = input.alreadyPaid ? input.date : input.dueDate || input.date;
 
-    const payable = await tx.payable.create({
-      data: {
-        description: `${input.description} - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-        category: "DESPESA_OPERACIONAL",
-        amount: input.amount,
-        dueDate: input.alreadyPaid ? input.date : input.dueDate || input.date,
-        paymentDate: input.alreadyPaid ? input.date : null,
-        status: input.alreadyPaid ? "PAGO" : "PENDENTE",
-        supplierId: input.supplierId || null,
-        vehicleId: vehicle.id,
-        notes: input.notes || null,
-      },
-    });
+    // Parcelado (ex.: IPVA em 3x): divide o total em N parcelas mensais,
+    // cada uma com custo e conta a pagar próprios.
+    const amounts = count > 1 ? splitInstallments(input.amount, count) : [input.amount];
 
-    return tx.vehicleCost.create({
-      data: {
-        vehicleId: vehicle.id,
-        description: input.description,
-        category: input.category,
-        amount: input.amount,
-        date: input.date,
-        notes: input.notes || null,
-        payableId: payable.id,
-      },
-    });
+    let firstCost = null;
+    for (let i = 0; i < amounts.length; i++) {
+      const label =
+        count > 1 ? `${input.description} - Parcela ${i + 1}/${count}` : input.description;
+      const dueDate = addMonths(firstDue, i);
+      const paid = input.alreadyPaid && count === 1;
+
+      const payable = await tx.payable.create({
+        data: {
+          description: `${label} - ${suffix}`,
+          category: "DESPESA_OPERACIONAL",
+          amount: amounts[i],
+          dueDate,
+          paymentDate: paid ? input.date : null,
+          status: paid ? "PAGO" : "PENDENTE",
+          supplierId: input.supplierId || null,
+          vehicleId: vehicle.id,
+          notes: input.notes || null,
+        },
+      });
+
+      const cost = await tx.vehicleCost.create({
+        data: {
+          vehicleId: vehicle.id,
+          description: label,
+          category: input.category,
+          amount: amounts[i],
+          date: count > 1 ? dueDate : input.date,
+          notes: input.notes || null,
+          payableId: payable.id,
+        },
+      });
+      firstCost = firstCost ?? cost;
+    }
+
+    return firstCost!;
   });
 }
 

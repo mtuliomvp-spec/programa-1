@@ -22,7 +22,7 @@ export async function markPendingAction(id: string) {
 
 const manualSchema = z.object({
   description: z.string().min(1, "Informe a descrição"),
-  category: z.enum(["DESPESA_OPERACIONAL", "COMISSAO", "OUTROS"]),
+  category: z.enum(["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"]),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),

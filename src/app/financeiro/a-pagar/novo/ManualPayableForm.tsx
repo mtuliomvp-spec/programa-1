@@ -24,6 +24,8 @@ export default function ManualPayableForm({ suppliers }: { suppliers: Supplier[]
           <Select name="category" defaultValue="DESPESA_OPERACIONAL">
             <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
             <option value="COMISSAO">Comissão</option>
+            <option value="SALARIO">Salário</option>
+            <option value="COMBUSTIVEL">Combustível</option>
             <option value="OUTROS">Outros</option>
           </Select>
         </Field>

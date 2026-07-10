@@ -69,7 +69,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     prisma.payable.findMany({
       where: {
         dueDate: { gte: rangeStart, lt: rangeEnd },
-        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "OUTROS"] },
+        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null, // custos de veículo já entram no custo da venda
         vehicleId: null, // idem para contas manuais ligadas a veículos
       },
@@ -248,6 +248,8 @@ export const PAYABLE_CATEGORY_LABEL: Record<CategoriaPagar, string> = {
   COMPRA_PECA: "Compra de peças",
   DESPESA_OPERACIONAL: "Despesas operacionais",
   COMISSAO: "Comissões",
+  SALARIO: "Salários",
+  COMBUSTIVEL: "Combustíveis",
   OUTROS: "Outros",
 };
 
