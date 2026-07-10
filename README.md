@@ -43,6 +43,25 @@ rode localmente apontando para o banco da Vercel:
 DATABASE_URL="<url do Neon>" npm run db:seed
 ```
 
+## Consulta por placa (preenchimento automático)
+
+No cadastro de veículo, o botão **"Buscar dados pela placa"** preenche
+marca, modelo, versão, anos, cor, chassi e combustível, e sugere o
+**valor FIPE** como preço de venda.
+
+Para ativar, é preciso contratar um token de um provedor de consulta
+veicular (ex.: [wdapi2.com.br](https://wdapi2.com.br) — planos a partir
+de alguns centavos por consulta) e configurar na Vercel:
+
+1. No projeto da Vercel: **Settings → Environment Variables**
+2. Adicione `PLACA_API_TOKEN` com o token contratado
+3. (Opcional) `PLACA_API_URL` para outro provedor, usando os marcadores
+   `{placa}` e `{token}` — padrão: `https://wdapi2.com.br/consulta/{placa}/{token}`
+4. Faça **Redeploy**
+
+Sem o token, o botão exibe uma mensagem explicando como ativar — o
+restante do sistema funciona normalmente.
+
 ## Rodando localmente
 
 Crie um arquivo `.env` a partir do `.env.example` com a URL de um

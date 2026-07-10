@@ -138,6 +138,11 @@ export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RE
   revalidatePath("/");
 }
 
+export async function lookupPlateAction(plate: string) {
+  const { lookupPlate } = await import("@/lib/plate-lookup");
+  return lookupPlate(plate);
+}
+
 const costSchema = z.object({
   vehicleId: z.string().min(1),
   description: z.string().min(1, "Descreva o custo"),

@@ -1,9 +1,14 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import { createVehicleAction, updateVehicleAction, type VehicleFormState } from "./actions";
-import { toDateInputValue } from "@/lib/format";
+import {
+  createVehicleAction,
+  updateVehicleAction,
+  lookupPlateAction,
+  type VehicleFormState,
+} from "./actions";
+import { toDateInputValue, formatCurrency } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
 
@@ -40,9 +45,62 @@ export default function VehicleForm({
   const action = isEdit ? updateVehicleAction : createVehicleAction;
   const [state, formAction, pending] = useActionState(action, initialState);
   const [alreadyPaid, setAlreadyPaid] = useState(true);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [looking, startLookup] = useTransition();
+  const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+
+  function setField(name: string, value: string | number | undefined) {
+    if (value === undefined || value === "") return;
+    const el = formRef.current?.elements.namedItem(name);
+    if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) {
+      if (el instanceof HTMLSelectElement) {
+        const match = Array.from(el.options).find((o) => o.value === String(value));
+        if (!match) return;
+      }
+      el.value = String(value);
+    }
+  }
+
+  function handlePlateLookup() {
+    const plateEl = formRef.current?.elements.namedItem("plate");
+    const plate = plateEl instanceof HTMLInputElement ? plateEl.value.trim() : "";
+    if (!plate) {
+      setLookupMsg({ tone: "err", text: "Digite a placa antes de buscar." });
+      return;
+    }
+    setLookupMsg(null);
+    startLookup(async () => {
+      const result = await lookupPlateAction(plate);
+      if (!result.ok) {
+        setLookupMsg({ tone: "err", text: result.error });
+        return;
+      }
+      const d = result.data;
+      setField("brand", d.brand);
+      setField("model", d.model);
+      setField("version", d.version);
+      setField("manufactureYear", d.manufactureYear);
+      setField("modelYear", d.modelYear ?? d.manufactureYear);
+      setField("chassi", d.chassi);
+      setField("color", d.color);
+      setField("fuel", d.fuel);
+      // sugere o preço FIPE como preço de venda se ainda não preenchido
+      const saleEl = formRef.current?.elements.namedItem("salePrice");
+      if (d.fipePrice && saleEl instanceof HTMLInputElement && !saleEl.value) {
+        saleEl.value = String(d.fipePrice);
+      }
+      const found = [d.brand, d.model, d.modelYear].filter(Boolean).join(" ");
+      setLookupMsg({
+        tone: "ok",
+        text: `Dados encontrados: ${found || "veículo"}${
+          d.fipePrice ? ` · FIPE ${formatCurrency(d.fipePrice)}` : ""
+        }. Confira e complete o que faltar.`,
+      });
+    });
+  }
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form ref={formRef} action={formAction} className="space-y-6">
       {isEdit ? <input type="hidden" name="id" defaultValue={vehicle!.id} /> : null}
 
       {state.error ? (
@@ -50,6 +108,36 @@ export default function VehicleForm({
           {state.error}
         </div>
       ) : null}
+
+      <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+        <Field label="Placa" required>
+          <div className="flex flex-wrap gap-2">
+            <Input
+              name="plate"
+              defaultValue={vehicle?.plate}
+              required
+              placeholder="ABC1D23"
+              className="max-w-[180px] uppercase"
+            />
+            <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking}>
+              {looking ? "Buscando..." : "🔍 Buscar dados pela placa"}
+            </Button>
+          </div>
+        </Field>
+        <p className="mt-2 text-xs text-slate-500">
+          Digite a placa e clique em buscar: marca, modelo, ano, cor, chassi e o valor FIPE são
+          preenchidos automaticamente.
+        </p>
+        {lookupMsg ? (
+          <p
+            className={`mt-2 text-sm font-medium ${
+              lookupMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"
+            }`}
+          >
+            {lookupMsg.text}
+          </p>
+        ) : null}
+      </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Marca" required>
@@ -66,9 +154,6 @@ export default function VehicleForm({
         </Field>
         <Field label="Ano modelo" required>
           <Input type="number" name="modelYear" defaultValue={vehicle?.modelYear ?? new Date().getFullYear()} required />
-        </Field>
-        <Field label="Placa" required>
-          <Input name="plate" defaultValue={vehicle?.plate} required placeholder="ABC1D23" className="uppercase" />
         </Field>
         <Field label="Chassi (VIN)">
           <Input name="chassi" defaultValue={vehicle?.chassi || ""} />
