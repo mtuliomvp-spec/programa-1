@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureRecurringGenerated } from "@/lib/recurring";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectiveReceivableStatus } from "@/lib/status";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -16,6 +17,7 @@ export default async function ContasAReceberPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status: statusFilter } = await searchParams;
+  await ensureRecurringGenerated();
 
   const receivables = await prisma.receivable.findMany({
     orderBy: { dueDate: "asc" },

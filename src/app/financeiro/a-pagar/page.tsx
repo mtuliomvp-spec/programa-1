@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { ensureRecurringGenerated } from "@/lib/recurring";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -23,6 +24,7 @@ export default async function ContasAPagarPage({
   searchParams: Promise<{ status?: string }>;
 }) {
   const { status: statusFilter } = await searchParams;
+  await ensureRecurringGenerated();
 
   const payables = await prisma.payable.findMany({
     orderBy: { dueDate: "asc" },
@@ -78,7 +80,14 @@ export default async function ContasAPagarPage({
             <tbody>
               {filtered.map((p) => (
                 <Tr key={p.id}>
-                  <Td className="font-medium text-slate-900">{p.description}</Td>
+                  <Td className="font-medium text-slate-900">
+                    {p.description}
+                    {p.recurringId ? (
+                      <span className="ml-1.5 text-xs text-slate-400" title="Gerada por recorrência">
+                        🔁
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td>{categoryLabel[p.category]}</Td>
                   <Td>{p.supplier?.name || "-"}</Td>
                   <Td>{formatDate(p.dueDate)}</Td>

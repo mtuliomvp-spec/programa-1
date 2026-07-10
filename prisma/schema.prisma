@@ -55,6 +55,11 @@ enum StatusVenda {
   CANCELADA
 }
 
+enum TipoRecorrencia {
+  PAGAR
+  RECEBER
+}
+
 enum CategoriaCustoVeiculo {
   PREPARACAO
   DOCUMENTACAO
@@ -78,6 +83,7 @@ model Supplier {
   vehicles  Vehicle[]
   parts     Part[]
   payables  Payable[]
+  recurring RecurringEntry[]
 
   @@map("suppliers")
 }
@@ -95,6 +101,7 @@ model Customer {
   sales       Sale[]
   partSales   PartSale[]
   receivables Receivable[]
+  recurring   RecurringEntry[]
 
   @@map("customers")
 }
@@ -206,23 +213,27 @@ model PartSale {
 }
 
 model Payable {
-  id          String         @id @default(cuid())
-  description String
-  category    CategoriaPagar
-  amount      Float
-  dueDate     DateTime
-  paymentDate DateTime?
-  status      StatusConta    @default(PENDENTE)
-  supplierId  String?
-  supplier    Supplier?      @relation(fields: [supplierId], references: [id])
-  vehicleId   String?
-  vehicle     Vehicle?       @relation(fields: [vehicleId], references: [id])
-  partId      String?
-  part        Part?          @relation(fields: [partId], references: [id])
-  vehicleCost VehicleCost?
-  notes       String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id           String          @id @default(cuid())
+  description  String
+  category     CategoriaPagar
+  amount       Float
+  dueDate      DateTime
+  paymentDate  DateTime?
+  status       StatusConta     @default(PENDENTE)
+  supplierId   String?
+  supplier     Supplier?       @relation(fields: [supplierId], references: [id])
+  vehicleId    String?
+  vehicle      Vehicle?        @relation(fields: [vehicleId], references: [id])
+  partId       String?
+  part         Part?           @relation(fields: [partId], references: [id])
+  vehicleCost  VehicleCost?
+  recurringId  String?
+  recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  reconciledAt DateTime?
+  bankRef      String?
+  notes        String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@map("payables")
 }
@@ -243,9 +254,39 @@ model Receivable {
   partSale          PartSale?         @relation(fields: [partSaleId], references: [id])
   installmentNumber Int?
   totalInstallments Int?
+  recurringId       String?
+  recurring         RecurringEntry?   @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  reconciledAt      DateTime?
+  bankRef           String?
   notes             String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
   @@map("receivables")
+}
+
+// Lançamento recorrente: gera automaticamente uma conta a pagar ou a
+// receber todo mês no dia configurado (aluguel, salários, assinaturas...).
+model RecurringEntry {
+  id              String            @id @default(cuid())
+  kind            TipoRecorrencia
+  description     String
+  amount          Float
+  dayOfMonth      Int
+  categoryPagar   CategoriaPagar?
+  categoryReceber CategoriaReceber?
+  supplierId      String?
+  supplier        Supplier?         @relation(fields: [supplierId], references: [id])
+  customerId      String?
+  customer        Customer?         @relation(fields: [customerId], references: [id])
+  active          Boolean           @default(true)
+  startDate       DateTime          @default(now())
+  endDate         DateTime?
+  notes           String?
+  payables        Payable[]
+  receivables     Receivable[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+
+  @@map("recurring_entries")
 }

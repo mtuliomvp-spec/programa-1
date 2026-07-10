@@ -23,6 +23,7 @@ async function main() {
   await prisma.vehicleCost.deleteMany();
   await prisma.receivable.deleteMany();
   await prisma.payable.deleteMany();
+  await prisma.recurringEntry.deleteMany();
   await prisma.partSale.deleteMany();
   await prisma.sale.deleteMany();
   await prisma.part.deleteMany();
@@ -273,6 +274,38 @@ async function main() {
     paymentMethod: "PARCELADO",
     installmentsCount: 2,
     notes: "Venda de balcão",
+  });
+
+  console.log("Criando lançamentos recorrentes...");
+  await prisma.recurringEntry.create({
+    data: {
+      kind: "PAGAR",
+      description: "Energia elétrica da loja",
+      amount: 850,
+      dayOfMonth: 20,
+      categoryPagar: "DESPESA_OPERACIONAL",
+      startDate: daysAgo(60),
+    },
+  });
+  await prisma.recurringEntry.create({
+    data: {
+      kind: "PAGAR",
+      description: "Assinatura portal de anúncios",
+      amount: 499.9,
+      dayOfMonth: 15,
+      categoryPagar: "DESPESA_OPERACIONAL",
+      startDate: daysAgo(90),
+    },
+  });
+  await prisma.recurringEntry.create({
+    data: {
+      kind: "RECEBER",
+      description: "Aluguel da sala anexa",
+      amount: 1200,
+      dayOfMonth: 8,
+      categoryReceber: "OUTROS",
+      startDate: daysAgo(120),
+    },
   });
 
   console.log("Lançando despesas operacionais...");

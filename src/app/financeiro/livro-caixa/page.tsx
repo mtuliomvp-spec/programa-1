@@ -1,0 +1,195 @@
+import { prisma } from "@/lib/prisma";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import PrintButton from "@/components/PrintButton";
+
+export const dynamic = "force-dynamic";
+
+function parseMonth(value: string | undefined): { year: number; month: number } {
+  const match = value?.match(/^(\d{4})-(\d{2})$/);
+  if (match) return { year: Number(match[1]), month: Number(match[2]) - 1 };
+  const now = new Date();
+  return { year: now.getUTCFullYear(), month: now.getUTCMonth() };
+}
+
+export default async function LivroCaixaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ mes?: string }>;
+}) {
+  const params = await searchParams;
+  const { year, month } = parseMonth(params.mes);
+  const monthStart = new Date(Date.UTC(year, month, 1));
+  const monthEnd = new Date(Date.UTC(year, month + 1, 1));
+  const monthValue = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthLabel = monthStart.toLocaleDateString("pt-BR", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth] = await Promise.all([
+    prisma.payable.aggregate({
+      where: { status: "PAGO", paymentDate: { lt: monthStart } },
+      _sum: { amount: true },
+    }),
+    prisma.receivable.aggregate({
+      where: { status: "RECEBIDO", receivedDate: { lt: monthStart } },
+      _sum: { amount: true },
+    }),
+    prisma.payable.findMany({
+      where: { status: "PAGO", paymentDate: { gte: monthStart, lt: monthEnd } },
+      include: { supplier: true },
+    }),
+    prisma.receivable.findMany({
+      where: { status: "RECEBIDO", receivedDate: { gte: monthStart, lt: monthEnd } },
+      include: { customer: true },
+    }),
+  ]);
+
+  const openingBalance =
+    (receivedBefore._sum.amount || 0) - (paidBefore._sum.amount || 0);
+
+  type Movement = {
+    id: string;
+    date: Date;
+    description: string;
+    who: string;
+    kind: "entrada" | "saida";
+    amount: number;
+  };
+
+  const movements: Movement[] = [
+    ...receivedMonth.map((r) => ({
+      id: `r-${r.id}`,
+      date: r.receivedDate!,
+      description: r.description,
+      who: r.customer?.name || "-",
+      kind: "entrada" as const,
+      amount: r.amount,
+    })),
+    ...paidMonth.map((p) => ({
+      id: `p-${p.id}`,
+      date: p.paymentDate!,
+      description: p.description,
+      who: p.supplier?.name || "-",
+      kind: "saida" as const,
+      amount: p.amount,
+    })),
+  ].sort((a, b) => a.date.getTime() - b.date.getTime());
+
+  let running = openingBalance;
+  const rows = movements.map((m) => {
+    running += m.kind === "entrada" ? m.amount : -m.amount;
+    return { ...m, balance: running };
+  });
+
+  const totalIn = movements.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0);
+  const totalOut = movements.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0);
+
+  const prevMonth = new Date(Date.UTC(year, month - 1, 1));
+  const nextMonth = new Date(Date.UTC(year, month + 1, 1));
+  const toParam = (d: Date) =>
+    `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+
+  return (
+    <div>
+      <PageHeader
+        title="Livro caixa"
+        description={`Movimentações realizadas em ${monthLabel}`}
+        action={
+          <div className="flex flex-wrap gap-2 print:hidden">
+            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${toParam(prevMonth)}`}>
+              ← Mês anterior
+            </LinkButton>
+            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${toParam(nextMonth)}`}>
+              Mês seguinte →
+            </LinkButton>
+            <PrintButton />
+          </div>
+        }
+      />
+
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard label="Saldo inicial" value={formatCurrency(openingBalance)} hint={`antes de ${monthLabel}`} />
+        <StatCard label="Entradas no mês" value={formatCurrency(totalIn)} tone="positive" />
+        <StatCard label="Saídas no mês" value={formatCurrency(totalOut)} tone="negative" />
+        <StatCard
+          label="Saldo final"
+          value={formatCurrency(openingBalance + totalIn - totalOut)}
+          tone={openingBalance + totalIn - totalOut >= 0 ? "positive" : "negative"}
+        />
+      </div>
+
+      <Card>
+        <CardHeader
+          title={`Movimentações — ${monthValue}`}
+          description="Somente o que foi efetivamente pago e recebido, em ordem cronológica, com saldo corrente"
+        />
+        {rows.length === 0 ? (
+          <EmptyState
+            title="Nenhuma movimentação neste mês"
+            description="Pagamentos e recebimentos baixados aparecem aqui, dia a dia."
+          />
+        ) : (
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>Data</Th>
+                <Th>Descrição</Th>
+                <Th>Quem</Th>
+                <Th className="text-right">Entrada</Th>
+                <Th className="text-right">Saída</Th>
+                <Th className="text-right">Saldo</Th>
+              </Tr>
+            </Thead>
+            <tbody>
+              <Tr className="bg-slate-50">
+                <Td className="text-slate-500">—</Td>
+                <Td className="font-medium text-slate-700">Saldo inicial</Td>
+                <Td>{""}</Td>
+                <Td>{""}</Td>
+                <Td>{""}</Td>
+                <Td className="text-right font-semibold tabular-nums">{formatCurrency(openingBalance)}</Td>
+              </Tr>
+              {rows.map((m) => (
+                <Tr key={m.id}>
+                  <Td className="whitespace-nowrap">{formatDate(m.date)}</Td>
+                  <Td className="font-medium text-slate-900">{m.description}</Td>
+                  <Td>{m.who}</Td>
+                  <Td className="text-right tabular-nums text-emerald-600">
+                    {m.kind === "entrada" ? formatCurrency(m.amount) : ""}
+                  </Td>
+                  <Td className="text-right tabular-nums text-rose-600">
+                    {m.kind === "saida" ? formatCurrency(m.amount) : ""}
+                  </Td>
+                  <Td
+                    className={`text-right font-medium tabular-nums ${
+                      m.balance >= 0 ? "text-slate-900" : "text-rose-600"
+                    }`}
+                  >
+                    {formatCurrency(m.balance)}
+                  </Td>
+                </Tr>
+              ))}
+              <Tr className="bg-slate-50 font-semibold">
+                <Td className="text-slate-700">Total</Td>
+                <Td>{""}</Td>
+                <Td>{""}</Td>
+                <Td className="text-right tabular-nums text-emerald-600">{formatCurrency(totalIn)}</Td>
+                <Td className="text-right tabular-nums text-rose-600">{formatCurrency(totalOut)}</Td>
+                <Td className="text-right tabular-nums">
+                  {formatCurrency(openingBalance + totalIn - totalOut)}
+                </Td>
+              </Tr>
+            </tbody>
+          </Table>
+        )}
+        <p className="px-5 py-3 text-xs text-slate-400">
+          O saldo considera todo o histórico de pagamentos e recebimentos baixados no sistema.{" "}
+          <Badge tone="info">Dica</Badge> use a Conciliação bancária para conferir com o extrato do banco.
+        </p>
+      </Card>
+    </div>
+  );
+}

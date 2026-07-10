@@ -19,7 +19,10 @@ export const NAV_GROUPS: {
     items: [
       { href: "/financeiro/a-pagar", label: "Contas a pagar", icon: "📤" },
       { href: "/financeiro/a-receber", label: "Contas a receber", icon: "📥" },
+      { href: "/financeiro/recorrentes", label: "Recorrentes", icon: "🔁" },
+      { href: "/financeiro/livro-caixa", label: "Livro caixa", icon: "📒" },
       { href: "/financeiro/fluxo-caixa", label: "Fluxo de caixa", icon: "💰" },
+      { href: "/financeiro/conciliacao", label: "Conciliação bancária", icon: "🏦" },
     ],
   },
   {
