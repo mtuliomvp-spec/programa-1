@@ -1,6 +1,6 @@
 export const NAV_GROUPS: {
   title: string;
-  items: { href: string; label: string; icon: string }[];
+  items: { href: string; label: string; icon: string; adminOnly?: boolean }[];
 }[] = [
   {
     title: "Visão geral",
@@ -44,9 +44,17 @@ export const NAV_GROUPS: {
     items: [
       { href: "/clientes", label: "Clientes", icon: "👤" },
       { href: "/fornecedores", label: "Fornecedores", icon: "🏭" },
+      { href: "/usuarios", label: "Usuários", icon: "🔐", adminOnly: true },
     ],
   },
 ];
+
+export function navGroupsFor(role: "ADMIN" | "OPERADOR") {
+  return NAV_GROUPS.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => !item.adminOnly || role === "ADMIN"),
+  })).filter((group) => group.items.length > 0);
+}
 
 export function isNavActive(href: string, pathname: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);

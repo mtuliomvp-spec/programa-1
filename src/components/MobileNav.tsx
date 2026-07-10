@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "@/lib/clsx";
-import { NAV_GROUPS, isNavActive } from "@/lib/nav";
+import { navGroupsFor, isNavActive } from "@/lib/nav";
 import BrandMark from "@/components/BrandMark";
+import UserFooter from "@/components/UserFooter";
 
-export default function MobileNav() {
+type SessionUser = { name: string; role: "ADMIN" | "OPERADOR" };
+
+export default function MobileNav({ user }: { user: SessionUser }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
+  const groups = navGroupsFor(user.role);
 
   // fecha a gaveta ao navegar
   useEffect(() => {
@@ -63,7 +67,7 @@ export default function MobileNav() {
               </button>
             </div>
             <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-              {NAV_GROUPS.map((group) => (
+              {groups.map((group) => (
                 <div key={group.title}>
                   <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
                     {group.title}
@@ -91,6 +95,9 @@ export default function MobileNav() {
                 </div>
               ))}
             </nav>
+            <div className="border-t border-white/10 px-4 py-3">
+              <UserFooter user={user} dark />
+            </div>
           </div>
         </div>
       ) : null}

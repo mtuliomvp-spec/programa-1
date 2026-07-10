@@ -3,11 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "@/lib/clsx";
-import { NAV_GROUPS, isNavActive } from "@/lib/nav";
+import { navGroupsFor, isNavActive } from "@/lib/nav";
 import BrandMark from "@/components/BrandMark";
+import UserFooter from "@/components/UserFooter";
 
-export default function Sidebar() {
+type SessionUser = { name: string; role: "ADMIN" | "OPERADOR" };
+
+export default function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname();
+  const groups = navGroupsFor(user.role);
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-slate-950 md:flex">
@@ -15,7 +19,7 @@ export default function Sidebar() {
         <BrandMark dark />
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
-        {NAV_GROUPS.map((group) => (
+        {groups.map((group) => (
           <div key={group.title}>
             <p className="px-2 text-[11px] font-semibold uppercase tracking-wider text-slate-500">
               {group.title}
@@ -43,8 +47,8 @@ export default function Sidebar() {
           </div>
         ))}
       </nav>
-      <div className="border-t border-white/10 px-5 py-3">
-        <p className="text-[11px] text-slate-500">MVP Veículos · gestão completa</p>
+      <div className="border-t border-white/10 px-4 py-3">
+        <UserFooter user={user} dark />
       </div>
     </aside>
   );

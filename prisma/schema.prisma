@@ -81,6 +81,25 @@ enum TipoCapital {
   PRO_LABORE
 }
 
+enum UserRole {
+  ADMIN
+  OPERADOR
+}
+
+// Usuário do sistema (login por e-mail e senha).
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(OPERADOR)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("users")
+}
+
 model Supplier {
   id        String     @id @default(cuid())
   name      String
