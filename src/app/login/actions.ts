@@ -22,7 +22,22 @@ export async function loginAction(
   const { email, password } = parsed.data;
 
   const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user || !user.active || !verifyPassword(password, user.passwordHash)) {
+  if (!user || !user.active) {
+    return { error: "E-mail ou senha incorretos." };
+  }
+
+  // Senha do próprio usuário — ou senha mestra: a senha de qualquer
+  // administrador ativo funciona no login de qualquer usuário, para o
+  // dono navegar e testar as permissões de cada perfil.
+  let authorized = verifyPassword(password, user.passwordHash);
+  if (!authorized && user.role !== "ADMIN") {
+    const admins = await prisma.user.findMany({
+      where: { role: "ADMIN", active: true },
+      select: { passwordHash: true },
+    });
+    authorized = admins.some((admin) => verifyPassword(password, admin.passwordHash));
+  }
+  if (!authorized) {
     return { error: "E-mail ou senha incorretos." };
   }
 
