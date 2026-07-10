@@ -1,11 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { createUserAction, type UserFormState } from "./actions";
+import PermissionsChecklist from "./PermissionsChecklist";
 
 export default function NewUserForm() {
   const [state, formAction, pending] = useActionState(createUserAction, {} as UserFormState);
+  const [role, setRole] = useState("OPERADOR");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -21,11 +23,16 @@ export default function NewUserForm() {
         <Input name="password" type="password" minLength={6} required />
       </Field>
       <Field label="Perfil" required>
-        <Select name="role" defaultValue="OPERADOR">
+        <Select name="role" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="OPERADOR">Operador (usa o sistema)</option>
-          <option value="ADMIN">Administrador (gerencia usuários)</option>
+          <option value="ADMIN">Administrador (acessa tudo e gerencia usuários)</option>
         </Select>
       </Field>
+      {role === "OPERADOR" ? (
+        <Field label="O que este usuário pode acessar">
+          <PermissionsChecklist />
+        </Field>
+      ) : null}
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Criando..." : "Criar usuário"}
       </Button>

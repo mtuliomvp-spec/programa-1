@@ -8,12 +8,12 @@ import { navGroupsFor, isNavActive } from "@/lib/nav";
 import BrandMark from "@/components/BrandMark";
 import UserFooter from "@/components/UserFooter";
 
-type SessionUser = { name: string; role: "ADMIN" | "OPERADOR" };
+type SessionUser = { name: string; role: "ADMIN" | "OPERADOR"; permissions: string[] };
 
 export default function MobileNav({ user }: { user: SessionUser }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const groups = navGroupsFor(user.role);
+  const groups = navGroupsFor(user);
 
   // fecha a gaveta ao navegar
   useEffect(() => {

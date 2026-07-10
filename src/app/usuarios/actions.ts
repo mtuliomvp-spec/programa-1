@@ -36,16 +36,37 @@ export async function createUserAction(
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "Já existe um usuário com esse e-mail." };
 
+  const permissions =
+    parsed.data.role === "OPERADOR" ? formData.getAll("permissions").map(String) : [];
+
   await prisma.user.create({
     data: {
       name: parsed.data.name,
       email,
       passwordHash: hashPassword(parsed.data.password),
       role: parsed.data.role,
+      permissions,
     },
   });
   revalidatePath("/usuarios");
   return { success: "Usuário criado." };
+}
+
+export async function updatePermissionsAction(
+  _prev: UserFormState,
+  formData: FormData,
+): Promise<UserFormState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Apenas administradores podem gerenciar usuários." };
+  }
+  const userId = String(formData.get("userId") || "");
+  if (!userId) return { error: "Usuário inválido." };
+  const permissions = formData.getAll("permissions").map(String);
+  await prisma.user.update({ where: { id: userId }, data: { permissions } });
+  revalidatePath("/usuarios");
+  return { success: "Permissões atualizadas." };
 }
 
 export async function toggleUserAction(id: string, active: boolean) {

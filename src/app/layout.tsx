@@ -33,7 +33,7 @@ export default async function RootLayout({
     );
   }
 
-  const sessionUser = { name: user.name, role: user.role };
+  const sessionUser = { name: user.name, role: user.role, permissions: user.permissions };
 
   return (
     <html lang="pt-BR" className="h-full antialiased">

@@ -7,11 +7,11 @@ import { navGroupsFor, isNavActive } from "@/lib/nav";
 import BrandMark from "@/components/BrandMark";
 import UserFooter from "@/components/UserFooter";
 
-type SessionUser = { name: string; role: "ADMIN" | "OPERADOR" };
+type SessionUser = { name: string; role: "ADMIN" | "OPERADOR"; permissions: string[] };
 
 export default function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname();
-  const groups = navGroupsFor(user.role);
+  const groups = navGroupsFor(user);
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-slate-950 md:flex">

@@ -57,7 +57,13 @@ export default async function UsuariosPage() {
                     </Badge>
                   </Td>
                   <Td>
-                    <UserRowActions id={u.id} active={u.active} isSelf={u.id === sessionUser.id} />
+                    <UserRowActions
+                      id={u.id}
+                      active={u.active}
+                      isSelf={u.id === sessionUser.id}
+                      role={u.role}
+                      permissions={u.permissions}
+                    />
                   </Td>
                 </Tr>
               ))}
