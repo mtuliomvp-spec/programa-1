@@ -18,6 +18,46 @@ function currentMonthDue(dayOfMonth: number): Date {
   return new Date(Date.UTC(year, month, day, 12));
 }
 
+/** Gera as parcelas mensais dos consórcios ativos até o mês corrente
+ * (com recuperação de meses passados), numeradas e sem duplicidade. */
+export async function ensureConsortiumInstallments(): Promise<number> {
+  const now = new Date();
+  const consortiums = await prisma.consortium.findMany({
+    where: { status: "ATIVO" },
+    include: { payables: { select: { id: true } } },
+  });
+
+  let created = 0;
+  for (const consortium of consortiums) {
+    const existing = consortium.payables.length;
+    const start = consortium.startDate;
+    const monthsElapsed =
+      (now.getUTCFullYear() - start.getUTCFullYear()) * 12 +
+      (now.getUTCMonth() - start.getUTCMonth());
+    const target = Math.min(consortium.installmentsCount, Math.max(0, monthsElapsed) + 1);
+
+    for (let i = existing; i < target; i++) {
+      const year = start.getUTCFullYear();
+      const month = start.getUTCMonth() + i;
+      const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+      const dueDate = new Date(Date.UTC(year, month, Math.min(consortium.dueDay, lastDay), 12));
+      await prisma.payable.create({
+        data: {
+          description: `${consortium.name} - Parcela ${i + 1}/${consortium.installmentsCount}`,
+          category: "OUTROS",
+          amount: consortium.installmentValue,
+          dueDate,
+          status: "PENDENTE",
+          consortiumId: consortium.id,
+          notes: consortium.administrator ? `Administradora: ${consortium.administrator}` : null,
+        },
+      });
+      created++;
+    }
+  }
+  return created;
+}
+
 export async function ensureRecurringGenerated(): Promise<number> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));

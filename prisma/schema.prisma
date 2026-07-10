@@ -86,12 +86,60 @@ enum UserRole {
   OPERADOR
 }
 
+enum StatusConsorcio {
+  ATIVO
+  CONTEMPLADO
+  ENCERRADO
+}
+
+enum TipoCentroCusto {
+  OBRA
+  IMOVEL
+  OUTRO
+}
+
 enum StatusSolicitacao {
   PENDENTE
   APROVADA
   REJEITADA
   CONCLUIDA
   CANCELADA
+}
+
+// Consórcio: parcelas mensais geradas automaticamente em contas a pagar.
+model Consortium {
+  id                String          @id @default(cuid())
+  name              String
+  administrator     String?
+  creditValue       Float
+  installmentValue  Float
+  installmentsCount Int
+  dueDay            Int             @default(10)
+  startDate         DateTime        @default(now())
+  status            StatusConsorcio @default(ATIVO)
+  contemplatedAt    DateTime?
+  notes             String?
+  payables          Payable[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@map("consortiums")
+}
+
+// Centro de custo (obra, imóvel, outro negócio): agrupa despesas e
+// receitas para apurar o resultado de cada frente.
+model CostCenter {
+  id          String          @id @default(cuid())
+  name        String
+  type        TipoCentroCusto @default(OUTRO)
+  active      Boolean         @default(true)
+  notes       String?
+  payables    Payable[]
+  receivables Receivable[]
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@map("cost_centers")
 }
 
 // Solicitação de compra: pedido -> aprovação do administrador ->
@@ -297,6 +345,10 @@ model Payable {
   reconciledAt DateTime?
   bankRef      String?
   employeeId   String?
+  consortiumId String?
+  consortium   Consortium?     @relation(fields: [consortiumId], references: [id], onDelete: SetNull)
+  costCenterId String?
+  costCenter   CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   notes        String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -324,6 +376,8 @@ model Receivable {
   recurring         RecurringEntry?   @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   reconciledAt      DateTime?
   bankRef           String?
+  costCenterId      String?
+  costCenter        CostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   notes             String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt

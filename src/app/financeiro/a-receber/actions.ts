@@ -25,6 +25,7 @@ const manualSchema = z.object({
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   customerId: z.string().optional(),
+  costCenterId: z.string().optional(),
   notes: z.string().optional(),
   alreadyReceived: z.coerce.boolean().optional(),
 });
@@ -44,6 +45,7 @@ export async function createManualReceivableAction(
     amount: d.amount,
     dueDate: parseDateInput(d.dueDate),
     customerId: d.customerId || null,
+    costCenterId: d.costCenterId || null,
     notes: d.notes || null,
     alreadyReceived: Boolean(d.alreadyReceived),
   });

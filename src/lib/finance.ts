@@ -526,6 +526,7 @@ export async function createManualPayable(input: {
   amount: number;
   dueDate: Date;
   supplierId?: string | null;
+  costCenterId?: string | null;
   notes?: string | null;
   alreadyPaid: boolean;
 }) {
@@ -538,6 +539,7 @@ export async function createManualPayable(input: {
       paymentDate: input.alreadyPaid ? input.dueDate : null,
       status: input.alreadyPaid ? "PAGO" : "PENDENTE",
       supplierId: input.supplierId || null,
+      costCenterId: input.costCenterId || null,
       notes: input.notes || null,
     },
   });
@@ -548,6 +550,7 @@ export async function createManualReceivable(input: {
   amount: number;
   dueDate: Date;
   customerId?: string | null;
+  costCenterId?: string | null;
   notes?: string | null;
   alreadyReceived: boolean;
 }) {
@@ -560,6 +563,7 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
+      costCenterId: input.costCenterId || null,
       notes: input.notes || null,
     },
   });

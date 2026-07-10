@@ -6,8 +6,15 @@ import { createManualPayableAction, type ManualPayableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
+type CostCenter = { id: string; name: string };
 
-export default function ManualPayableForm({ suppliers }: { suppliers: Supplier[] }) {
+export default function ManualPayableForm({
+  suppliers,
+  costCenters,
+}: {
+  suppliers: Supplier[];
+  costCenters: CostCenter[];
+}) {
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
 
@@ -44,6 +51,16 @@ export default function ManualPayableForm({ suppliers }: { suppliers: Supplier[]
         </Field>
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
+        </Field>
+        <Field label="Centro de custo (obra, imóvel...)">
+          <Select name="costCenterId" defaultValue="">
+            <option value="">Nenhum (loja)</option>
+            {costCenters.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
         </Field>
       </div>
       <label className="flex items-center gap-2 text-sm text-slate-600">

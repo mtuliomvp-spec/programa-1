@@ -40,6 +40,8 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/folha", label: "Folha de pagamento", icon: "👥", module: "administrativo" },
       { href: "/capital", label: "Capital dos sócios", icon: "💼", module: "administrativo" },
       { href: "/combustiveis", label: "Combustíveis", icon: "⛽", module: "administrativo" },
+      { href: "/consorcios", label: "Consórcios", icon: "🎯", module: "administrativo" },
+      { href: "/centros-custo", label: "Centros de custo", icon: "🏗️", module: "administrativo" },
     ],
   },
   {

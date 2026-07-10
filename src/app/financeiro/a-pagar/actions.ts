@@ -26,6 +26,7 @@ const manualSchema = z.object({
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
+  costCenterId: z.string().optional(),
   notes: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
@@ -46,6 +47,7 @@ export async function createManualPayableAction(
     amount: d.amount,
     dueDate: parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
+    costCenterId: d.costCenterId || null,
     notes: d.notes || null,
     alreadyPaid: Boolean(d.alreadyPaid),
   });
