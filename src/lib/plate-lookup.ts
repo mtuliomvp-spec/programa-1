@@ -10,7 +10,7 @@
  * pouco diferentes, então procuramos os valores em vários lugares comuns.
  */
 
-export type FipeOption = { modelo: string; price: number };
+export type FipeOption = { modelo: string; price: number; ano?: string };
 
 export type PlateLookupData = {
   brand?: string;
@@ -20,6 +20,7 @@ export type PlateLookupData = {
   modelYear?: number;
   color?: string;
   fuel?: string;
+  transmission?: string;
   chassi?: string;
   fipePrice?: number;
   fipeModelo?: string;
@@ -83,6 +84,15 @@ function normalizeFuel(value: string | undefined): string | undefined {
   return fuelFromKeywords(value) ?? titleCase(value);
 }
 
+function transmissionFromKeywords(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const v = value.toUpperCase();
+  if (v.includes("CVT")) return "CVT";
+  if (v.includes("AUT")) return "Automático";
+  if (v.includes("MEC") || v.includes("MANUAL")) return "Manual";
+  return undefined;
+}
+
 function normalize(raw: Record<string, unknown>): PlateLookupData {
   let brand = firstString(raw, ["marca", "MARCA", "brand", "fabricante"]);
   let model = firstString(raw, ["modelo", "MODELO", "model"]);
@@ -110,8 +120,12 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
     const price = parseBrl(firstString(item, ["texto_valor", "valor", "preco"]));
     if (!modelo || !price) continue;
     if (!fipeFuel) fipeFuel = firstString(item, ["combustivel", "COMBUSTIVEL", "combustível"]);
-    if (fipeOptions.some((o) => o.modelo === modelo)) continue;
-    fipeOptions.push({ modelo, price });
+    if (fipeOptions.some((o) => o.modelo === modelo && o.price === price)) continue;
+    fipeOptions.push({
+      modelo,
+      price,
+      ano: firstString(item, ["ano_modelo", "anoModelo", "ano"]),
+    });
   }
   const bestFipe = fipeOptions[0];
 
@@ -131,11 +145,46 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
       // último recurso: o texto da versão FIPE costuma citar o combustível
       // (ex.: "Hilux CD SR 4x4 2.8 TDI Diesel Aut.")
       fuelFromKeywords(fipeOptions.map((o) => o.modelo).join(" ")),
+    transmission:
+      transmissionFromKeywords(
+        firstString(raw, ["cambio", "CAMBIO", "câmbio", "transmissao", "transmissão"]) ||
+          firstString(extra, ["cambio", "câmbio", "transmissao"]),
+      ) ?? transmissionFromKeywords(bestFipe?.modelo),
     chassi: firstString(raw, ["chassi", "CHASSI", "vin"]) || firstString(extra, ["chassi"]),
     fipePrice: bestFipe ? bestFipe.price : parseBrl(firstString(raw, ["valorFipe", "fipe_valor"])),
     fipeModelo: bestFipe?.modelo,
     fipeOptions,
   };
+}
+
+/**
+ * Consulta bruta para a página de diagnóstico (somente ADMIN):
+ * devolve o JSON completo do provedor + o resultado normalizado,
+ * para investigar por que algum campo não foi preenchido.
+ */
+export async function lookupPlateRaw(
+  plateInput: string,
+): Promise<{ ok: true; json: Record<string, unknown>; normalized: PlateLookupData } | { ok: false; error: string }> {
+  const plate = plateInput.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(plate)) {
+    return { ok: false, error: "Placa inválida. Use o formato ABC1D23 ou ABC1234." };
+  }
+  const token = process.env.PLACA_API_TOKEN;
+  const template = process.env.PLACA_API_URL || DEFAULT_URL_TEMPLATE;
+  if (!token && template.includes("{token}")) {
+    return { ok: false, error: "PLACA_API_TOKEN não configurado." };
+  }
+  const url = template.replace("{placa}", plate).replace("{token}", token || "");
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(15000), cache: "no-store" });
+    if (!response.ok) {
+      return { ok: false, error: `O provedor respondeu HTTP ${response.status}.` };
+    }
+    const json = (await response.json()) as Record<string, unknown>;
+    return { ok: true, json, normalized: normalize(json) };
+  } catch {
+    return { ok: false, error: "Falha de rede ao consultar o provedor." };
+  }
 }
 
 export async function lookupPlate(plateInput: string): Promise<PlateLookupResult> {

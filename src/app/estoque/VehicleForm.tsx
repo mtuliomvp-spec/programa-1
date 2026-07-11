@@ -48,7 +48,7 @@ export default function VehicleForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
-  const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number }[]>([]);
+  const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number; ano?: string }[]>([]);
   const [fipeChoice, setFipeChoice] = useState(0);
 
   function setField(name: string, value: string | number | undefined) {
@@ -87,6 +87,7 @@ export default function VehicleForm({
       setField("chassi", d.chassi);
       setField("color", d.color);
       setField("fuel", d.fuel);
+      setField("transmission", d.transmission);
       // sugere o preço FIPE como preço de venda se ainda não preenchido
       const saleEl = formRef.current?.elements.namedItem("salePrice");
       if (d.fipePrice && saleEl instanceof HTMLInputElement && !saleEl.value) {
@@ -174,7 +175,10 @@ export default function VehicleForm({
                     className="mt-0.5 h-4 w-4 shrink-0 border-slate-300"
                   />
                   <span className="min-w-0">
-                    <span className="block text-slate-700">{option.modelo}</span>
+                    <span className="block text-slate-700">
+                      {option.modelo}
+                      {option.ano ? ` (${option.ano})` : ""}
+                    </span>
                     <span className="font-semibold text-slate-900">
                       {formatCurrency(option.price)}
                     </span>
