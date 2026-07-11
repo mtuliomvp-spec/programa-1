@@ -16,16 +16,23 @@ export default async function CentrosCustoPage() {
   await ensureStructuralCostCenters();
   const centers = await prisma.costCenter.findMany({
     include: {
-      payables: { select: { amount: true, status: true } },
+      payables: { select: { amount: true, status: true, vehicle: { select: { status: true } } } },
       receivables: { select: { amount: true, status: true } },
     },
     orderBy: [{ structural: "desc" }, { active: "desc" }, { name: "asc" }],
   });
 
   const withTotals = centers.map((c) => {
-    const despesas = c.payables.reduce((s, p) => s + p.amount, 0);
+    const isVeiculos = c.key === "VEICULOS";
+    let despesas = 0;
+    let imobilizado = 0;
+    for (const p of c.payables) {
+      // Veículo em estoque é capital imobilizado (ativo), não despesa.
+      if (isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO") imobilizado += p.amount;
+      else despesas += p.amount;
+    }
     const receitas = c.receivables.reduce((s, r) => s + r.amount, 0);
-    return { ...c, despesas, receitas, resultado: receitas - despesas };
+    return { ...c, despesas, receitas, imobilizado, resultado: receitas - despesas };
   });
 
   return (
@@ -68,6 +75,9 @@ export default async function CentrosCustoPage() {
                     </p>
                     <p className="mt-0.5 text-xs text-slate-500">
                       Despesas {formatCurrency(c.despesas)} · Receitas {formatCurrency(c.receitas)}
+                      {c.imobilizado > 0
+                        ? ` · Em estoque ${formatCurrency(c.imobilizado)} (imobilizado)`
+                        : ""}
                     </p>
                   </div>
                   <div className="flex items-center gap-4">

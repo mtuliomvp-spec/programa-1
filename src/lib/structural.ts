@@ -91,20 +91,32 @@ export async function getStructuralSummary() {
   const centers = await prisma.costCenter.findMany({
     where: { structural: true },
     include: {
-      payables: { select: { amount: true } },
+      payables: { select: { amount: true, vehicle: { select: { status: true } } } },
       receivables: { select: { amount: true } },
     },
   });
   const byKey = new Map(centers.map((c) => [c.key, c]));
   return STRUCTURAL_CENTERS.map((def) => {
     const c = byKey.get(def.key);
-    const despesas = c?.payables.reduce((s, p) => s + p.amount, 0) ?? 0;
+    const isVeiculos = def.key === "VEICULOS";
+    let despesas = 0;
+    let imobilizado = 0;
+    for (const p of c?.payables ?? []) {
+      // Veículo ainda em estoque é capital imobilizado (um ativo), não
+      // despesa: o custo só entra no resultado quando o carro é vendido.
+      if (isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO") {
+        imobilizado += p.amount;
+      } else {
+        despesas += p.amount;
+      }
+    }
     const receitas = c?.receivables.reduce((s, r) => s + r.amount, 0) ?? 0;
     return {
       key: def.key,
       name: def.name,
       despesas,
       receitas,
+      imobilizado,
       resultado: receitas - despesas,
     };
   });

@@ -138,6 +138,9 @@ export default async function DashboardPage() {
                 </p>
                 <p className="mt-0.5 text-xs text-slate-400">
                   Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
+                  {s.imobilizado > 0
+                    ? ` · Em estoque ${formatCurrency(s.imobilizado)} (imobilizado)`
+                    : ""}
                 </p>
               </Link>
             ))}
