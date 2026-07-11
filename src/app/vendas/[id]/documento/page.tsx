@@ -37,7 +37,7 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
           right={
             <>
               <p className="font-bold">ORDEM DE VENDA</p>
-              <p className="text-slate-500">Nº {sale.id.slice(-8).toUpperCase()}</p>
+              <p className="text-slate-500">Nº {String(sale.orderNumber).padStart(4, "0")}</p>
               <p className="text-slate-500">Emissão: {formatDate(sale.saleDate)}</p>
             </>
           }

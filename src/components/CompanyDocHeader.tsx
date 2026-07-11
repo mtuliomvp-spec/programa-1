@@ -22,8 +22,8 @@ export default function CompanyDocHeader({
 }) {
   const cityLine = company.city ? `${company.city}${company.uf ? `/${company.uf}` : ""}` : null;
   return (
-    <header className="mb-6 flex items-start justify-between gap-4 border-b-2 border-slate-900 pb-4">
-      <div className="flex items-start gap-3">
+    <header className="mb-6 flex flex-col gap-3 border-b-2 border-slate-900 pb-4 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+      <div className="flex min-w-0 items-start gap-3">
         {company.logoDataUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={company.logoDataUrl} alt="" className="h-14 w-auto" />

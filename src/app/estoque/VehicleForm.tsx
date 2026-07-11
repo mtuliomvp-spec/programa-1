@@ -8,6 +8,8 @@ import {
   lookupPlateAction,
   type VehicleFormState,
 } from "./actions";
+import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
+import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
@@ -51,6 +53,64 @@ export default function VehicleForm({
   const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number; ano?: string }[]>([]);
   const [fipeChoice, setFipeChoice] = useState(0);
   const [showAllFipe, setShowAllFipe] = useState(false);
+  const [supplierList, setSupplierList] = useState(suppliers);
+  const [supplierId, setSupplierId] = useState(vehicle?.supplierId || "");
+  const [showNewSupplier, setShowNewSupplier] = useState(false);
+  const [savingSupplier, startSupplier] = useTransition();
+  const [supplierMsg, setSupplierMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [newSupplier, setNewSupplier] = useState({
+    name: "",
+    document: "",
+    phone: "",
+    email: "",
+    address: "",
+  });
+
+  function handleSupplierCnpj() {
+    if (!newSupplier.document.trim()) {
+      setSupplierMsg({ tone: "err", text: "Digite o CNPJ antes de buscar." });
+      return;
+    }
+    setSupplierMsg(null);
+    startSupplier(async () => {
+      const result = await lookupCnpjAction(newSupplier.document);
+      if (!result.ok) {
+        setSupplierMsg({ tone: "err", text: result.error });
+        return;
+      }
+      setNewSupplier((prev) => ({
+        ...prev,
+        name: result.data.name || prev.name,
+        phone: result.data.phone || prev.phone,
+        email: result.data.email || prev.email,
+        address: result.data.address || prev.address,
+      }));
+      setSupplierMsg({ tone: "ok", text: `Dados encontrados: ${result.data.name}.` });
+    });
+  }
+
+  function handleCreateSupplier() {
+    setSupplierMsg(null);
+    startSupplier(async () => {
+      const result = await quickCreateSupplierAction(newSupplier);
+      if (!result.ok) {
+        setSupplierMsg({ tone: "err", text: result.error });
+        return;
+      }
+      setSupplierList((prev) =>
+        prev.some((s) => s.id === result.id) ? prev : [...prev, { id: result.id, name: result.name }],
+      );
+      setSupplierId(result.id);
+      setShowNewSupplier(false);
+      setNewSupplier({ name: "", document: "", phone: "", email: "", address: "" });
+      setSupplierMsg({
+        tone: "ok",
+        text: result.existed
+          ? `Esse CPF/CNPJ já estava cadastrado — fornecedor "${result.name}" selecionado.`
+          : `Fornecedor "${result.name}" cadastrado e selecionado.`,
+      });
+    });
+  }
 
   function setField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
@@ -269,17 +329,90 @@ export default function VehicleForm({
         <Field label="Preço de venda (anúncio)" required>
           <Input type="number" step="0.01" min={0} name="salePrice" defaultValue={vehicle?.salePrice} required />
         </Field>
-        <Field label="Fornecedor de origem">
-          <Select name="supplierId" defaultValue={vehicle?.supplierId || ""}>
-            <option value="">Sem fornecedor / particular</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <div>
+          <Field label="Fornecedor de origem">
+            <Select
+              name="supplierId"
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+            >
+              <option value="">Sem fornecedor / particular</option>
+              {supplierList.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <button
+            type="button"
+            onClick={() => setShowNewSupplier((v) => !v)}
+            className="mt-1.5 text-sm font-medium text-blue-700 hover:underline"
+          >
+            {showNewSupplier ? "✕ Cancelar novo fornecedor" : "+ Cadastrar novo fornecedor"}
+          </button>
+          {supplierMsg ? (
+            <p
+              className={`mt-1 text-sm font-medium ${
+                supplierMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"
+              }`}
+            >
+              {supplierMsg.text}
+            </p>
+          ) : null}
+        </div>
       </div>
+
+      {showNewSupplier ? (
+        <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
+          <p className="mb-3 text-sm font-medium text-slate-700">Novo fornecedor</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="CPF / CNPJ">
+              <div className="flex flex-wrap gap-2">
+                <Input
+                  value={newSupplier.document}
+                  onChange={(e) => setNewSupplier((p) => ({ ...p, document: e.target.value }))}
+                  placeholder="00.000.000/0000-00"
+                  className="max-w-[200px]"
+                />
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleSupplierCnpj}
+                  disabled={savingSupplier}
+                >
+                  🔍 Buscar CNPJ
+                </Button>
+              </div>
+            </Field>
+            <Field label="Nome" required>
+              <Input
+                value={newSupplier.name}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, name: e.target.value }))}
+                placeholder="Nome ou razão social"
+              />
+            </Field>
+            <Field label="Telefone">
+              <Input
+                value={newSupplier.phone}
+                onChange={(e) => setNewSupplier((p) => ({ ...p, phone: e.target.value }))}
+              />
+            </Field>
+          </div>
+          <Button
+            type="button"
+            onClick={handleCreateSupplier}
+            disabled={savingSupplier}
+            className="mt-3"
+          >
+            {savingSupplier ? "Salvando..." : "Salvar fornecedor"}
+          </Button>
+          <p className="mt-2 text-xs text-slate-500">
+            O fornecedor é salvo no cadastro geral e já fica selecionado neste veículo. Endereço e
+            outros dados podem ser completados depois em Cadastros → Fornecedores.
+          </p>
+        </div>
+      ) : null}
 
       {!isEdit ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

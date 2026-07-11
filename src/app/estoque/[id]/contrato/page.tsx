@@ -53,8 +53,8 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
             Contrato Particular de Compra e Venda de Veículo Usado
           </h1>
           <p className="mt-1 text-xs text-slate-500">
-            Instrumento nº {vehicle.id.slice(-8).toUpperCase()} · com força de título executivo
-            extrajudicial (art. 784, III, do Código de Processo Civil)
+            Instrumento nº {String(vehicle.orderNumber).padStart(4, "0")} · com força de título
+            executivo extrajudicial (art. 784, III, do Código de Processo Civil)
           </p>
         </header>
 

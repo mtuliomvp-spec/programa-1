@@ -269,6 +269,7 @@ model Customer {
 
 model Vehicle {
   id               String        @id @default(cuid())
+  orderNumber      Int           @unique @default(autoincrement())
   brand            String
   model            String
   version          String?
@@ -319,6 +320,7 @@ model VehicleCost {
 
 model Sale {
   id                String         @id @default(cuid())
+  orderNumber       Int            @unique @default(autoincrement())
   vehicleId         String         @unique
   vehicle           Vehicle        @relation(fields: [vehicleId], references: [id])
   customerId        String
