@@ -86,6 +86,13 @@ enum UserRole {
   OPERADOR
 }
 
+enum TipoConta {
+  CAIXA
+  BANCO
+  POUPANCA
+  OUTRO
+}
+
 enum StatusConsorcio {
   ATIVO
   CONTEMPLADO
@@ -104,6 +111,44 @@ enum StatusSolicitacao {
   REJEITADA
   CONCLUIDA
   CANCELADA
+}
+
+// Conta financeira (caixa físico, banco...): todo pagamento e
+// recebimento baixado passa por uma conta, que acumula saldo próprio.
+model FinancialAccount {
+  id             String            @id @default(cuid())
+  name           String
+  type           TipoConta         @default(CAIXA)
+  bankName       String?
+  agency         String?
+  accountNumber  String?
+  initialBalance Float             @default(0)
+  isDefault      Boolean           @default(false)
+  active         Boolean           @default(true)
+  notes          String?
+  payables       Payable[]
+  receivables    Receivable[]
+  transfersOut   AccountTransfer[] @relation("TransferFrom")
+  transfersIn    AccountTransfer[] @relation("TransferTo")
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  @@map("financial_accounts")
+}
+
+// Transferência entre contas financeiras.
+model AccountTransfer {
+  id          String           @id @default(cuid())
+  fromId      String
+  from        FinancialAccount @relation("TransferFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId        String
+  to          FinancialAccount @relation("TransferTo", fields: [toId], references: [id], onDelete: Cascade)
+  amount      Float
+  date        DateTime         @default(now())
+  description String?
+  createdAt   DateTime         @default(now())
+
+  @@map("account_transfers")
 }
 
 // Consórcio: parcelas mensais geradas automaticamente em contas a pagar.
@@ -349,6 +394,8 @@ model Payable {
   consortium   Consortium?     @relation(fields: [consortiumId], references: [id], onDelete: SetNull)
   costCenterId String?
   costCenter   CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  accountId    String?
+  account      FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   notes        String?
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
@@ -378,6 +425,8 @@ model Receivable {
   bankRef           String?
   costCenterId      String?
   costCenter        CostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  accountId         String?
+  account           FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   notes             String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt

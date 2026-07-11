@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
+import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectiveReceivableStatus } from "@/lib/status";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -19,10 +20,13 @@ export default async function ContasAReceberPage({
   const { status: statusFilter } = await searchParams;
   await ensureRecurringGenerated();
 
-  const receivables = await prisma.receivable.findMany({
-    orderBy: { dueDate: "asc" },
-    include: { customer: true },
-  });
+  const [receivables, accounts] = await Promise.all([
+    prisma.receivable.findMany({
+      orderBy: { dueDate: "asc" },
+      include: { customer: true, account: { select: { name: true } } },
+    }),
+    getActiveAccounts(),
+  ]);
 
   const withStatus = receivables.map((r) => ({ ...r, effective: effectiveReceivableStatus(r.status, r.dueDate) }));
   const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((r) => r.effective === statusFilter) : withStatus;
@@ -82,7 +86,7 @@ export default async function ContasAReceberPage({
                     <Badge tone={statusTone[r.effective]}>{statusLabelMap[r.effective]}</Badge>
                   </Td>
                   <Td>
-                    <ReceivableRowActions id={r.id} status={r.status} />
+                    <ReceivableRowActions id={r.id} status={r.status} accounts={accounts} />
                   </Td>
                 </Tr>
               ))}

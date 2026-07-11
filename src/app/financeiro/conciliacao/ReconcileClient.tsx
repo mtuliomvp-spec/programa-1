@@ -10,12 +10,15 @@ import {
   type MatchRow,
 } from "./actions";
 
-export default function ReconcileClient() {
+type Account = { id: string; name: string };
+
+export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
   const [rows, setRows] = useState<MatchRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const [createdIds, setCreatedIds] = useState<Set<string>>(new Set());
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
 
   function handleUpload(formData: FormData) {
     setMessage(null);
@@ -49,7 +52,7 @@ export default function ReconcileClient() {
       return;
     }
     startTransition(async () => {
-      const { done } = await confirmMatchesAction(toConfirm);
+      const { done } = await confirmMatchesAction(toConfirm, accountId || undefined);
       setMessage({
         tone: "ok",
         text: `${done} transação(ões) conciliada(s) com sucesso. Pendentes casadas receberam baixa automática.`,
@@ -68,7 +71,7 @@ export default function ReconcileClient() {
 
   function handleCreate(row: MatchRow) {
     startTransition(async () => {
-      await createFromBankTxnAction(row.txn);
+      await createFromBankTxnAction(row.txn, accountId || undefined);
       setCreatedIds((prev) => new Set(prev).add(row.txn.fitId));
       setMessage({
         tone: "ok",
@@ -96,6 +99,20 @@ export default function ReconcileClient() {
             required
             className="text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-700 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-blue-600"
           />
+          {accounts.length > 0 ? (
+            <select
+              value={accountId}
+              onChange={(e) => setAccountId(e.target.value)}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900"
+              title="Conta do extrato"
+            >
+              {accounts.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
           <Button type="submit" disabled={pending}>
             {pending ? "Analisando..." : "Analisar extrato"}
           </Button>

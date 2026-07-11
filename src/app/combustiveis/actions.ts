@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { parseDateInput } from "@/lib/format";
+import { getDefaultAccountId } from "@/lib/accounts";
 
 const fuelSchema = z.object({
   date: z.string().min(1),
@@ -35,6 +36,7 @@ export async function createFuelEntryAction(
 
   const date = parseDateInput(data.date);
   const total = Math.round(data.liters * data.pricePerLiter * 100) / 100;
+  const defaultAccountId = data.alreadyPaid ? await getDefaultAccountId() : null;
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -54,6 +56,7 @@ export async function createFuelEntryAction(
           paymentDate: paid ? date : null,
           status: paid ? "PAGO" : "PENDENTE",
           vehicleId: data.vehicleId || null,
+          accountId: paid ? defaultAccountId : null,
           notes: data.notes || null,
         },
       });

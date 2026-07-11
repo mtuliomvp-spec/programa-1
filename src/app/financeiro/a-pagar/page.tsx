@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated, ensureConsortiumInstallments } from "@/lib/recurring";
+import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -29,10 +30,13 @@ export default async function ContasAPagarPage({
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
 
-  const payables = await prisma.payable.findMany({
-    orderBy: { dueDate: "asc" },
-    include: { supplier: true, vehicle: true, part: true },
-  });
+  const [payables, accounts] = await Promise.all([
+    prisma.payable.findMany({
+      orderBy: { dueDate: "asc" },
+      include: { supplier: true, vehicle: true, part: true, account: { select: { name: true } } },
+    }),
+    getActiveAccounts(),
+  ]);
 
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
   const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((p) => p.effective === statusFilter) : withStatus;
@@ -97,9 +101,12 @@ export default async function ContasAPagarPage({
                   <Td>{formatCurrency(p.amount)}</Td>
                   <Td>
                     <Badge tone={statusTone[p.effective]}>{statusLabelMap[p.effective]}</Badge>
+                    {p.account ? (
+                      <p className="mt-0.5 text-[11px] text-slate-400">{p.account.name}</p>
+                    ) : null}
                   </Td>
                   <Td>
-                    <PayableRowActions id={p.id} status={p.status} />
+                    <PayableRowActions id={p.id} status={p.status} accounts={accounts} />
                   </Td>
                 </Tr>
               ))}

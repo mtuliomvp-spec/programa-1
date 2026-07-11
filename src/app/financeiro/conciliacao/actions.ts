@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { parseOfx } from "@/lib/ofx";
+import { getDefaultAccountId } from "@/lib/accounts";
 
 /**
  * Conciliação bancária: importa o extrato OFX, casa cada transação do
@@ -146,7 +147,9 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
 
 export async function confirmMatchesAction(
   matches: { kind: "payable" | "receivable"; id: string; fitId: string; date: string }[],
+  accountId?: string,
 ): Promise<{ done: number }> {
+  const account = accountId || (await getDefaultAccountId());
   let done = 0;
   for (const m of matches.slice(0, 500)) {
     const when = new Date(`${m.date}T12:00:00Z`);
@@ -158,6 +161,7 @@ export async function confirmMatchesAction(
           bankRef: m.fitId,
           status: "PAGO",
           paymentDate: { set: when },
+          accountId: account,
         },
       });
     } else {
@@ -168,6 +172,7 @@ export async function confirmMatchesAction(
           bankRef: m.fitId,
           status: "RECEBIDO",
           receivedDate: { set: when },
+          accountId: account,
         },
       });
     }
@@ -180,7 +185,11 @@ export async function confirmMatchesAction(
   return { done };
 }
 
-export async function createFromBankTxnAction(txn: BankTxn): Promise<{ ok: boolean }> {
+export async function createFromBankTxnAction(
+  txn: BankTxn,
+  accountId?: string,
+): Promise<{ ok: boolean }> {
+  const account = accountId || (await getDefaultAccountId());
   const when = new Date(`${txn.date}T12:00:00Z`);
   if (txn.amount < 0) {
     await prisma.payable.create({
@@ -193,6 +202,7 @@ export async function createFromBankTxnAction(txn: BankTxn): Promise<{ ok: boole
         status: "PAGO",
         reconciledAt: new Date(),
         bankRef: txn.fitId,
+        accountId: account,
         notes: "Criado pela conciliação bancária",
       },
     });
@@ -207,6 +217,7 @@ export async function createFromBankTxnAction(txn: BankTxn): Promise<{ ok: boole
         status: "RECEBIDO",
         reconciledAt: new Date(),
         bankRef: txn.fitId,
+        accountId: account,
         notes: "Criado pela conciliação bancária",
       },
     });

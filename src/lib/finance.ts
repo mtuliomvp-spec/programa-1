@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getDefaultAccountId } from "@/lib/accounts";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -59,6 +60,7 @@ export async function createVehicleWithPayable(input: {
   alreadyPaid: boolean;
   dueDate?: Date | null;
 }) {
+  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
       data: {
@@ -94,6 +96,7 @@ export async function createVehicleWithPayable(input: {
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           vehicleId: vehicle.id,
+          accountId: defaultAccountId,
         },
       });
     }
@@ -118,6 +121,7 @@ export async function addVehicleCostWithPayable(input: {
   dueDate?: Date | null;
   installments?: number;
 }) {
+  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -148,6 +152,7 @@ export async function addVehicleCostWithPayable(input: {
           supplierId: input.supplierId || null,
           vehicleId: vehicle.id,
           notes: input.notes || null,
+          accountId: paid ? defaultAccountId : null,
         },
       });
 
@@ -197,6 +202,7 @@ export async function createPartWithPayable(input: {
   alreadyPaid: boolean;
   dueDate?: Date | null;
 }) {
+  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.create({
       data: {
@@ -224,6 +230,7 @@ export async function createPartWithPayable(input: {
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           partId: part.id,
+          accountId: input.alreadyPaid ? defaultAccountId : null,
         },
       });
     }
@@ -240,6 +247,7 @@ export async function addPartStockWithPayable(input: {
   alreadyPaid: boolean;
   dueDate?: Date | null;
 }) {
+  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.update({
       where: { id: input.partId },
@@ -263,6 +271,7 @@ export async function addPartStockWithPayable(input: {
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           partId: part.id,
+          accountId: input.alreadyPaid ? defaultAccountId : null,
         },
       });
     }
@@ -286,6 +295,7 @@ export async function registerVehicleSale(input: {
   sellerName?: string | null;
   notes?: string | null;
 }) {
+  const defaultAccountId = await getDefaultAccountId();
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -330,6 +340,7 @@ export async function registerVehicleSale(input: {
           saleId: sale.id,
           installmentNumber: 0,
           totalInstallments: input.installmentsCount,
+          accountId: defaultAccountId,
         });
       }
 
@@ -412,6 +423,7 @@ export async function registerPartSale(input: {
   installmentsCount?: number;
   notes?: string | null;
 }) {
+  const defaultAccountId = await getDefaultAccountId();
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.findUniqueOrThrow({ where: { id: input.partId } });
     if (part.quantity < input.quantity) {
@@ -469,6 +481,7 @@ export async function registerPartSale(input: {
         status: "RECEBIDO",
         customerId: input.customerId || null,
         partSaleId: partSale.id,
+        accountId: defaultAccountId,
       });
     } else {
       receivablesData.push({
@@ -492,31 +505,33 @@ export async function registerPartSale(input: {
 // Baixas manuais
 // ---------------------------------------------------------------------------
 
-export async function markPayablePaid(id: string, paymentDate: Date) {
+export async function markPayablePaid(id: string, paymentDate: Date, accountId?: string | null) {
+  const account = accountId ?? (await getDefaultAccountId());
   return prisma.payable.update({
     where: { id },
-    data: { status: "PAGO", paymentDate },
+    data: { status: "PAGO", paymentDate, accountId: account },
   });
 }
 
 export async function markPayablePending(id: string) {
   return prisma.payable.update({
     where: { id },
-    data: { status: "PENDENTE", paymentDate: null },
+    data: { status: "PENDENTE", paymentDate: null, accountId: null },
   });
 }
 
-export async function markReceivableReceived(id: string, receivedDate: Date) {
+export async function markReceivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
+  const account = accountId ?? (await getDefaultAccountId());
   return prisma.receivable.update({
     where: { id },
-    data: { status: "RECEBIDO", receivedDate },
+    data: { status: "RECEBIDO", receivedDate, accountId: account },
   });
 }
 
 export async function markReceivablePending(id: string) {
   return prisma.receivable.update({
     where: { id },
-    data: { status: "PENDENTE", receivedDate: null },
+    data: { status: "PENDENTE", receivedDate: null, accountId: null },
   });
 }
 
@@ -530,6 +545,7 @@ export async function createManualPayable(input: {
   notes?: string | null;
   alreadyPaid: boolean;
 }) {
+  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   return prisma.payable.create({
     data: {
       description: input.description,
@@ -540,6 +556,7 @@ export async function createManualPayable(input: {
       status: input.alreadyPaid ? "PAGO" : "PENDENTE",
       supplierId: input.supplierId || null,
       costCenterId: input.costCenterId || null,
+      accountId: defaultAccountId,
       notes: input.notes || null,
     },
   });
@@ -554,6 +571,7 @@ export async function createManualReceivable(input: {
   notes?: string | null;
   alreadyReceived: boolean;
 }) {
+  const defaultAccountId = input.alreadyReceived ? await getDefaultAccountId() : null;
   return prisma.receivable.create({
     data: {
       description: input.description,
@@ -564,6 +582,7 @@ export async function createManualReceivable(input: {
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
       costCenterId: input.costCenterId || null,
+      accountId: defaultAccountId,
       notes: input.notes || null,
     },
   });

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
+import { getDefaultAccountId } from "@/lib/accounts";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -101,6 +102,7 @@ export async function concludeRequestAction(
 
       const now = new Date();
       const paid = Boolean(data.alreadyPaid);
+      const accountId = paid ? await getDefaultAccountId() : null;
       const payable = await tx.payable.create({
         data: {
           description: `Compra #${request.number}: ${request.description}`,
@@ -110,6 +112,7 @@ export async function concludeRequestAction(
           paymentDate: paid ? now : null,
           status: paid ? "PAGO" : "PENDENTE",
           supplierId: request.supplierId,
+          accountId,
           notes: request.details,
         },
       });

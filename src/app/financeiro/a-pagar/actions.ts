@@ -6,10 +6,11 @@ import { redirect } from "next/navigation";
 import { markPayablePaid, markPayablePending, createManualPayable } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
-export async function markPaidAction(id: string) {
-  await markPayablePaid(id, new Date());
+export async function markPaidAction(id: string, accountId?: string) {
+  await markPayablePaid(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
   revalidatePath("/");
 }
 

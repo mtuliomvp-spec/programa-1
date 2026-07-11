@@ -6,10 +6,11 @@ import { redirect } from "next/navigation";
 import { markReceivableReceived, markReceivablePending, createManualReceivable } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
-export async function markReceivedAction(id: string) {
-  await markReceivableReceived(id, new Date());
+export async function markReceivedAction(id: string, accountId?: string) {
+  await markReceivableReceived(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
   revalidatePath("/");
 }
 

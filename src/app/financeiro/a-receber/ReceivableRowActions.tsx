@@ -1,10 +1,22 @@
 "use client";
 
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { markReceivedAction, markPendingAction } from "./actions";
 
-export default function ReceivableRowActions({ id, status }: { id: string; status: "PENDENTE" | "RECEBIDO" | "ATRASADO" }) {
+type Account = { id: string; name: string };
+
+export default function ReceivableRowActions({
+  id,
+  status,
+  accounts,
+}: {
+  id: string;
+  status: "PENDENTE" | "RECEBIDO" | "ATRASADO";
+  accounts: Account[];
+}) {
   const [pending, startTransition] = useTransition();
+  const [choosing, setChoosing] = useState(false);
+  const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
 
   if (status === "RECEBIDO") {
     return (
@@ -19,11 +31,47 @@ export default function ReceivableRowActions({ id, status }: { id: string; statu
     );
   }
 
+  if (choosing && accounts.length > 0) {
+    return (
+      <div className="flex items-center justify-end gap-2">
+        <select
+          value={accountId}
+          onChange={(e) => setAccountId(e.target.value)}
+          className="h-8 rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900"
+        >
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+            </option>
+          ))}
+        </select>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => startTransition(() => markReceivedAction(id, accountId))}
+          className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
+        >
+          {pending ? "Salvando..." : "Confirmar"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setChoosing(false)}
+          className="text-xs text-slate-400 hover:underline"
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
   return (
     <button
       type="button"
       disabled={pending}
-      onClick={() => startTransition(() => markReceivedAction(id))}
+      onClick={() => {
+        if (accounts.length > 1) setChoosing(true);
+        else startTransition(() => markReceivedAction(id, accounts[0]?.id));
+      }}
       className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
     >
       {pending ? "Salvando..." : "Marcar como recebido"}

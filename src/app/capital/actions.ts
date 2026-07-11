@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { parseDateInput } from "@/lib/format";
+import { getDefaultAccountId } from "@/lib/accounts";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -47,6 +48,7 @@ export async function addCapitalTransactionAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;
   const date = parseDateInput(data.date);
+  const accountId = await getDefaultAccountId();
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -66,6 +68,7 @@ export async function addCapitalTransactionAction(
             dueDate: date,
             receivedDate: date,
             status: "RECEBIDO",
+            accountId,
             notes: data.description || null,
           },
         });
@@ -82,6 +85,7 @@ export async function addCapitalTransactionAction(
             dueDate: date,
             paymentDate: date,
             status: "PAGO",
+            accountId,
             notes: data.description || null,
           },
         });

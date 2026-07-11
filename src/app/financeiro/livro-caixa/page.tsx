@@ -15,10 +15,11 @@ function parseMonth(value: string | undefined): { year: number; month: number } 
 export default async function LivroCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string }>;
 }) {
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
+  const accountFilter = params.conta || "";
   const monthStart = new Date(Date.UTC(year, month, 1));
   const monthEnd = new Date(Date.UTC(year, month + 1, 1));
   const monthValue = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -28,27 +29,51 @@ export default async function LivroCaixaPage({
     timeZone: "UTC",
   });
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth] = await Promise.all([
-    prisma.payable.aggregate({
-      where: { status: "PAGO", paymentDate: { lt: monthStart } },
-      _sum: { amount: true },
-    }),
-    prisma.receivable.aggregate({
-      where: { status: "RECEBIDO", receivedDate: { lt: monthStart } },
-      _sum: { amount: true },
-    }),
-    prisma.payable.findMany({
-      where: { status: "PAGO", paymentDate: { gte: monthStart, lt: monthEnd } },
-      include: { supplier: true },
-    }),
-    prisma.receivable.findMany({
-      where: { status: "RECEBIDO", receivedDate: { gte: monthStart, lt: monthEnd } },
-      include: { customer: true },
-    }),
-  ]);
+  const accountWhere = accountFilter ? { accountId: accountFilter } : {};
 
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers] =
+    await Promise.all([
+      prisma.payable.aggregate({
+        where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
+        _sum: { amount: true },
+      }),
+      prisma.receivable.aggregate({
+        where: { status: "RECEBIDO", receivedDate: { lt: monthStart }, ...accountWhere },
+        _sum: { amount: true },
+      }),
+      prisma.payable.findMany({
+        where: { status: "PAGO", paymentDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
+        include: { supplier: true, account: { select: { name: true } } },
+      }),
+      prisma.receivable.findMany({
+        where: { status: "RECEBIDO", receivedDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
+        include: { customer: true, account: { select: { name: true } } },
+      }),
+      prisma.financialAccount.findMany({
+        orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, initialBalance: true, active: true },
+      }),
+      prisma.accountTransfer.findMany({
+        where: accountFilter
+          ? { OR: [{ fromId: accountFilter }, { toId: accountFilter }] }
+          : { id: "___nunca___" },
+        include: { from: { select: { name: true } }, to: { select: { name: true } } },
+      }),
+    ]);
+
+  // saldo inicial considera o saldo de abertura das contas e as
+  // transferências anteriores ao mês (quando filtrado por conta)
+  const initialFromAccounts = accountFilter
+    ? accounts.find((a) => a.id === accountFilter)?.initialBalance ?? 0
+    : accounts.reduce((s, a) => s + a.initialBalance, 0);
+  const transfersBefore = transfers
+    .filter((t) => t.date < monthStart)
+    .reduce((s, t) => s + (t.toId === accountFilter ? t.amount : -t.amount), 0);
   const openingBalance =
-    (receivedBefore._sum.amount || 0) - (paidBefore._sum.amount || 0);
+    initialFromAccounts +
+    (receivedBefore._sum.amount || 0) -
+    (paidBefore._sum.amount || 0) +
+    transfersBefore;
 
   type Movement = {
     id: string;
@@ -59,7 +84,19 @@ export default async function LivroCaixaPage({
     amount: number;
   };
 
+  const transferMovements: Movement[] = transfers
+    .filter((t) => t.date >= monthStart && t.date < monthEnd)
+    .map((t) => ({
+      id: `t-${t.id}`,
+      date: t.date,
+      description: t.description || `Transferência ${t.from.name} → ${t.to.name}`,
+      who: t.toId === accountFilter ? t.from.name : t.to.name,
+      kind: (t.toId === accountFilter ? "entrada" : "saida") as "entrada" | "saida",
+      amount: t.amount,
+    }));
+
   const movements: Movement[] = [
+    ...transferMovements,
     ...receivedMonth.map((r) => ({
       id: `r-${r.id}`,
       date: r.receivedDate!,
@@ -99,16 +136,44 @@ export default async function LivroCaixaPage({
         description={`Movimentações realizadas em ${monthLabel}`}
         action={
           <div className="flex flex-wrap gap-2 print:hidden">
-            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${toParam(prevMonth)}`}>
+            <LinkButton
+              variant="secondary"
+              href={`/financeiro/livro-caixa?mes=${toParam(prevMonth)}${accountFilter ? `&conta=${accountFilter}` : ""}`}
+            >
               ← Mês anterior
             </LinkButton>
-            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${toParam(nextMonth)}`}>
+            <LinkButton
+              variant="secondary"
+              href={`/financeiro/livro-caixa?mes=${toParam(nextMonth)}${accountFilter ? `&conta=${accountFilter}` : ""}`}
+            >
               Mês seguinte →
             </LinkButton>
             <PrintButton />
           </div>
         }
       />
+
+      {accounts.length > 0 ? (
+        <div className="mb-4 flex flex-wrap gap-2 print:hidden">
+          <LinkButton
+            variant={!accountFilter ? "primary" : "secondary"}
+            href={`/financeiro/livro-caixa?mes=${monthValue}`}
+          >
+            Todas as contas
+          </LinkButton>
+          {accounts
+            .filter((a) => a.active)
+            .map((a) => (
+              <LinkButton
+                key={a.id}
+                variant={accountFilter === a.id ? "primary" : "secondary"}
+                href={`/financeiro/livro-caixa?mes=${monthValue}&conta=${a.id}`}
+              >
+                {a.name}
+              </LinkButton>
+            ))}
+        </div>
+      ) : null}
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Saldo inicial" value={formatCurrency(openingBalance)} hint={`antes de ${monthLabel}`} />

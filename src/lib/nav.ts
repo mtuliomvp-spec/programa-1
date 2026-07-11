@@ -26,6 +26,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Financeiro",
     items: [
+      { href: "/financeiro/contas", label: "Contas e caixas", icon: "💳", module: "financeiro" },
       { href: "/financeiro/a-pagar", label: "Contas a pagar", icon: "📤", module: "financeiro" },
       { href: "/financeiro/a-receber", label: "Contas a receber", icon: "📥", module: "financeiro" },
       { href: "/financeiro/recorrentes", label: "Recorrentes", icon: "🔁", module: "financeiro" },
