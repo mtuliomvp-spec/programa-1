@@ -93,6 +93,28 @@ function transmissionFromKeywords(value: string | undefined): string | undefined
   return undefined;
 }
 
+/**
+ * Mede o quanto o nome de uma versão FIPE "casa" com a descrição do
+ * documento do veículo. O documento abrevia e cola as palavras
+ * (ex.: "HILUX CDSR A4FD" = Hilux CD SR), então comparamos as palavras
+ * da versão FIPE concatenadas em sequência ("HILUX", "HILUXCD",
+ * "HILUXCDSR"...) contra a descrição compactada: quanto mais longa a
+ * sequência encontrada, melhor o casamento. Assim "CD SR" (CDSR) vence
+ * "CD SRV" (CDSRV) para um documento que diz CDSR.
+ */
+function fipeMatchScore(vehicleCompact: string, fipeModelo: string): number {
+  if (!vehicleCompact) return 0;
+  const tokens = fipeModelo.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  let sequence = "";
+  let best = 0;
+  for (const token of tokens) {
+    sequence += token;
+    if (vehicleCompact.includes(sequence)) best = sequence.length;
+    else break;
+  }
+  return best;
+}
+
 function normalize(raw: Record<string, unknown>): PlateLookupData {
   let brand = firstString(raw, ["marca", "MARCA", "brand", "fabricante"]);
   let model = firstString(raw, ["modelo", "MODELO", "model"]);
@@ -109,24 +131,33 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
   const fipe = (raw.fipe ?? {}) as { dados?: unknown };
   const fipeDados = Array.isArray(fipe.dados) ? (fipe.dados as Record<string, unknown>[]) : [];
 
-  // Todas as versões FIPE válidas, ordenadas pelo score do provedor.
-  // O provedor nem sempre acerta a versão exata, então a tela mostra a lista
-  // completa para o usuário escolher — aqui só definimos a sugestão inicial.
-  const sorted = [...fipeDados].sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
-  const fipeOptions: FipeOption[] = [];
+  // Todas as versões FIPE válidas, ordenadas pela melhor combinação com a
+  // descrição do documento (e, em empate, pelo score do provedor — que
+  // sozinho erra com frequência). A tela ainda mostra a lista completa para
+  // o usuário confirmar; aqui definimos só a sugestão inicial.
+  const vehicleCompact = [brand, model, firstString(raw, ["versao", "VERSAO", "version", "submodelo"]), marcaModelo]
+    .filter(Boolean)
+    .join(" ")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+  const candidates: (FipeOption & { providerScore: number; matchScore: number })[] = [];
   let fipeFuel: string | undefined;
-  for (const item of sorted) {
+  for (const item of fipeDados) {
     const modelo = firstString(item, ["texto_modelo", "modelo"]);
     const price = parseBrl(firstString(item, ["texto_valor", "valor", "preco"]));
     if (!modelo || !price) continue;
     if (!fipeFuel) fipeFuel = firstString(item, ["combustivel", "COMBUSTIVEL", "combustível"]);
-    if (fipeOptions.some((o) => o.modelo === modelo && o.price === price)) continue;
-    fipeOptions.push({
+    if (candidates.some((o) => o.modelo === modelo && o.price === price)) continue;
+    candidates.push({
       modelo,
       price,
       ano: firstString(item, ["ano_modelo", "anoModelo", "ano"]),
+      providerScore: Number(item.score) || 0,
+      matchScore: fipeMatchScore(vehicleCompact, modelo),
     });
   }
+  candidates.sort((a, b) => b.matchScore - a.matchScore || b.providerScore - a.providerScore);
+  const fipeOptions: FipeOption[] = candidates.map(({ modelo, price, ano }) => ({ modelo, price, ano }));
   const bestFipe = fipeOptions[0];
 
   return {
