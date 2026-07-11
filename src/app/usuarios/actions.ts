@@ -69,6 +69,18 @@ export async function updatePermissionsAction(
   return { success: "Permissões atualizadas." };
 }
 
+export async function approveUserAction(id: string) {
+  await requireAdmin();
+  await prisma.user.update({ where: { id }, data: { pending: false, active: true } });
+  revalidatePath("/usuarios");
+}
+
+export async function rejectUserAction(id: string) {
+  await requireAdmin();
+  await prisma.user.delete({ where: { id, pending: true } });
+  revalidatePath("/usuarios");
+}
+
 export async function toggleUserAction(id: string, active: boolean) {
   const admin = await requireAdmin();
   if (admin.id === id) throw new Error("Você não pode desativar a si mesmo.");
@@ -95,7 +107,7 @@ export async function resetPasswordAction(
 
   await prisma.user.update({
     where: { id: parsed.data.userId },
-    data: { passwordHash: hashPassword(parsed.data.password) },
+    data: { passwordHash: hashPassword(parsed.data.password), resetRequestedAt: null },
   });
   revalidatePath("/usuarios");
   return { success: "Senha alterada." };

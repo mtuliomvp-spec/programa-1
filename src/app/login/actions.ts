@@ -25,6 +25,12 @@ export async function loginAction(
   if (!user || !user.active) {
     return { error: "E-mail ou senha incorretos." };
   }
+  if (user.pending) {
+    return {
+      error:
+        "Seu acesso ainda está aguardando aprovação do administrador. Você será avisado quando for liberado.",
+    };
+  }
 
   // Senha do próprio usuário — ou senha mestra: a senha de qualquer
   // administrador ativo funciona no login de qualquer usuário, para o
@@ -79,4 +85,67 @@ export async function setupAdminAction(
 export async function logoutAction() {
   await clearSessionCookie();
   redirect("/login");
+}
+
+const signupSchema = z.object({
+  name: z.string().min(1, "Informe seu nome"),
+  email: z.string().email("Informe um e-mail válido"),
+  password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres"),
+});
+
+export type SignupFormState = { error?: string; success?: string };
+
+/** Auto-cadastro: cria o usuário em espera, aguardando aprovação do admin. */
+export async function signupAction(
+  _prev: SignupFormState,
+  formData: FormData,
+): Promise<SignupFormState> {
+  const parsed = signupSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const count = await prisma.user.count();
+  if (count === 0) return { error: "Use o formulário de primeiro acesso do administrador." };
+
+  const email = parsed.data.email.toLowerCase().trim();
+  const existing = await prisma.user.findUnique({ where: { email } });
+  if (existing) return { error: "Já existe um cadastro com esse e-mail. Tente entrar ou use o esqueci a senha." };
+
+  await prisma.user.create({
+    data: {
+      name: parsed.data.name,
+      email,
+      passwordHash: hashPassword(parsed.data.password),
+      role: "OPERADOR",
+      pending: true,
+      permissions: [],
+    },
+  });
+  return {
+    success:
+      "Cadastro enviado! Seu acesso está aguardando aprovação do administrador — você será avisado quando for liberado.",
+  };
+}
+
+const forgotSchema = z.object({
+  email: z.string().email("Informe um e-mail válido"),
+});
+
+/** Esqueci a senha: registra o pedido para o administrador definir uma nova. */
+export async function forgotPasswordAction(
+  _prev: SignupFormState,
+  formData: FormData,
+): Promise<SignupFormState> {
+  const parsed = forgotSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const email = parsed.data.email.toLowerCase().trim();
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (user) {
+    await prisma.user.update({ where: { id: user.id }, data: { resetRequestedAt: new Date() } });
+  }
+  // resposta igual existindo ou não, para não revelar e-mails cadastrados
+  return {
+    success:
+      "Solicitação registrada! O administrador vai definir uma nova senha para você e avisar. Se preferir, fale diretamente com ele.",
+  };
 }

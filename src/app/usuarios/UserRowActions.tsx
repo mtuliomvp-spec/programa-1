@@ -5,6 +5,8 @@ import {
   toggleUserAction,
   resetPasswordAction,
   updatePermissionsAction,
+  approveUserAction,
+  rejectUserAction,
   type UserFormState,
 } from "./actions";
 import { Button, Input } from "@/components/ui";
@@ -13,12 +15,14 @@ import PermissionsChecklist from "./PermissionsChecklist";
 export default function UserRowActions({
   id,
   active,
+  pending: isPending,
   isSelf,
   role,
   permissions,
 }: {
   id: string;
   active: boolean;
+  pending: boolean;
   isSelf: boolean;
   role: "ADMIN" | "OPERADOR";
   permissions: string[];
@@ -42,6 +46,33 @@ export default function UserRowActions({
     },
     {} as UserFormState,
   );
+
+  if (isPending) {
+    return (
+      <div className="flex items-center justify-end gap-3 text-sm font-medium">
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => startTransition(() => approveUserAction(id))}
+          className="text-emerald-700 hover:underline disabled:opacity-50"
+        >
+          ✓ Aprovar
+        </button>
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => {
+            if (confirm("Recusar e excluir este cadastro?")) {
+              startTransition(() => rejectUserAction(id));
+            }
+          }}
+          className="text-rose-600 hover:underline disabled:opacity-50"
+        >
+          Recusar
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col items-end gap-1">

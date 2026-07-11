@@ -52,14 +52,22 @@ export default async function UsuariosPage() {
                   </Td>
                   <Td>{formatDate(u.createdAt)}</Td>
                   <Td>
-                    <Badge tone={u.active ? "success" : "danger"}>
-                      {u.active ? "Ativo" : "Desativado"}
-                    </Badge>
+                    <div className="flex flex-col items-start gap-1">
+                      {u.pending ? (
+                        <Badge tone="warning">Aguardando aprovação</Badge>
+                      ) : (
+                        <Badge tone={u.active ? "success" : "danger"}>
+                          {u.active ? "Ativo" : "Desativado"}
+                        </Badge>
+                      )}
+                      {u.resetRequestedAt ? <Badge tone="info">🔑 Pediu nova senha</Badge> : null}
+                    </div>
                   </Td>
                   <Td>
                     <UserRowActions
                       id={u.id}
                       active={u.active}
+                      pending={u.pending}
                       isSelf={u.id === sessionUser.id}
                       role={u.role}
                       permissions={u.permissions}
