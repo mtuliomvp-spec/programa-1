@@ -10,6 +10,8 @@
  * pouco diferentes, então procuramos os valores em vários lugares comuns.
  */
 
+export type FipeOption = { modelo: string; price: number };
+
 export type PlateLookupData = {
   brand?: string;
   model?: string;
@@ -21,6 +23,8 @@ export type PlateLookupData = {
   chassi?: string;
   fipePrice?: number;
   fipeModelo?: string;
+  /** Todas as versões FIPE retornadas, da mais provável para a menos provável */
+  fipeOptions?: FipeOption[];
 };
 
 export type PlateLookupResult =
@@ -63,7 +67,7 @@ function titleCase(value: string | undefined): string | undefined {
     .join(" ");
 }
 
-function normalizeFuel(value: string | undefined): string | undefined {
+function fuelFromKeywords(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const fuel = value.toUpperCase();
   if (fuel.includes("FLEX") || (fuel.includes("ALCOOL") && fuel.includes("GASOLINA"))) return "Flex";
@@ -71,7 +75,12 @@ function normalizeFuel(value: string | undefined): string | undefined {
   if (fuel.includes("ELETRICO") || fuel.includes("ELÉTRICO")) return "Elétrico";
   if (fuel.includes("DIESEL")) return "Diesel";
   if (fuel.includes("GASOLINA")) return "Gasolina";
-  return titleCase(value);
+  return undefined;
+}
+
+function normalizeFuel(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return fuelFromKeywords(value) ?? titleCase(value);
 }
 
 function normalize(raw: Record<string, unknown>): PlateLookupData {
@@ -89,9 +98,22 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
   const extra = (raw.extra ?? {}) as Record<string, unknown>;
   const fipe = (raw.fipe ?? {}) as { dados?: unknown };
   const fipeDados = Array.isArray(fipe.dados) ? (fipe.dados as Record<string, unknown>[]) : [];
-  const bestFipe = [...fipeDados].sort(
-    (a, b) => (Number(b.score) || 0) - (Number(a.score) || 0),
-  )[0];
+
+  // Todas as versões FIPE válidas, ordenadas pelo score do provedor.
+  // O provedor nem sempre acerta a versão exata, então a tela mostra a lista
+  // completa para o usuário escolher — aqui só definimos a sugestão inicial.
+  const sorted = [...fipeDados].sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0));
+  const fipeOptions: FipeOption[] = [];
+  let fipeFuel: string | undefined;
+  for (const item of sorted) {
+    const modelo = firstString(item, ["texto_modelo", "modelo"]);
+    const price = parseBrl(firstString(item, ["texto_valor", "valor", "preco"]));
+    if (!modelo || !price) continue;
+    if (!fipeFuel) fipeFuel = firstString(item, ["combustivel", "COMBUSTIVEL", "combustível"]);
+    if (fipeOptions.some((o) => o.modelo === modelo)) continue;
+    fipeOptions.push({ modelo, price });
+  }
+  const bestFipe = fipeOptions[0];
 
   return {
     brand: titleCase(brand),
@@ -100,17 +122,19 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
     manufactureYear: parseYear(firstString(raw, ["ano", "ANO", "anoFabricacao", "ano_fabricacao"])),
     modelYear: parseYear(firstString(raw, ["anoModelo", "ANO_MODELO", "ano_modelo"])),
     color: titleCase(firstString(raw, ["cor", "COR", "color"])),
-    fuel: normalizeFuel(
-      firstString(raw, ["combustivel", "COMBUSTIVEL", "fuel"]) ||
-        firstString(extra, ["combustivel"]),
-    ),
+    fuel:
+      normalizeFuel(
+        firstString(raw, ["combustivel", "COMBUSTIVEL", "combustível", "COMBUSTÍVEL", "fuel"]) ||
+          firstString(extra, ["combustivel", "combustível"]) ||
+          fipeFuel,
+      ) ||
+      // último recurso: o texto da versão FIPE costuma citar o combustível
+      // (ex.: "Hilux CD SR 4x4 2.8 TDI Diesel Aut.")
+      fuelFromKeywords(fipeOptions.map((o) => o.modelo).join(" ")),
     chassi: firstString(raw, ["chassi", "CHASSI", "vin"]) || firstString(extra, ["chassi"]),
-    fipePrice: bestFipe
-      ? parseBrl(firstString(bestFipe, ["texto_valor", "valor", "preco"]))
-      : parseBrl(firstString(raw, ["valorFipe", "fipe_valor"])),
-    fipeModelo: bestFipe
-      ? firstString(bestFipe, ["texto_modelo", "modelo"])
-      : undefined,
+    fipePrice: bestFipe ? bestFipe.price : parseBrl(firstString(raw, ["valorFipe", "fipe_valor"])),
+    fipeModelo: bestFipe?.modelo,
+    fipeOptions,
   };
 }
 

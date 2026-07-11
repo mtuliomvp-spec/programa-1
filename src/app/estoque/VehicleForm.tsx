@@ -48,6 +48,8 @@ export default function VehicleForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number }[]>([]);
+  const [fipeChoice, setFipeChoice] = useState(0);
 
   function setField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
@@ -69,6 +71,7 @@ export default function VehicleForm({
       return;
     }
     setLookupMsg(null);
+    setFipeOptions([]);
     startLookup(async () => {
       const result = await lookupPlateAction(plate);
       if (!result.ok) {
@@ -89,6 +92,8 @@ export default function VehicleForm({
       if (d.fipePrice && saleEl instanceof HTMLInputElement && !saleEl.value) {
         saleEl.value = String(d.fipePrice);
       }
+      setFipeOptions(d.fipeOptions ?? []);
+      setFipeChoice(0);
       const found = [d.brand, d.model, d.modelYear].filter(Boolean).join(" ");
       setLookupMsg({
         tone: "ok",
@@ -97,6 +102,15 @@ export default function VehicleForm({
         }. Confira e complete o que faltar.`,
       });
     });
+  }
+
+  function chooseFipe(index: number) {
+    setFipeChoice(index);
+    const option = fipeOptions[index];
+    const saleEl = formRef.current?.elements.namedItem("salePrice");
+    if (option && saleEl instanceof HTMLInputElement) {
+      saleEl.value = String(option.price);
+    }
   }
 
   return (
@@ -136,6 +150,43 @@ export default function VehicleForm({
           >
             {lookupMsg.text}
           </p>
+        ) : null}
+        {fipeOptions.length > 1 ? (
+          <div className="mt-3 rounded-lg border border-blue-200 bg-white p-3">
+            <p className="text-sm font-medium text-slate-700">
+              A tabela FIPE tem {fipeOptions.length} versões para este veículo. Toque na versão
+              correta para ajustar o valor:
+            </p>
+            <div className="mt-2 space-y-1.5">
+              {fipeOptions.map((option, i) => (
+                <label
+                  key={i}
+                  className={`flex cursor-pointer items-start gap-2 rounded-md border px-3 py-2 text-sm ${
+                    fipeChoice === i
+                      ? "border-blue-400 bg-blue-50"
+                      : "border-slate-200 hover:bg-slate-50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    checked={fipeChoice === i}
+                    onChange={() => chooseFipe(i)}
+                    className="mt-0.5 h-4 w-4 shrink-0 border-slate-300"
+                  />
+                  <span className="min-w-0">
+                    <span className="block text-slate-700">{option.modelo}</span>
+                    <span className="font-semibold text-slate-900">
+                      {formatCurrency(option.price)}
+                    </span>
+                  </span>
+                </label>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              O valor da versão escolhida vai para o campo &quot;Preço de venda (anúncio)&quot;.
+              Você pode ajustá-lo depois.
+            </p>
+          </div>
         ) : null}
       </div>
 
