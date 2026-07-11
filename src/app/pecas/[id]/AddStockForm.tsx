@@ -19,7 +19,7 @@ export default function AddStockForm({
   suppliers: Supplier[];
 }) {
   const [state, formAction, pending] = useActionState(addStockAction, {} as FormState);
-  const [alreadyPaid, setAlreadyPaid] = useState(true);
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
 
   return (
     <form action={formAction} className="space-y-4">

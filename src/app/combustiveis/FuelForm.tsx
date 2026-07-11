@@ -58,8 +58,8 @@ export default function FuelForm({ vehicles }: { vehicles: VehicleOption[] }) {
         <Input name="station" placeholder="Nome do posto" />
       </Field>
       <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="alreadyPaid" value="true" defaultChecked className="h-4 w-4 rounded border-slate-300" />
-        Já foi pago
+        <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
+        Já paguei no ato (senão, entra como conta a pagar)
       </label>
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Registrando..." : "Registrar abastecimento"}

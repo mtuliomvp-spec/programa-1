@@ -46,7 +46,7 @@ export default function VehicleForm({
   const isEdit = Boolean(vehicle);
   const action = isEdit ? updateVehicleAction : createVehicleAction;
   const [state, formAction, pending] = useActionState(action, initialState);
-  const [alreadyPaid, setAlreadyPaid] = useState(true);
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -417,7 +417,17 @@ export default function VehicleForm({
       {!isEdit ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-sm font-medium text-slate-700">Financeiro da compra</p>
-          <label className="flex items-center gap-2 text-sm text-slate-600">
+          <div className="max-w-xs">
+            <Field label="Vencimento do pagamento">
+              <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
+            </Field>
+            <p className="mt-1 text-xs text-slate-500">
+              A compra entra como <strong>conta a pagar</strong>. O pagamento é feito depois em{" "}
+              <strong>Contas a pagar</strong>, dando a baixa por uma conta financeira (caixa ou
+              banco).
+            </p>
+          </div>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
               name="alreadyPaid"
@@ -426,22 +436,14 @@ export default function VehicleForm({
               onChange={(e) => setAlreadyPaid(e.target.checked)}
               className="h-4 w-4 rounded border-slate-300"
             />
-            Compra já foi paga ao fornecedor
+            Já paguei no ato (dar a baixa agora pela conta padrão)
           </label>
-          {!alreadyPaid ? (
-            <div className="mt-3 max-w-xs">
-              <Field label="Vencimento do pagamento">
-                <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
-              </Field>
-              <p className="mt-1 text-xs text-slate-500">
-                Será lançada automaticamente uma conta a pagar para este veículo.
-              </p>
-            </div>
-          ) : (
-            <p className="mt-2 text-xs text-slate-500">
-              Nenhuma conta a pagar será gerada, pois a compra já está quitada.
+          {alreadyPaid ? (
+            <p className="mt-2 text-xs text-amber-700">
+              Atenção: isso registra o pagamento na hora, saindo da conta financeira padrão. Use
+              só se você realmente já pagou.
             </p>
-          )}
+          ) : null}
         </div>
       ) : null}
 

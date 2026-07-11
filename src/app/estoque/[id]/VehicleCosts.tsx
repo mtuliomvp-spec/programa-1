@@ -111,8 +111,8 @@ export default function VehicleCosts({
               </Field>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="alreadyPaid" value="true" defaultChecked className="h-4 w-4 rounded border-slate-300" />
-              Já foi pago (senão, entra como conta a pagar pendente; parcelado sempre gera parcelas pendentes)
+              <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
+              Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)
             </label>
             {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
             <div className="flex gap-2">

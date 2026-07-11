@@ -9,7 +9,7 @@ type Supplier = { id: string; name: string };
 
 export default function PartForm({ suppliers }: { suppliers: Supplier[] }) {
   const [state, formAction, pending] = useActionState(createPartAction, {} as FormState);
-  const [alreadyPaid, setAlreadyPaid] = useState(true);
+  const [alreadyPaid, setAlreadyPaid] = useState(false);
 
   return (
     <form action={formAction} className="space-y-6">

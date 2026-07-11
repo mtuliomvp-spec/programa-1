@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { markPaidAction, markPendingAction } from "./actions";
 
@@ -61,6 +62,16 @@ export default function PayableRowActions({
           ✕
         </button>
       </div>
+    );
+  }
+
+  // Sem conta financeira cadastrada não há como registrar o pagamento —
+  // orienta a criar uma conta antes de dar a baixa.
+  if (accounts.length === 0) {
+    return (
+      <Link href="/financeiro/contas" className="text-sm font-medium text-blue-700 hover:underline">
+        Criar conta p/ pagar
+      </Link>
     );
   }
 
