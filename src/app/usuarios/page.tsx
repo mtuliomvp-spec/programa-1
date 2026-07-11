@@ -13,6 +13,8 @@ export default async function UsuariosPage() {
   if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
 
   const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+  const pendingUsers = users.filter((u) => u.pending);
+  const regularUsers = users.filter((u) => !u.pending);
 
   return (
     <div>
@@ -21,62 +23,133 @@ export default async function UsuariosPage() {
         description="Quem pode acessar o sistema — administradores gerenciam usuários; operadores usam o restante"
       />
 
+      {pendingUsers.length > 0 ? (
+        <Card className="mb-4 ring-2 ring-amber-300">
+          <CardHeader
+            title={`⏳ Aguardando liberação (${pendingUsers.length})`}
+            description="Pessoas que se cadastraram sozinhas e só entram depois que você aprovar"
+          />
+          <div className="divide-y divide-slate-100">
+            {pendingUsers.map((u) => (
+              <div
+                key={u.id}
+                className="flex flex-wrap items-center justify-between gap-3 bg-amber-50/60 px-5 py-4"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">{u.name}</p>
+                  <p className="text-xs text-slate-500">
+                    {u.email} · pediu acesso em {formatDate(u.createdAt)}
+                  </p>
+                </div>
+                <UserRowActions
+                  id={u.id}
+                  active={u.active}
+                  pending={u.pending}
+                  isSelf={false}
+                  role={u.role}
+                  permissions={u.permissions}
+                />
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Usuários cadastrados" />
-          <Table>
-            <Thead>
-              <Tr>
-                <Th>Nome</Th>
-                <Th>E-mail</Th>
-                <Th>Perfil</Th>
-                <Th>Desde</Th>
-                <Th>Situação</Th>
-                <Th />
-              </Tr>
-            </Thead>
-            <tbody>
-              {users.map((u) => (
-                <Tr key={u.id} className={!u.active ? "opacity-60" : undefined}>
-                  <Td className="font-medium text-slate-900">
-                    {u.name}
-                    {u.id === sessionUser.id ? (
-                      <span className="ml-1.5 text-xs text-slate-400">(você)</span>
-                    ) : null}
-                  </Td>
-                  <Td>{u.email}</Td>
-                  <Td>
-                    <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                      {u.role === "ADMIN" ? "Administrador" : "Operador"}
-                    </Badge>
-                  </Td>
-                  <Td>{formatDate(u.createdAt)}</Td>
-                  <Td>
-                    <div className="flex flex-col items-start gap-1">
-                      {u.pending ? (
-                        <Badge tone="warning">Aguardando aprovação</Badge>
-                      ) : (
+
+          {/* Celular: cartões empilhados (a tabela não cabe na tela) */}
+          <div className="divide-y divide-slate-100 sm:hidden">
+            {regularUsers.map((u) => (
+              <div key={u.id} className={`px-5 py-4 ${!u.active ? "opacity-60" : ""}`}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900">
+                      {u.name}
+                      {u.id === sessionUser.id ? (
+                        <span className="ml-1.5 text-xs font-normal text-slate-400">(você)</span>
+                      ) : null}
+                    </p>
+                    <p className="truncate text-xs text-slate-500">{u.email}</p>
+                  </div>
+                  <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
+                    {u.role === "ADMIN" ? "Administrador" : "Operador"}
+                  </Badge>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <Badge tone={u.active ? "success" : "danger"}>
+                    {u.active ? "Ativo" : "Desativado"}
+                  </Badge>
+                  {u.resetRequestedAt ? <Badge tone="info">🔑 Pediu nova senha</Badge> : null}
+                  <span className="text-xs text-slate-400">desde {formatDate(u.createdAt)}</span>
+                </div>
+                <div className="mt-3">
+                  <UserRowActions
+                    id={u.id}
+                    active={u.active}
+                    pending={u.pending}
+                    isSelf={u.id === sessionUser.id}
+                    role={u.role}
+                    permissions={u.permissions}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Telas maiores: tabela completa */}
+          <div className="hidden sm:block">
+            <Table>
+              <Thead>
+                <Tr>
+                  <Th>Nome</Th>
+                  <Th>E-mail</Th>
+                  <Th>Perfil</Th>
+                  <Th>Desde</Th>
+                  <Th>Situação</Th>
+                  <Th />
+                </Tr>
+              </Thead>
+              <tbody>
+                {regularUsers.map((u) => (
+                  <Tr key={u.id} className={!u.active ? "opacity-60" : undefined}>
+                    <Td className="font-medium text-slate-900">
+                      {u.name}
+                      {u.id === sessionUser.id ? (
+                        <span className="ml-1.5 text-xs text-slate-400">(você)</span>
+                      ) : null}
+                    </Td>
+                    <Td>{u.email}</Td>
+                    <Td>
+                      <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
+                        {u.role === "ADMIN" ? "Administrador" : "Operador"}
+                      </Badge>
+                    </Td>
+                    <Td>{formatDate(u.createdAt)}</Td>
+                    <Td>
+                      <div className="flex flex-col items-start gap-1">
                         <Badge tone={u.active ? "success" : "danger"}>
                           {u.active ? "Ativo" : "Desativado"}
                         </Badge>
-                      )}
-                      {u.resetRequestedAt ? <Badge tone="info">🔑 Pediu nova senha</Badge> : null}
-                    </div>
-                  </Td>
-                  <Td>
-                    <UserRowActions
-                      id={u.id}
-                      active={u.active}
-                      pending={u.pending}
-                      isSelf={u.id === sessionUser.id}
-                      role={u.role}
-                      permissions={u.permissions}
-                    />
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
+                        {u.resetRequestedAt ? <Badge tone="info">🔑 Pediu nova senha</Badge> : null}
+                      </div>
+                    </Td>
+                    <Td>
+                      <UserRowActions
+                        id={u.id}
+                        active={u.active}
+                        pending={u.pending}
+                        isSelf={u.id === sessionUser.id}
+                        role={u.role}
+                        permissions={u.permissions}
+                      />
+                    </Td>
+                  </Tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
         </Card>
 
         <Card className="h-fit">
