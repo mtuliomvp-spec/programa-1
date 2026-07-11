@@ -53,6 +53,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <LinkButton href={`/estoque/${vehicle.id}/ordem-compra`} variant="secondary">
               📄 Ordem de compra
             </LinkButton>
+            <LinkButton href={`/estoque/${vehicle.id}/contrato`} variant="secondary">
+              📜 Contrato de compra
+            </LinkButton>
             {vehicle.status !== "VENDIDO" ? (
               <LinkButton href={`/vendas/novo?vehicleId=${vehicle.id}`} variant="primary">
                 Vender veículo
