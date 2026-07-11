@@ -6,6 +6,7 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, 
 import DeleteVehicleButton from "./DeleteVehicleButton";
 import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleCosts from "./VehicleCosts";
+import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
 
@@ -138,6 +139,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   : null,
               }))}
             />
+            {vehicle.status !== "VENDIDO" ? <VehicleDebtsLookup vehicleId={vehicle.id} /> : null}
           </Card>
 
           <Card>

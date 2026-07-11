@@ -143,6 +143,41 @@ export async function lookupPlateAction(plate: string) {
   return lookupPlate(plate);
 }
 
+export async function fetchVehicleDebtsAction(vehicleId: string) {
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: vehicleId },
+    select: { plate: true },
+  });
+  const { lookupVehicleDebts } = await import("@/lib/debts-lookup");
+  return lookupVehicleDebts(vehicle.plate);
+}
+
+export async function importVehicleDebtsAction(
+  vehicleId: string,
+  debts: { category: "IPVA" | "MULTA" | "LICENCIAMENTO"; description: string; amount: number; dueDate: string }[],
+): Promise<{ imported: number }> {
+  let imported = 0;
+  for (const debt of debts.slice(0, 50)) {
+    if (!debt.amount || debt.amount <= 0) continue;
+    await addVehicleCostWithPayable({
+      vehicleId,
+      description: debt.description.slice(0, 180),
+      category: debt.category,
+      amount: debt.amount,
+      date: new Date(),
+      alreadyPaid: false,
+      dueDate: parseDateInput(debt.dueDate),
+      installments: 1,
+      notes: "Importado da consulta de débitos (API Placas)",
+    });
+    imported++;
+  }
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/");
+  return { imported };
+}
+
 const costSchema = z.object({
   vehicleId: z.string().min(1),
   description: z.string().min(1, "Descreva o custo"),
