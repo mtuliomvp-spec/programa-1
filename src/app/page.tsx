@@ -1,18 +1,26 @@
 import Link from "next/link";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
 import { getPerformanceStats } from "@/lib/reports";
+import { getStructuralSummary } from "@/lib/structural";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
 
 export const dynamic = "force-dynamic";
 
+const structuralIcon: Record<string, string> = {
+  CAPITAL: "💼",
+  VEICULOS: "🚗",
+  ADMINISTRATIVO: "🏢",
+};
+
 export default async function DashboardPage() {
-  const [stats, upcoming, monthly, perf] = await Promise.all([
+  const [stats, upcoming, monthly, perf, structural] = await Promise.all([
     getDashboardStats(),
     getUpcomingDue(7),
     getCashFlowLastMonths(6),
     getPerformanceStats(),
+    getStructuralSummary(),
   ]);
 
   type UpcomingItem = {
@@ -99,6 +107,42 @@ export default async function DashboardPage() {
           value={`${perf.avgDaysInStock} dias`}
           tone={perf.avgDaysInStock > 60 ? "warning" : "default"}
         />
+      </div>
+
+      <div className="mt-4">
+        <Card>
+          <CardHeader
+            title="Fluxos estruturais"
+            description="Resultado de cada centro: Capital, Veículos e Administrativo"
+            action={
+              <Link href="/centros-custo" className="text-sm font-medium text-slate-900 hover:underline">
+                Ver centros →
+              </Link>
+            }
+          />
+          <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+            {structural.map((s) => (
+              <Link
+                key={s.key}
+                href="/centros-custo"
+                className="px-5 py-4 transition-colors hover:bg-slate-50"
+              >
+                <p className="flex items-center gap-2 text-sm font-semibold text-slate-800">
+                  <span aria-hidden>{structuralIcon[s.key]}</span>
+                  {s.name}
+                </p>
+                <p
+                  className={`mt-1 text-xl font-bold ${s.resultado >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+                >
+                  {formatCurrency(s.resultado)}
+                </p>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </Card>
       </div>
 
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-3">

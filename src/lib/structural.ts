@@ -81,3 +81,31 @@ export async function structuralCenterId(key: StructuralKey): Promise<string> {
   const ids = await ensureStructuralCostCenters();
   return ids[key];
 }
+
+/**
+ * Resumo dos três fluxos estruturais para o painel: despesas, receitas e
+ * resultado de cada um. Garante que os centros existam antes de somar.
+ */
+export async function getStructuralSummary() {
+  await ensureStructuralCostCenters();
+  const centers = await prisma.costCenter.findMany({
+    where: { structural: true },
+    include: {
+      payables: { select: { amount: true } },
+      receivables: { select: { amount: true } },
+    },
+  });
+  const byKey = new Map(centers.map((c) => [c.key, c]));
+  return STRUCTURAL_CENTERS.map((def) => {
+    const c = byKey.get(def.key);
+    const despesas = c?.payables.reduce((s, p) => s + p.amount, 0) ?? 0;
+    const receitas = c?.receivables.reduce((s, r) => s + r.amount, 0) ?? 0;
+    return {
+      key: def.key,
+      name: def.name,
+      despesas,
+      receitas,
+      resultado: receitas - despesas,
+    };
+  });
+}
