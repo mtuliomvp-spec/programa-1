@@ -9,8 +9,9 @@ import BrandMark from "@/components/BrandMark";
 import UserFooter from "@/components/UserFooter";
 
 type SessionUser = { name: string; role: "ADMIN" | "OPERADOR"; permissions: string[] };
+type Brand = { name: string; logoDataUrl: string | null };
 
-export default function MobileNav({ user }: { user: SessionUser }) {
+export default function MobileNav({ user, brand }: { user: SessionUser; brand?: Brand }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const groups = navGroupsFor(user);
@@ -30,7 +31,7 @@ export default function MobileNav({ user }: { user: SessionUser }) {
   return (
     <>
       <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:hidden">
-        <BrandMark />
+        <BrandMark name={brand?.name} logoDataUrl={brand?.logoDataUrl} />
         <button
           type="button"
           aria-label="Abrir menu"
@@ -53,7 +54,7 @@ export default function MobileNav({ user }: { user: SessionUser }) {
           />
           <div className="absolute inset-y-0 right-0 flex w-[85%] max-w-xs flex-col bg-slate-950 shadow-2xl">
             <div className="flex h-14 items-center justify-between border-b border-white/10 px-4">
-              <BrandMark dark />
+              <BrandMark dark name={brand?.name} logoDataUrl={brand?.logoDataUrl} />
               <button
                 type="button"
                 aria-label="Fechar menu"

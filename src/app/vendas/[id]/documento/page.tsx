@@ -1,8 +1,10 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
+import CompanyDocHeader from "@/components/CompanyDocHeader";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +18,7 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
   });
   if (!sale) notFound();
 
+  const company = await getCompany();
   const v = sale.vehicle;
   const c = sale.customer;
 
@@ -29,17 +32,16 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
       </div>
 
       <div className="rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm print:border-0 print:shadow-none">
-        <header className="mb-6 flex items-start justify-between border-b-2 border-slate-900 pb-4">
-          <div>
-            <h1 className="text-2xl font-black tracking-tight">MVP VEÍCULOS</h1>
-            <p className="text-sm text-slate-500">Gestão de seminovos</p>
-          </div>
-          <div className="text-right text-sm">
-            <p className="font-bold">ORDEM DE VENDA</p>
-            <p className="text-slate-500">Nº {sale.id.slice(-8).toUpperCase()}</p>
-            <p className="text-slate-500">Emissão: {formatDate(sale.saleDate)}</p>
-          </div>
-        </header>
+        <CompanyDocHeader
+          company={company}
+          right={
+            <>
+              <p className="font-bold">ORDEM DE VENDA</p>
+              <p className="text-slate-500">Nº {sale.id.slice(-8).toUpperCase()}</p>
+              <p className="text-slate-500">Emissão: {formatDate(sale.saleDate)}</p>
+            </>
+          }
+        />
 
         <section className="mb-5">
           <h2 className="mb-2 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">
@@ -131,7 +133,7 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
 
         <div className="grid grid-cols-2 gap-10 pt-6 text-center text-sm">
           <div>
-            <div className="border-t border-slate-400 pt-2">MVP Veículos (vendedor)</div>
+            <div className="border-t border-slate-400 pt-2">{company.razaoSocial} (vendedor)</div>
           </div>
           <div>
             <div className="border-t border-slate-400 pt-2">{c.name} (comprador)</div>

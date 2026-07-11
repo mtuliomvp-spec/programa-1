@@ -8,15 +8,16 @@ import BrandMark from "@/components/BrandMark";
 import UserFooter from "@/components/UserFooter";
 
 type SessionUser = { name: string; role: "ADMIN" | "OPERADOR"; permissions: string[] };
+type Brand = { name: string; logoDataUrl: string | null };
 
-export default function Sidebar({ user }: { user: SessionUser }) {
+export default function Sidebar({ user, brand }: { user: SessionUser; brand?: Brand }) {
   const pathname = usePathname();
   const groups = navGroupsFor(user);
 
   return (
     <aside className="hidden w-64 shrink-0 flex-col bg-slate-950 md:flex">
       <div className="flex h-16 items-center border-b border-white/10 px-5">
-        <BrandMark dark />
+        <BrandMark dark name={brand?.name} logoDataUrl={brand?.logoDataUrl} />
       </div>
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
         {groups.map((group) => (

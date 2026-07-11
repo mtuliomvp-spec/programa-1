@@ -533,3 +533,23 @@ model RecurringEntry {
 
   @@map("recurring_entries")
 }
+
+// Parâmetros da empresa (linha única): dados usados nos documentos
+// impressos (ordem de compra, contrato, venda) e na marca do sistema.
+model CompanySettings {
+  id                String   @id @default("company")
+  razaoSocial       String   @default("MVP Veículos")
+  nomeFantasia      String   @default("MVP Veículos")
+  cnpj              String?
+  inscricaoEstadual String?
+  phone             String?
+  email             String?
+  address           String?
+  city              String?
+  uf                String?
+  logoDataUrl       String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@map("company_settings")
+}

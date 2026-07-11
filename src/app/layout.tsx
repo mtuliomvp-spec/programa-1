@@ -34,13 +34,19 @@ export default async function RootLayout({
   }
 
   const sessionUser = { name: user.name, role: user.role, permissions: user.permissions };
+  const { getCompany } = await import("@/lib/company");
+  const company = await getCompany().catch(() => null);
+  const brand = {
+    name: company?.nomeFantasia || "MVP Veículos",
+    logoDataUrl: company?.logoDataUrl || null,
+  };
 
   return (
     <html lang="pt-BR" className="h-full antialiased">
       <body className="flex h-full min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-        <Sidebar user={sessionUser} />
+        <Sidebar user={sessionUser} brand={brand} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <MobileNav user={sessionUser} />
+          <MobileNav user={sessionUser} brand={brand} />
           <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
         </div>
       </body>

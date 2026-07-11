@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
@@ -23,9 +24,13 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
   });
   if (!vehicle) notFound();
 
+  const company = await getCompany();
   const s = vehicle.supplier;
   const allPaid = vehicle.payables.length > 0 && vehicle.payables.every((p) => p.status === "PAGO");
   const today = new Date();
+  const companyCity = company.city
+    ? `${company.city}${company.uf ? `/${company.uf}` : ""}`
+    : null;
 
   const Blank = ({ w = "8rem" }: { w?: string }) => (
     <span className="inline-block border-b border-slate-400 align-baseline" style={{ minWidth: w }}>
@@ -78,9 +83,23 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
             Comprador(a)
           </h2>
           <p>
-            <strong>MVP VEÍCULOS</strong>, CNPJ nº <Blank w="10rem" />, com endereço em{" "}
-            <Blank w="20rem" />, neste ato representada na forma de seus atos constitutivos,
-            doravante denominada simplesmente <strong>COMPRADORA</strong>.
+            <strong>{company.razaoSocial.toUpperCase()}</strong>
+            {company.nomeFantasia && company.nomeFantasia !== company.razaoSocial
+              ? ` (nome fantasia ${company.nomeFantasia})`
+              : ""}
+            , CNPJ nº {company.cnpj || <Blank w="10rem" />}
+            {company.inscricaoEstadual ? `, inscrição estadual nº ${company.inscricaoEstadual}` : ""}
+            , com endereço em{" "}
+            {company.address ? (
+              <>
+                {company.address}
+                {companyCity ? `, ${companyCity}` : ""}
+              </>
+            ) : (
+              <Blank w="20rem" />
+            )}
+            , neste ato representada na forma de seus atos constitutivos, doravante denominada
+            simplesmente <strong>COMPRADORA</strong>.
           </p>
         </section>
 
@@ -210,8 +229,9 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           <div>
             <p className="font-bold">Cláusula 8ª — Do foro</p>
             <p>
-              Fica eleito o foro da comarca de <Blank w="12rem" />, com renúncia a qualquer outro,
-              por mais privilegiado que seja, para dirimir dúvidas oriundas deste contrato.
+              Fica eleito o foro da comarca de {companyCity || <Blank w="12rem" />}, com renúncia a
+              qualquer outro, por mais privilegiado que seja, para dirimir dúvidas oriundas deste
+              contrato.
             </p>
           </div>
         </section>
@@ -222,7 +242,7 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
         </p>
 
         <p className="mt-4 text-sm">
-          <Blank w="12rem" />, {formatDate(today)}.
+          {companyCity || <Blank w="12rem" />}, {formatDate(today)}.
         </p>
 
         <div className="mt-10 grid grid-cols-2 gap-10 text-center text-sm">
@@ -234,7 +254,7 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           </div>
           <div>
             <div className="border-t border-slate-400 pt-2">
-              MVP Veículos
+              {company.razaoSocial}
               <p className="text-xs text-slate-500">COMPRADORA</p>
             </div>
           </div>
