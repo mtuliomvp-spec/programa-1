@@ -63,7 +63,6 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let consorcios = 0;
   let contasAPagar = 0;
   let totalPago = 0;
-  let apagarVeiculoEstoquePend = 0;
   let titulosVencidosCount = 0;
   let titulosVencidosValor = 0;
 
@@ -76,7 +75,6 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       contasAPagar += p.amount;
       if (isVeiculoEmEstoque(p)) {
         veiculosNegociadoPendente += p.amount;
-        apagarVeiculoEstoquePend += p.amount;
       }
       if (p.dueDate < now) {
         titulosVencidosCount++;
@@ -102,18 +100,20 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   }
   const saldoCapital = aportes - retiradas;
 
-  // Contas a pagar que entram na equação: todas as pendentes MENOS as de
-  // veículos ainda em estoque (esses ficam neutros até quitar/vender).
-  const apagarEquacao = contasAPagar - apagarVeiculoEstoquePend;
-
+  // Equação patrimonial (só estes cards, com as entradas/saídas de cada um):
+  //   Caixa + Estoque de veículos (pago) + Almoxarifado + Consórcios − Capital
+  //
+  // Cada card entra pela sua contribuição líquida (entradas − saídas):
+  // - Caixa: saldo das contas (entradas − saídas de dinheiro)
+  // - Estoque de veículos: só o valor PAGO dos carros em estoque; quando o
+  //   carro é vendido ele sai do estoque e o dinheiro já está no caixa, então
+  //   não se subtrai o recebido de novo (evita contagem dupla); o negociado
+  //   ainda não pago fica neutro (não é ativo nem prejuízo até ser quitado)
+  // - Almoxarifado: valor líquido em estoque (entradas − saídas de peças)
+  // - Consórcios: valor aplicado nas cotas
+  // - Capital: aportes − retiradas dos sócios (não é lucro; entra subtraindo)
   const lucro =
-    saldoCaixa +
-    estoqueVeiculosPago +
-    almoxarifado +
-    consorcios +
-    contasAReceber -
-    apagarEquacao -
-    saldoCapital;
+    saldoCaixa + estoqueVeiculosPago + almoxarifado + consorcios - saldoCapital;
 
   return {
     saldoCaixa,
