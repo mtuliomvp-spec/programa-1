@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 
@@ -49,6 +50,7 @@ export async function addCapitalTransactionAction(
   const data = parsed.data;
   const date = parseDateInput(data.date);
   const accountId = await getDefaultAccountId();
+  const capitalCenterId = await structuralCenterId("CAPITAL");
 
   try {
     await prisma.$transaction(async (tx) => {
@@ -62,6 +64,7 @@ export async function addCapitalTransactionAction(
       if (data.kind === "APORTE") {
         const receivable = await tx.receivable.create({
           data: {
+            costCenterId: capitalCenterId,
             description: `Aporte de capital - ${beneficiary.name}`,
             category: "OUTROS",
             amount: data.amount,
@@ -76,6 +79,7 @@ export async function addCapitalTransactionAction(
       } else {
         const payable = await tx.payable.create({
           data: {
+            costCenterId: capitalCenterId,
             description:
               data.kind === "PRO_LABORE"
                 ? `Pró-labore - ${beneficiary.name}`

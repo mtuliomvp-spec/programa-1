@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 import { parseOfx } from "@/lib/ofx";
 import { getDefaultAccountId } from "@/lib/accounts";
 
@@ -194,6 +195,7 @@ export async function createFromBankTxnAction(
   if (txn.amount < 0) {
     await prisma.payable.create({
       data: {
+        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
         description: txn.memo.slice(0, 180),
         category: "OUTROS",
         amount: Math.abs(txn.amount),
@@ -209,6 +211,7 @@ export async function createFromBankTxnAction(
   } else {
     await prisma.receivable.create({
       data: {
+        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
         description: txn.memo.slice(0, 180),
         category: "OUTROS",
         amount: txn.amount,

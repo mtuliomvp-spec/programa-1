@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { getDefaultAccountId } from "@/lib/accounts";
@@ -94,6 +95,7 @@ export async function concludeRequestAction(
   const data = parsed.data;
 
   try {
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
     await prisma.$transaction(async (tx) => {
       const request = await tx.purchaseRequest.findUniqueOrThrow({
         where: { id: data.requestId },
@@ -105,6 +107,7 @@ export async function concludeRequestAction(
       const accountId = paid ? await getDefaultAccountId() : null;
       const payable = await tx.payable.create({
         data: {
+          costCenterId: adminCenterId,
           description: `Compra #${request.number}: ${request.description}`,
           category: data.category,
           amount: data.finalAmount,

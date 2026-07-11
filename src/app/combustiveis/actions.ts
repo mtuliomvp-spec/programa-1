@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 
@@ -39,6 +40,7 @@ export async function createFuelEntryAction(
   const defaultAccountId = data.alreadyPaid ? await getDefaultAccountId() : null;
 
   try {
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
     await prisma.$transaction(async (tx) => {
       let plate = data.plate?.trim().toUpperCase() || null;
       if (data.vehicleId) {
@@ -49,6 +51,7 @@ export async function createFuelEntryAction(
       const paid = Boolean(data.alreadyPaid);
       const payable = await tx.payable.create({
         data: {
+          costCenterId: adminCenterId,
           description: `Combustível ${plate}${data.station ? ` - ${data.station}` : ""}`,
           category: "COMBUSTIVEL",
           amount: total,

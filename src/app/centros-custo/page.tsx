@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { ensureStructuralCostCenters } from "@/lib/structural";
 import { formatCurrency } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import CostCenterForm from "./CostCenterForm";
@@ -7,15 +8,18 @@ import ToggleCostCenterButton from "./ToggleCostCenterButton";
 
 export const dynamic = "force-dynamic";
 
-const typeLabel = { OBRA: "Obra", IMOVEL: "Imóvel", OUTRO: "Outro" } as const;
+const typeLabel = { ESTRUTURAL: "Estrutural", OBRA: "Obra", IMOVEL: "Imóvel", OUTRO: "Outro" } as const;
 
 export default async function CentrosCustoPage() {
+  // Garante os centros estruturais (Capital, Veículos, Administrativo) e
+  // classifica lançamentos antigos que ainda estavam sem centro.
+  await ensureStructuralCostCenters();
   const centers = await prisma.costCenter.findMany({
     include: {
       payables: { select: { amount: true, status: true } },
       receivables: { select: { amount: true, status: true } },
     },
-    orderBy: [{ active: "desc" }, { name: "asc" }],
+    orderBy: [{ structural: "desc" }, { active: "desc" }, { name: "asc" }],
   });
 
   const withTotals = centers.map((c) => {
@@ -28,7 +32,7 @@ export default async function CentrosCustoPage() {
     <div>
       <PageHeader
         title="Centros de custo"
-        description="Obras, imóveis e outros negócios: cada um com despesas, receitas e resultado próprios"
+        description="Todo lançamento passa por um centro: os estruturais (Capital, Veículos, Administrativo) são automáticos; obras e imóveis você cria e escolhe nos lançamentos"
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -47,7 +51,17 @@ export default async function CentrosCustoPage() {
                   <div className="min-w-0">
                     <p className="flex items-center gap-2 font-semibold text-slate-900">
                       {c.name}
-                      <Badge tone={c.type === "OBRA" ? "warning" : c.type === "IMOVEL" ? "info" : "default"}>
+                      <Badge
+                        tone={
+                          c.structural
+                            ? "info"
+                            : c.type === "OBRA"
+                              ? "warning"
+                              : c.type === "IMOVEL"
+                                ? "info"
+                                : "default"
+                        }
+                      >
                         {typeLabel[c.type]}
                       </Badge>
                       {!c.active ? <Badge>Encerrado</Badge> : null}
@@ -65,7 +79,7 @@ export default async function CentrosCustoPage() {
                         {formatCurrency(c.resultado)}
                       </p>
                     </div>
-                    <ToggleCostCenterButton id={c.id} active={c.active} />
+                    {!c.structural ? <ToggleCostCenterButton id={c.id} active={c.active} /> : null}
                   </div>
                 </div>
               </Card>

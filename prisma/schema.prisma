@@ -100,6 +100,7 @@ enum StatusConsorcio {
 }
 
 enum TipoCentroCusto {
+  ESTRUTURAL
   OBRA
   IMOVEL
   OUTRO
@@ -177,6 +178,10 @@ model CostCenter {
   id          String          @id @default(cuid())
   name        String
   type        TipoCentroCusto @default(OUTRO)
+  // Centros estruturais (Capital, Veículos, Administrativo): criados pelo
+  // sistema, identificados pela chave fixa e protegidos contra exclusão.
+  key         String?         @unique
+  structural  Boolean         @default(false)
   active      Boolean         @default(true)
   notes       String?
   payables    Payable[]
@@ -444,6 +449,8 @@ model Receivable {
 model CapitalBeneficiary {
   id           String               @id @default(cuid())
   name         String
+  // Beneficiário que representa a própria empresa (criado pelos Parâmetros)
+  isCompany    Boolean              @default(false)
   proLabore    Float                @default(0)
   active       Boolean              @default(true)
   notes        String?

@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 
 const employeeSchema = z.object({
@@ -56,6 +57,7 @@ export async function generatePayrollAction(): Promise<{ created: number }> {
   const employees = await prisma.employee.findMany({ where: { active: true } });
   let created = 0;
 
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
   for (const employee of employees) {
     if (employee.salary <= 0) continue;
     const description = `Salário ${employee.name} - ${competencia}`;
@@ -73,6 +75,7 @@ export async function generatePayrollAction(): Promise<{ created: number }> {
         status: "PENDENTE",
         employeeId: employee.id,
         notes: employee.pixKey ? `PIX: ${employee.pixKey}` : null,
+        costCenterId: adminCenterId,
       },
     });
     created++;

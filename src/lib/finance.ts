@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getDefaultAccountId } from "@/lib/accounts";
+import { structuralCenterId } from "@/lib/structural";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -61,6 +62,7 @@ export async function createVehicleWithPayable(input: {
   dueDate?: Date | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
       data: {
@@ -97,6 +99,7 @@ export async function createVehicleWithPayable(input: {
           supplierId: input.supplierId || null,
           vehicleId: vehicle.id,
           accountId: defaultAccountId,
+          costCenterId: veiculosCenterId,
         },
       });
     }
@@ -122,6 +125,7 @@ export async function addVehicleCostWithPayable(input: {
   installments?: number;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -153,6 +157,7 @@ export async function addVehicleCostWithPayable(input: {
           vehicleId: vehicle.id,
           notes: input.notes || null,
           accountId: paid ? defaultAccountId : null,
+          costCenterId: veiculosCenterId,
         },
       });
 
@@ -203,6 +208,7 @@ export async function createPartWithPayable(input: {
   dueDate?: Date | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.create({
       data: {
@@ -231,6 +237,7 @@ export async function createPartWithPayable(input: {
           supplierId: input.supplierId || null,
           partId: part.id,
           accountId: input.alreadyPaid ? defaultAccountId : null,
+          costCenterId: veiculosCenterId,
         },
       });
     }
@@ -248,6 +255,7 @@ export async function addPartStockWithPayable(input: {
   dueDate?: Date | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.update({
       where: { id: input.partId },
@@ -272,6 +280,7 @@ export async function addPartStockWithPayable(input: {
           supplierId: input.supplierId || null,
           partId: part.id,
           accountId: input.alreadyPaid ? defaultAccountId : null,
+          costCenterId: veiculosCenterId,
         },
       });
     }
@@ -296,6 +305,7 @@ export async function registerVehicleSale(input: {
   notes?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -386,7 +396,9 @@ export async function registerVehicleSale(input: {
       });
     }
 
-    await tx.receivable.createMany({ data: receivablesData });
+    await tx.receivable.createMany({
+      data: receivablesData.map((r) => ({ ...r, costCenterId: veiculosCenterId })),
+    });
 
     return sale;
   });
@@ -424,6 +436,7 @@ export async function registerPartSale(input: {
   notes?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.findUniqueOrThrow({ where: { id: input.partId } });
     if (part.quantity < input.quantity) {
@@ -495,7 +508,9 @@ export async function registerPartSale(input: {
       });
     }
 
-    await tx.receivable.createMany({ data: receivablesData });
+    await tx.receivable.createMany({
+      data: receivablesData.map((r) => ({ ...r, costCenterId: veiculosCenterId })),
+    });
 
     return partSale;
   });
@@ -555,7 +570,7 @@ export async function createManualPayable(input: {
       paymentDate: input.alreadyPaid ? input.dueDate : null,
       status: input.alreadyPaid ? "PAGO" : "PENDENTE",
       supplierId: input.supplierId || null,
-      costCenterId: input.costCenterId || null,
+      costCenterId: input.costCenterId || (await structuralCenterId("ADMINISTRATIVO")),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },
@@ -581,7 +596,7 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
-      costCenterId: input.costCenterId || null,
+      costCenterId: input.costCenterId || (await structuralCenterId("ADMINISTRATIVO")),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },

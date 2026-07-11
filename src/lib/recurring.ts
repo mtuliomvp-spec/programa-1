@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { structuralCenterId } from "@/lib/structural";
 
 /**
  * Geração idempotente dos lançamentos recorrentes do mês corrente.
@@ -43,6 +44,7 @@ export async function ensureConsortiumInstallments(): Promise<number> {
       const dueDate = new Date(Date.UTC(year, month, Math.min(consortium.dueDay, lastDay), 12));
       await prisma.payable.create({
         data: {
+          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
           description: `${consortium.name} - Parcela ${i + 1}/${consortium.installmentsCount}`,
           category: "OUTROS",
           amount: consortium.installmentValue,
@@ -81,6 +83,7 @@ export async function ensureRecurringGenerated(): Promise<number> {
     if (entry.kind === "PAGAR" && entry.payables.length === 0) {
       await prisma.payable.create({
         data: {
+          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
           description: entry.description,
           category: entry.categoryPagar ?? "DESPESA_OPERACIONAL",
           amount: entry.amount,
@@ -95,6 +98,7 @@ export async function ensureRecurringGenerated(): Promise<number> {
     } else if (entry.kind === "RECEBER" && entry.receivables.length === 0) {
       await prisma.receivable.create({
         data: {
+          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
           description: entry.description,
           category: entry.categoryReceber ?? "OUTROS",
           amount: entry.amount,

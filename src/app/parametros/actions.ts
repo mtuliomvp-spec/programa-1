@@ -66,6 +66,10 @@ export async function saveCompanyAction(
     create: { id: "company", ...data },
   });
 
+  // A empresa também vive no módulo Capital, como beneficiária própria
+  const { ensureCompanyBeneficiary } = await import("@/lib/company");
+  await ensureCompanyBeneficiary();
+
   revalidatePath("/", "layout");
   return { success: true };
 }

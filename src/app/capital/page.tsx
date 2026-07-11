@@ -1,15 +1,18 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { ensureCompanyBeneficiary } from "@/lib/company";
 import { formatCurrency } from "@/lib/format";
-import { Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function CapitalPage() {
+  // A empresa dos Parâmetros sempre aparece como beneficiária própria
+  await ensureCompanyBeneficiary();
   const beneficiaries = await prisma.capitalBeneficiary.findMany({
     include: { transactions: true },
-    orderBy: { name: "asc" },
+    orderBy: [{ isCompany: "desc" }, { name: "asc" }],
   });
 
   const withTotals = beneficiaries.map((b) => {
@@ -53,7 +56,10 @@ export default async function CapitalPage() {
                 <Card className="px-5 py-4 transition-shadow hover:shadow-md">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <p className="font-semibold text-slate-900">{b.name}</p>
+                      <p className="flex items-center gap-2 font-semibold text-slate-900">
+                        {b.name}
+                        {b.isCompany ? <Badge tone="info">Empresa</Badge> : null}
+                      </p>
                       <p className="mt-0.5 text-xs text-slate-500">
                         Aportes {formatCurrency(b.aportes)} · Retiradas {formatCurrency(b.retiradas)}
                         {b.proLabore > 0 ? ` · Pró-labore pago ${formatCurrency(b.proLabore)}` : ""}
