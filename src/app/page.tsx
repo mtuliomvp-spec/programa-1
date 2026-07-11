@@ -2,9 +2,11 @@ import Link from "next/link";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
 import { getPerformanceStats } from "@/lib/reports";
 import { getStructuralSummary } from "@/lib/structural";
+import { getPatrimonialStats } from "@/lib/patrimonial";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
+import PatrimonialCard from "@/components/PatrimonialCard";
 
 export const dynamic = "force-dynamic";
 
@@ -15,12 +17,13 @@ const structuralIcon: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
-  const [stats, upcoming, monthly, perf, structural] = await Promise.all([
+  const [stats, upcoming, monthly, perf, structural, pat] = await Promise.all([
     getDashboardStats(),
     getUpcomingDue(7),
     getCashFlowLastMonths(6),
     getPerformanceStats(),
     getStructuralSummary(),
+    getPatrimonialStats(),
   ]);
 
   type UpcomingItem = {
@@ -63,7 +66,84 @@ export default async function DashboardPage() {
         }
       />
 
+      {/* Posição patrimonial — estilo Agrasty, com a equação patrimonial */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <PatrimonialCard
+          label="Saldo em caixa"
+          value={pat.saldoCaixa}
+          tone="green"
+          icon="🏦"
+          sub="Soma das contas financeiras (caixas e bancos)"
+          href="/financeiro/contas"
+        />
+        <PatrimonialCard
+          label="Estoque de veículos"
+          value={pat.estoqueVeiculosPago}
+          tone="green"
+          icon="🚗"
+          sub="Só o que já foi pago dos carros em estoque"
+          subItems={[
+            { label: "Negociado a pagar", value: pat.veiculosNegociadoPendente },
+            { label: "Recebido em vendas", value: pat.veiculosRecebido },
+          ]}
+          href="/estoque"
+        />
+        <PatrimonialCard
+          label="Almoxarifado (peças)"
+          value={pat.almoxarifado}
+          tone="blue"
+          icon="📦"
+          sub="Valor das peças em estoque (quantidade × custo)"
+          href="/pecas"
+        />
+        <PatrimonialCard
+          label="Saldo de capital"
+          value={pat.saldoCapital}
+          tone={pat.saldoCapital >= 0 ? "green" : "red"}
+          icon="💲"
+          sub="Aportes menos retiradas dos sócios"
+          href="/capital"
+        />
+        <PatrimonialCard
+          label="Investimentos (consórcios)"
+          value={pat.consorcios}
+          tone="violet"
+          icon="🐷"
+          sub="Aplicado em cotas de consórcio (parcelas pagas)"
+          href="/consorcios"
+        />
+        <PatrimonialCard
+          label="Contas a receber"
+          value={pat.contasAReceber}
+          tone="blue"
+          icon="📥"
+          sub="Títulos pendentes a receber"
+          href="/financeiro/a-receber"
+        />
+        <PatrimonialCard
+          label="Contas a pagar"
+          value={pat.contasAPagar}
+          tone="amber"
+          icon="📤"
+          subItems={
+            pat.titulosVencidosCount > 0
+              ? [{ label: `${pat.titulosVencidosCount} vencido(s)`, value: pat.titulosVencidosValor }]
+              : undefined
+          }
+          sub={pat.titulosVencidosCount > 0 ? undefined : "Títulos pendentes a pagar"}
+          href="/financeiro/a-pagar"
+        />
+        <PatrimonialCard
+          label={pat.lucro >= 0 ? "Lucro (patrimonial)" : "Prejuízo (patrimonial)"}
+          value={pat.lucro}
+          tone={pat.lucro >= 0 ? "green" : "red"}
+          icon={pat.lucro >= 0 ? "📈" : "📉"}
+          formula="Caixa + Estoque de veículos (pago) + Almoxarifado + Consórcios + A receber − A pagar (exceto veículos em estoque) − Capital"
+        />
+      </div>
+
+      {/* Indicadores operacionais */}
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           label="Veículos em estoque"
           value={String(stats.vehiclesInStockCount)}
@@ -76,31 +156,10 @@ export default async function DashboardPage() {
           tone="positive"
         />
         <StatCard
-          label="Contas a pagar"
-          value={formatCurrency(stats.payablesPendingTotal)}
-          hint={stats.payablesOverdueCount > 0 ? `${stats.payablesOverdueCount} atrasada(s) · ${formatCurrency(stats.payablesOverdueTotal)}` : `${stats.payablesPendingCount} pendente(s)`}
-          tone={stats.payablesOverdueCount > 0 ? "negative" : "default"}
-        />
-        <StatCard
-          label="Contas a receber"
-          value={formatCurrency(stats.receivablesPendingTotal)}
-          hint={stats.receivablesOverdueCount > 0 ? `${stats.receivablesOverdueCount} atrasada(s) · ${formatCurrency(stats.receivablesOverdueTotal)}` : `${stats.receivablesPendingCount} pendente(s)`}
-          tone={stats.receivablesOverdueCount > 0 ? "negative" : "default"}
-        />
-      </div>
-
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard
           label="Lucro do mês (veículos)"
           value={formatCurrency(perf.profitThisMonth)}
           tone={perf.profitThisMonth >= 0 ? "positive" : "negative"}
           hint="vendas menos compra + custos"
-        />
-        <StatCard label="Ticket médio do mês" value={formatCurrency(perf.avgTicket)} />
-        <StatCard
-          label="Capital imobilizado"
-          value={formatCurrency(perf.investedInStock)}
-          hint="investido nos veículos em estoque"
         />
         <StatCard
           label="Tempo médio em estoque"
