@@ -2,8 +2,19 @@
 
 import { z } from "zod";
 import { redirect } from "next/navigation";
+import { headers } from "next/headers";
+import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword, setSessionCookie, clearSessionCookie } from "@/lib/auth";
+import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
+
+async function baseUrl(): Promise<string> {
+  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const h = await headers();
+  const proto = h.get("x-forwarded-proto") || "https";
+  const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";
+  return `${proto}://${host}`;
+}
 
 export type LoginFormState = { error?: string };
 
@@ -140,12 +151,74 @@ export async function forgotPasswordAction(
 
   const email = parsed.data.email.toLowerCase().trim();
   const user = await prisma.user.findUnique({ where: { email } });
-  if (user) {
-    await prisma.user.update({ where: { id: user.id }, data: { resetRequestedAt: new Date() } });
+  const emailOn = isEmailConfigured();
+
+  if (user && user.active && !user.pending) {
+    if (emailOn) {
+      // link de redefinição com token de uso único (1 hora)
+      const token = randomBytes(32).toString("base64url");
+      const tokenHash = createHash("sha256").update(token).digest("hex");
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          resetRequestedAt: new Date(),
+          resetTokenHash: tokenHash,
+          resetTokenExpiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        },
+      });
+      const link = `${await baseUrl()}/login/redefinir?token=${token}`;
+      await sendEmail({
+        to: user.email,
+        subject: "Redefinir sua senha - MVP Veículos",
+        html: emailLayout(
+          "Redefinir sua senha",
+          `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Recebemos um pedido para redefinir sua senha. Clique no botão abaixo (válido por 1 hora):</p>
+           <p style="margin:0 0 8px"><a href="${link}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:bold">Criar nova senha</a></p>`,
+        ),
+      });
+    } else {
+      await prisma.user.update({ where: { id: user.id }, data: { resetRequestedAt: new Date() } });
+    }
   }
+
   // resposta igual existindo ou não, para não revelar e-mails cadastrados
   return {
-    success:
-      "Solicitação registrada! O administrador vai definir uma nova senha para você e avisar. Se preferir, fale diretamente com ele.",
+    success: emailOn
+      ? "Se o e-mail estiver cadastrado, você receberá em instantes um link para criar uma nova senha (confira também o spam)."
+      : "Solicitação registrada! O administrador vai definir uma nova senha para você e avisar. Se preferir, fale diretamente com ele.",
   };
+}
+
+const resetSchema = z.object({
+  token: z.string().min(10),
+  password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres"),
+});
+
+/** Define a nova senha a partir do link enviado por e-mail. */
+export async function resetWithTokenAction(
+  _prev: SignupFormState,
+  formData: FormData,
+): Promise<SignupFormState> {
+  const parsed = resetSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const tokenHash = createHash("sha256").update(parsed.data.token).digest("hex");
+  const user = await prisma.user.findFirst({
+    where: { resetTokenHash: tokenHash, resetTokenExpiresAt: { gt: new Date() } },
+  });
+  if (!user) {
+    return { error: "Link inválido ou expirado. Peça um novo em 'Esqueci a senha'." };
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      passwordHash: hashPassword(parsed.data.password),
+      resetTokenHash: null,
+      resetTokenExpiresAt: null,
+      resetRequestedAt: null,
+    },
+  });
+  await setSessionCookie(user);
+  redirect("/");
 }

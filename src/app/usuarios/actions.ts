@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser, hashPassword } from "@/lib/auth";
+import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 
 export type UserFormState = { error?: string; success?: string };
 
@@ -71,7 +72,21 @@ export async function updatePermissionsAction(
 
 export async function approveUserAction(id: string) {
   await requireAdmin();
-  await prisma.user.update({ where: { id }, data: { pending: false, active: true } });
+  const user = await prisma.user.update({
+    where: { id },
+    data: { pending: false, active: true },
+  });
+  if (isEmailConfigured()) {
+    // aviso de liberação — falha de envio não impede a aprovação
+    await sendEmail({
+      to: user.email,
+      subject: "Seu acesso foi liberado - MVP Veículos",
+      html: emailLayout(
+        "Acesso liberado! 🎉",
+        `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado. Você já pode entrar no sistema com seu e-mail e a senha que criou.</p>`,
+      ),
+    });
+  }
   revalidatePath("/usuarios");
 }
 

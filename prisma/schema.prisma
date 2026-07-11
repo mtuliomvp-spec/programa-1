@@ -220,8 +220,10 @@ model User {
   role             UserRole  @default(OPERADOR)
   permissions      String[]  @default([])
   active           Boolean   @default(true)
-  pending          Boolean   @default(false)
-  resetRequestedAt DateTime?
+  pending             Boolean   @default(false)
+  resetRequestedAt    DateTime?
+  resetTokenHash      String?
+  resetTokenExpiresAt DateTime?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 

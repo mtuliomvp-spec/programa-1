@@ -41,7 +41,8 @@ export default function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (pathname === "/login") return NextResponse.next();
+  // /login e subpáginas (ex.: /login/redefinir) são públicas
+  if (pathname === "/login" || pathname.startsWith("/login/")) return NextResponse.next();
 
   const loginUrl = new URL("/login", request.url);
   if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
