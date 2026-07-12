@@ -5,6 +5,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { createSaleAction, type SaleFormState } from "./actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
+import BankInput from "@/components/BankInput";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
@@ -241,7 +242,7 @@ export default function SaleForm({
                 />
               </Field>
               <Field label="Banco / financeira da quitação">
-                <Input name="tiPayoffTo" placeholder="Ex.: Banco XPTO" />
+                <BankInput name="tiPayoffTo" placeholder="Ex.: Banco XPTO" />
               </Field>
               <Field label="Débitos do veículo (IPVA, multas...)">
                 <Input

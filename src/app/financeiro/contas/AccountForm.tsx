@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
+import BankInput from "@/components/BankInput";
 import { createAccountAction, type ContaFormState } from "./actions";
 
 export default function AccountForm() {
@@ -23,7 +24,7 @@ export default function AccountForm() {
       </Field>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Banco">
-          <Input name="bankName" placeholder="Ex: Itaú" />
+          <BankInput name="bankName" placeholder="Ex: Itaú" />
         </Field>
         <Field label="Agência">
           <Input name="agency" placeholder="0000" />

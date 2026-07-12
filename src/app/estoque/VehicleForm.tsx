@@ -11,6 +11,7 @@ import {
 import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
+import BankInput from "@/components/BankInput";
 
 type Supplier = { id: string; name: string };
 
@@ -464,7 +465,7 @@ export default function VehicleForm({
                 />
               </Field>
               <Field label="Banco / financeira da quitação">
-                <Input name="payoffTo" defaultValue={vehicle?.payoffTo || ""} placeholder="Ex.: Banco XPTO" />
+                <BankInput name="payoffTo" defaultValue={vehicle?.payoffTo || ""} placeholder="Ex.: Banco XPTO" />
               </Field>
               <Field label="Débitos do veículo (R$)">
                 <Input
@@ -544,7 +545,7 @@ export default function VehicleForm({
               </Field>
               {acquisition === "FINANCIADO" || acquisition === "CONSORCIO" ? (
                 <Field label={acquisition === "CONSORCIO" ? "Administradora do consórcio" : "Banco / financeira"}>
-                  <Input name="financerName" defaultValue={vehicle?.financerName || ""} placeholder="Ex.: Banco XPTO" />
+                  <BankInput name="financerName" defaultValue={vehicle?.financerName || ""} placeholder="Ex.: Banco XPTO" />
                 </Field>
               ) : null}
             </>
