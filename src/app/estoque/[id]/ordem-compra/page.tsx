@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
+import { describeAcquisition } from "@/lib/acquisition";
 import { formatCurrency, formatDate } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
@@ -21,6 +22,7 @@ export default async function OrdemCompraPage({ params }: { params: Promise<{ id
 
   const company = await getCompany();
   const s = vehicle.supplier;
+  const acquisition = describeAcquisition(vehicle);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -79,12 +81,16 @@ export default async function OrdemCompraPage({ params }: { params: Promise<{ id
 
         <section className="mb-5">
           <h2 className="mb-2 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">
-            Condições da compra
+            Condições de pagamento
           </h2>
-          <p className="text-sm">
-            <span className="text-slate-500">Valor de compra:</span>{" "}
-            <strong>{formatCurrency(vehicle.purchasePrice)}</strong>
-          </p>
+          <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+            {acquisition.linhas.map((l) => (
+              <p key={l.label}>
+                <span className="text-slate-500">{l.label}:</span> <strong>{l.value}</strong>
+              </p>
+            ))}
+          </div>
+          <p className="mt-3 text-sm font-semibold text-slate-600">Cronograma de pagamentos</p>
           {vehicle.payables.length > 0 ? (
             <table className="mt-3 w-full text-sm">
               <thead>

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
+import { describeAcquisition } from "@/lib/acquisition";
 import { formatCurrency, formatDate } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
@@ -26,6 +27,7 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
 
   const company = await getCompany();
   const s = vehicle.supplier;
+  const acquisition = describeAcquisition(vehicle);
   const allPaid = vehicle.payables.length > 0 && vehicle.payables.every((p) => p.status === "PAGO");
   const today = new Date();
   const companyCity = company.city
@@ -130,10 +132,18 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           <div>
             <p className="font-bold">Cláusula 2ª — Do preço e da forma de pagamento</p>
             <p>
-              O preço certo e ajustado é de <strong>{formatCurrency(vehicle.purchasePrice)}</strong>
+              O preço certo e ajustado é de <strong>{formatCurrency(vehicle.purchasePrice)}</strong>,
+              na forma de pagamento <strong>{acquisition.forma.toLowerCase()}</strong>
+              {vehicle.acquisitionType !== "A_VISTA" && vehicle.downPayment > 0
+                ? `, com entrada de ${formatCurrency(vehicle.downPayment)}`
+                : ""}
+              {vehicle.acquisitionType !== "A_VISTA"
+                ? ` e ${Math.max(1, vehicle.installmentsCount)} parcela(s)`
+                : ""}
+              {vehicle.financerName ? `, por meio de ${vehicle.financerName}` : ""}
               {allPaid
-                ? `, pago integralmente pela COMPRADORA na data de ${formatDate(vehicle.entryDate)}, servindo este contrato como recibo de quitação do valor pago.`
-                : ", a ser pago conforme o cronograma abaixo:"}
+                ? `. Valor pago integralmente pela COMPRADORA na data de ${formatDate(vehicle.entryDate)}, servindo este contrato como recibo de quitação.`
+                : ", conforme o cronograma abaixo:"}
             </p>
             {!allPaid && vehicle.payables.length > 0 ? (
               <table className="mt-2 w-full text-sm">
