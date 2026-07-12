@@ -14,13 +14,22 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
   const { id } = await params;
   const sale = await prisma.sale.findUnique({
     where: { id },
-    include: { vehicle: true, customer: true, receivables: { orderBy: { dueDate: "asc" } } },
+    include: {
+      vehicle: true,
+      tradeInVehicle: true,
+      customer: true,
+      receivables: { orderBy: { dueDate: "asc" } },
+    },
   });
   if (!sale) notFound();
 
   const company = await getCompany();
   const v = sale.vehicle;
   const c = sale.customer;
+  const ti = sale.tradeInVehicle;
+  const tiLiquido = ti
+    ? Math.max(0, Math.round((ti.purchasePrice - ti.payoffAmount - ti.debtsAmount) * 100) / 100)
+    : 0;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -115,6 +124,38 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
             </table>
           ) : null}
         </section>
+
+        {ti ? (
+          <section className="mb-5">
+            <h2 className="mb-2 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+              Veículo recebido em troca (parte do pagamento)
+            </h2>
+            <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-3">
+              <p><span className="text-slate-500">Marca/Modelo:</span> <strong>{ti.brand} {ti.model}</strong></p>
+              <p><span className="text-slate-500">Ano:</span> {ti.manufactureYear}/{ti.modelYear}</p>
+              <p><span className="text-slate-500">Placa:</span> <strong>{ti.plate}</strong></p>
+              <p><span className="text-slate-500">Cor:</span> {ti.color || "—"}</p>
+              <p><span className="text-slate-500">KM:</span> {ti.km.toLocaleString("pt-BR")}</p>
+              <p><span className="text-slate-500">Chassi:</span> {ti.chassi || "—"}</p>
+              <p><span className="text-slate-500">Avaliação:</span> {formatCurrency(ti.purchasePrice)}</p>
+              {ti.payoffAmount > 0 ? (
+                <p><span className="text-slate-500">Quitação{ti.payoffTo ? ` (${ti.payoffTo})` : ""}:</span> − {formatCurrency(ti.payoffAmount)}</p>
+              ) : null}
+              {ti.debtsAmount > 0 ? (
+                <p><span className="text-slate-500">Débitos:</span> − {formatCurrency(ti.debtsAmount)}</p>
+              ) : null}
+              <p className="sm:col-span-3">
+                <span className="text-slate-500">Valor aproveitado como entrada:</span>{" "}
+                <strong className="text-emerald-700">{formatCurrency(tiLiquido)}</strong>
+              </p>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              O(A) comprador(a) entrega o veículo acima como parte do pagamento. A COMPRADORA
+              (MVP Veículos) assume a quitação do financiamento e os débitos indicados, cabendo ao
+              comprador o valor líquido aproveitado como entrada desta venda.
+            </p>
+          </section>
+        ) : null}
 
         {sale.notes ? (
           <section className="mb-5 text-sm">

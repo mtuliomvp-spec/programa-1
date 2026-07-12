@@ -314,7 +314,8 @@ model Vehicle {
   payables         Payable[]
   costs            VehicleCost[]
   fuelEntries      FuelEntry[]
-  sale             Sale?
+  sale             Sale?         @relation("SaleVehicle")
+  tradeInForSale   Sale?         @relation("SaleTradeIn")
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -344,7 +345,9 @@ model Sale {
   id                String         @id @default(cuid())
   orderNumber       Int            @unique @default(autoincrement())
   vehicleId         String         @unique
-  vehicle           Vehicle        @relation(fields: [vehicleId], references: [id])
+  vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
+  tradeInVehicleId  String?        @unique
+  tradeInVehicle    Vehicle?       @relation("SaleTradeIn", fields: [tradeInVehicleId], references: [id])
   customerId        String
   customer          Customer       @relation(fields: [customerId], references: [id])
   saleDate          DateTime       @default(now())

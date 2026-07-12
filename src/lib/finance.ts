@@ -513,6 +513,7 @@ export async function registerVehicleSale(input: {
   // pelo carro recebido). Reduz o que o cliente paga em dinheiro.
   tradeInAmount?: number;
   tradeInLabel?: string | null;
+  tradeInVehicleId?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
   const veiculosCenterId = await structuralCenterId("VEICULOS");
@@ -536,6 +537,7 @@ export async function registerVehicleSale(input: {
         paymentMethod: input.paymentMethod,
         sellerName: input.sellerName || null,
         notes: input.notes || null,
+        tradeInVehicleId: input.tradeInVehicleId || null,
       },
     });
 

@@ -53,6 +53,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
   // Troca: cadastra o veículo recebido do cliente e usa o líquido como entrada.
   let tradeInAmount = 0;
   let tradeInLabel: string | null = null;
+  let tradeInVehicleId: string | null = null;
   if (d.tradeIn) {
     const negociado = d.tiNegotiated ?? 0;
     if (!d.tiPlate || !d.tiBrand || !d.tiModel || negociado <= 0) {
@@ -71,7 +72,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
     const customer = await prisma.customer.findUnique({ where: { id: d.customerId } });
     const sellVehicle = await prisma.vehicle.findUnique({ where: { id: d.vehicleId } });
     try {
-      await createVehicleWithPayable({
+      const tradeVehicle = await createVehicleWithPayable({
         brand: d.tiBrand,
         model: d.tiModel,
         manufactureYear: d.tiManufactureYear ?? new Date().getFullYear(),
@@ -96,6 +97,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
       });
       tradeInAmount = liquido;
       tradeInLabel = `${d.tiBrand} ${d.tiModel} - ${d.tiPlate.toUpperCase()}`;
+      tradeInVehicleId = tradeVehicle.id;
     } catch {
       return { error: "Não foi possível cadastrar o veículo da troca. Verifique os dados." };
     }
@@ -115,6 +117,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
       notes: d.notes || null,
       tradeInAmount,
       tradeInLabel,
+      tradeInVehicleId,
     });
     saleId = sale.id;
   } catch (err) {
