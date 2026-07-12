@@ -18,6 +18,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
     where: { id },
     include: {
       vehicle: true,
+      tradeInVehicle: true,
       customer: true,
       receivables: { orderBy: { installmentNumber: "asc" } },
     },
@@ -38,6 +39,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             <LinkButton href={`/vendas/${sale.id}/documento`} variant="secondary">
               📄 Ordem de venda
             </LinkButton>
+            {sale.tradeInVehicle ? (
+              <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
+                🔁 Documento de troca
+              </LinkButton>
+            ) : null}
             {sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
           </div>
         }
