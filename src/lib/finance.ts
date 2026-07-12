@@ -66,11 +66,17 @@ export async function createVehicleWithPayable(input: {
   downPayment?: number;
   installmentsCount?: number;
   financerName?: string | null;
+  payoffAmount?: number;
+  payoffTo?: string | null;
+  debtsAmount?: number;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   const acquisitionType = input.acquisitionType ?? "A_VISTA";
-  const downPayment = Math.min(Math.max(0, input.downPayment ?? 0), input.purchasePrice);
+  const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
+  const debtsAmount = Math.max(0, input.debtsAmount ?? 0);
+  const liquido = Math.max(0, Math.round((input.purchasePrice - payoffAmount - debtsAmount) * 100) / 100);
+  const downPayment = Math.min(Math.max(0, input.downPayment ?? 0), liquido);
   const installmentsCount = Math.max(1, input.installmentsCount ?? 1);
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
@@ -92,6 +98,9 @@ export async function createVehicleWithPayable(input: {
         downPayment,
         installmentsCount,
         financerName: input.financerName || null,
+        payoffAmount,
+        payoffTo: input.payoffTo || null,
+        debtsAmount,
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
@@ -111,6 +120,9 @@ export async function createVehicleWithPayable(input: {
         downPayment,
         installmentsCount,
         financerName: input.financerName || null,
+        payoffAmount,
+        payoffTo: input.payoffTo || null,
+        debtsAmount,
         alreadyPaid: input.alreadyPaid,
         defaultAccountId,
       });
@@ -141,6 +153,9 @@ async function createAcquisitionPayables(
     downPayment: number;
     installmentsCount: number;
     financerName: string | null;
+    payoffAmount?: number;
+    payoffTo?: string | null;
+    debtsAmount?: number;
     alreadyPaid: boolean;
     defaultAccountId: string | null;
   },
@@ -151,13 +166,51 @@ async function createAcquisitionPayables(
     costCenterId: input.veiculosCenterId,
   };
 
-  // À vista: uma conta só.
+  const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
+  const debtsAmount = Math.max(0, input.debtsAmount ?? 0);
+
+  // Repasse: quitação do financiamento (banco) e débitos do veículo (órgãos)
+  // são contas a pagar separadas, com credores próprios, abatendo o valor
+  // negociado. O que sobra é o líquido pago ao vendedor.
+  if (payoffAmount > 0) {
+    await tx.payable.create({
+      data: {
+        ...base,
+        description: `Quitação do financiamento ${input.label}${input.payoffTo ? ` (${input.payoffTo})` : ""}`,
+        amount: payoffAmount,
+        dueDate: input.dueDate,
+        status: "PENDENTE",
+        supplierId: null,
+      },
+    });
+  }
+  if (debtsAmount > 0) {
+    await tx.payable.create({
+      data: {
+        ...base,
+        description: `Débitos do veículo (repasse) ${input.label}`,
+        amount: debtsAmount,
+        dueDate: input.dueDate,
+        status: "PENDENTE",
+        supplierId: null,
+      },
+    });
+  }
+
+  // Líquido ao vendedor = valor negociado − quitação − débitos.
+  const liquido = Math.max(0, Math.round((input.total - payoffAmount - debtsAmount) * 100) / 100);
+  if (liquido <= 0) return;
+
+  const repasse = payoffAmount > 0 || debtsAmount > 0;
+  const vendedorLabel = repasse ? " (líquido ao vendedor)" : "";
+
+  // À vista: uma conta só (o líquido).
   if (input.acquisitionType === "A_VISTA") {
     await tx.payable.create({
       data: {
         ...base,
-        description: `Compra do veículo ${input.label}`,
-        amount: input.total,
+        description: `Compra do veículo ${input.label}${vendedorLabel}`,
+        amount: liquido,
         dueDate: input.alreadyPaid ? input.entryDate : input.dueDate,
         paymentDate: input.alreadyPaid ? input.entryDate : null,
         status: input.alreadyPaid ? "PAGO" : "PENDENTE",
@@ -177,7 +230,7 @@ async function createAcquisitionPayables(
     await tx.payable.create({
       data: {
         ...base,
-        description: `Entrada da compra ${input.label}`,
+        description: `Entrada da compra ${input.label}${vendedorLabel}`,
         amount: input.downPayment,
         dueDate: input.dueDate,
         status: "PENDENTE",
@@ -186,7 +239,7 @@ async function createAcquisitionPayables(
     });
   }
 
-  const remaining = Math.round((input.total - input.downPayment) * 100) / 100;
+  const remaining = Math.round((liquido - input.downPayment) * 100) / 100;
   if (remaining <= 0) return;
 
   const count = Math.max(1, input.installmentsCount);
@@ -237,6 +290,9 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
         downPayment: vehicle.downPayment,
         installmentsCount: vehicle.installmentsCount,
         financerName: vehicle.financerName,
+        payoffAmount: vehicle.payoffAmount,
+        payoffTo: vehicle.payoffTo,
+        debtsAmount: vehicle.debtsAmount,
         alreadyPaid: false,
         defaultAccountId: null,
       });

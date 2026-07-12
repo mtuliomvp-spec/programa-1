@@ -299,6 +299,12 @@ model Vehicle {
   downPayment      Float         @default(0)
   installmentsCount Int          @default(1)
   financerName     String?
+  // Compra com repasse/troca: parte do valor negociado vai para quitar o
+  // financiamento do antigo dono (banco) e para débitos do veículo; o líquido
+  // é o que sobra para o vendedor. Credores separados nas contas a pagar.
+  payoffAmount     Float         @default(0)
+  payoffTo         String?
+  debtsAmount      Float         @default(0)
   status           StatusVeiculo @default(ESTOQUE)
   entryDate        DateTime      @default(now())
   photoUrl         String?

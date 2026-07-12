@@ -34,6 +34,9 @@ const vehicleSchema = z.object({
   downPayment: z.coerce.number().min(0).optional(),
   installmentsCount: z.coerce.number().int().min(1).max(120).optional(),
   financerName: z.string().optional(),
+  payoffAmount: z.coerce.number().min(0).optional(),
+  payoffTo: z.string().optional(),
+  debtsAmount: z.coerce.number().min(0).optional(),
 });
 
 export type VehicleFormState = { error?: string };
@@ -78,6 +81,9 @@ export async function createVehicleAction(
       downPayment: data.downPayment ?? 0,
       installmentsCount: data.installmentsCount ?? 1,
       financerName: data.financerName || null,
+      payoffAmount: data.payoffAmount ?? 0,
+      payoffTo: data.payoffTo || null,
+      debtsAmount: data.debtsAmount ?? 0,
     });
     revalidatePath("/estoque");
     revalidatePath("/financeiro/a-pagar");
@@ -129,6 +135,9 @@ export async function updateVehicleAction(
         downPayment: data.downPayment ?? 0,
         installmentsCount: data.installmentsCount ?? 1,
         financerName: data.financerName || null,
+        payoffAmount: data.payoffAmount ?? 0,
+        payoffTo: data.payoffTo || null,
+        debtsAmount: data.debtsAmount ?? 0,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,

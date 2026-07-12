@@ -36,6 +36,9 @@ type VehicleData = {
   downPayment?: number;
   installmentsCount?: number;
   financerName?: string | null;
+  payoffAmount?: number;
+  payoffTo?: string | null;
+  debtsAmount?: number;
 };
 
 const initialState: VehicleFormState = {};
@@ -54,6 +57,13 @@ export default function VehicleForm({
   const [acquisition, setAcquisition] = useState<
     "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO"
   >(vehicle?.acquisitionType ?? "A_VISTA");
+  const [repasse, setRepasse] = useState<boolean>(
+    Boolean((vehicle?.payoffAmount ?? 0) > 0 || (vehicle?.debtsAmount ?? 0) > 0),
+  );
+  const [negociado, setNegociado] = useState<number>(vehicle?.purchasePrice ?? 0);
+  const [payoff, setPayoff] = useState<number>(vehicle?.payoffAmount ?? 0);
+  const [debts, setDebts] = useState<number>(vehicle?.debtsAmount ?? 0);
+  const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -330,8 +340,16 @@ export default function VehicleForm({
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Preço de compra (custo)" required>
-          <Input type="number" step="0.01" min={0} name="purchasePrice" defaultValue={vehicle?.purchasePrice} required />
+        <Field label="Preço de compra (valor negociado)" required>
+          <Input
+            type="number"
+            step="0.01"
+            min={0}
+            name="purchasePrice"
+            defaultValue={vehicle?.purchasePrice}
+            onChange={(e) => setNegociado(Number(e.target.value) || 0)}
+            required
+          />
         </Field>
         <Field label="Preço de venda (anúncio)" required>
           <Input type="number" step="0.01" min={0} name="salePrice" defaultValue={vehicle?.salePrice} required />
@@ -421,8 +439,72 @@ export default function VehicleForm({
         </div>
       ) : null}
 
+      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            checked={repasse}
+            onChange={(e) => setRepasse(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Compra com repasse / troca (o veículo tem financiamento a quitar ou débitos)
+        </label>
+        {repasse ? (
+          <>
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Saldo devedor / quitação (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="payoffAmount"
+                  value={payoff || ""}
+                  onChange={(e) => setPayoff(Number(e.target.value) || 0)}
+                  placeholder="0,00"
+                />
+              </Field>
+              <Field label="Banco / financeira da quitação">
+                <Input name="payoffTo" defaultValue={vehicle?.payoffTo || ""} placeholder="Ex.: Banco XPTO" />
+              </Field>
+              <Field label="Débitos do veículo (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="debtsAmount"
+                  value={debts || ""}
+                  onChange={(e) => setDebts(Number(e.target.value) || 0)}
+                  placeholder="IPVA, multas, licenciamento"
+                />
+              </Field>
+            </div>
+            <div className="mt-3 rounded-lg border border-amber-300 bg-white p-3 text-sm">
+              <p className="text-slate-600">
+                Valor negociado <strong>{formatCurrency(negociado)}</strong> − quitação{" "}
+                <strong>{formatCurrency(payoff)}</strong> − débitos{" "}
+                <strong>{formatCurrency(debts)}</strong> ={" "}
+                <strong className="text-emerald-700">líquido ao vendedor {formatCurrency(liquido)}</strong>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                O sistema gera contas a pagar <strong>separadas</strong>: a quitação (ao banco), os
+                débitos (aos órgãos) e o líquido ao vendedor — cada um pago por uma conta financeira.
+                O líquido é o que segue a forma de aquisição abaixo (à vista ou parcelado, servindo
+                de entrada numa troca).
+              </p>
+            </div>
+          </>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">
+            Marque quando o carro comprado tiver financiamento a quitar ou débitos que serão
+            descontados do valor pago ao vendedor.
+          </p>
+        )}
+      </div>
+
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <p className="mb-3 text-sm font-medium text-slate-700">Forma de aquisição (como o veículo será pago)</p>
+        <p className="mb-3 text-sm font-medium text-slate-700">
+          Forma de aquisição {repasse ? "(do líquido ao vendedor)" : "(como o veículo será pago)"}
+        </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <Field label="Forma de aquisição">
             <Select

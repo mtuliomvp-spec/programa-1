@@ -145,6 +145,35 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
                 ? `. Valor pago integralmente pela COMPRADORA na data de ${formatDate(vehicle.entryDate)}, servindo este contrato como recibo de quitação.`
                 : ", conforme o cronograma abaixo:"}
             </p>
+            {vehicle.payoffAmount > 0 || vehicle.debtsAmount > 0 ? (
+              <p className="mt-1">
+                Do valor negociado, a COMPRADORA reterá e quitará diretamente:{" "}
+                {vehicle.payoffAmount > 0 ? (
+                  <>
+                    o saldo devedor do financiamento de{" "}
+                    <strong>{formatCurrency(vehicle.payoffAmount)}</strong>
+                    {vehicle.payoffTo ? ` junto a ${vehicle.payoffTo}` : ""}
+                  </>
+                ) : null}
+                {vehicle.payoffAmount > 0 && vehicle.debtsAmount > 0 ? " e " : ""}
+                {vehicle.debtsAmount > 0 ? (
+                  <>
+                    os débitos do veículo (IPVA, licenciamento e multas) de{" "}
+                    <strong>{formatCurrency(vehicle.debtsAmount)}</strong>
+                  </>
+                ) : null}
+                , cabendo ao(à) VENDEDOR(A) receber o valor líquido de{" "}
+                <strong>
+                  {formatCurrency(
+                    Math.max(
+                      0,
+                      vehicle.purchasePrice - vehicle.payoffAmount - vehicle.debtsAmount,
+                    ),
+                  )}
+                </strong>
+                .
+              </p>
+            ) : null}
             {!allPaid && vehicle.payables.length > 0 ? (
               <table className="mt-2 w-full text-sm">
                 <thead>
