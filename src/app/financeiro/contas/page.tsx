@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
 import AccountRowActions from "./AccountRowActions";
@@ -30,6 +30,18 @@ export default async function ContasPage() {
         title="Contas e caixas"
         description="Cadastre as contas da loja — toda baixa de pagamento/recebimento passa por uma delas"
       />
+
+      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+        <LinkButton href="/financeiro/livro-caixa" variant="secondary" className="justify-center">
+          📒 Movimento de caixa diário
+        </LinkButton>
+        <LinkButton href="/financeiro/a-pagar" variant="secondary" className="justify-center">
+          📤 Contas a pagar
+        </LinkButton>
+        <LinkButton href="/financeiro/a-receber" variant="secondary" className="justify-center">
+          📥 Contas a receber
+        </LinkButton>
+      </div>
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
