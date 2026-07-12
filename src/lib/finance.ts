@@ -69,6 +69,10 @@ export async function createVehicleWithPayable(input: {
   payoffAmount?: number;
   payoffTo?: string | null;
   debtsAmount?: number;
+  // Trade-in: o líquido ao vendedor já é quitado pela troca (não vira conta a
+  // pagar em aberto nem sai dinheiro do caixa).
+  liquidoSettledByTrade?: boolean;
+  tradeNote?: string | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
@@ -123,6 +127,8 @@ export async function createVehicleWithPayable(input: {
         payoffAmount,
         payoffTo: input.payoffTo || null,
         debtsAmount,
+        liquidoSettledByTrade: input.liquidoSettledByTrade,
+        tradeNote: input.tradeNote || null,
         alreadyPaid: input.alreadyPaid,
         defaultAccountId,
       });
@@ -156,6 +162,8 @@ async function createAcquisitionPayables(
     payoffAmount?: number;
     payoffTo?: string | null;
     debtsAmount?: number;
+    liquidoSettledByTrade?: boolean;
+    tradeNote?: string | null;
     alreadyPaid: boolean;
     defaultAccountId: string | null;
   },
@@ -206,16 +214,22 @@ async function createAcquisitionPayables(
 
   // À vista: uma conta só (o líquido).
   if (input.acquisitionType === "A_VISTA") {
+    // Numa troca, o líquido já está quitado pelo carro recebido: registra como
+    // PAGO, sem conta financeira (não sai dinheiro do caixa).
+    const settledByTrade = Boolean(input.liquidoSettledByTrade);
     await tx.payable.create({
       data: {
         ...base,
-        description: `Compra do veículo ${input.label}${vendedorLabel}`,
+        description: settledByTrade
+          ? `Compra do veículo ${input.label} (líquido quitado pela troca)`
+          : `Compra do veículo ${input.label}${vendedorLabel}`,
         amount: liquido,
-        dueDate: input.alreadyPaid ? input.entryDate : input.dueDate,
-        paymentDate: input.alreadyPaid ? input.entryDate : null,
-        status: input.alreadyPaid ? "PAGO" : "PENDENTE",
+        dueDate: input.alreadyPaid || settledByTrade ? input.entryDate : input.dueDate,
+        paymentDate: input.alreadyPaid || settledByTrade ? input.entryDate : null,
+        status: input.alreadyPaid || settledByTrade ? "PAGO" : "PENDENTE",
         supplierId: input.supplierId,
         accountId: input.alreadyPaid ? input.defaultAccountId : null,
+        notes: settledByTrade ? input.tradeNote : undefined,
       },
     });
     return;
@@ -495,6 +509,10 @@ export async function registerVehicleSale(input: {
   paymentMethod: FormaPagamento;
   sellerName?: string | null;
   notes?: string | null;
+  // Entrada dada em troca por outro veículo (não entra no caixa: é quitada
+  // pelo carro recebido). Reduz o que o cliente paga em dinheiro.
+  tradeInAmount?: number;
+  tradeInLabel?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
   const veiculosCenterId = await structuralCenterId("VEICULOS");
@@ -529,12 +547,34 @@ export async function registerVehicleSale(input: {
     const receivablesData: Prisma.ReceivableCreateManyInput[] = [];
     const baseDescription = `Venda do veículo ${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
 
+    const tradeIn = Math.max(0, Math.min(input.tradeInAmount ?? 0, input.totalAmount));
+    // Entrada em troca: recebida (não fica devendo) mas SEM conta financeira,
+    // pois quem "pagou" foi o veículo recebido — não entra dinheiro no caixa.
+    if (tradeIn > 0) {
+      receivablesData.push({
+        description: `${baseDescription} - Entrada em troca${input.tradeInLabel ? ` (${input.tradeInLabel})` : ""}`,
+        category: "VENDA_VEICULO",
+        amount: tradeIn,
+        dueDate: input.saleDate,
+        receivedDate: input.saleDate,
+        status: "RECEBIDO",
+        customerId: input.customerId,
+        saleId: sale.id,
+        installmentNumber: 0,
+        accountId: null,
+      });
+    }
+
+    // O que resta a cobrar em dinheiro (depois de abater a troca).
+    const billable = Math.max(0, Math.round((input.totalAmount - tradeIn) * 100) / 100);
+
     if (input.paymentMethod === "PARCELADO") {
-      if (input.downPayment > 0) {
+      const cashDown = Math.max(0, Math.min(input.downPayment, billable));
+      if (cashDown > 0) {
         receivablesData.push({
           description: `${baseDescription} - Entrada`,
           category: "VENDA_VEICULO",
-          amount: input.downPayment,
+          amount: cashDown,
           dueDate: input.saleDate,
           receivedDate: input.saleDate,
           status: "RECEBIDO",
@@ -546,10 +586,7 @@ export async function registerVehicleSale(input: {
         });
       }
 
-      const remaining = Math.max(
-        0,
-        Math.round((input.totalAmount - input.downPayment) * 100) / 100,
-      );
+      const remaining = Math.max(0, Math.round((billable - cashDown) * 100) / 100);
       const count = Math.max(1, input.installmentsCount);
       const parcelas = splitInstallments(remaining, count);
       parcelas.forEach((amount, index) => {
@@ -566,25 +603,28 @@ export async function registerVehicleSale(input: {
         });
       });
     } else if (input.paymentMethod === "FINANCIADO") {
-      receivablesData.push({
-        description: `${baseDescription} - Repasse financiamento`,
-        category: "VENDA_VEICULO",
-        amount: input.totalAmount,
-        dueDate: addDays(input.saleDate, 5),
-        status: "PENDENTE",
-        customerId: input.customerId,
-        saleId: sale.id,
-      });
-    } else {
+      if (billable > 0) {
+        receivablesData.push({
+          description: `${baseDescription} - Repasse financiamento`,
+          category: "VENDA_VEICULO",
+          amount: billable,
+          dueDate: addDays(input.saleDate, 5),
+          status: "PENDENTE",
+          customerId: input.customerId,
+          saleId: sale.id,
+        });
+      }
+    } else if (billable > 0) {
       receivablesData.push({
         description: `${baseDescription} - À vista`,
         category: "VENDA_VEICULO",
-        amount: input.totalAmount,
+        amount: billable,
         dueDate: input.saleDate,
         receivedDate: input.saleDate,
         status: "RECEBIDO",
         customerId: input.customerId,
         saleId: sale.id,
+        accountId: defaultAccountId,
       });
     }
 

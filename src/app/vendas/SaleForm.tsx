@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { createSaleAction, type SaleFormState } from "./actions";
+import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
@@ -20,6 +21,7 @@ export default function SaleForm({
   preselectedVehicleId?: string;
 }) {
   const [state, formAction, pending] = useActionState(createSaleAction, initialState);
+  const formRef = useRef<HTMLFormElement>(null);
   const [vehicleId, setVehicleId] = useState(preselectedVehicleId || "");
   const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">("A_VISTA");
 
@@ -27,6 +29,47 @@ export default function SaleForm({
   const [totalAmount, setTotalAmount] = useState<string>(
     selectedVehicle ? String(selectedVehicle.salePrice) : "",
   );
+
+  // Troca (veículo recebido do cliente, cadastrado aqui mesmo)
+  const [tradeIn, setTradeIn] = useState(false);
+  const [tiNegotiated, setTiNegotiated] = useState(0);
+  const [tiPayoff, setTiPayoff] = useState(0);
+  const [tiDebts, setTiDebts] = useState(0);
+  const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
+  const total = Number(totalAmount) || 0;
+  const restante = Math.max(0, Math.round((total - tiLiquido) * 100) / 100);
+  const [tiLooking, startTiLookup] = useTransition();
+  const [tiMsg, setTiMsg] = useState<string | null>(null);
+
+  function setTiField(name: string, value: string | number | undefined) {
+    if (value === undefined || value === "") return;
+    const el = formRef.current?.elements.namedItem(name);
+    if (el instanceof HTMLInputElement) el.value = String(value);
+  }
+
+  function handleTiLookup() {
+    const el = formRef.current?.elements.namedItem("tiPlate");
+    const plate = el instanceof HTMLInputElement ? el.value.trim() : "";
+    if (!plate) {
+      setTiMsg("Digite a placa do veículo da troca antes de buscar.");
+      return;
+    }
+    setTiMsg(null);
+    startTiLookup(async () => {
+      const result = await lookupPlateAction(plate);
+      if (!result.ok) {
+        setTiMsg(result.error);
+        return;
+      }
+      const dt = result.data;
+      setTiField("tiBrand", dt.brand);
+      setTiField("tiModel", dt.model);
+      setTiField("tiManufactureYear", dt.manufactureYear);
+      setTiField("tiModelYear", dt.modelYear ?? dt.manufactureYear);
+      setTiField("tiColor", dt.color);
+      setTiMsg(`Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}.`);
+    });
+  }
 
   function handleVehicleChange(id: string) {
     setVehicleId(id);
@@ -43,7 +86,7 @@ export default function SaleForm({
   }
 
   return (
-    <form action={formAction} className="space-y-6">
+    <form ref={formRef} action={formAction} className="space-y-6">
       {state.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}
@@ -132,6 +175,119 @@ export default function SaleForm({
       {paymentMethod === "A_VISTA" ? (
         <p className="text-xs text-slate-500">O valor total será lançado como recebido na data da venda.</p>
       ) : null}
+
+      <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            name="tradeIn"
+            value="true"
+            checked={tradeIn}
+            onChange={(e) => setTradeIn(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Entrada por troca (o cliente está dando um veículo)
+        </label>
+
+        {tradeIn ? (
+          <div className="mt-3 space-y-3">
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="Placa do veículo recebido">
+                <Input name="tiPlate" placeholder="ABC1D23" className="max-w-[160px] uppercase" />
+              </Field>
+              <Button type="button" variant="secondary" onClick={handleTiLookup} disabled={tiLooking}>
+                {tiLooking ? "Buscando..." : "🔍 Buscar dados"}
+              </Button>
+            </div>
+            {tiMsg ? <p className="text-sm font-medium text-emerald-700">{tiMsg}</p> : null}
+
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Marca">
+                <Input name="tiBrand" placeholder="Ex.: Volkswagen" />
+              </Field>
+              <Field label="Modelo">
+                <Input name="tiModel" placeholder="Ex.: Gol" />
+              </Field>
+              <Field label="Cor">
+                <Input name="tiColor" />
+              </Field>
+              <Field label="Ano fabricação">
+                <Input type="number" name="tiManufactureYear" defaultValue={new Date().getFullYear()} />
+              </Field>
+              <Field label="Ano modelo">
+                <Input type="number" name="tiModelYear" defaultValue={new Date().getFullYear()} />
+              </Field>
+              <Field label="Quilometragem">
+                <Input type="number" name="tiKm" min={0} defaultValue={0} />
+              </Field>
+              <Field label="Valor negociado (avaliação)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="tiNegotiated"
+                  value={tiNegotiated || ""}
+                  onChange={(e) => setTiNegotiated(Number(e.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Saldo devedor / quitação">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="tiPayoff"
+                  value={tiPayoff || ""}
+                  onChange={(e) => setTiPayoff(Number(e.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Banco / financeira da quitação">
+                <Input name="tiPayoffTo" placeholder="Ex.: Banco XPTO" />
+              </Field>
+              <Field label="Débitos do veículo (IPVA, multas...)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="tiDebts"
+                  value={tiDebts || ""}
+                  onChange={(e) => setTiDebts(Number(e.target.value) || 0)}
+                />
+              </Field>
+            </div>
+
+            <div className="rounded-lg border border-amber-300 bg-white p-3 text-sm">
+              <p className="text-slate-600">
+                Avaliação <strong>{formatCurrency(tiNegotiated)}</strong> − quitação{" "}
+                <strong>{formatCurrency(tiPayoff)}</strong> − débitos{" "}
+                <strong>{formatCurrency(tiDebts)}</strong> ={" "}
+                <strong className="text-emerald-700">
+                  entrada da troca {formatCurrency(tiLiquido)}
+                </strong>
+              </p>
+              <p className="mt-1 text-slate-600">
+                Valor da venda {formatCurrency(total)} − entrada da troca{" "}
+                {formatCurrency(tiLiquido)} ={" "}
+                <strong>restante a pagar {formatCurrency(restante)}</strong> (
+                {paymentMethod === "A_VISTA"
+                  ? "à vista"
+                  : paymentMethod === "PARCELADO"
+                    ? "parcelado"
+                    : "financiado"}
+                )
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                O veículo recebido entra no estoque; a quitação (ao banco) e os débitos (aos órgãos)
+                viram contas a pagar. A entrada da troca não passa pelo caixa — é quitada pelo carro.
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">
+            Marque quando o cliente entrega um carro como parte do pagamento. Você cadastra o
+            veículo aqui mesmo e o líquido dele vira a entrada.
+          </p>
+        )}
+      </div>
 
       <Field label="Observações">
         <Textarea name="notes" rows={3} />
