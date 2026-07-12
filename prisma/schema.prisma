@@ -99,6 +99,13 @@ enum StatusConsorcio {
   ENCERRADO
 }
 
+enum TipoAquisicao {
+  A_VISTA
+  PARCELADO
+  FINANCIADO
+  CONSORCIO
+}
+
 enum TipoCentroCusto {
   ESTRUTURAL
   OBRA
@@ -288,6 +295,10 @@ model Vehicle {
   transmission     String?
   purchasePrice    Float
   salePrice        Float
+  acquisitionType  TipoAquisicao @default(A_VISTA)
+  downPayment      Float         @default(0)
+  installmentsCount Int          @default(1)
+  financerName     String?
   status           StatusVeiculo @default(ESTOQUE)
   entryDate        DateTime      @default(now())
   photoUrl         String?

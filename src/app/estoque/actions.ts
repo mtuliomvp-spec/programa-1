@@ -30,6 +30,10 @@ const vehicleSchema = z.object({
   supplierId: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
   dueDate: z.string().optional(),
+  acquisitionType: z.enum(["A_VISTA", "PARCELADO", "FINANCIADO", "CONSORCIO"]).optional(),
+  downPayment: z.coerce.number().min(0).optional(),
+  installmentsCount: z.coerce.number().int().min(1).max(120).optional(),
+  financerName: z.string().optional(),
 });
 
 export type VehicleFormState = { error?: string };
@@ -70,6 +74,10 @@ export async function createVehicleAction(
       supplierId: data.supplierId || null,
       alreadyPaid: Boolean(data.alreadyPaid),
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
+      acquisitionType: data.acquisitionType ?? "A_VISTA",
+      downPayment: data.downPayment ?? 0,
+      installmentsCount: data.installmentsCount ?? 1,
+      financerName: data.financerName || null,
     });
     revalidatePath("/estoque");
     revalidatePath("/financeiro/a-pagar");
@@ -117,13 +125,25 @@ export async function updateVehicleAction(
         transmission: data.transmission || null,
         purchasePrice: data.purchasePrice,
         salePrice: data.salePrice,
+        acquisitionType: data.acquisitionType ?? "A_VISTA",
+        downPayment: data.downPayment ?? 0,
+        installmentsCount: data.installmentsCount ?? 1,
+        financerName: data.financerName || null,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,
       },
     });
+
+    // Regenera as contas a pagar da compra conforme a forma de aquisição,
+    // desde que nenhuma parcela da compra já tenha sido paga (senão mantém
+    // o que existe para não bagunçar o que já foi liquidado).
+    const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
+    await regenerateVehicleAcquisitionPayables(data.id);
+
     revalidatePath("/estoque");
     revalidatePath(`/estoque/${data.id}`);
+    revalidatePath("/financeiro/a-pagar");
     revalidatePath("/");
   } catch {
     return { error: "Não foi possível atualizar o veículo." };

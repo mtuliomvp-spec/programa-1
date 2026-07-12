@@ -32,6 +32,10 @@ type VehicleData = {
   entryDate: Date;
   notes: string | null;
   supplierId: string | null;
+  acquisitionType?: "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO";
+  downPayment?: number;
+  installmentsCount?: number;
+  financerName?: string | null;
 };
 
 const initialState: VehicleFormState = {};
@@ -47,6 +51,9 @@ export default function VehicleForm({
   const action = isEdit ? updateVehicleAction : createVehicleAction;
   const [state, formAction, pending] = useActionState(action, initialState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+  const [acquisition, setAcquisition] = useState<
+    "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO"
+  >(vehicle?.acquisitionType ?? "A_VISTA");
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -414,38 +421,87 @@ export default function VehicleForm({
         </div>
       ) : null}
 
-      {!isEdit ? (
-        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <p className="mb-3 text-sm font-medium text-slate-700">Financeiro da compra</p>
-          <div className="max-w-xs">
-            <Field label="Vencimento do pagamento">
-              <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
-            </Field>
-            <p className="mt-1 text-xs text-slate-500">
-              A compra entra como <strong>conta a pagar</strong>. O pagamento é feito depois em{" "}
-              <strong>Contas a pagar</strong>, dando a baixa por uma conta financeira (caixa ou
-              banco).
-            </p>
-          </div>
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              name="alreadyPaid"
-              value="true"
-              checked={alreadyPaid}
-              onChange={(e) => setAlreadyPaid(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            Já paguei no ato (dar a baixa agora pela conta padrão)
-          </label>
-          {alreadyPaid ? (
-            <p className="mt-2 text-xs text-amber-700">
-              Atenção: isso registra o pagamento na hora, saindo da conta financeira padrão. Use
-              só se você realmente já pagou.
-            </p>
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <p className="mb-3 text-sm font-medium text-slate-700">Forma de aquisição (como o veículo será pago)</p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Field label="Forma de aquisição">
+            <Select
+              name="acquisitionType"
+              value={acquisition}
+              onChange={(e) => setAcquisition(e.target.value as typeof acquisition)}
+            >
+              <option value="A_VISTA">À vista</option>
+              <option value="PARCELADO">Parcelado (direto com o fornecedor)</option>
+              <option value="FINANCIADO">Financiado (banco/financeira)</option>
+              <option value="CONSORCIO">Consórcio (carta de crédito)</option>
+            </Select>
+          </Field>
+          <Field label={acquisition === "A_VISTA" ? "Vencimento do pagamento" : "Vencimento da entrada / 1ª parcela"}>
+            <Input type="date" name="dueDate" defaultValue={toDateInputValue(vehicle ? vehicle.entryDate : new Date())} />
+          </Field>
+          {acquisition !== "A_VISTA" ? (
+            <>
+              <Field label="Entrada (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="downPayment"
+                  defaultValue={vehicle?.downPayment ?? 0}
+                  placeholder="0,00"
+                />
+              </Field>
+              <Field label="Número de parcelas">
+                <Input
+                  type="number"
+                  min={1}
+                  max={120}
+                  name="installmentsCount"
+                  defaultValue={vehicle?.installmentsCount ?? 12}
+                />
+              </Field>
+              {acquisition === "FINANCIADO" || acquisition === "CONSORCIO" ? (
+                <Field label={acquisition === "CONSORCIO" ? "Administradora do consórcio" : "Banco / financeira"}>
+                  <Input name="financerName" defaultValue={vehicle?.financerName || ""} placeholder="Ex.: Banco XPTO" />
+                </Field>
+              ) : null}
+            </>
           ) : null}
         </div>
-      ) : null}
+
+        {acquisition === "A_VISTA" ? (
+          <>
+            <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                name="alreadyPaid"
+                value="true"
+                checked={alreadyPaid}
+                onChange={(e) => setAlreadyPaid(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Já paguei no ato (dar a baixa agora pela conta padrão)
+            </label>
+            <p className="mt-2 text-xs text-slate-500">
+              {alreadyPaid
+                ? "Atenção: registra o pagamento na hora, saindo da conta financeira padrão."
+                : "A compra entra como conta a pagar. O pagamento é dado depois em Contas a pagar, por uma conta financeira."}
+            </p>
+          </>
+        ) : (
+          <p className="mt-3 text-xs text-slate-500">
+            Serão geradas automaticamente as contas a pagar: a <strong>entrada</strong> (se houver) e{" "}
+            <strong>{acquisition === "FINANCIADO" || acquisition === "CONSORCIO" ? "as parcelas do financiamento" : "as parcelas"}</strong>{" "}
+            mês a mês. Cada uma é paga depois em Contas a pagar, por uma conta financeira.
+          </p>
+        )}
+        {isEdit ? (
+          <p className="mt-2 text-xs text-amber-700">
+            Ao salvar, as contas a pagar da compra são recriadas conforme esta forma — desde que
+            nenhuma parcela da compra já tenha sido paga.
+          </p>
+        ) : null}
+      </div>
 
       <Field label="Observações">
         <Textarea name="notes" defaultValue={vehicle?.notes || ""} rows={3} />

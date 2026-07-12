@@ -41,6 +41,8 @@ function splitInstallments(total: number, count: number): number[] {
 // Estoque de veículos -> Contas a Pagar
 // ---------------------------------------------------------------------------
 
+export type TipoAquisicao = "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO";
+
 export async function createVehicleWithPayable(input: {
   brand: string;
   model: string;
@@ -60,9 +62,16 @@ export async function createVehicleWithPayable(input: {
   supplierId?: string | null;
   alreadyPaid: boolean;
   dueDate?: Date | null;
+  acquisitionType?: TipoAquisicao;
+  downPayment?: number;
+  installmentsCount?: number;
+  financerName?: string | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const acquisitionType = input.acquisitionType ?? "A_VISTA";
+  const downPayment = Math.min(Math.max(0, input.downPayment ?? 0), input.purchasePrice);
+  const installmentsCount = Math.max(1, input.installmentsCount ?? 1);
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.create({
       data: {
@@ -79,6 +88,10 @@ export async function createVehicleWithPayable(input: {
         transmission: input.transmission || null,
         purchasePrice: input.purchasePrice,
         salePrice: input.salePrice,
+        acquisitionType,
+        downPayment,
+        installmentsCount,
+        financerName: input.financerName || null,
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
@@ -86,25 +99,148 @@ export async function createVehicleWithPayable(input: {
     });
 
     if (input.purchasePrice > 0) {
-      await tx.payable.create({
-        data: {
-          description: `Compra do veículo ${input.brand} ${input.model} - placa ${input.plate}`,
-          category: "COMPRA_VEICULO" as CategoriaPagar,
-          amount: input.purchasePrice,
-          dueDate: input.alreadyPaid
-            ? input.entryDate
-            : input.dueDate || input.entryDate,
-          paymentDate: input.alreadyPaid ? input.entryDate : null,
-          status: input.alreadyPaid ? "PAGO" : "PENDENTE",
-          supplierId: input.supplierId || null,
-          vehicleId: vehicle.id,
-          accountId: defaultAccountId,
-          costCenterId: veiculosCenterId,
-        },
+      await createAcquisitionPayables(tx, {
+        vehicleId: vehicle.id,
+        label: `${input.brand} ${input.model} - placa ${input.plate}`,
+        total: input.purchasePrice,
+        entryDate: input.entryDate,
+        dueDate: input.dueDate || input.entryDate,
+        supplierId: input.supplierId || null,
+        veiculosCenterId,
+        acquisitionType,
+        downPayment,
+        installmentsCount,
+        financerName: input.financerName || null,
+        alreadyPaid: input.alreadyPaid,
+        defaultAccountId,
       });
     }
 
     return vehicle;
+  });
+}
+
+/**
+ * Gera as contas a pagar da compra do veículo conforme a forma de aquisição:
+ * - À vista: uma conta única no valor total.
+ * - Parcelado/Financiado/Consórcio: entrada (se houver) + N parcelas mensais
+ *   do valor restante. No financiado/consórcio, as parcelas indicam a
+ *   financeira; a entrada fica com o fornecedor.
+ */
+async function createAcquisitionPayables(
+  tx: Prisma.TransactionClient,
+  input: {
+    vehicleId: string;
+    label: string;
+    total: number;
+    entryDate: Date;
+    dueDate: Date;
+    supplierId: string | null;
+    veiculosCenterId: string;
+    acquisitionType: TipoAquisicao;
+    downPayment: number;
+    installmentsCount: number;
+    financerName: string | null;
+    alreadyPaid: boolean;
+    defaultAccountId: string | null;
+  },
+) {
+  const base = {
+    category: "COMPRA_VEICULO" as CategoriaPagar,
+    vehicleId: input.vehicleId,
+    costCenterId: input.veiculosCenterId,
+  };
+
+  // À vista: uma conta só.
+  if (input.acquisitionType === "A_VISTA") {
+    await tx.payable.create({
+      data: {
+        ...base,
+        description: `Compra do veículo ${input.label}`,
+        amount: input.total,
+        dueDate: input.alreadyPaid ? input.entryDate : input.dueDate,
+        paymentDate: input.alreadyPaid ? input.entryDate : null,
+        status: input.alreadyPaid ? "PAGO" : "PENDENTE",
+        supplierId: input.supplierId,
+        accountId: input.alreadyPaid ? input.defaultAccountId : null,
+      },
+    });
+    return;
+  }
+
+  const financiado =
+    input.acquisitionType === "FINANCIADO" || input.acquisitionType === "CONSORCIO";
+  const financerLabel = input.financerName ? ` (${input.financerName})` : "";
+
+  // Entrada (se houver) — vai para o fornecedor.
+  if (input.downPayment > 0) {
+    await tx.payable.create({
+      data: {
+        ...base,
+        description: `Entrada da compra ${input.label}`,
+        amount: input.downPayment,
+        dueDate: input.dueDate,
+        status: "PENDENTE",
+        supplierId: input.supplierId,
+      },
+    });
+  }
+
+  const remaining = Math.round((input.total - input.downPayment) * 100) / 100;
+  if (remaining <= 0) return;
+
+  const count = Math.max(1, input.installmentsCount);
+  const parcelas = splitInstallments(remaining, count);
+  for (let i = 0; i < parcelas.length; i++) {
+    await tx.payable.create({
+      data: {
+        ...base,
+        description: `${financiado ? "Financiamento" : "Parcela"} do veículo ${input.label}${financerLabel} - Parcela ${i + 1}/${count}`,
+        amount: parcelas[i],
+        dueDate: addMonths(input.dueDate, i + 1),
+        status: "PENDENTE",
+        // No financiado/consórcio o credor é a financeira, não o fornecedor.
+        supplierId: financiado ? null : input.supplierId,
+      },
+    });
+  }
+}
+
+/**
+ * Recria as contas a pagar da compra ao editar a forma de aquisição.
+ * Só age se NENHUMA conta da compra já tiver sido paga — nesse caso apaga as
+ * pendentes de compra e gera as novas conforme a forma escolhida. Se já houver
+ * pagamento, preserva tudo (não mexe no que já foi liquidado).
+ */
+export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  return prisma.$transaction(async (tx) => {
+    const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: vehicleId } });
+    const purchasePayables = await tx.payable.findMany({
+      where: { vehicleId, category: "COMPRA_VEICULO" },
+    });
+    // Se algo da compra já foi pago, não recriar (evita desfazer baixas).
+    if (purchasePayables.some((p) => p.status === "PAGO")) return;
+
+    await tx.payable.deleteMany({ where: { vehicleId, category: "COMPRA_VEICULO" } });
+
+    if (vehicle.purchasePrice > 0) {
+      await createAcquisitionPayables(tx, {
+        vehicleId: vehicle.id,
+        label: `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`,
+        total: vehicle.purchasePrice,
+        entryDate: vehicle.entryDate,
+        dueDate: vehicle.entryDate,
+        supplierId: vehicle.supplierId,
+        veiculosCenterId,
+        acquisitionType: vehicle.acquisitionType as TipoAquisicao,
+        downPayment: vehicle.downPayment,
+        installmentsCount: vehicle.installmentsCount,
+        financerName: vehicle.financerName,
+        alreadyPaid: false,
+        defaultAccountId: null,
+      });
+    }
   });
 }
 
