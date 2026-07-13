@@ -2,32 +2,42 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import StructuralFlowSelect from "@/components/StructuralFlowSelect";
-import { toDateInputValue } from "@/lib/format";
+import CategoryInput from "@/components/CategoryInput";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
 type Account = { id: string; name: string };
+type Supplier = { id: string; name: string };
+type Vehicle = { id: string; label: string };
 
 const initial: CashEntryState = {};
 
 export default function CashEntryForm({
   accounts,
+  suppliers,
+  vehicles,
+  categories,
   defaultDate,
   preselectedAccountId,
 }: {
   accounts: Account[];
+  suppliers: Supplier[];
+  vehicles: Vehicle[];
+  categories: string[];
   defaultDate: string;
   preselectedAccountId?: string;
 }) {
   const [state, formAction, pending] = useActionState(createCashEntryAction, initial);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<"entrada" | "saida">("saida");
+  const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
     if (state.ok) {
       formRef.current?.reset();
       setKind("saida");
+      setFlow("ADMINISTRATIVO");
     }
   }, [state.ok]);
 
@@ -132,18 +142,52 @@ export default function CashEntryForm({
           </Select>
         </Field>
 
-        <StructuralFlowSelect />
+        <Field label="Fluxo (obra estrutural)">
+          <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
+            {STRUCTURAL_FLOWS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+
+        {kind === "saida" && flow === "VEICULOS" ? (
+          <Field label="Veículo (opcional)">
+            <Select name="vehicleId" defaultValue="">
+              <option value="">Nenhum (custo geral de veículos)</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </Select>
+            {vehicles.length === 0 ? (
+              <p className="mt-1 text-xs text-slate-400">Nenhum veículo em estoque.</p>
+            ) : (
+              <p className="mt-1 text-xs text-slate-400">
+                O valor entra no custo pago desse veículo.
+              </p>
+            )}
+          </Field>
+        ) : null}
 
         {kind === "saida" ? (
-          <Field label="Categoria">
-            <Select name="category" defaultValue="OUTROS">
-              <option value="OUTROS">Outros</option>
-              <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-              <option value="COMISSAO">Comissão</option>
-              <option value="SALARIO">Salário</option>
-              <option value="COMBUSTIVEL">Combustível</option>
-            </Select>
-          </Field>
+          <>
+            <Field label="Categoria">
+              <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
+            </Field>
+            <Field label="Fornecedor (opcional)">
+              <Select name="supplierId" defaultValue="">
+                <option value="">Sem fornecedor</option>
+                {suppliers.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </>
         ) : null}
 
         <Field label="Observações">

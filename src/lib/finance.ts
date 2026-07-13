@@ -833,7 +833,10 @@ export async function createCashEntry(input: {
   date: Date;
   accountId: string;
   category?: CategoriaPagar;
+  categoryLabel?: string | null;
   structuralKey?: StructuralKey;
+  supplierId?: string | null;
+  vehicleId?: string | null;
   notes?: string | null;
 }) {
   const centerId = await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
@@ -852,16 +855,56 @@ export async function createCashEntry(input: {
       },
     });
   }
+
+  // Saída atribuída a um veículo: a conta paga também vira um custo do veículo,
+  // entrando no seu custo pago e na margem real.
+  if (input.vehicleId) {
+    return prisma.$transaction(async (tx) => {
+      const payable = await tx.payable.create({
+        data: {
+          description: input.description,
+          category: input.category || "OUTROS",
+          categoryLabel: input.categoryLabel || null,
+          amount: input.amount,
+          dueDate: input.date,
+          paymentDate: input.date,
+          status: "PAGO",
+          accountId: input.accountId,
+          costCenterId: await structuralCenterId("VEICULOS"),
+          supplierId: input.supplierId || null,
+          vehicleId: input.vehicleId,
+          notes: input.notes || null,
+        },
+      });
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: input.vehicleId!,
+          description: input.categoryLabel
+            ? `${input.categoryLabel}: ${input.description}`
+            : input.description,
+          category: "OUTROS",
+          amount: input.amount,
+          date: input.date,
+          notes: input.notes || null,
+          payableId: payable.id,
+        },
+      });
+      return payable;
+    });
+  }
+
   return prisma.payable.create({
     data: {
       description: input.description,
       category: input.category || "OUTROS",
+      categoryLabel: input.categoryLabel || null,
       amount: input.amount,
       dueDate: input.date,
       paymentDate: input.date,
       status: "PAGO",
       accountId: input.accountId,
       costCenterId: centerId,
+      supplierId: input.supplierId || null,
       notes: input.notes || null,
     },
   });

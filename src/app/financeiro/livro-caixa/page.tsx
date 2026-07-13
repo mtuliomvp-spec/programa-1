@@ -33,7 +33,7 @@ export default async function LivroCaixaPage({
 
   const accountWhere = accountFilter ? { accountId: accountFilter } : {};
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -61,7 +61,23 @@ export default async function LivroCaixaPage({
           : { id: "___nunca___" },
         include: { from: { select: { name: true } }, to: { select: { name: true } } },
       }),
+      prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      prisma.vehicle.findMany({
+        where: { status: { not: "VENDIDO" } },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, brand: true, model: true, plate: true },
+      }),
+      prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
     ]);
+
+  const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível"];
+  const categoryOptions = Array.from(
+    new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
+  );
+  const vehicleOptions = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}`,
+  }));
 
   // saldo inicial considera o saldo de abertura das contas e as
   // transferências anteriores ao mês (quando filtrado por conta)
@@ -201,6 +217,9 @@ export default async function LivroCaixaPage({
       <div className="mb-4">
         <CashEntryForm
           accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
+          suppliers={suppliers}
+          vehicles={vehicleOptions}
+          categories={categoryOptions}
           defaultDate={toDateInputValue(new Date())}
           preselectedAccountId={accountFilter || undefined}
         />

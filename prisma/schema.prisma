@@ -407,6 +407,9 @@ model Payable {
   id           String          @id @default(cuid())
   description  String
   category     CategoriaPagar
+  // Categoria livre/personalizada informada pelo usuário (ex.: "Revisão").
+  // Quando presente, prevalece sobre o rótulo do enum na exibição.
+  categoryLabel String?
   amount       Float
   dueDate      DateTime
   paymentDate  DateTime?
@@ -465,6 +468,16 @@ model Receivable {
   updatedAt         DateTime          @updatedAt
 
   @@map("receivables")
+}
+
+// Categoria personalizada de lançamento, cadastrada pelo usuário para
+// reaproveitar nas telas de lançamento (ex.: "Revisão", "Documentação").
+model LaunchCategory {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("launch_categories")
 }
 
 // Sócio/investidor da empresa: acompanha aportes, retiradas e pró-labore.
