@@ -3,23 +3,23 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
+import SupplierInput from "@/components/SupplierInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createManualPayableAction, type ManualPayableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
-type Supplier = { id: string; name: string };
 type CostCenter = { id: string; name: string };
 type Vehicle = { id: string; label: string };
 type Beneficiary = { id: string; name: string };
 
 export default function ManualPayableForm({
-  suppliers,
+  supplierNames,
   costCenters,
   vehicles,
   beneficiaries,
   categories,
 }: {
-  suppliers: Supplier[];
+  supplierNames: string[];
   costCenters: CostCenter[];
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
@@ -84,19 +84,8 @@ export default function ManualPayableForm({
         </Field>
         {!isCapital ? (
           <Field label="Fornecedor" required>
-            <Select name="supplierId" defaultValue="" required>
-              <option value="">Selecione o fornecedor</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-            {suppliers.length === 0 ? (
-              <p className="mt-1 text-xs text-amber-600">
-                Nenhum fornecedor. <a href="/fornecedores/novo" className="underline">Cadastrar</a>
-              </p>
-            ) : null}
+            <SupplierInput name="supplierName" suppliers={supplierNames} required />
+            <p className="mt-1 text-xs text-slate-400">Numa tarifa bancária, escolha o próprio banco.</p>
           </Field>
         ) : null}
         <Field label="Valor" required>

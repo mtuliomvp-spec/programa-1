@@ -3,11 +3,11 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
+import SupplierInput from "@/components/SupplierInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
 type Account = { id: string; name: string };
-type Supplier = { id: string; name: string };
 type Vehicle = { id: string; label: string };
 type Beneficiary = { id: string; name: string };
 
@@ -15,7 +15,7 @@ const initial: CashEntryState = {};
 
 export default function CashEntryForm({
   accounts,
-  suppliers,
+  supplierNames,
   vehicles,
   beneficiaries,
   categories,
@@ -23,7 +23,7 @@ export default function CashEntryForm({
   preselectedAccountId,
 }: {
   accounts: Account[];
-  suppliers: Supplier[];
+  supplierNames: string[];
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
   categories: string[];
@@ -200,19 +200,10 @@ export default function CashEntryForm({
             </Field>
             {flow !== "CAPITAL" ? (
               <Field label="Fornecedor" required>
-                <Select name="supplierId" defaultValue="" required>
-                  <option value="">Selecione o fornecedor</option>
-                  {suppliers.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </Select>
-                {suppliers.length === 0 ? (
-                  <p className="mt-1 text-xs text-amber-600">
-                    Nenhum fornecedor cadastrado. <a href="/fornecedores/novo" className="underline">Cadastrar</a>
-                  </p>
-                ) : null}
+                <SupplierInput name="supplierName" suppliers={supplierNames} required />
+                <p className="mt-1 text-xs text-slate-400">
+                  Numa tarifa bancária, escolha o próprio banco.
+                </p>
               </Field>
             ) : null}
           </>

@@ -815,6 +815,22 @@ export async function createManualPayable(input: {
   });
 }
 
+/**
+ * Resolve um fornecedor pelo nome: reaproveita se já existir (sem diferenciar
+ * maiúsculas) ou cadastra um novo. Usado para lançar tarifas com o próprio
+ * banco como fornecedor sem precisar cadastrá-lo antes.
+ */
+export async function resolveSupplierByName(name: string): Promise<string> {
+  const trimmed = name.trim();
+  const existing = await prisma.supplier.findFirst({
+    where: { name: { equals: trimmed, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.supplier.create({ data: { name: trimmed } });
+  return created.id;
+}
+
 // ---------------------------------------------------------------------------
 // Lançamento avulso no Movimento de caixa diário (livro caixa)
 // ---------------------------------------------------------------------------

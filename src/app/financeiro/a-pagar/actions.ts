@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
 export async function markPaidAction(id: string, accountId?: string) {
@@ -54,7 +54,7 @@ const manualSchema = z.object({
   categoryLabel: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
-  supplierId: z.string().optional(),
+  supplierName: z.string().optional(),
   costCenterId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
@@ -86,17 +86,21 @@ export async function createManualPayableAction(
 
   const label = (d.categoryLabel || "").trim();
   const isCapital = d.structuralKey === "CAPITAL";
+  const supplierName = (d.supplierName || "").trim();
 
   // Toda conta precisa de categoria; e de fornecedor (ou, no Capital, do
   // beneficiário do capital).
   if (!label) return { error: "Informe a categoria." };
   if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
-  if (!isCapital && !d.supplierId) return { error: "Escolha o fornecedor." };
+  if (!isCapital && !supplierName) return { error: "Informe o fornecedor." };
 
   // Categoria nova é cadastrada para reaproveitar.
   if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
     await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
   }
+
+  // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
+  const supplierId = isCapital ? null : await resolveSupplierByName(supplierName);
 
   await createManualPayable({
     description: d.description,
@@ -104,7 +108,7 @@ export async function createManualPayableAction(
     categoryLabel: label,
     amount: d.amount,
     dueDate: parseDateInput(d.dueDate),
-    supplierId: isCapital ? null : d.supplierId || null,
+    supplierId,
     costCenterId: isCapital ? null : d.costCenterId || null,
     structuralKey: d.structuralKey,
     vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,

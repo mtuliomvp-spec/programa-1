@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { createCashEntry, deleteCashEntry } from "@/lib/finance";
+import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 import type { CategoriaPagar } from "@prisma/client";
 
@@ -15,7 +15,7 @@ const schema = z.object({
   accountId: z.string().min(1, "Escolha a conta"),
   categoryLabel: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
-  supplierId: z.string().optional(),
+  supplierName: z.string().optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
@@ -49,6 +49,7 @@ export async function createCashEntryAction(
 
   const label = d.kind === "saida" ? (d.categoryLabel || "").trim() : "";
   const isCapital = d.structuralKey === "CAPITAL";
+  const supplierName = (d.supplierName || "").trim();
 
   // Toda saída precisa de categoria; e de fornecedor (ou, no Capital, do
   // beneficiário do capital).
@@ -57,8 +58,8 @@ export async function createCashEntryAction(
     if (isCapital && !d.capitalBeneficiaryId) {
       return { error: "Escolha o beneficiário do capital." };
     }
-    if (!isCapital && !d.supplierId) {
-      return { error: "Escolha o fornecedor do lançamento." };
+    if (!isCapital && !supplierName) {
+      return { error: "Informe o fornecedor do lançamento." };
     }
   }
 
@@ -71,6 +72,12 @@ export async function createCashEntryAction(
     });
   }
 
+  // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
+  const supplierId =
+    d.kind === "saida" && !isCapital && supplierName
+      ? await resolveSupplierByName(supplierName)
+      : null;
+
   await createCashEntry({
     kind: d.kind,
     description: d.description,
@@ -80,7 +87,7 @@ export async function createCashEntryAction(
     category: d.kind === "saida" ? mapCategory(label) : undefined,
     categoryLabel: d.kind === "saida" && label ? label : null,
     structuralKey: d.structuralKey,
-    supplierId: d.kind === "saida" && !isCapital ? d.supplierId || null : null,
+    supplierId,
     vehicleId: d.kind === "saida" && d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
     capitalBeneficiaryId: d.kind === "saida" && isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,

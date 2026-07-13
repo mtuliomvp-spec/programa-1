@@ -222,7 +222,7 @@ export default async function LivroCaixaPage({
       <div className="mb-4">
         <CashEntryForm
           accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
-          suppliers={suppliers}
+          supplierNames={suppliers.map((s) => s.name)}
           vehicles={vehicleOptions}
           beneficiaries={beneficiaries}
           categories={categoryOptions}

@@ -39,7 +39,7 @@ export default async function NovaContaPagarPage() {
         <CardHeader title="Dados da conta" />
         <div className="p-5">
           <ManualPayableForm
-            suppliers={suppliers}
+            supplierNames={suppliers.map((s) => s.name)}
             costCenters={costCenters}
             vehicles={vehicles}
             beneficiaries={beneficiaries}
