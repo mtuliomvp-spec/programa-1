@@ -110,13 +110,19 @@ export default async function EstoquePage({
                   </div>
                   <div className="mt-3 flex items-end justify-between gap-3">
                     <div>
+                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo</p>
+                      <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.invested)}</p>
+                    </div>
+                    <div className="text-right">
                       <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
                       <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
                     </div>
-                    {v.status !== "VENDIDO" ? (
-                      <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
-                    ) : null}
                   </div>
+                  {v.status !== "VENDIDO" ? (
+                    <div className="mt-2 flex justify-end">
+                      <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
+                    </div>
+                  ) : null}
                 </Card>
               </Link>
             ))}
