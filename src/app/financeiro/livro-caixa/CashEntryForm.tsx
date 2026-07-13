@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
+import NewSupplierInline from "@/components/NewSupplierInline";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
@@ -34,6 +35,8 @@ export default function CashEntryForm({
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<"entrada" | "saida">("saida");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
+  const [supplierName, setSupplierName] = useState("");
+  const [newSupplier, setNewSupplier] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
   useEffect(() => {
@@ -41,6 +44,8 @@ export default function CashEntryForm({
       formRef.current?.reset();
       setKind("saida");
       setFlow("ADMINISTRATIVO");
+      setSupplierName("");
+      setNewSupplier(false);
     }
   }, [state.ok]);
 
@@ -199,12 +204,35 @@ export default function CashEntryForm({
               <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
             </Field>
             <Field label="Fornecedor" required>
-              <SupplierInput name="supplierName" suppliers={supplierNames} required />
-              <p className="mt-1 text-xs text-slate-400">
-                {flow === "CAPITAL"
-                  ? "A quem o valor foi pago (o beneficiário indica de quem é o capital)."
-                  : "Numa tarifa bancária, escolha o próprio banco."}
-              </p>
+              <SupplierInput
+                name="supplierName"
+                suppliers={supplierNames}
+                value={supplierName}
+                onValueChange={setSupplierName}
+                required
+              />
+              <div className="mt-1 flex items-center justify-between gap-2">
+                <p className="text-xs text-slate-400">
+                  {flow === "CAPITAL"
+                    ? "A quem o valor foi pago."
+                    : "Numa tarifa bancária, escolha o próprio banco."}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => setNewSupplier((v) => !v)}
+                  className="shrink-0 text-xs font-medium text-blue-700 hover:underline"
+                >
+                  {newSupplier ? "Fechar" : "➕ Cadastrar fornecedor"}
+                </button>
+              </div>
+              {newSupplier ? (
+                <NewSupplierInline
+                  onCreated={(nm) => {
+                    setSupplierName(nm);
+                    setNewSupplier(false);
+                  }}
+                />
+              ) : null}
             </Field>
           </>
         ) : null}

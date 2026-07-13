@@ -14,16 +14,22 @@ export default function SupplierInput({
   name,
   suppliers,
   defaultValue = "",
+  value: controlledValue,
+  onValueChange,
   required,
   placeholder = "Fornecedor ou banco...",
 }: {
   name: string;
   suppliers: string[];
   defaultValue?: string;
+  value?: string;
+  onValueChange?: (v: string) => void;
   required?: boolean;
   placeholder?: string;
 }) {
-  const [value, setValue] = useState(defaultValue);
+  const [internal, setInternal] = useState(defaultValue);
+  const value = controlledValue !== undefined ? controlledValue : internal;
+  const setValue = (v: string) => (onValueChange ? onValueChange(v) : setInternal(v));
   const [open, setOpen] = useState(false);
 
   // Fornecedores primeiro, depois os bancos que ainda não são fornecedores.

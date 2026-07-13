@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
+import NewSupplierInline from "@/components/NewSupplierInline";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createManualPayableAction, type ManualPayableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
@@ -28,6 +29,8 @@ export default function ManualPayableForm({
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
+  const [supplierName, setSupplierName] = useState("");
+  const [newSupplier, setNewSupplier] = useState(false);
   const isCapital = flow === "CAPITAL";
 
   return (
@@ -83,12 +86,33 @@ export default function ManualPayableForm({
           <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
         </Field>
         <Field label="Fornecedor" required>
-          <SupplierInput name="supplierName" suppliers={supplierNames} required />
-          <p className="mt-1 text-xs text-slate-400">
-            {isCapital
-              ? "A quem o valor foi pago (o beneficiário indica de quem é o capital)."
-              : "Numa tarifa bancária, escolha o próprio banco."}
-          </p>
+          <SupplierInput
+            name="supplierName"
+            suppliers={supplierNames}
+            value={supplierName}
+            onValueChange={setSupplierName}
+            required
+          />
+          <div className="mt-1 flex items-center justify-between gap-2">
+            <p className="text-xs text-slate-400">
+              {isCapital ? "A quem o valor foi pago." : "Numa tarifa bancária, escolha o próprio banco."}
+            </p>
+            <button
+              type="button"
+              onClick={() => setNewSupplier((v) => !v)}
+              className="shrink-0 text-xs font-medium text-blue-700 hover:underline"
+            >
+              {newSupplier ? "Fechar" : "➕ Cadastrar fornecedor"}
+            </button>
+          </div>
+          {newSupplier ? (
+            <NewSupplierInline
+              onCreated={(nm) => {
+                setSupplierName(nm);
+                setNewSupplier(false);
+              }}
+            />
+          ) : null}
         </Field>
         <Field label="Valor" required>
           <Input type="number" step="0.01" min={0.01} name="amount" required />
