@@ -1,10 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated, ensureConsortiumInstallments } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
-import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
-import PayableRowActions from "./PayableRowActions";
+import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
+import PayablesTable, { type PayableRow } from "./PayablesTable";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +17,6 @@ const categoryLabel = {
   COMBUSTIVEL: "Combustível",
   OUTROS: "Outros",
 } as const;
-
-const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
-const statusLabelMap = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atrasado" } as const;
 
 export default async function ContasAPagarPage({
   searchParams,
@@ -43,6 +40,19 @@ export default async function ContasAPagarPage({
 
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);
   const totalAtrasado = withStatus.filter((p) => p.effective === "ATRASADO").reduce((s, p) => s + p.amount, 0);
+
+  const tableRows: PayableRow[] = filtered.map((p) => ({
+    id: p.id,
+    description: p.description,
+    categoryLabel: categoryLabel[p.category],
+    supplierName: p.supplier?.name ?? null,
+    dueDate: p.dueDate.toISOString(),
+    amount: p.amount,
+    effective: p.effective,
+    status: p.status,
+    accountName: p.account?.name ?? null,
+    recurring: Boolean(p.recurringId),
+  }));
 
   return (
     <div>
@@ -72,46 +82,12 @@ export default async function ContasAPagarPage({
         {filtered.length === 0 ? (
           <EmptyState title="Nenhuma conta a pagar encontrada" />
         ) : (
-          <Table>
-            <Thead>
-              <Tr>
-                <Th>Descrição</Th>
-                <Th>Categoria</Th>
-                <Th>Fornecedor</Th>
-                <Th>Vencimento</Th>
-                <Th>Valor</Th>
-                <Th>Status</Th>
-                <Th />
-              </Tr>
-            </Thead>
-            <tbody>
-              {filtered.map((p) => (
-                <Tr key={p.id}>
-                  <Td className="font-medium text-slate-900">
-                    {p.description}
-                    {p.recurringId ? (
-                      <span className="ml-1.5 text-xs text-slate-400" title="Gerada por recorrência">
-                        🔁
-                      </span>
-                    ) : null}
-                  </Td>
-                  <Td>{categoryLabel[p.category]}</Td>
-                  <Td>{p.supplier?.name || "-"}</Td>
-                  <Td>{formatDate(p.dueDate)}</Td>
-                  <Td>{formatCurrency(p.amount)}</Td>
-                  <Td>
-                    <Badge tone={statusTone[p.effective]}>{statusLabelMap[p.effective]}</Badge>
-                    {p.account ? (
-                      <p className="mt-0.5 text-[11px] text-slate-400">{p.account.name}</p>
-                    ) : null}
-                  </Td>
-                  <Td>
-                    <PayableRowActions id={p.id} status={p.status} accounts={accounts} />
-                  </Td>
-                </Tr>
-              ))}
-            </tbody>
-          </Table>
+          <>
+            <p className="border-b border-slate-100 px-5 py-2.5 text-xs text-slate-500">
+              Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
+            </p>
+            <PayablesTable rows={tableRows} accounts={accounts} />
+          </>
         )}
       </Card>
     </div>

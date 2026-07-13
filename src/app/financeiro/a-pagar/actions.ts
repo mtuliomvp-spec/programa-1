@@ -14,6 +14,33 @@ export async function markPaidAction(id: string, accountId?: string) {
   revalidatePath("/");
 }
 
+export type PayBatchResult = { ok: boolean; paid: number; error?: string };
+
+/**
+ * Baixa um ou vários títulos de uma vez pela conta escolhida (pagamento em
+ * lote, como na Agrasty). A data padrão é hoje; se informada, usa a data dada.
+ */
+export async function payBatchAction(
+  ids: string[],
+  accountId: string,
+  dateInput?: string,
+): Promise<PayBatchResult> {
+  if (!ids.length) return { ok: false, paid: 0, error: "Selecione ao menos um título." };
+  if (!accountId) return { ok: false, paid: 0, error: "Escolha a conta que fará o pagamento." };
+  const date = dateInput ? parseDateInput(dateInput) : new Date();
+  let paid = 0;
+  for (const id of ids) {
+    await markPayablePaid(id, date, accountId);
+    paid += 1;
+  }
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: true, paid };
+}
+
 export async function markPendingAction(id: string) {
   await markPayablePending(id);
   revalidatePath("/financeiro/a-pagar");
