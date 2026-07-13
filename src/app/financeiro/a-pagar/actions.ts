@@ -28,6 +28,7 @@ const manualSchema = z.object({
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
   costCenterId: z.string().optional(),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   notes: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
@@ -49,6 +50,7 @@ export async function createManualPayableAction(
     dueDate: parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
     costCenterId: d.costCenterId || null,
+    structuralKey: d.structuralKey,
     notes: d.notes || null,
     alreadyPaid: Boolean(d.alreadyPaid),
   });

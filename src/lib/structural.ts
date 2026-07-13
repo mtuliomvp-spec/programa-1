@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { STRUCTURAL_FLOWS, type StructuralKey } from "@/lib/structural-flows";
 
 /**
  * Centros de custo estruturais — o equivalente às "obras estruturais" do
@@ -8,15 +9,14 @@ import { prisma } from "@/lib/prisma";
  * - CAPITAL:        aportes, retiradas e pró-labore dos sócios/empresa
  * - VEICULOS:       compra, custos e venda de veículos e peças
  * - ADMINISTRATIVO: demais despesas e receitas (folha, combustível, etc.)
+ *
+ * A lista canônica dos fluxos fica em `structural-flows.ts` (arquivo puro,
+ * usável no cliente). Aqui apenas reexportamos para não quebrar imports.
  */
 
-export const STRUCTURAL_CENTERS = [
-  { key: "CAPITAL", name: "Capital", notes: "Aportes, retiradas e pró-labore" },
-  { key: "VEICULOS", name: "Veículos", notes: "Compra, custos e venda de veículos e peças" },
-  { key: "ADMINISTRATIVO", name: "Administrativo", notes: "Despesas e receitas administrativas" },
-] as const;
+export const STRUCTURAL_CENTERS = STRUCTURAL_FLOWS;
 
-export type StructuralKey = (typeof STRUCTURAL_CENTERS)[number]["key"];
+export type { StructuralKey };
 
 /** Cria os centros estruturais (idempotente) e classifica lançamentos antigos. */
 export async function ensureStructuralCostCenters(): Promise<Record<StructuralKey, string>> {

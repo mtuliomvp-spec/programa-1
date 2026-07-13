@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import StructuralFlowSelect from "@/components/StructuralFlowSelect";
 import { createManualPayableAction, type ManualPayableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
@@ -52,9 +53,10 @@ export default function ManualPayableForm({
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
+        <StructuralFlowSelect />
         <Field label="Centro de custo (obra, imóvel...)">
           <Select name="costCenterId" defaultValue="">
-            <option value="">Nenhum (loja)</option>
+            <option value="">Nenhum (usa o fluxo acima)</option>
             {costCenters.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}

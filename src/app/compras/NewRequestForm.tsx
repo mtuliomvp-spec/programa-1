@@ -2,6 +2,7 @@
 
 import { useActionState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import StructuralFlowSelect from "@/components/StructuralFlowSelect";
 import { createRequestAction, type ComprasFormState } from "./actions";
 
 type Option = { id: string; name: string };
@@ -22,6 +23,7 @@ export default function NewRequestForm({ suppliers }: { suppliers: Option[] }) {
       <Field label="Valor estimado (R$)">
         <Input name="estimatedAmount" type="number" step="0.01" min={0} />
       </Field>
+      <StructuralFlowSelect />
       <Field label="Fornecedor sugerido">
         <Select name="supplierId" defaultValue="">
           <option value="">Sem sugestão</option>

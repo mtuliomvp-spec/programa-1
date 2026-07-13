@@ -27,6 +27,7 @@ const manualSchema = z.object({
   dueDate: z.string().min(1),
   customerId: z.string().optional(),
   costCenterId: z.string().optional(),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   notes: z.string().optional(),
   alreadyReceived: z.coerce.boolean().optional(),
 });
@@ -47,6 +48,7 @@ export async function createManualReceivableAction(
     dueDate: parseDateInput(d.dueDate),
     customerId: d.customerId || null,
     costCenterId: d.costCenterId || null,
+    structuralKey: d.structuralKey,
     notes: d.notes || null,
     alreadyReceived: Boolean(d.alreadyReceived),
   });

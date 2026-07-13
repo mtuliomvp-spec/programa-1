@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import StructuralFlowSelect from "@/components/StructuralFlowSelect";
 import { toDateInputValue } from "@/lib/format";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
@@ -130,6 +131,8 @@ export default function CashEntryForm({
             ))}
           </Select>
         </Field>
+
+        <StructuralFlowSelect />
 
         {kind === "saida" ? (
           <Field label="Categoria">

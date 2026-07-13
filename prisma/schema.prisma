@@ -210,6 +210,8 @@ model PurchaseRequest {
   supplierId      String?
   supplier        Supplier?         @relation(fields: [supplierId], references: [id])
   requestedBy     String
+  // Fluxo estrutural indicado pelo solicitante (CAPITAL/VEICULOS/ADMINISTRATIVO)
+  structuralKey   String?
   status          StatusSolicitacao @default(PENDENTE)
   decidedBy       String?
   decidedAt       DateTime?

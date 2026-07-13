@@ -21,6 +21,7 @@ const createSchema = z.object({
   details: z.string().optional(),
   estimatedAmount: z.coerce.number().min(0).optional(),
   supplierId: z.string().optional(),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
 });
 
 export async function createRequestAction(
@@ -42,6 +43,7 @@ export async function createRequestAction(
       details: parsed.data.details || null,
       estimatedAmount: parsed.data.estimatedAmount || null,
       supplierId: parsed.data.supplierId || null,
+      structuralKey: parsed.data.structuralKey || "ADMINISTRATIVO",
       requestedBy: user.name,
     },
   });
@@ -77,6 +79,7 @@ const concludeSchema = z.object({
   requestId: z.string().min(1),
   finalAmount: z.coerce.number().positive("Informe o valor pago/combinado"),
   category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
 
@@ -95,7 +98,14 @@ export async function concludeRequestAction(
   const data = parsed.data;
 
   try {
-  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
+    const request0 = await prisma.purchaseRequest.findUniqueOrThrow({
+      where: { id: data.requestId },
+    });
+    const flowKey = (data.structuralKey || request0.structuralKey || "ADMINISTRATIVO") as
+      | "CAPITAL"
+      | "VEICULOS"
+      | "ADMINISTRATIVO";
+    const centerId = await structuralCenterId(flowKey);
     await prisma.$transaction(async (tx) => {
       const request = await tx.purchaseRequest.findUniqueOrThrow({
         where: { id: data.requestId },
@@ -107,7 +117,7 @@ export async function concludeRequestAction(
       const accountId = paid ? await getDefaultAccountId() : null;
       const payable = await tx.payable.create({
         data: {
-          costCenterId: adminCenterId,
+          costCenterId: centerId,
           description: `Compra #${request.number}: ${request.description}`,
           category: data.category,
           amount: data.finalAmount,

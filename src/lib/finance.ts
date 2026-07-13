@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
+import type { StructuralKey } from "@/lib/structural-flows";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -791,6 +792,7 @@ export async function createManualPayable(input: {
   dueDate: Date;
   supplierId?: string | null;
   costCenterId?: string | null;
+  structuralKey?: StructuralKey;
   notes?: string | null;
   alreadyPaid: boolean;
 }) {
@@ -804,7 +806,8 @@ export async function createManualPayable(input: {
       paymentDate: input.alreadyPaid ? input.dueDate : null,
       status: input.alreadyPaid ? "PAGO" : "PENDENTE",
       supplierId: input.supplierId || null,
-      costCenterId: input.costCenterId || (await structuralCenterId("ADMINISTRATIVO")),
+      costCenterId:
+        input.costCenterId || (await structuralCenterId(input.structuralKey || "ADMINISTRATIVO")),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },
@@ -830,8 +833,10 @@ export async function createCashEntry(input: {
   date: Date;
   accountId: string;
   category?: CategoriaPagar;
+  structuralKey?: StructuralKey;
   notes?: string | null;
 }) {
+  const centerId = await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
   if (input.kind === "entrada") {
     return prisma.receivable.create({
       data: {
@@ -842,7 +847,7 @@ export async function createCashEntry(input: {
         receivedDate: input.date,
         status: "RECEBIDO",
         accountId: input.accountId,
-        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+        costCenterId: centerId,
         notes: input.notes || null,
       },
     });
@@ -856,7 +861,7 @@ export async function createCashEntry(input: {
       paymentDate: input.date,
       status: "PAGO",
       accountId: input.accountId,
-      costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+      costCenterId: centerId,
       notes: input.notes || null,
     },
   });
@@ -891,6 +896,7 @@ export async function createManualReceivable(input: {
   dueDate: Date;
   customerId?: string | null;
   costCenterId?: string | null;
+  structuralKey?: StructuralKey;
   notes?: string | null;
   alreadyReceived: boolean;
 }) {
@@ -904,7 +910,8 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
-      costCenterId: input.costCenterId || (await structuralCenterId("ADMINISTRATIVO")),
+      costCenterId:
+        input.costCenterId || (await structuralCenterId(input.structuralKey || "ADMINISTRATIVO")),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },

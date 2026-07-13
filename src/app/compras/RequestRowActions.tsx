@@ -8,15 +8,18 @@ import {
   type ComprasFormState,
 } from "./actions";
 import { Button, Input, Select } from "@/components/ui";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 
 export default function RequestRowActions({
   id,
   status,
   isAdmin,
+  structuralKey,
 }: {
   id: string;
   status: "PENDENTE" | "APROVADA" | "REJEITADA" | "CONCLUIDA" | "CANCELADA";
   isAdmin: boolean;
+  structuralKey?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [showConclude, setShowConclude] = useState(false);
@@ -92,6 +95,17 @@ export default function RequestRowActions({
               <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
               <option value="COMBUSTIVEL">Combustível</option>
               <option value="OUTROS">Outros</option>
+            </Select>
+            <Select
+              name="structuralKey"
+              defaultValue={structuralKey || "ADMINISTRATIVO"}
+              className="h-8 w-40 py-1 text-xs"
+            >
+              {STRUCTURAL_FLOWS.map((f) => (
+                <option key={f.key} value={f.key}>
+                  Fluxo: {f.name}
+                </option>
+              ))}
             </Select>
             <label className="flex items-center gap-1.5 text-xs text-slate-600">
               <input type="checkbox" name="alreadyPaid" value="true" defaultChecked className="h-3.5 w-3.5" />

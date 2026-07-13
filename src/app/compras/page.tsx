@@ -4,8 +4,12 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewRequestForm from "./NewRequestForm";
 import RequestRowActions from "./RequestRowActions";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 
 export const dynamic = "force-dynamic";
+
+const flowName = (key?: string | null) =>
+  STRUCTURAL_FLOWS.find((f) => f.key === key)?.name ?? null;
 
 const statusMeta = {
   PENDENTE: { label: "Aguardando aprovação", tone: "warning" },
@@ -80,6 +84,7 @@ export default async function ComprasPage() {
                       <p className="truncate">{r.description}</p>
                       <p className="truncate text-xs font-normal text-slate-400">
                         {formatDate(r.createdAt)}
+                        {flowName(r.structuralKey) ? ` · ${flowName(r.structuralKey)}` : ""}
                         {r.supplier ? ` · ${r.supplier.name}` : ""}
                         {r.decisionNotes ? ` · ${r.decisionNotes}` : ""}
                       </p>
@@ -96,7 +101,12 @@ export default async function ComprasPage() {
                       <Badge tone={statusMeta[r.status].tone}>{statusMeta[r.status].label}</Badge>
                     </Td>
                     <Td>
-                      <RequestRowActions id={r.id} status={r.status} isAdmin={isAdmin} />
+                      <RequestRowActions
+                        id={r.id}
+                        status={r.status}
+                        isAdmin={isAdmin}
+                        structuralKey={r.structuralKey}
+                      />
                     </Td>
                   </Tr>
                 ))}

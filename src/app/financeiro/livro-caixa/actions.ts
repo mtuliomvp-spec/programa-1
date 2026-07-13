@@ -12,6 +12,7 @@ const schema = z.object({
   date: z.string().min(1, "Informe a data"),
   accountId: z.string().min(1, "Escolha a conta"),
   category: z.enum(["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"]).optional(),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   notes: z.string().optional(),
 });
 
@@ -32,6 +33,7 @@ export async function createCashEntryAction(
     date: parseDateInput(d.date),
     accountId: d.accountId,
     category: d.kind === "saida" ? d.category : undefined,
+    structuralKey: d.structuralKey,
     notes: d.notes || null,
   });
 
