@@ -15,6 +15,8 @@ const saleSchema = z.object({
   paymentMethod: z.enum(["A_VISTA", "PARCELADO", "FINANCIADO"]),
   downPayment: z.coerce.number().min(0).default(0),
   installmentsCount: z.coerce.number().int().min(0).default(0),
+  financerName: z.string().optional(),
+  financedAmount: z.coerce.number().min(0).optional(),
   sellerName: z.string().optional(),
   notes: z.string().optional(),
   // Troca: veículo recebido do cliente cadastrado aqui mesmo.
@@ -48,6 +50,10 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
     if (d.installmentsCount < 1) {
       return { error: "Informe o número de parcelas." };
     }
+  }
+
+  if (d.paymentMethod === "FINANCIADO" && d.financedAmount != null && d.financedAmount > d.totalAmount) {
+    return { error: "O valor financiado não pode ser maior que o valor total da venda." };
   }
 
   // Troca: cadastra o veículo recebido do cliente e usa o líquido como entrada.
@@ -114,6 +120,8 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
       installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
       paymentMethod: d.paymentMethod,
       sellerName: d.sellerName || null,
+      financerName: d.paymentMethod === "FINANCIADO" ? d.financerName || null : null,
+      financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       notes: d.notes || null,
       tradeInAmount,
       tradeInLabel,

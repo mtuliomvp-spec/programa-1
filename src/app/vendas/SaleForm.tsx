@@ -16,10 +16,12 @@ export default function SaleForm({
   vehicles,
   customers,
   preselectedVehicleId,
+  currentUserName,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
   preselectedVehicleId?: string;
+  currentUserName?: string;
 }) {
   const [state, formAction, pending] = useActionState(createSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -39,6 +41,11 @@ export default function SaleForm({
   const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
   const total = Number(totalAmount) || 0;
   const restante = Math.max(0, Math.round((total - tiLiquido) * 100) / 100);
+
+  // Financiamento: valor financiado pelo banco e a entrada (restante) paga agora
+  const [financedAmount, setFinancedAmount] = useState<string>("");
+  const financed = Math.min(Number(financedAmount) || 0, restante);
+  const entradaFinanciamento = Math.max(0, Math.round((restante - financed) * 100) / 100);
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
 
@@ -135,7 +142,7 @@ export default function SaleForm({
           />
         </Field>
         <Field label="Vendedor">
-          <Input name="sellerName" />
+          <Input name="sellerName" defaultValue={currentUserName || ""} />
         </Field>
         <Field label="Forma de pagamento" required>
           <Select
@@ -168,9 +175,42 @@ export default function SaleForm({
       ) : null}
 
       {paymentMethod === "FINANCIADO" ? (
-        <p className="text-xs text-slate-500">
-          Será gerada uma conta a receber referente ao repasse do banco/financeira, com vencimento em 5 dias.
-        </p>
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do financiamento</p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Banco / financeira">
+              <BankInput name="financerName" placeholder="Ex.: Banco Itaú, BV, Santander..." />
+            </Field>
+            <Field label="Valor financiado (repasse do banco)">
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                name="financedAmount"
+                value={financedAmount}
+                onChange={(e) => setFinancedAmount(e.target.value)}
+                placeholder={String(restante)}
+              />
+            </Field>
+          </div>
+          <p className="mt-2 text-xs text-slate-500">
+            O valor financiado vira uma conta a receber do banco/financeira (vencimento em 5 dias).
+            {financedAmount === "" ? " Se ficar em branco, financia o valor total." : ""}
+          </p>
+          {financedAmount !== "" && entradaFinanciamento > 0 ? (
+            <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
+              <p className="text-slate-600">
+                Financiado <strong>{formatCurrency(financed)}</strong> · restante{" "}
+                <strong className="text-emerald-700">
+                  entrada paga agora {formatCurrency(entradaFinanciamento)}
+                </strong>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                A entrada é lançada como recebida na data da venda; o restante é o repasse do banco.
+              </p>
+            </div>
+          ) : null}
+        </div>
       ) : null}
 
       {paymentMethod === "A_VISTA" ? (

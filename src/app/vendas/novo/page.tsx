@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import SaleForm from "../SaleForm";
 
@@ -10,6 +11,7 @@ export default async function NovaVendaPage({
   searchParams: Promise<{ vehicleId?: string }>;
 }) {
   const { vehicleId } = await searchParams;
+  const user = await getSessionUser();
   const [vehicles, customers] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
@@ -25,7 +27,12 @@ export default async function NovaVendaPage({
       <Card>
         <CardHeader title="Dados da venda" />
         <div className="p-5">
-          <SaleForm vehicles={vehicles} customers={customers} preselectedVehicleId={vehicleId} />
+          <SaleForm
+            vehicles={vehicles}
+            customers={customers}
+            preselectedVehicleId={vehicleId}
+            currentUserName={user?.name}
+          />
         </div>
       </Card>
     </div>

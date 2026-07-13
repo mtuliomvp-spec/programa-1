@@ -359,6 +359,9 @@ model Sale {
   installmentsCount Int            @default(0)
   paymentMethod     FormaPagamento
   sellerName        String?
+  // Financiamento: banco/financeira e valor financiado (repasse)
+  financerName      String?
+  financedAmount    Float?
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

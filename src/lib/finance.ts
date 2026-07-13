@@ -510,6 +510,10 @@ export async function registerVehicleSale(input: {
   paymentMethod: FormaPagamento;
   sellerName?: string | null;
   notes?: string | null;
+  // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
+  // do valor a cobrar (billable − financiado) é a entrada paga agora.
+  financerName?: string | null;
+  financedAmount?: number | null;
   // Entrada dada em troca por outro veículo (não entra no caixa: é quitada
   // pelo carro recebido). Reduz o que o cliente paga em dinheiro.
   tradeInAmount?: number;
@@ -537,6 +541,8 @@ export async function registerVehicleSale(input: {
         installmentsCount: input.installmentsCount,
         paymentMethod: input.paymentMethod,
         sellerName: input.sellerName || null,
+        financerName: input.paymentMethod === "FINANCIADO" ? input.financerName || null : null,
+        financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -606,11 +612,33 @@ export async function registerVehicleSale(input: {
         });
       });
     } else if (input.paymentMethod === "FINANCIADO") {
-      if (billable > 0) {
+      // Valor financiado pelo banco (repasse). Se não informado, financia tudo.
+      const financed =
+        input.financedAmount != null && input.financedAmount > 0
+          ? Math.min(input.financedAmount, billable)
+          : billable;
+      // O que sobra é a entrada paga agora pelo cliente (à vista).
+      const entrada = Math.max(0, Math.round((billable - financed) * 100) / 100);
+
+      if (entrada > 0) {
         receivablesData.push({
-          description: `${baseDescription} - Repasse financiamento`,
+          description: `${baseDescription} - Entrada`,
           category: "VENDA_VEICULO",
-          amount: billable,
+          amount: entrada,
+          dueDate: input.saleDate,
+          receivedDate: input.saleDate,
+          status: "RECEBIDO",
+          customerId: input.customerId,
+          saleId: sale.id,
+          installmentNumber: 0,
+          accountId: defaultAccountId,
+        });
+      }
+      if (financed > 0) {
+        receivablesData.push({
+          description: `${baseDescription} - Repasse financiamento${input.financerName ? ` (${input.financerName})` : ""}`,
+          category: "VENDA_VEICULO",
+          amount: financed,
           dueDate: addDays(input.saleDate, 5),
           status: "PENDENTE",
           customerId: input.customerId,
