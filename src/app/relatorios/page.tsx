@@ -7,12 +7,6 @@ export const dynamic = "force-dynamic";
 
 const REPORTS = [
   {
-    href: "/relatorios/lucro-prejuizo",
-    icon: "📈",
-    title: "Lucro / Prejuízo",
-    description: "O resultado da loja no período, com o lucro ou prejuízo em destaque",
-  },
-  {
     href: "/relatorios/dre",
     icon: "📑",
     title: "DRE mensal",

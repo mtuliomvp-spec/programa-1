@@ -127,6 +127,128 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
 }
 
 // ---------------------------------------------------------------------------
+// Extrato de Lucro / Prejuízo
+// Lista os lançamentos que compõem o resultado. Para veículos e peças, só o
+// VALOR QUE GEROU LUCRO/PREJUÍZO (a margem = venda − custo) entra no extrato,
+// nunca o valor cheio da venda. Despesas e comissões entram pelo valor total
+// (com sinal negativo). A soma das linhas é o lucro/prejuízo do período.
+// ---------------------------------------------------------------------------
+
+export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO";
+
+export type PLEntry = {
+  id: string;
+  date: Date;
+  kind: PLEntryKind;
+  description: string;
+  detail: string | null;
+  value: number; // contribuição ao resultado (+ lucro / − prejuízo)
+};
+
+export type PLStatement = {
+  entries: PLEntry[];
+  receitaTotal: number;
+  custoTotal: number;
+  lucroBruto: number;
+  despesas: number;
+  comissoes: number;
+  lucroLiquido: number;
+  veiculosVendidos: number;
+};
+
+export async function getProfitLossStatement(months = 12): Promise<PLStatement> {
+  const { start: rangeStart } = monthRange(months - 1);
+  const { end: rangeEnd } = monthRange(0);
+
+  const [sales, partSales, expenses] = await Promise.all([
+    prisma.sale.findMany({
+      where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
+      include: { vehicle: { include: { costs: true } } },
+    }),
+    prisma.partSale.findMany({
+      where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
+      include: { part: { select: { name: true, costPrice: true } } },
+    }),
+    prisma.payable.findMany({
+      where: {
+        dueDate: { gte: rangeStart, lt: rangeEnd },
+        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
+        vehicleCost: null,
+        vehicleId: null,
+      },
+      select: { id: true, amount: true, dueDate: true, category: true, description: true, categoryLabel: true },
+    }),
+  ]);
+
+  const fmt = (n: number) =>
+    n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const entries: PLEntry[] = [];
+  let receitaVeiculos = 0, custoVeiculos = 0, receitaPecas = 0, custoPecas = 0;
+  let despesas = 0, comissoes = 0;
+
+  for (const s of sales) {
+    const custo = s.vehicle.purchasePrice + s.vehicle.costs.reduce((c, x) => c + x.amount, 0);
+    const margem = s.totalAmount - custo;
+    receitaVeiculos += s.totalAmount;
+    custoVeiculos += custo;
+    entries.push({
+      id: `v-${s.id}`,
+      date: s.saleDate,
+      kind: "VEICULO",
+      description: `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+      detail: `venda ${fmt(s.totalAmount)} − custo ${fmt(custo)}`,
+      value: margem,
+    });
+  }
+
+  for (const p of partSales) {
+    const custo = p.quantity * p.part.costPrice;
+    const margem = p.totalAmount - custo;
+    receitaPecas += p.totalAmount;
+    custoPecas += custo;
+    entries.push({
+      id: `p-${p.id}`,
+      date: p.saleDate,
+      kind: "PECA",
+      description: `Venda de peça: ${p.part.name}${p.quantity > 1 ? ` (${p.quantity}x)` : ""}`,
+      detail: `venda ${fmt(p.totalAmount)} − custo ${fmt(custo)}`,
+      value: margem,
+    });
+  }
+
+  for (const e of expenses) {
+    const isComissao = e.category === "COMISSAO";
+    if (isComissao) comissoes += e.amount;
+    else despesas += e.amount;
+    entries.push({
+      id: `e-${e.id}`,
+      date: e.dueDate,
+      kind: isComissao ? "COMISSAO" : "DESPESA",
+      description: e.categoryLabel || e.description,
+      detail: null,
+      value: -e.amount,
+    });
+  }
+
+  entries.sort((a, b) => b.date.getTime() - a.date.getTime());
+
+  const receitaTotal = receitaVeiculos + receitaPecas;
+  const custoTotal = custoVeiculos + custoPecas;
+  const lucroBruto = receitaTotal - custoTotal;
+  return {
+    entries,
+    receitaTotal,
+    custoTotal,
+    lucroBruto,
+    despesas,
+    comissoes,
+    lucroLiquido: lucroBruto - despesas - comissoes,
+    veiculosVendidos: sales.length,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Lucro por veículo vendido
 // ---------------------------------------------------------------------------
 

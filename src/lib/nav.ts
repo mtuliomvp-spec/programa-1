@@ -32,6 +32,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/financeiro/recorrentes", label: "Recorrentes", icon: "🔁", module: "financeiro" },
       { href: "/financeiro/livro-caixa", label: "Livro caixa", icon: "📒", module: "financeiro" },
       { href: "/financeiro/fluxo-caixa", label: "Fluxo de caixa", icon: "💰", module: "financeiro" },
+      { href: "/financeiro/lucro-prejuizo", label: "Lucro / Prejuízo", icon: "📈", module: "financeiro" },
       { href: "/financeiro/conciliacao", label: "Conciliação bancária", icon: "🏦", module: "financeiro" },
     ],
   },
