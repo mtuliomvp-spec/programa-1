@@ -171,17 +171,29 @@ export default async function DashboardPage() {
                   <span aria-hidden>{structuralIcon[s.key]}</span>
                   {s.name}
                 </p>
-                <p
-                  className={`mt-1 text-xl font-bold ${s.resultado >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-                >
-                  {formatCurrency(s.resultado)}
-                </p>
-                <p className="mt-0.5 text-xs text-slate-400">
-                  Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
-                  {s.imobilizado > 0
-                    ? ` · Em estoque ${formatCurrency(s.imobilizado)} (imobilizado)`
-                    : ""}
-                </p>
+                {s.key === "VEICULOS" ? (
+                  <>
+                    <p className="mt-1 text-xl font-bold text-emerald-600">
+                      {formatCurrency(s.imobilizado)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Em estoque (pago) {formatCurrency(s.imobilizado)}
+                      {s.negociadoPendente > 0 ? ` · a pagar ${formatCurrency(s.negociadoPendente)}` : ""}
+                      {" · "}Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p
+                      className={`mt-1 text-xl font-bold ${s.resultado >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+                    >
+                      {formatCurrency(s.resultado)}
+                    </p>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
+                    </p>
+                  </>
+                )}
               </Link>
             ))}
           </div>

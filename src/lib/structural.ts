@@ -90,8 +90,8 @@ export async function getStructuralSummary() {
   const centers = await prisma.costCenter.findMany({
     where: { structural: true },
     include: {
-      payables: { select: { amount: true, vehicle: { select: { status: true } } } },
-      receivables: { select: { amount: true } },
+      payables: { select: { amount: true, status: true, vehicle: { select: { status: true } } } },
+      receivables: { select: { amount: true, status: true } },
     },
   });
   const byKey = new Map(centers.map((c) => [c.key, c]));
@@ -99,23 +99,31 @@ export async function getStructuralSummary() {
     const c = byKey.get(def.key);
     const isVeiculos = def.key === "VEICULOS";
     let despesas = 0;
-    let imobilizado = 0;
+    let imobilizado = 0; // veículos em estoque JÁ PAGOS (ativo)
+    let negociadoPendente = 0; // veículos em estoque ainda NÃO pagos
     for (const p of c?.payables ?? []) {
-      // Veículo ainda em estoque é capital imobilizado (um ativo), não
-      // despesa: o custo só entra no resultado quando o carro é vendido.
-      if (isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO") {
-        imobilizado += p.amount;
-      } else {
+      const paid = p.status === "PAGO";
+      const veiculoEmEstoque = isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO";
+      if (veiculoEmEstoque) {
+        // Veículo em estoque é capital imobilizado (um ativo), não despesa. E,
+        // seguindo a regra da loja, só conta o que já foi efetivamente pago; o
+        // negociado ainda a pagar fica à parte.
+        if (paid) imobilizado += p.amount;
+        else negociadoPendente += p.amount;
+      } else if (paid) {
+        // Só o que foi pago vira despesa realizada.
         despesas += p.amount;
       }
     }
-    const receitas = c?.receivables.reduce((s, r) => s + r.amount, 0) ?? 0;
+    // Só o que foi efetivamente recebido vira receita realizada.
+    const receitas = c?.receivables.reduce((s, r) => s + (r.status === "RECEBIDO" ? r.amount : 0), 0) ?? 0;
     return {
       key: def.key,
       name: def.name,
       despesas,
       receitas,
       imobilizado,
+      negociadoPendente,
       resultado: receitas - despesas,
     };
   });
