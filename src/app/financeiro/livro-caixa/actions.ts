@@ -58,7 +58,7 @@ export async function createCashEntryAction(
     if (isCapital && !d.capitalBeneficiaryId) {
       return { error: "Escolha o beneficiário do capital." };
     }
-    if (!isCapital && !supplierName) {
+    if (!supplierName) {
       return { error: "Informe o fornecedor do lançamento." };
     }
   }
@@ -73,10 +73,9 @@ export async function createCashEntryAction(
   }
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
+  // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
   const supplierId =
-    d.kind === "saida" && !isCapital && supplierName
-      ? await resolveSupplierByName(supplierName)
-      : null;
+    d.kind === "saida" && supplierName ? await resolveSupplierByName(supplierName) : null;
 
   await createCashEntry({
     kind: d.kind,

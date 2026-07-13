@@ -92,7 +92,7 @@ export async function createManualPayableAction(
   // beneficiário do capital).
   if (!label) return { error: "Informe a categoria." };
   if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
-  if (!isCapital && !supplierName) return { error: "Informe o fornecedor." };
+  if (!supplierName) return { error: "Informe o fornecedor." };
 
   // Categoria nova é cadastrada para reaproveitar.
   if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
@@ -100,7 +100,8 @@ export async function createManualPayableAction(
   }
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
-  const supplierId = isCapital ? null : await resolveSupplierByName(supplierName);
+  // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
+  const supplierId = await resolveSupplierByName(supplierName);
 
   await createManualPayable({
     description: d.description,

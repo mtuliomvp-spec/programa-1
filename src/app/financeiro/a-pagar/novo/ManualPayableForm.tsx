@@ -82,12 +82,14 @@ export default function ManualPayableForm({
         <Field label="Categoria" required>
           <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
         </Field>
-        {!isCapital ? (
-          <Field label="Fornecedor" required>
-            <SupplierInput name="supplierName" suppliers={supplierNames} required />
-            <p className="mt-1 text-xs text-slate-400">Numa tarifa bancária, escolha o próprio banco.</p>
-          </Field>
-        ) : null}
+        <Field label="Fornecedor" required>
+          <SupplierInput name="supplierName" suppliers={supplierNames} required />
+          <p className="mt-1 text-xs text-slate-400">
+            {isCapital
+              ? "A quem o valor foi pago (o beneficiário indica de quem é o capital)."
+              : "Numa tarifa bancária, escolha o próprio banco."}
+          </p>
+        </Field>
         <Field label="Valor" required>
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
