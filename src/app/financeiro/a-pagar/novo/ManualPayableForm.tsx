@@ -2,22 +2,33 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import StructuralFlowSelect from "@/components/StructuralFlowSelect";
+import CategoryInput from "@/components/CategoryInput";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createManualPayableAction, type ManualPayableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
 type CostCenter = { id: string; name: string };
+type Vehicle = { id: string; label: string };
+type Beneficiary = { id: string; name: string };
 
 export default function ManualPayableForm({
   suppliers,
   costCenters,
+  vehicles,
+  beneficiaries,
+  categories,
 }: {
   suppliers: Supplier[];
   costCenters: CostCenter[];
+  vehicles: Vehicle[];
+  beneficiaries: Beneficiary[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+  const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
+  const isCapital = flow === "CAPITAL";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -27,43 +38,85 @@ export default function ManualPayableForm({
       <Field label="Descrição" required>
         <Input name="description" required placeholder="Ex: Aluguel do salão de vendas" />
       </Field>
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Categoria" required>
-          <Select name="category" defaultValue="DESPESA_OPERACIONAL">
-            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-            <option value="COMISSAO">Comissão</option>
-            <option value="SALARIO">Salário</option>
-            <option value="COMBUSTIVEL">Combustível</option>
-            <option value="OUTROS">Outros</option>
+
+      <Field label="Fluxo (obra estrutural)">
+        <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
+          {STRUCTURAL_FLOWS.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      {flow === "VEICULOS" ? (
+        <Field label="Veículo (opcional)">
+          <Select name="vehicleId" defaultValue="">
+            <option value="">Nenhum (custo geral de veículos)</option>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
           </Select>
+          {vehicles.length > 0 ? (
+            <p className="mt-1 text-xs text-slate-400">O valor entra no custo desse veículo.</p>
+          ) : null}
         </Field>
-        <Field label="Fornecedor">
-          <Select name="supplierId" defaultValue="">
-            <option value="">Sem fornecedor</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
+      ) : null}
+
+      {isCapital ? (
+        <Field label="Beneficiário do capital" required>
+          <Select name="capitalBeneficiaryId" defaultValue="" required>
+            <option value="">Selecione o beneficiário</option>
+            {beneficiaries.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
               </option>
             ))}
           </Select>
         </Field>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Categoria" required>
+          <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
+        </Field>
+        {!isCapital ? (
+          <Field label="Fornecedor" required>
+            <Select name="supplierId" defaultValue="" required>
+              <option value="">Selecione o fornecedor</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+            {suppliers.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-600">
+                Nenhum fornecedor. <a href="/fornecedores/novo" className="underline">Cadastrar</a>
+              </p>
+            ) : null}
+          </Field>
+        ) : null}
         <Field label="Valor" required>
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
-        <StructuralFlowSelect />
-        <Field label="Centro de custo (obra, imóvel...)">
-          <Select name="costCenterId" defaultValue="">
-            <option value="">Nenhum (usa o fluxo acima)</option>
-            {costCenters.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        {!isCapital ? (
+          <Field label="Centro de custo (obra, imóvel...)">
+            <Select name="costCenterId" defaultValue="">
+              <option value="">Nenhum (usa o fluxo acima)</option>
+              {costCenters.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
       </div>
       <label className="flex items-center gap-2 text-sm text-slate-600">
         <input

@@ -9,6 +9,7 @@ import { createCashEntryAction, type CashEntryState } from "./actions";
 type Account = { id: string; name: string };
 type Supplier = { id: string; name: string };
 type Vehicle = { id: string; label: string };
+type Beneficiary = { id: string; name: string };
 
 const initial: CashEntryState = {};
 
@@ -16,6 +17,7 @@ export default function CashEntryForm({
   accounts,
   suppliers,
   vehicles,
+  beneficiaries,
   categories,
   defaultDate,
   preselectedAccountId,
@@ -23,6 +25,7 @@ export default function CashEntryForm({
   accounts: Account[];
   suppliers: Supplier[];
   vehicles: Vehicle[];
+  beneficiaries: Beneficiary[];
   categories: string[];
   defaultDate: string;
   preselectedAccountId?: string;
@@ -172,21 +175,46 @@ export default function CashEntryForm({
           </Field>
         ) : null}
 
+        {kind === "saida" && flow === "CAPITAL" ? (
+          <Field label="Beneficiário do capital" required>
+            <Select name="capitalBeneficiaryId" defaultValue="" required>
+              <option value="">Selecione o beneficiário</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+            {beneficiaries.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-600">
+                Nenhum beneficiário cadastrado. Cadastre em Capital.
+              </p>
+            ) : null}
+          </Field>
+        ) : null}
+
         {kind === "saida" ? (
           <>
-            <Field label="Categoria">
+            <Field label="Categoria" required>
               <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
             </Field>
-            <Field label="Fornecedor (opcional)">
-              <Select name="supplierId" defaultValue="">
-                <option value="">Sem fornecedor</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {flow !== "CAPITAL" ? (
+              <Field label="Fornecedor" required>
+                <Select name="supplierId" defaultValue="" required>
+                  <option value="">Selecione o fornecedor</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </Select>
+                {suppliers.length === 0 ? (
+                  <p className="mt-1 text-xs text-amber-600">
+                    Nenhum fornecedor cadastrado. <a href="/fornecedores/novo" className="underline">Cadastrar</a>
+                  </p>
+                ) : null}
+              </Field>
+            ) : null}
           </>
         ) : null}
 

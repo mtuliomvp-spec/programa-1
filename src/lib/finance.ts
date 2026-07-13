@@ -788,29 +788,30 @@ export async function markReceivablePending(id: string) {
 export async function createManualPayable(input: {
   description: string;
   category: CategoriaPagar;
+  categoryLabel?: string | null;
   amount: number;
   dueDate: Date;
   supplierId?: string | null;
   costCenterId?: string | null;
   structuralKey?: StructuralKey;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
   notes?: string | null;
   alreadyPaid: boolean;
 }) {
-  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
-  return prisma.payable.create({
-    data: {
-      description: input.description,
-      category: input.category,
-      amount: input.amount,
-      dueDate: input.dueDate,
-      paymentDate: input.alreadyPaid ? input.dueDate : null,
-      status: input.alreadyPaid ? "PAGO" : "PENDENTE",
-      supplierId: input.supplierId || null,
-      costCenterId:
-        input.costCenterId || (await structuralCenterId(input.structuralKey || "ADMINISTRATIVO")),
-      accountId: defaultAccountId,
-      notes: input.notes || null,
-    },
+  return createExpensePayable({
+    description: input.description,
+    category: input.category,
+    categoryLabel: input.categoryLabel || null,
+    amount: input.amount,
+    dueDate: input.dueDate,
+    paid: input.alreadyPaid,
+    supplierId: input.supplierId || null,
+    vehicleId: input.vehicleId || null,
+    capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+    costCenterId: input.costCenterId || null,
+    structuralKey: input.structuralKey,
+    notes: input.notes || null,
   });
 }
 
@@ -826,6 +827,86 @@ export async function createManualPayable(input: {
  * - Saída  => Conta a Pagar já PAGA na conta escolhida.
  * - Entrada => Conta a Receber já RECEBIDA na conta escolhida.
  */
+/**
+ * Cria uma conta a pagar (saída/despesa) já com todos os vínculos: fornecedor,
+ * categoria personalizada, e — conforme o fluxo — veículo (vira custo do carro)
+ * ou beneficiário do capital (vira uma movimentação de capital). Usada tanto
+ * pelo movimento de caixa quanto pelo lançamento manual de contas a pagar.
+ */
+export async function createExpensePayable(input: {
+  description: string;
+  category: CategoriaPagar;
+  categoryLabel?: string | null;
+  amount: number;
+  dueDate: Date;
+  paid: boolean;
+  paymentDate?: Date;
+  accountId?: string | null;
+  supplierId?: string | null;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  costCenterId?: string | null;
+  structuralKey?: StructuralKey;
+  notes?: string | null;
+}) {
+  const centerId =
+    input.costCenterId ||
+    (input.vehicleId
+      ? await structuralCenterId("VEICULOS")
+      : input.capitalBeneficiaryId
+        ? await structuralCenterId("CAPITAL")
+        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO"));
+  const paymentDate = input.paid ? input.paymentDate || input.dueDate : null;
+  const accountId = input.paid ? input.accountId ?? (await getDefaultAccountId()) : null;
+
+  return prisma.$transaction(async (tx) => {
+    const payable = await tx.payable.create({
+      data: {
+        description: input.description,
+        category: input.category,
+        categoryLabel: input.categoryLabel || null,
+        amount: input.amount,
+        dueDate: input.dueDate,
+        paymentDate,
+        status: input.paid ? "PAGO" : "PENDENTE",
+        accountId,
+        costCenterId: centerId,
+        supplierId: input.supplierId || null,
+        vehicleId: input.vehicleId || null,
+        notes: input.notes || null,
+      },
+    });
+    if (input.vehicleId) {
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: input.vehicleId,
+          description: input.categoryLabel
+            ? `${input.categoryLabel}: ${input.description}`
+            : input.description,
+          category: "OUTROS",
+          amount: input.amount,
+          date: input.dueDate,
+          notes: input.notes || null,
+          payableId: payable.id,
+        },
+      });
+    }
+    if (input.capitalBeneficiaryId) {
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId: input.capitalBeneficiaryId,
+          kind: "RETIRADA",
+          amount: input.amount,
+          date: input.dueDate,
+          description: input.description,
+          payableId: payable.id,
+        },
+      });
+    }
+    return payable;
+  });
+}
+
 export async function createCashEntry(input: {
   kind: "entrada" | "saida";
   description: string;
@@ -837,10 +918,11 @@ export async function createCashEntry(input: {
   structuralKey?: StructuralKey;
   supplierId?: string | null;
   vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
   notes?: string | null;
 }) {
-  const centerId = await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
   if (input.kind === "entrada") {
+    const centerId = await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
     return prisma.receivable.create({
       data: {
         description: input.description,
@@ -856,57 +938,20 @@ export async function createCashEntry(input: {
     });
   }
 
-  // Saída atribuída a um veículo: a conta paga também vira um custo do veículo,
-  // entrando no seu custo pago e na margem real.
-  if (input.vehicleId) {
-    return prisma.$transaction(async (tx) => {
-      const payable = await tx.payable.create({
-        data: {
-          description: input.description,
-          category: input.category || "OUTROS",
-          categoryLabel: input.categoryLabel || null,
-          amount: input.amount,
-          dueDate: input.date,
-          paymentDate: input.date,
-          status: "PAGO",
-          accountId: input.accountId,
-          costCenterId: await structuralCenterId("VEICULOS"),
-          supplierId: input.supplierId || null,
-          vehicleId: input.vehicleId,
-          notes: input.notes || null,
-        },
-      });
-      await tx.vehicleCost.create({
-        data: {
-          vehicleId: input.vehicleId!,
-          description: input.categoryLabel
-            ? `${input.categoryLabel}: ${input.description}`
-            : input.description,
-          category: "OUTROS",
-          amount: input.amount,
-          date: input.date,
-          notes: input.notes || null,
-          payableId: payable.id,
-        },
-      });
-      return payable;
-    });
-  }
-
-  return prisma.payable.create({
-    data: {
-      description: input.description,
-      category: input.category || "OUTROS",
-      categoryLabel: input.categoryLabel || null,
-      amount: input.amount,
-      dueDate: input.date,
-      paymentDate: input.date,
-      status: "PAGO",
-      accountId: input.accountId,
-      costCenterId: centerId,
-      supplierId: input.supplierId || null,
-      notes: input.notes || null,
-    },
+  return createExpensePayable({
+    description: input.description,
+    category: input.category || "OUTROS",
+    categoryLabel: input.categoryLabel || null,
+    amount: input.amount,
+    dueDate: input.date,
+    paid: true,
+    paymentDate: input.date,
+    accountId: input.accountId,
+    supplierId: input.supplierId || null,
+    vehicleId: input.vehicleId || null,
+    capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+    structuralKey: input.structuralKey,
+    notes: input.notes || null,
   });
 }
 

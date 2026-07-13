@@ -17,6 +17,7 @@ const schema = z.object({
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   supplierId: z.string().optional(),
   vehicleId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -47,6 +48,19 @@ export async function createCashEntryAction(
   const d = parsed.data;
 
   const label = d.kind === "saida" ? (d.categoryLabel || "").trim() : "";
+  const isCapital = d.structuralKey === "CAPITAL";
+
+  // Toda saída precisa de categoria; e de fornecedor (ou, no Capital, do
+  // beneficiário do capital).
+  if (d.kind === "saida") {
+    if (!label) return { error: "Informe a categoria do lançamento." };
+    if (isCapital && !d.capitalBeneficiaryId) {
+      return { error: "Escolha o beneficiário do capital." };
+    }
+    if (!isCapital && !d.supplierId) {
+      return { error: "Escolha o fornecedor do lançamento." };
+    }
+  }
 
   // Categoria nova (não é uma das padrão) é cadastrada para reaproveitar.
   if (label && !KNOWN[label.toLowerCase()]) {
@@ -66,8 +80,9 @@ export async function createCashEntryAction(
     category: d.kind === "saida" ? mapCategory(label) : undefined,
     categoryLabel: d.kind === "saida" && label ? label : null,
     structuralKey: d.structuralKey,
-    supplierId: d.kind === "saida" ? d.supplierId || null : null,
+    supplierId: d.kind === "saida" && !isCapital ? d.supplierId || null : null,
     vehicleId: d.kind === "saida" && d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    capitalBeneficiaryId: d.kind === "saida" && isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
   });
 
@@ -76,6 +91,7 @@ export async function createCashEntryAction(
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/estoque");
+  revalidatePath("/capital");
   revalidatePath("/");
   return { ok: true };
 }

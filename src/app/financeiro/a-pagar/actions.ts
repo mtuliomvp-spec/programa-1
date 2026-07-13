@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
@@ -50,15 +51,28 @@ export async function markPendingAction(id: string) {
 
 const manualSchema = z.object({
   description: z.string().min(1, "Informe a descrição"),
-  category: z.enum(["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"]),
+  categoryLabel: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
   costCenterId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  vehicleId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
+
+const KNOWN_CATEGORIES: Record<string, "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "OUTROS"> = {
+  outros: "OUTROS",
+  "despesa operacional": "DESPESA_OPERACIONAL",
+  comissão: "COMISSAO",
+  comissao: "COMISSAO",
+  salário: "SALARIO",
+  salario: "SALARIO",
+  combustível: "COMBUSTIVEL",
+  combustivel: "COMBUSTIVEL",
+};
 
 export type ManualPayableState = { error?: string };
 
@@ -70,19 +84,38 @@ export async function createManualPayableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
 
+  const label = (d.categoryLabel || "").trim();
+  const isCapital = d.structuralKey === "CAPITAL";
+
+  // Toda conta precisa de categoria; e de fornecedor (ou, no Capital, do
+  // beneficiário do capital).
+  if (!label) return { error: "Informe a categoria." };
+  if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
+  if (!isCapital && !d.supplierId) return { error: "Escolha o fornecedor." };
+
+  // Categoria nova é cadastrada para reaproveitar.
+  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
+    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
+  }
+
   await createManualPayable({
     description: d.description,
-    category: d.category,
+    category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
+    categoryLabel: label,
     amount: d.amount,
     dueDate: parseDateInput(d.dueDate),
-    supplierId: d.supplierId || null,
-    costCenterId: d.costCenterId || null,
+    supplierId: isCapital ? null : d.supplierId || null,
+    costCenterId: isCapital ? null : d.costCenterId || null,
     structuralKey: d.structuralKey,
+    vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
     alreadyPaid: Boolean(d.alreadyPaid),
   });
 
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/estoque");
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect("/financeiro/a-pagar");
 }

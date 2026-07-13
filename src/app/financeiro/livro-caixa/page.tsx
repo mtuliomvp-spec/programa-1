@@ -33,7 +33,7 @@ export default async function LivroCaixaPage({
 
   const accountWhere = accountFilter ? { accountId: accountFilter } : {};
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -68,6 +68,11 @@ export default async function LivroCaixaPage({
         select: { id: true, brand: true, model: true, plate: true },
       }),
       prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+      prisma.capitalBeneficiary.findMany({
+        where: { active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
     ]);
 
   const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível"];
@@ -219,6 +224,7 @@ export default async function LivroCaixaPage({
           accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
           suppliers={suppliers}
           vehicles={vehicleOptions}
+          beneficiaries={beneficiaries}
           categories={categoryOptions}
           defaultDate={toDateInputValue(new Date())}
           preselectedAccountId={accountFilter || undefined}
