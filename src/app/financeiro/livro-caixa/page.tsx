@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import CashEntryForm from "./CashEntryForm";
+import DeleteCashEntryButton from "./DeleteCashEntryButton";
 
 export const dynamic = "force-dynamic";
 
@@ -82,6 +84,8 @@ export default async function LivroCaixaPage({
     who: string;
     kind: "entrada" | "saida";
     amount: number;
+    // preenchido só em lançamentos avulsos que podem ser excluídos daqui
+    deletable?: { kind: "entrada" | "saida"; id: string };
   };
 
   const transferMovements: Movement[] = transfers
@@ -104,6 +108,10 @@ export default async function LivroCaixaPage({
       who: r.customer?.name || "-",
       kind: "entrada" as const,
       amount: r.amount,
+      deletable:
+        !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null
+          ? ({ kind: "entrada", id: r.id } as const)
+          : undefined,
     })),
     ...paidMonth.map((p) => ({
       id: `p-${p.id}`,
@@ -112,6 +120,10 @@ export default async function LivroCaixaPage({
       who: p.supplier?.name || "-",
       kind: "saida" as const,
       amount: p.amount,
+      deletable:
+        !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId
+          ? ({ kind: "saida", id: p.id } as const)
+          : undefined,
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
@@ -186,6 +198,14 @@ export default async function LivroCaixaPage({
         />
       </div>
 
+      <div className="mb-4">
+        <CashEntryForm
+          accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
+          defaultDate={toDateInputValue(new Date())}
+          preselectedAccountId={accountFilter || undefined}
+        />
+      </div>
+
       <Card>
         <CardHeader
           title={`Movimentações — ${monthValue}`}
@@ -220,7 +240,14 @@ export default async function LivroCaixaPage({
               {rows.map((m) => (
                 <Tr key={m.id}>
                   <Td className="whitespace-nowrap">{formatDate(m.date)}</Td>
-                  <Td className="font-medium text-slate-900">{m.description}</Td>
+                  <Td className="font-medium text-slate-900">
+                    <span className="flex items-center gap-2">
+                      {m.description}
+                      {m.deletable ? (
+                        <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} />
+                      ) : null}
+                    </span>
+                  </Td>
                   <Td>{m.who}</Td>
                   <Td className="text-right tabular-nums text-emerald-600">
                     {m.kind === "entrada" ? formatCurrency(m.amount) : ""}

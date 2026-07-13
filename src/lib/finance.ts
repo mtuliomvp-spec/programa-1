@@ -811,6 +811,80 @@ export async function createManualPayable(input: {
   });
 }
 
+// ---------------------------------------------------------------------------
+// Lançamento avulso no Movimento de caixa diário (livro caixa)
+// ---------------------------------------------------------------------------
+
+/**
+ * Lança uma entrada ou saída direto no caixa/banco escolhido, já baixada na
+ * data informada. É o "lançamento manual" do movimento de caixa diário: nada é
+ * lançado sem comando, e o valor sempre passa por uma conta financeira.
+ *
+ * - Saída  => Conta a Pagar já PAGA na conta escolhida.
+ * - Entrada => Conta a Receber já RECEBIDA na conta escolhida.
+ */
+export async function createCashEntry(input: {
+  kind: "entrada" | "saida";
+  description: string;
+  amount: number;
+  date: Date;
+  accountId: string;
+  category?: CategoriaPagar;
+  notes?: string | null;
+}) {
+  if (input.kind === "entrada") {
+    return prisma.receivable.create({
+      data: {
+        description: input.description,
+        category: "OUTROS",
+        amount: input.amount,
+        dueDate: input.date,
+        receivedDate: input.date,
+        status: "RECEBIDO",
+        accountId: input.accountId,
+        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+        notes: input.notes || null,
+      },
+    });
+  }
+  return prisma.payable.create({
+    data: {
+      description: input.description,
+      category: input.category || "OUTROS",
+      amount: input.amount,
+      dueDate: input.date,
+      paymentDate: input.date,
+      status: "PAGO",
+      accountId: input.accountId,
+      costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+      notes: input.notes || null,
+    },
+  });
+}
+
+/**
+ * Exclui um lançamento avulso do movimento de caixa. Só remove entradas/saídas
+ * que não estejam vinculadas a veículo, peça, venda, consórcio ou recorrência —
+ * baixas geradas por essas operações devem ser revertidas na própria origem.
+ */
+export async function deleteCashEntry(kind: "entrada" | "saida", id: string) {
+  if (kind === "entrada") {
+    const r = await prisma.receivable.findUnique({ where: { id } });
+    if (!r) return;
+    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
+      throw new Error("Este lançamento veio de uma venda/recorrência e deve ser revertido na origem.");
+    }
+    await prisma.receivable.delete({ where: { id } });
+    return;
+  }
+  const p = await prisma.payable.findUnique({ where: { id } });
+  if (!p) return;
+  if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
+    throw new Error("Este lançamento veio de outra operação e deve ser revertido na origem.");
+  }
+  await prisma.payable.delete({ where: { id } });
+}
+
 export async function createManualReceivable(input: {
   description: string;
   amount: number;
