@@ -61,6 +61,9 @@ export async function createCashEntryAction(
     if (!supplierName) {
       return { error: "Informe o fornecedor do lançamento." };
     }
+  } else if (isCapital && !d.capitalBeneficiaryId) {
+    // Entrada no Capital = aporte: precisa do beneficiário.
+    return { error: "Escolha o beneficiário do capital (aporte)." };
   }
 
   // Categoria nova (não é uma das padrão) é cadastrada para reaproveitar.
@@ -87,8 +90,8 @@ export async function createCashEntryAction(
     categoryLabel: d.kind === "saida" && label ? label : null,
     structuralKey: d.structuralKey,
     supplierId,
-    vehicleId: d.kind === "saida" && d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
-    capitalBeneficiaryId: d.kind === "saida" && isCapital ? d.capitalBeneficiaryId || null : null,
+    vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
   });
 

@@ -314,6 +314,7 @@ model Vehicle {
   supplierId       String?
   supplier         Supplier?     @relation(fields: [supplierId], references: [id])
   payables         Payable[]
+  receivables      Receivable[]
   costs            VehicleCost[]
   fuelEntries      FuelEntry[]
   sale             Sale?         @relation("SaleVehicle")
@@ -451,6 +452,8 @@ model Receivable {
   customer          Customer?         @relation(fields: [customerId], references: [id])
   saleId            String?
   sale              Sale?             @relation(fields: [saleId], references: [id])
+  vehicleId         String?
+  vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
   partSaleId        String?
   partSale          PartSale?         @relation(fields: [partSaleId], references: [id])
   installmentNumber Int?

@@ -938,19 +938,40 @@ export async function createCashEntry(input: {
   notes?: string | null;
 }) {
   if (input.kind === "entrada") {
-    const centerId = await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
-    return prisma.receivable.create({
-      data: {
-        description: input.description,
-        category: "OUTROS",
-        amount: input.amount,
-        dueDate: input.date,
-        receivedDate: input.date,
-        status: "RECEBIDO",
-        accountId: input.accountId,
-        costCenterId: centerId,
-        notes: input.notes || null,
-      },
+    const centerId = input.vehicleId
+      ? await structuralCenterId("VEICULOS")
+      : input.capitalBeneficiaryId
+        ? await structuralCenterId("CAPITAL")
+        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+    return prisma.$transaction(async (tx) => {
+      const receivable = await tx.receivable.create({
+        data: {
+          description: input.description,
+          category: "OUTROS",
+          amount: input.amount,
+          dueDate: input.date,
+          receivedDate: input.date,
+          status: "RECEBIDO",
+          accountId: input.accountId,
+          costCenterId: centerId,
+          vehicleId: input.vehicleId || null,
+          notes: input.notes || null,
+        },
+      });
+      // Aporte de capital: registra a movimentação do beneficiário.
+      if (input.capitalBeneficiaryId) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: input.capitalBeneficiaryId,
+            kind: "APORTE",
+            amount: input.amount,
+            date: input.date,
+            description: input.description,
+            receivableId: receivable.id,
+          },
+        });
+      }
+      return receivable;
     });
   }
 

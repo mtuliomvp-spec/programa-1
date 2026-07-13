@@ -160,10 +160,12 @@ export default function CashEntryForm({
           </Select>
         </Field>
 
-        {kind === "saida" && flow === "VEICULOS" ? (
+        {flow === "VEICULOS" ? (
           <Field label="Veículo (opcional)">
             <Select name="vehicleId" defaultValue="">
-              <option value="">Nenhum (custo geral de veículos)</option>
+              <option value="">
+                {kind === "entrada" ? "Nenhum (receita geral de veículos)" : "Nenhum (custo geral de veículos)"}
+              </option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.label}
@@ -174,13 +176,15 @@ export default function CashEntryForm({
               <p className="mt-1 text-xs text-slate-400">Nenhum veículo em estoque.</p>
             ) : (
               <p className="mt-1 text-xs text-slate-400">
-                O valor entra no custo pago desse veículo.
+                {kind === "entrada"
+                  ? "Ex.: entrada/sinal da venda desse veículo."
+                  : "O valor entra no custo pago desse veículo."}
               </p>
             )}
           </Field>
         ) : null}
 
-        {kind === "saida" && flow === "CAPITAL" ? (
+        {flow === "CAPITAL" ? (
           <Field label="Beneficiário do capital" required>
             <Select name="capitalBeneficiaryId" defaultValue="" required>
               <option value="">Selecione o beneficiário</option>
@@ -190,6 +194,9 @@ export default function CashEntryForm({
                 </option>
               ))}
             </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              {kind === "entrada" ? "Entrada no Capital = aporte do beneficiário." : "De quem é o capital."}
+            </p>
             {beneficiaries.length === 0 ? (
               <p className="mt-1 text-xs text-amber-600">
                 Nenhum beneficiário cadastrado. Cadastre em Capital.
