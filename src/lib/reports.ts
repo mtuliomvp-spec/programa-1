@@ -6,8 +6,8 @@ import type { CategoriaPagar } from "@prisma/client";
  * aging de estoque e despesas por categoria.
  *
  * Convenções:
- * - Receitas/custos de venda seguem regime de competência (data da venda).
- * - Despesas usam a data de vencimento da conta a pagar.
+ * - Receitas/custos de venda seguem a data da venda.
+ * - Despesas seguem o regime de CAIXA: contam quando pagas (data do pagamento).
  * - Custos de veículos (vehicle_costs) entram no custo do veículo vendido,
  *   nunca em despesas — a conta a pagar gerada por eles é excluída das
  *   despesas para não contar duas vezes.
@@ -66,14 +66,16 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { part: { select: { costPrice: true } } },
     }),
+    // Despesas: regime de CAIXA — só as PAGAS, na data do pagamento.
     prisma.payable.findMany({
       where: {
-        dueDate: { gte: rangeStart, lt: rangeEnd },
+        status: "PAGO",
+        paymentDate: { gte: rangeStart, lt: rangeEnd },
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null, // custos de veículo já entram no custo da venda
         vehicleId: null, // idem para contas manuais ligadas a veículos
       },
-      select: { amount: true, dueDate: true, category: true },
+      select: { amount: true, paymentDate: true, category: true },
     }),
   ]);
 
@@ -82,7 +84,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const { start, end } = monthRange(i);
     const monthSales = sales.filter((s) => s.saleDate >= start && s.saleDate < end);
     const monthPartSales = partSales.filter((p) => p.saleDate >= start && p.saleDate < end);
-    const monthExpenses = expenses.filter((e) => e.dueDate >= start && e.dueDate < end);
+    const monthExpenses = expenses.filter((e) => e.paymentDate! >= start && e.paymentDate! < end);
 
     const receitaVeiculos = monthSales.reduce((sum, s) => sum + s.totalAmount, 0);
     const receitaPecas = monthPartSales.reduce((sum, p) => sum + p.totalAmount, 0);

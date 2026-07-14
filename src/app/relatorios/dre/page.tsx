@@ -32,7 +32,7 @@ export default async function DrePage({
     <div>
       <PageHeader
         title="DRE mensal"
-        description={`Resultado dos últimos ${months} meses (regime de competência)`}
+        description={`Resultado dos últimos ${months} meses (regime de caixa — despesas quando pagas)`}
         action={
           <div className="flex gap-2 print:hidden">
             <LinkButton href="/relatorios/dre?meses=6" variant={months === 6 ? "primary" : "secondary"}>
@@ -109,8 +109,8 @@ export default async function DrePage({
           </tbody>
         </Table>
         <p className="px-5 py-3 text-xs text-slate-400">
-          Receita e custo seguem a data da venda; despesas seguem o vencimento. Custos lançados nos
-          veículos entram no custo da venda (não em despesas), evitando dupla contagem.
+          Receita e custo seguem a data da venda; despesas entram quando são pagas (regime de caixa).
+          Custos lançados nos veículos entram no custo da venda (não em despesas), evitando dupla contagem.
         </p>
       </Card>
     </div>
