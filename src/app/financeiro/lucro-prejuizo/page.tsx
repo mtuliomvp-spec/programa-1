@@ -151,7 +151,8 @@ export default async function LucroPrejuizoPage({
         )}
         <p className="px-5 py-3 text-xs text-slate-400">
           O custo do veículo (compra + preparação) entra no resultado no dia em que ele é vendido —
-          por isso só a diferença (a margem) aparece aqui, não o valor cheio da venda.
+          por isso só a diferença (a margem) aparece aqui, não o valor cheio da venda. As despesas
+          entram <strong>quando são pagas</strong> (regime de caixa), acompanhando a equação patrimonial.
         </p>
       </Card>
     </div>

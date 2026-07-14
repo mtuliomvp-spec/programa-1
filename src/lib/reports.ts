@@ -170,20 +170,24 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
       where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { part: { select: { name: true, costPrice: true } } },
     }),
+    // Despesas: regime de CAIXA — só contam quando PAGAS, na data do pagamento.
     prisma.payable.findMany({
       where: {
-        dueDate: { gte: rangeStart, lt: rangeEnd },
+        status: "PAGO",
+        paymentDate: { gte: rangeStart, lt: rangeEnd },
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null,
         vehicleId: null,
       },
-      select: { id: true, amount: true, dueDate: true, category: true, description: true, categoryLabel: true },
+      select: { id: true, amount: true, paymentDate: true, category: true, description: true, categoryLabel: true },
     }),
-    // Custos pós-venda (lançados após o veículo ser vendido): entram à parte,
-    // na data em que foram lançados — não na margem da venda.
+    // Custos pós-venda: também só quando o pagamento é efetuado.
     prisma.vehicleCost.findMany({
-      where: { postSale: true, date: { gte: rangeStart, lt: rangeEnd } },
-      include: { vehicle: { select: { brand: true, model: true, plate: true } } },
+      where: { postSale: true, payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
+      include: {
+        vehicle: { select: { brand: true, model: true, plate: true } },
+        payable: { select: { paymentDate: true } },
+      },
     }),
   ]);
 
@@ -233,7 +237,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     else despesas += e.amount;
     entries.push({
       id: `e-${e.id}`,
-      date: e.dueDate,
+      date: e.paymentDate!,
       kind: isComissao ? "COMISSAO" : "DESPESA",
       description: e.categoryLabel || e.description,
       detail: null,
@@ -245,7 +249,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     posVenda += c.amount;
     entries.push({
       id: `pv-${c.id}`,
-      date: c.date,
+      date: c.payable?.paymentDate ?? c.date,
       kind: "POS_VENDA",
       description: `Pós-venda: ${c.description}`,
       detail: `${c.vehicle.brand} ${c.vehicle.model} · ${c.vehicle.plate}`,
