@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -29,12 +30,13 @@ export default async function ContasPage() {
   const renderAccountCard = (a: (typeof accounts)[number]) => (
     <Card key={a.id} className={`px-5 py-4 ${!a.active ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">
+        <Link href={`/financeiro/contas/${a.id}`} className="group min-w-0">
+          <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900 group-hover:text-blue-700">
             {a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
             <Badge tone="default">{typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
             {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
+            <span className="text-xs font-normal text-blue-600 group-hover:underline">ver extrato →</span>
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
             {[a.bankName, a.agency && `ag. ${a.agency}`, a.accountNumber && `conta ${a.accountNumber}`]
@@ -42,7 +44,7 @@ export default async function ContasPage() {
               .join(" · ") || "—"}
             {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
           </p>
-        </div>
+        </Link>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-xs uppercase tracking-wide text-slate-400">Saldo</p>
