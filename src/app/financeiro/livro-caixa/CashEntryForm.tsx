@@ -230,8 +230,8 @@ export default function CashEntryForm({
           </Field>
         ) : null}
 
-        {isSinal ? (
-          <Field label="Cliente que está dando o sinal">
+        {kind === "entrada" ? (
+          <Field label={isSinal ? "Cliente que está dando o sinal" : "Cliente (opcional)"}>
             <Select name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
               <option value="">Selecione o cliente (opcional)</option>
               {customerList.map((c) => (
