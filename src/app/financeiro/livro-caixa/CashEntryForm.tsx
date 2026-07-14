@@ -161,7 +161,13 @@ export default function CashEntryForm({
         </Field>
 
         {flow === "VEICULOS" ? (
-          <Field label="Veículo (opcional)">
+          <Field
+            label={
+              kind === "entrada"
+                ? "Veículo — sinal / entrada antecipada"
+                : "Veículo (opcional)"
+            }
+          >
             <Select name="vehicleId" defaultValue="">
               <option value="">
                 {kind === "entrada" ? "Nenhum (receita geral de veículos)" : "Nenhum (custo geral de veículos)"}
@@ -177,7 +183,7 @@ export default function CashEntryForm({
             ) : (
               <p className="mt-1 text-xs text-slate-400">
                 {kind === "entrada"
-                  ? "Ex.: entrada/sinal da venda desse veículo."
+                  ? "Escolhendo um veículo, o valor entra como SINAL / entrada antecipada dele e é abatido quando a venda for fechada."
                   : "O valor entra no custo pago desse veículo."}
               </p>
             )}
