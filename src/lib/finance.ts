@@ -749,7 +749,10 @@ export async function cancelVehicleSale(saleId: string) {
       where: { id: saleId },
       include: { vehicle: { select: { plate: true } } },
     });
-    if (sale.status === "CANCELADA") return sale;
+
+    // Idempotente: todos os passos podem rodar de novo com segurança. Isso
+    // permite corrigir vendas canceladas por versões antigas (que deixavam os
+    // recebíveis RECEBIDOS "presos", divergindo caixa x equação patrimonial).
 
     // 1) Sinais/adiantamentos (recebíveis com veículo) voltam a ser sinal: só
     //    desvincula da venda; o dinheiro recebido permanece.
@@ -780,11 +783,19 @@ export async function cancelVehicleSale(saleId: string) {
       await tx.sale.update({ where: { id: saleId }, data: { tradeInVehicleId: null } });
       await tx.vehicleCost.deleteMany({ where: { vehicleId: tradeId } });
       await tx.payable.deleteMany({ where: { vehicleId: tradeId } });
-      await tx.vehicle.delete({ where: { id: tradeId } });
+      // deleteMany não estoura se o veículo já tiver sido removido.
+      await tx.vehicle.deleteMany({ where: { id: tradeId } });
     }
 
-    // 5) Carro volta ao estoque e a venda fica cancelada.
-    await tx.vehicle.update({ where: { id: sale.vehicleId }, data: { status: "ESTOQUE" } });
+    // 5) Carro volta ao estoque — a menos que já exista outra venda ativa dele
+    //    (evita "roubar" um veículo revendido ao reverter uma venda antiga).
+    const outraVendaAtiva = await tx.sale.findFirst({
+      where: { vehicleId: sale.vehicleId, id: { not: saleId }, status: "CONCLUIDA" },
+      select: { id: true },
+    });
+    if (!outraVendaAtiva) {
+      await tx.vehicle.update({ where: { id: sale.vehicleId }, data: { status: "ESTOQUE" } });
+    }
     await tx.sale.update({
       where: { id: saleId },
       data: { status: "CANCELADA", financerSettledAt: null },

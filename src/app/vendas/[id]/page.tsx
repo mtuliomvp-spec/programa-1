@@ -27,6 +27,10 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
   if (!sale) notFound();
 
   const totalRecebido = sale.receivables.filter((r) => r.status === "RECEBIDO").reduce((s, r) => s + r.amount, 0);
+  // Venda cancelada que ainda tem lançamentos vinculados (cancelada por uma
+  // versão antiga que não revertia tudo): oferece corrigir e limpar os resíduos.
+  const cancelamentoResidual =
+    sale.status === "CANCELADA" && (sale.receivables.length > 0 || !!sale.tradeInVehicleId);
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -45,6 +49,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
               </LinkButton>
             ) : null}
             {sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
+            {cancelamentoResidual ? <CancelSaleButton id={sale.id} mode="fix" /> : null}
           </div>
         }
       />
