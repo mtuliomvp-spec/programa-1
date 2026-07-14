@@ -2,7 +2,8 @@
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import { createSaleAction, type SaleFormState } from "./actions";
+import { type SaleFormState } from "./actions";
+import { createPreSaleAction } from "./pre-vendas/actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
@@ -11,24 +12,33 @@ type Vehicle = { id: string; brand: string; model: string; plate: string; salePr
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string };
 
+export type SaleFormInitial = {
+  vehicleId?: string;
+  customerId?: string;
+  saleDate?: string;
+  totalAmount?: number;
+  paymentMethod?: "A_VISTA" | "PARCELADO" | "FINANCIADO";
+  downPayment?: number;
+  installmentsCount?: number;
+  financerAccountId?: string;
+  financedAmount?: number;
+  sellerName?: string;
+  notes?: string;
+  tradeIn?: boolean;
+  tiPlate?: string;
+  tiBrand?: string;
+  tiModel?: string;
+  tiManufactureYear?: number;
+  tiModelYear?: number;
+  tiColor?: string;
+  tiKm?: number;
+  tiNegotiated?: number;
+  tiPayoff?: number;
+  tiPayoffTo?: string;
+  tiDebts?: number;
+};
+
 const initialState: SaleFormState = {};
-
-/** Linha de informação (texto): rótulo à esquerda, valor à direita. */
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
-      <span className="text-slate-500">{label}</span>
-      <span className="text-right font-medium text-slate-800">{value}</span>
-    </div>
-  );
-}
-
-/** Formata "aaaa-mm-dd" (input date) para "dd/mm/aaaa". */
-function formatDateBR(value: string) {
-  if (!value) return "—";
-  const [y, m, d] = value.split("-");
-  return y && m && d ? `${d}/${m}/${y}` : value;
-}
 
 /** Linha de um resumo financeiro: rótulo à esquerda, valor à direita. */
 function SummaryRow({
@@ -65,6 +75,8 @@ export default function SaleForm({
   advances = {},
   preselectedVehicleId,
   currentUserName,
+  initial,
+  preSaleId,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
@@ -72,22 +84,26 @@ export default function SaleForm({
   advances?: Record<string, number>;
   preselectedVehicleId?: string;
   currentUserName?: string;
+  initial?: SaleFormInitial;
+  preSaleId?: string;
 }) {
-  const [state, formAction, pending] = useActionState(createSaleAction, initialState);
+  const [state, formAction, pending] = useActionState(createPreSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
-  const [vehicleId, setVehicleId] = useState(preselectedVehicleId || "");
-  const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">("A_VISTA");
+  const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
+  const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">(
+    initial?.paymentMethod || "A_VISTA",
+  );
 
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
   const [totalAmount, setTotalAmount] = useState<string>(
-    selectedVehicle ? String(selectedVehicle.salePrice) : "",
+    initial?.totalAmount != null ? String(initial.totalAmount) : selectedVehicle ? String(selectedVehicle.salePrice) : "",
   );
 
   // Troca (veículo recebido do cliente, cadastrado aqui mesmo)
-  const [tradeIn, setTradeIn] = useState(false);
-  const [tiNegotiated, setTiNegotiated] = useState(0);
-  const [tiPayoff, setTiPayoff] = useState(0);
-  const [tiDebts, setTiDebts] = useState(0);
+  const [tradeIn, setTradeIn] = useState(!!initial?.tradeIn);
+  const [tiNegotiated, setTiNegotiated] = useState(initial?.tiNegotiated ?? 0);
+  const [tiPayoff, setTiPayoff] = useState(initial?.tiPayoff ?? 0);
+  const [tiDebts, setTiDebts] = useState(initial?.tiDebts ?? 0);
   const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
   const total = Number(totalAmount) || 0;
   const sinal = advances[vehicleId] || 0;
@@ -95,8 +111,10 @@ export default function SaleForm({
 
   // Financiamento: valor financiado pelo banco e a entrada (restante) paga agora.
   // O sinal já recebido também abate do que o cliente ainda tem a pagar.
-  const [financedAmount, setFinancedAmount] = useState<string>("");
-  const [financerAccountId, setFinancerAccountId] = useState("");
+  const [financedAmount, setFinancedAmount] = useState<string>(
+    initial?.financedAmount != null ? String(initial.financedAmount) : "",
+  );
+  const [financerAccountId, setFinancerAccountId] = useState(initial?.financerAccountId || "");
   // Restante depois de troca e sinal — pode ficar negativo (troca + sinal já
   // passam do valor da venda), e aí o excedente já é devolução ao cliente.
   const rawRestante = Math.round((total - tiLiquido - sinal) * 100) / 100;
@@ -120,43 +138,6 @@ export default function SaleForm({
     paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
-
-  // Pré-venda: antes de registrar, mostramos a ficha de negócio para revisão.
-  // Nada é gravado até o clique final em "Registrar venda".
-  const [review, setReview] = useState(false);
-  const [snap, setSnap] = useState<Record<string, string>>({});
-  const [reviewError, setReviewError] = useState<string | null>(null);
-
-  function readField(name: string) {
-    const el = formRef.current?.elements.namedItem(name) as { value?: unknown } | null;
-    return el && el.value != null ? String(el.value) : "";
-  }
-
-  function handleReview() {
-    // Validação leve só para não abrir a ficha sem o essencial.
-    if (!vehicleId) return setReviewError("Selecione o veículo.");
-    const customerId = readField("customerId");
-    if (!customerId) return setReviewError("Selecione o cliente.");
-    if (!(total > 0)) return setReviewError("Informe o valor da venda.");
-    if (tradeIn && (!readField("tiBrand") || !readField("tiModel") || !readField("tiPlate") || tiNegotiated <= 0)) {
-      return setReviewError("Para a troca, informe placa, marca, modelo e valor negociado do veículo recebido.");
-    }
-    setReviewError(null);
-    setSnap({
-      customerName: customers.find((c) => c.id === customerId)?.name ?? "",
-      sellerName: readField("sellerName"),
-      saleDate: readField("saleDate"),
-      downPayment: readField("downPayment"),
-      installmentsCount: readField("installmentsCount"),
-      notes: readField("notes"),
-      tiBrand: readField("tiBrand"),
-      tiModel: readField("tiModel"),
-      tiPlate: readField("tiPlate"),
-      tiPayoffTo: readField("tiPayoffTo"),
-    });
-    setReview(true);
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
-  }
 
   function setTiField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
@@ -210,9 +191,8 @@ export default function SaleForm({
         </div>
       ) : null}
 
-      {/* Formulário de edição — escondido (mas montado) durante a revisão, para
-          que os campos continuem sendo enviados ao registrar a venda. */}
-      <div className={review ? "hidden" : "space-y-6"}>
+      {preSaleId ? <input type="hidden" name="preSaleId" value={preSaleId} /> : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Veículo" required>
           <Select name="vehicleId" value={vehicleId} onChange={(e) => handleVehicleChange(e.target.value)} required>
@@ -225,7 +205,7 @@ export default function SaleForm({
           </Select>
         </Field>
         <Field label="Cliente" required>
-          <Select name="customerId" required defaultValue="">
+          <Select name="customerId" required defaultValue={initial?.customerId || ""}>
             <option value="">Selecione um cliente</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
@@ -240,7 +220,7 @@ export default function SaleForm({
           ) : null}
         </Field>
         <Field label="Data da venda" required>
-          <Input type="date" name="saleDate" defaultValue={toDateInputValue(new Date())} required />
+          <Input type="date" name="saleDate" defaultValue={initial?.saleDate || toDateInputValue(new Date())} required />
         </Field>
         <Field label="Valor total da venda" required>
           <Input
@@ -254,7 +234,7 @@ export default function SaleForm({
           />
         </Field>
         <Field label="Vendedor">
-          <Input name="sellerName" defaultValue={currentUserName || ""} />
+          <Input name="sellerName" defaultValue={initial?.sellerName ?? currentUserName ?? ""} />
         </Field>
         <Field label="Forma de pagamento" required>
           <Select
@@ -290,10 +270,10 @@ export default function SaleForm({
           <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do parcelamento</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Valor de entrada">
-              <Input type="number" step="0.01" min={0} name="downPayment" defaultValue={0} />
+              <Input type="number" step="0.01" min={0} name="downPayment" defaultValue={initial?.downPayment ?? 0} />
             </Field>
             <Field label="Número de parcelas" required>
-              <Input type="number" min={1} name="installmentsCount" defaultValue={1} required />
+              <Input type="number" min={1} name="installmentsCount" defaultValue={initial?.installmentsCount || 1} required />
             </Field>
           </div>
           <p className="mt-2 text-xs text-slate-500">
@@ -418,7 +398,7 @@ export default function SaleForm({
           <div className="mt-3 space-y-3">
             <div className="flex flex-wrap items-end gap-2">
               <Field label="Placa do veículo recebido">
-                <Input name="tiPlate" placeholder="ABC1D23" className="max-w-[160px] uppercase" />
+                <Input name="tiPlate" defaultValue={initial?.tiPlate || ""} placeholder="ABC1D23" className="max-w-[160px] uppercase" />
               </Field>
               <Button type="button" variant="secondary" onClick={handleTiLookup} disabled={tiLooking}>
                 {tiLooking ? "Buscando..." : "🔍 Buscar dados"}
@@ -428,22 +408,22 @@ export default function SaleForm({
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Marca">
-                <Input name="tiBrand" placeholder="Ex.: Volkswagen" />
+                <Input name="tiBrand" defaultValue={initial?.tiBrand || ""} placeholder="Ex.: Volkswagen" />
               </Field>
               <Field label="Modelo">
-                <Input name="tiModel" placeholder="Ex.: Gol" />
+                <Input name="tiModel" defaultValue={initial?.tiModel || ""} placeholder="Ex.: Gol" />
               </Field>
               <Field label="Cor">
-                <Input name="tiColor" />
+                <Input name="tiColor" defaultValue={initial?.tiColor || ""} />
               </Field>
               <Field label="Ano fabricação">
-                <Input type="number" name="tiManufactureYear" defaultValue={new Date().getFullYear()} />
+                <Input type="number" name="tiManufactureYear" defaultValue={initial?.tiManufactureYear ?? new Date().getFullYear()} />
               </Field>
               <Field label="Ano modelo">
-                <Input type="number" name="tiModelYear" defaultValue={new Date().getFullYear()} />
+                <Input type="number" name="tiModelYear" defaultValue={initial?.tiModelYear ?? new Date().getFullYear()} />
               </Field>
               <Field label="Quilometragem">
-                <Input type="number" name="tiKm" min={0} defaultValue={0} />
+                <Input type="number" name="tiKm" min={0} defaultValue={initial?.tiKm ?? 0} />
               </Field>
               <Field label="Valor negociado (avaliação)">
                 <Input
@@ -466,7 +446,7 @@ export default function SaleForm({
                 />
               </Field>
               <Field label="Banco / financeira da quitação">
-                <BankInput name="tiPayoffTo" placeholder="Ex.: Banco XPTO" />
+                <BankInput name="tiPayoffTo" defaultValue={initial?.tiPayoffTo || ""} placeholder="Ex.: Banco XPTO" />
               </Field>
               <Field label="Débitos do veículo (IPVA, multas...)">
                 <Input
@@ -527,117 +507,18 @@ export default function SaleForm({
       </div>
 
       <Field label="Observações">
-        <Textarea name="notes" rows={3} />
+        <Textarea name="notes" rows={3} defaultValue={initial?.notes || ""} />
       </Field>
 
-      {reviewError ? (
-        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {reviewError}
-        </div>
-      ) : null}
-
-      <div className="flex justify-end">
-        <Button type="button" onClick={handleReview}>
-          Revisar negócio (pré-venda) →
+      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
+        <p className="text-xs text-slate-500 sm:mr-auto">
+          Ao gerar, cria-se uma <strong>pré-venda</strong> (ficha de negócio) para revisar e imprimir.
+          Nada é lançado no financeiro até você clicar em “Registrar venda” na ficha.
+        </p>
+        <Button type="submit" disabled={pending}>
+          {pending ? "Gerando..." : preSaleId ? "Salvar pré-venda →" : "Gerar pré-venda →"}
         </Button>
       </div>
-      </div>
-
-      {review ? (
-        <div className="space-y-4">
-          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <p className="text-lg font-bold text-slate-900">Ficha de negócio</p>
-                <p className="text-xs text-slate-500">
-                  Pré-venda — resumo da negociação. Nada foi lançado ainda; confira e confirme abaixo.
-                </p>
-              </div>
-              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
-                Pré-venda
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-              <InfoRow label="Veículo" value={selectedVehicle ? `${selectedVehicle.brand} ${selectedVehicle.model} - ${selectedVehicle.plate}` : "—"} />
-              <InfoRow label="Cliente" value={snap.customerName || "—"} />
-              <InfoRow label="Vendedor" value={snap.sellerName || "—"} />
-              <InfoRow label="Data da venda" value={formatDateBR(snap.saleDate)} />
-              <InfoRow label="Forma de pagamento" value={paymentMethod === "A_VISTA" ? "À vista" : paymentMethod === "PARCELADO" ? "Parcelado (carnê da loja)" : "Financiado"} />
-              {sinal > 0 ? <InfoRow label="Sinal já recebido" value={formatCurrency(sinal)} /> : null}
-            </div>
-
-            {tradeIn ? (
-              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
-                <p className="mb-2 font-semibold text-slate-700">Veículo recebido em troca</p>
-                <div className="space-y-1">
-                  <InfoRow label="Veículo da troca" value={[snap.tiBrand, snap.tiModel, snap.tiPlate].filter(Boolean).join(" ") || "—"} />
-                  <SummaryRow label="Avaliação" value={tiNegotiated} />
-                  <SummaryRow label="(−) Quitação / saldo devedor" value={tiPayoff} />
-                  <SummaryRow label="(−) Débitos (IPVA, multas)" value={tiDebts} />
-                  <SummaryRow label="= Entrada da troca" value={tiLiquido} strong tone="green" top />
-                </div>
-              </div>
-            ) : null}
-
-            {paymentMethod === "PARCELADO" ? (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                <p className="mb-2 font-semibold text-slate-700">Parcelamento</p>
-                <SummaryRow label="Entrada" value={Number(snap.downPayment) || 0} />
-                <div className="flex items-center justify-between gap-3 text-slate-600">
-                  <span>Número de parcelas</span>
-                  <span className="tabular-nums">{Number(snap.installmentsCount) || 0}x</span>
-                </div>
-              </div>
-            ) : null}
-
-            {paymentMethod === "FINANCIADO" ? (
-              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
-                <p className="mb-2 font-semibold text-slate-700">Financiamento</p>
-                <InfoRow
-                  label="Financeira"
-                  value={financers.find((f) => f.id === financerAccountId)?.name || "Não informada"}
-                />
-                <SummaryRow label="Valor financiado (banco)" value={financedTyped} />
-              </div>
-            ) : null}
-
-            <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm">
-              <div className="space-y-1">
-                <SummaryRow label="Valor da venda" value={total} />
-                {tiLiquido > 0 ? <SummaryRow label="(−) Entrada da troca" value={tiLiquido} /> : null}
-                {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
-                {paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
-                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
-                ) : null}
-                {devolucaoCliente > 0 ? (
-                  <SummaryRow label="= Devolução ao cliente (Contas a Pagar)" value={devolucaoCliente} strong tone="rose" top />
-                ) : paymentMethod === "FINANCIADO" ? (
-                  <SummaryRow label="= Entrada do cliente (Contas a Receber)" value={aReceberFin} strong tone="green" top />
-                ) : (
-                  <SummaryRow label={`= Restante a pagar (${methodLabel})`} value={restanteFin} strong top />
-                )}
-              </div>
-            </div>
-
-            {snap.notes ? (
-              <div className="mt-4 text-sm">
-                <p className="font-semibold text-slate-700">Observações</p>
-                <p className="mt-1 whitespace-pre-wrap text-slate-600">{snap.notes}</p>
-              </div>
-            ) : null}
-          </div>
-
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            <Button type="button" variant="secondary" onClick={() => setReview(false)}>
-              ← Editar
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Registrando..." : "Registrar venda"}
-            </Button>
-          </div>
-        </div>
-      ) : null}
     </form>
   );
 }

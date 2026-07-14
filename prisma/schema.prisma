@@ -350,6 +350,50 @@ model VehicleCost {
   @@map("vehicle_costs")
 }
 
+enum StatusPreVenda {
+  ABERTA
+  CONVERTIDA
+  CANCELADA
+}
+
+// Pré-venda: rascunho da negociação para revisão/impressão. NÃO gera nenhum
+// lançamento financeiro; só ao "Registrar venda" ela vira uma venda de fato.
+model PreSale {
+  id                String         @id @default(cuid())
+  number            Int            @unique @default(autoincrement())
+  vehicleId         String
+  customerId        String
+  saleDate          DateTime       @default(now())
+  totalAmount       Float
+  paymentMethod     FormaPagamento
+  downPayment       Float          @default(0)
+  installmentsCount Int            @default(0)
+  financerAccountId String?
+  financedAmount    Float?
+  sellerName        String?
+  notes             String?
+  // Troca (veículo recebido do cliente) — dados brutos, o veículo só é criado
+  // ao converter em venda.
+  tradeIn           Boolean        @default(false)
+  tiPlate           String?
+  tiBrand           String?
+  tiModel           String?
+  tiManufactureYear Int?
+  tiModelYear       Int?
+  tiColor           String?
+  tiKm              Int?
+  tiNegotiated      Float?
+  tiPayoff          Float?
+  tiPayoffTo        String?
+  tiDebts           Float?
+  status            StatusPreVenda @default(ABERTA)
+  convertedSaleId   String?
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+
+  @@map("pre_sales")
+}
+
 model Sale {
   id                String         @id @default(cuid())
   orderNumber       Int            @unique @default(autoincrement())
