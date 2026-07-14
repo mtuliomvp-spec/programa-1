@@ -8,8 +8,52 @@ import {
   addVehicleCostWithPayable,
   createVehicleWithPayable,
   deleteVehicleCost,
+  receiveVehicleAdvance,
 } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
+
+const advanceSchema = z.object({
+  vehicleId: z.string().min(1),
+  amount: z.coerce.number().min(0.01, "Informe o valor do sinal"),
+  date: z.string().min(1),
+  accountId: z.string().optional(),
+  customerId: z.string().optional(),
+});
+
+export type AdvanceFormState = { error?: string; success?: string };
+
+export async function receiveVehicleAdvanceAction(
+  _prev: AdvanceFormState,
+  formData: FormData,
+): Promise<AdvanceFormState> {
+  const parsed = advanceSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+  try {
+    await receiveVehicleAdvance({
+      vehicleId: d.vehicleId,
+      amount: d.amount,
+      date: parseDateInput(d.date),
+      accountId: d.accountId || null,
+      customerId: d.customerId || null,
+    });
+  } catch {
+    return { error: "Não foi possível receber o sinal." };
+  }
+  revalidatePath(`/estoque/${d.vehicleId}`);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/");
+  return { success: "Sinal recebido." };
+}
+
+export async function deleteVehicleAdvanceAction(id: string, vehicleId: string) {
+  // Só remove sinal ainda não vinculado a uma venda.
+  await prisma.receivable.deleteMany({ where: { id, saleId: null, vehicleId } });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/");
+}
 
 const vehicleSchema = z.object({
   brand: z.string().min(1, "Informe a marca"),

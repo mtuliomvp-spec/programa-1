@@ -26,6 +26,15 @@ export default async function NovaVendaPage({
     }),
   ]);
 
+  // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
+  const advanceRows = await prisma.receivable.groupBy({
+    by: ["vehicleId"],
+    where: { saleId: null, status: "RECEBIDO", vehicleId: { in: vehicles.map((v) => v.id) } },
+    _sum: { amount: true },
+  });
+  const advances: Record<string, number> = {};
+  for (const r of advanceRows) if (r.vehicleId) advances[r.vehicleId] = r._sum.amount ?? 0;
+
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Nova venda" description="Registrar a venda de um veículo do estoque" />
@@ -36,6 +45,7 @@ export default async function NovaVendaPage({
             vehicles={vehicles}
             customers={customers}
             financers={financers}
+            advances={advances}
             preselectedVehicleId={vehicleId}
             currentUserName={user?.name}
           />

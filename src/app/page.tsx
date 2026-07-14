@@ -83,6 +83,9 @@ export default async function DashboardPage() {
           subItems={[
             { label: "Negociado a pagar", value: pat.veiculosNegociadoPendente },
             { label: "Recebido em vendas", value: pat.veiculosRecebido },
+            ...(pat.sinaisRecebidos > 0
+              ? [{ label: "Sinal recebido (a fechar venda)", value: pat.sinaisRecebidos }]
+              : []),
           ]}
           redItem={{ label: "Pendente receber", value: pat.veiculosAReceber }}
           href="/estoque"

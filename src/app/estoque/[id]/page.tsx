@@ -7,6 +7,8 @@ import DeleteVehicleButton from "./DeleteVehicleButton";
 import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
+import VehicleAdvance from "./VehicleAdvance";
+import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
 
@@ -31,6 +33,20 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   });
 
   if (!vehicle) notFound();
+
+  // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
+  const inStock = vehicle.status !== "VENDIDO";
+  const [advanceAccounts, advanceCustomers, advances] = inStock
+    ? await Promise.all([
+        getActiveAccounts(),
+        prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+        prisma.receivable.findMany({
+          where: { vehicleId: id, saleId: null, status: "RECEBIDO" },
+          include: { account: { select: { name: true } }, customer: { select: { name: true } } },
+          orderBy: { receivedDate: "desc" },
+        }),
+      ])
+    : [[], [], []];
 
   const extraCosts = vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
   const totalCost = vehicle.purchasePrice + extraCosts;
@@ -145,6 +161,27 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             {vehicle.status !== "VENDIDO" ? <VehicleDebtsLookup vehicleId={vehicle.id} /> : null}
           </Card>
+
+          {inStock ? (
+            <Card>
+              <CardHeader
+                title="Sinal / entrada antecipada"
+                description="Dinheiro recebido antes de fechar a venda. No fechamento, é abatido do que o cliente tem a pagar."
+              />
+              <VehicleAdvance
+                vehicleId={vehicle.id}
+                accounts={advanceAccounts.map((a) => ({ id: a.id, name: a.name }))}
+                customers={advanceCustomers}
+                advances={advances.map((r) => ({
+                  id: r.id,
+                  amount: r.amount,
+                  date: r.receivedDate ?? r.dueDate,
+                  accountName: r.account?.name ?? null,
+                  customerName: r.customer?.name ?? null,
+                }))}
+              />
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader title="Contas a pagar vinculadas" description="Compra do veículo e custos lançados" />

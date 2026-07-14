@@ -17,12 +17,14 @@ export default function SaleForm({
   vehicles,
   customers,
   financers,
+  advances = {},
   preselectedVehicleId,
   currentUserName,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
   financers: Financer[];
+  advances?: Record<string, number>;
   preselectedVehicleId?: string;
   currentUserName?: string;
 }) {
@@ -43,6 +45,7 @@ export default function SaleForm({
   const [tiDebts, setTiDebts] = useState(0);
   const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
   const total = Number(totalAmount) || 0;
+  const sinal = advances[vehicleId] || 0;
   const restante = Math.max(0, Math.round((total - tiLiquido) * 100) / 100);
 
   // Financiamento: valor financiado pelo banco e a entrada (restante) paga agora
@@ -159,6 +162,14 @@ export default function SaleForm({
           </Select>
         </Field>
       </div>
+
+      {sinal > 0 ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          💰 Sinal / entrada antecipada já recebido deste veículo:{" "}
+          <strong>{formatCurrency(sinal)}</strong>. Será <strong>abatido</strong> automaticamente do
+          que o cliente tem a pagar ao fechar a venda.
+        </div>
+      ) : null}
 
       {paymentMethod === "PARCELADO" ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">

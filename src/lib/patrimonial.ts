@@ -23,6 +23,7 @@ export type PatrimonialStats = {
   veiculosNegociadoPendente: number;
   veiculosRecebido: number;
   veiculosAReceber: number;
+  sinaisRecebidos: number;
   almoxarifado: number;
   saldoCapital: number;
   consorcios: number;
@@ -48,7 +49,9 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
         vehicle: { select: { status: true } },
       },
     }),
-    prisma.receivable.findMany({ select: { amount: true, status: true, saleId: true } }),
+    prisma.receivable.findMany({
+      select: { amount: true, status: true, saleId: true, vehicleId: true, vehicle: { select: { status: true } } },
+    }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
     prisma.capitalTransaction.findMany({ select: { kind: true, amount: true } }),
   ]);
@@ -86,10 +89,23 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
 
   let veiculosRecebido = 0;
   let veiculosAReceber = 0;
+  let sinaisRecebidos = 0;
   let contasAReceber = 0;
   for (const r of receivables) {
-    if (r.status === "RECEBIDO" && r.saleId) veiculosRecebido += r.amount;
-    else if (isPend(r.status)) {
+    // Sinal / entrada antecipada: recebido para um veículo AINDA em estoque,
+    // sem venda fechada. É um adiantamento (o dinheiro entrou, mas a venda não
+    // aconteceu), então compensa o caixa na equação até o fechamento.
+    if (
+      r.status === "RECEBIDO" &&
+      !r.saleId &&
+      r.vehicleId &&
+      r.vehicle &&
+      r.vehicle.status !== "VENDIDO"
+    ) {
+      sinaisRecebidos += r.amount;
+    } else if (r.status === "RECEBIDO" && r.saleId) {
+      veiculosRecebido += r.amount;
+    } else if (isPend(r.status)) {
       contasAReceber += r.amount;
       // Pendente de vendas de veículos: é um ativo (o carro já saiu). Entra na
       // equação para o resultado bater com a página de Lucro/Prejuízo.
@@ -120,7 +136,13 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   // - Consórcios: valor aplicado nas cotas
   // - Capital: aportes − retiradas dos sócios (não é lucro; entra subtraindo)
   const lucro =
-    saldoCaixa + estoqueVeiculosPago + veiculosAReceber + almoxarifado + consorcios - saldoCapital;
+    saldoCaixa +
+    estoqueVeiculosPago +
+    veiculosAReceber +
+    almoxarifado +
+    consorcios -
+    sinaisRecebidos -
+    saldoCapital;
 
   return {
     saldoCaixa,
@@ -128,6 +150,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     veiculosNegociadoPendente,
     veiculosRecebido,
     veiculosAReceber,
+    sinaisRecebidos,
     almoxarifado,
     saldoCapital,
     consorcios,

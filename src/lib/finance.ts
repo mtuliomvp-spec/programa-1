@@ -503,6 +503,40 @@ export async function addPartStockWithPayable(input: {
 // Vendas de veículos -> Contas a Receber
 // ---------------------------------------------------------------------------
 
+/**
+ * Recebe um sinal / entrada antecipada de um veículo AINDA em estoque (antes de
+ * fechar a venda). O dinheiro entra na conta escolhida e fica vinculado ao
+ * veículo (sem venda). Quando a venda for fechada, esse valor é abatido
+ * automaticamente do que o cliente tem a pagar.
+ */
+export async function receiveVehicleAdvance(input: {
+  vehicleId: string;
+  amount: number;
+  date: Date;
+  accountId?: string | null;
+  customerId?: string | null;
+  notes?: string | null;
+}) {
+  const accountId = input.accountId ?? (await getDefaultAccountId());
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: input.vehicleId } });
+  return prisma.receivable.create({
+    data: {
+      description: `Sinal / entrada antecipada - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+      category: "VENDA_VEICULO",
+      amount: input.amount,
+      dueDate: input.date,
+      receivedDate: input.date,
+      status: "RECEBIDO",
+      customerId: input.customerId || null,
+      vehicleId: input.vehicleId,
+      accountId,
+      costCenterId: veiculosCenterId,
+      notes: input.notes || null,
+    },
+  });
+}
+
 export async function registerVehicleSale(input: {
   vehicleId: string;
   customerId: string;
@@ -581,8 +615,26 @@ export async function registerVehicleSale(input: {
       });
     }
 
-    // O que resta a cobrar em dinheiro (depois de abater a troca).
-    const billable = Math.max(0, Math.round((input.totalAmount - tradeIn) * 100) / 100);
+    // Sinal / entrada antecipada: valores já recebidos para este veículo ANTES
+    // do fechamento da venda (adiantamentos). No fechamento, damos baixa: são
+    // vinculados à venda e abatem do que ainda há a cobrar.
+    const advances = await tx.receivable.findMany({
+      where: { vehicleId: input.vehicleId, saleId: null, status: "RECEBIDO" },
+      select: { id: true, amount: true },
+    });
+    const advanceTotal = advances.reduce((s, a) => s + a.amount, 0);
+    if (advances.length > 0) {
+      await tx.receivable.updateMany({
+        where: { id: { in: advances.map((a) => a.id) } },
+        data: { saleId: sale.id },
+      });
+    }
+
+    // O que resta a cobrar em dinheiro (depois de abater troca e sinal).
+    const billable = Math.max(
+      0,
+      Math.round((input.totalAmount - tradeIn - advanceTotal) * 100) / 100,
+    );
 
     if (input.paymentMethod === "PARCELADO") {
       const cashDown = Math.max(0, Math.min(input.downPayment, billable));
