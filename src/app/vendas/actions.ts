@@ -156,6 +156,9 @@ export async function cancelSaleAction(id: string) {
   revalidatePath("/vendas");
   revalidatePath("/estoque");
   revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/financiamentos");
+  revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
   redirect(`/vendas/${id}`);
 }

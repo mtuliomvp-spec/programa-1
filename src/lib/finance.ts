@@ -733,20 +733,63 @@ export async function registerVehicleSale(input: {
   });
 }
 
+/**
+ * Cancela a venda revertendo TUDO atomicamente: apaga os recebíveis criados
+ * pela venda (entrada, à vista, parcelas, repasse do financiamento — inclusive
+ * o que entrou na conta da financeira), estorna a baixa do financiamento se já
+ * recebida, desfaz o veículo recebido em troca e devolve o carro ao estoque.
+ *
+ * O SINAL / entrada antecipada NÃO é revertido — ele foi um lançamento à parte,
+ * feito antes da venda. Ele é apenas desvinculado da venda e volta a ser um
+ * adiantamento do veículo (o dinheiro continua recebido).
+ */
 export async function cancelVehicleSale(saleId: string) {
   return prisma.$transaction(async (tx) => {
-    const sale = await tx.sale.findUniqueOrThrow({ where: { id: saleId } });
-    await tx.receivable.deleteMany({
-      where: { saleId, status: "PENDENTE" },
+    const sale = await tx.sale.findUniqueOrThrow({
+      where: { id: saleId },
+      include: { vehicle: { select: { plate: true } } },
     });
+    if (sale.status === "CANCELADA") return sale;
+
+    // 1) Sinais/adiantamentos (recebíveis com veículo) voltam a ser sinal: só
+    //    desvincula da venda; o dinheiro recebido permanece.
+    await tx.receivable.updateMany({
+      where: { saleId, vehicleId: { not: null } },
+      data: { saleId: null },
+    });
+
+    // 2) Recebíveis criados pela venda (entrada, à vista, parcelas, repasse) são
+    //    apagados — revertendo inclusive o que já estava recebido.
+    await tx.receivable.deleteMany({ where: { saleId } });
+
+    // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
+    //    para a empresa), estorna essa transferência.
+    if (sale.financerSettledAt && sale.financerAccountId && sale.financedAmount) {
+      await tx.accountTransfer.deleteMany({
+        where: {
+          fromId: sale.financerAccountId,
+          amount: sale.financedAmount,
+          description: { contains: sale.vehicle.plate },
+        },
+      });
+    }
+
+    // 4) Desfaz o veículo recebido em troca (e suas contas).
+    if (sale.tradeInVehicleId) {
+      const tradeId = sale.tradeInVehicleId;
+      await tx.sale.update({ where: { id: saleId }, data: { tradeInVehicleId: null } });
+      await tx.vehicleCost.deleteMany({ where: { vehicleId: tradeId } });
+      await tx.payable.deleteMany({ where: { vehicleId: tradeId } });
+      await tx.vehicle.delete({ where: { id: tradeId } });
+    }
+
+    // 5) Carro volta ao estoque e a venda fica cancelada.
+    await tx.vehicle.update({ where: { id: sale.vehicleId }, data: { status: "ESTOQUE" } });
     await tx.sale.update({
       where: { id: saleId },
-      data: { status: "CANCELADA" },
+      data: { status: "CANCELADA", financerSettledAt: null },
     });
-    await tx.vehicle.update({
-      where: { id: sale.vehicleId },
-      data: { status: "ESTOQUE" },
-    });
+    return sale;
   });
 }
 
