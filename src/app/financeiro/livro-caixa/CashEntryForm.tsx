@@ -11,6 +11,7 @@ import { createCashEntryAction, type CashEntryState } from "./actions";
 type Account = { id: string; name: string };
 type Vehicle = { id: string; label: string };
 type Beneficiary = { id: string; name: string };
+type Customer = { id: string; name: string };
 
 const initial: CashEntryState = {};
 
@@ -19,6 +20,7 @@ export default function CashEntryForm({
   supplierNames,
   vehicles,
   beneficiaries,
+  customers,
   categories,
   defaultDate,
   preselectedAccountId,
@@ -27,6 +29,7 @@ export default function CashEntryForm({
   supplierNames: string[];
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
+  customers: Customer[];
   categories: string[];
   defaultDate: string;
   preselectedAccountId?: string;
@@ -37,7 +40,25 @@ export default function CashEntryForm({
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
+  const [vehicleId, setVehicleId] = useState("");
+  const [description, setDescription] = useState("");
+  const lastAutoDesc = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
+
+  // É sinal de veículo? Entrada, fluxo Veículos e veículo selecionado.
+  const isSinal = kind === "entrada" && flow === "VEICULOS" && !!vehicleId;
+
+  // Preenche a descrição automaticamente para o sinal (mantém editável e não
+  // sobrescreve o que o usuário digitou manualmente).
+  useEffect(() => {
+    const label = vehicles.find((v) => v.id === vehicleId)?.label ?? "";
+    const auto = isSinal && label ? `Sinal / entrada antecipada - ${label}` : "";
+    setDescription((prev) => {
+      if (auto) return prev === "" || prev === lastAutoDesc.current ? auto : prev;
+      return prev === lastAutoDesc.current ? "" : prev;
+    });
+    lastAutoDesc.current = auto;
+  }, [isSinal, vehicleId, vehicles]);
 
   useEffect(() => {
     if (state.ok) {
@@ -46,6 +67,9 @@ export default function CashEntryForm({
       setFlow("ADMINISTRATIVO");
       setSupplierName("");
       setNewSupplier(false);
+      setVehicleId("");
+      setDescription("");
+      lastAutoDesc.current = "";
     }
   }, [state.ok]);
 
@@ -128,7 +152,13 @@ export default function CashEntryForm({
         </div>
 
         <Field label="Descrição" required>
-          <Input name="description" required placeholder="Ex.: Tarifa bancária / Venda de sucata" />
+          <Input
+            name="description"
+            required
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            placeholder="Ex.: Tarifa bancária / Venda de sucata"
+          />
         </Field>
 
         <div className="grid grid-cols-2 gap-3">
@@ -168,7 +198,11 @@ export default function CashEntryForm({
                 : "Veículo (opcional)"
             }
           >
-            <Select name="vehicleId" defaultValue="">
+            <Select
+              name="vehicleId"
+              value={vehicleId}
+              onChange={(e) => setVehicleId(e.target.value)}
+            >
               <option value="">
                 {kind === "entrada" ? "Nenhum (receita geral de veículos)" : "Nenhum (custo geral de veículos)"}
               </option>
@@ -187,6 +221,24 @@ export default function CashEntryForm({
                   : "O valor entra no custo pago desse veículo."}
               </p>
             )}
+          </Field>
+        ) : null}
+
+        {isSinal ? (
+          <Field label="Cliente que está dando o sinal">
+            <Select name="customerId" defaultValue="">
+              <option value="">Selecione o cliente (opcional)</option>
+              {customers.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            {customers.length === 0 ? (
+              <p className="mt-1 text-xs text-amber-600">
+                Nenhum cliente cadastrado. <a href="/clientes/novo" className="underline">Cadastrar</a>
+              </p>
+            ) : null}
           </Field>
         ) : null}
 

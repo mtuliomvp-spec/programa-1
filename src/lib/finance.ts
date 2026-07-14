@@ -1109,6 +1109,7 @@ export async function createCashEntry(input: {
   structuralKey?: StructuralKey;
   supplierId?: string | null;
   vehicleId?: string | null;
+  customerId?: string | null;
   capitalBeneficiaryId?: string | null;
   notes?: string | null;
 }) {
@@ -1130,6 +1131,7 @@ export async function createCashEntry(input: {
           accountId: input.accountId,
           costCenterId: centerId,
           vehicleId: input.vehicleId || null,
+          customerId: input.customerId || null,
           notes: input.notes || null,
         },
       });

@@ -17,6 +17,7 @@ const schema = z.object({
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   supplierName: z.string().optional(),
   vehicleId: z.string().optional(),
+  customerId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -91,6 +92,7 @@ export async function createCashEntryAction(
     structuralKey: d.structuralKey,
     supplierId,
     vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    customerId: d.kind === "entrada" ? d.customerId || null : null,
     capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
   });
