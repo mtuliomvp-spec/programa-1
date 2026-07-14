@@ -434,17 +434,30 @@ export default function SaleForm({
                 <SummaryRow label="Valor da venda" value={total} />
                 <SummaryRow label="(−) Entrada da troca" value={tiLiquido} />
                 {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
-                <SummaryRow
-                  label={`= Restante a pagar (${methodLabel})`}
-                  value={restanteFin}
-                  strong
-                  top
-                />
+                {paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
+                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
+                ) : null}
+                {devolucaoCliente > 0 ? (
+                  <SummaryRow label="= Devolução ao cliente" value={devolucaoCliente} strong tone="rose" top />
+                ) : paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
+                  <SummaryRow
+                    label="= Entrada do cliente (a receber)"
+                    value={entradaFinanciamento}
+                    strong
+                    tone="green"
+                    top
+                  />
+                ) : (
+                  <SummaryRow label={`= Restante a pagar (${methodLabel})`} value={restanteFin} strong top />
+                )}
               </div>
               <p className="mt-2 text-xs text-slate-500">
                 O veículo recebido entra no estoque; a quitação (ao banco) e os débitos (aos órgãos)
                 viram contas a pagar. A entrada da troca não passa pelo caixa — é quitada pelo carro.
                 {sinal > 0 ? " O sinal já recebido também abate do restante." : ""}
+                {devolucaoCliente > 0
+                  ? " Como a troca, o sinal e o financiamento passam do valor da venda, a diferença é devolvida ao cliente (Contas a Pagar)."
+                  : ""}
               </p>
             </div>
           </div>
