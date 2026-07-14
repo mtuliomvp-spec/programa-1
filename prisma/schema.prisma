@@ -43,6 +43,7 @@ enum CategoriaPagar {
   COMISSAO
   SALARIO
   COMBUSTIVEL
+  DEVOLUCAO_CLIENTE
   OUTROS
 }
 

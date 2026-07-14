@@ -636,6 +636,10 @@ export async function registerVehicleSale(input: {
       Math.round((input.totalAmount - tradeIn - advanceTotal) * 100) / 100,
     );
 
+    // Quando o financiamento excede o restante a pagar, o excedente vira uma
+    // devolução ao cliente (título em Contas a Pagar).
+    let devolucaoCliente = 0;
+
     if (input.paymentMethod === "PARCELADO") {
       const cashDown = Math.max(0, Math.min(input.downPayment, billable));
       if (cashDown > 0) {
@@ -671,13 +675,19 @@ export async function registerVehicleSale(input: {
         });
       });
     } else if (input.paymentMethod === "FINANCIADO") {
-      // Valor financiado pelo banco (repasse). Se não informado, financia tudo.
+      // Valor financiado pelo banco (repasse). Se não informado, financia todo o
+      // restante a pagar. Pode ser MAIOR que o restante — nesse caso o banco
+      // liberou mais do que faltava e a diferença é devolvida ao cliente.
       const financed =
         input.financedAmount != null && input.financedAmount > 0
-          ? Math.min(input.financedAmount, billable)
+          ? input.financedAmount
           : billable;
-      // O que sobra é a entrada paga agora pelo cliente (à vista).
-      const entrada = Math.max(0, Math.round((billable - financed) * 100) / 100);
+      // Parte do financiado que efetivamente cobre o carro.
+      const financedParaCarro = Math.min(financed, billable);
+      // O que ainda sobra a receber do cliente (entrada).
+      const entrada = Math.max(0, Math.round((billable - financedParaCarro) * 100) / 100);
+      // Excedente do financiamento sobre o restante → devolução ao cliente.
+      devolucaoCliente = Math.max(0, Math.round((financed - billable) * 100) / 100);
 
       if (entrada > 0) {
         // A entrada do cliente vai para Contas a Receber como PENDENTE: o
@@ -729,6 +739,27 @@ export async function registerVehicleSale(input: {
       data: receivablesData.map((r) => ({ ...r, costCenterId: veiculosCenterId })),
     });
 
+    // Devolução ao cliente: o banco financiou mais do que faltava a pagar. A
+    // diferença é lançada em Contas a Pagar (a loja recebeu a mais e devolve).
+    if (devolucaoCliente > 0) {
+      const customer = await tx.customer.findUnique({
+        where: { id: input.customerId },
+        select: { name: true },
+      });
+      await tx.payable.create({
+        data: {
+          description: `Devolução ao cliente${customer?.name ? ` ${customer.name}` : ""} - ${baseDescription}`,
+          category: "DEVOLUCAO_CLIENTE",
+          amount: devolucaoCliente,
+          dueDate: input.saleDate,
+          status: "PENDENTE",
+          vehicleId: input.vehicleId,
+          costCenterId: veiculosCenterId,
+          notes: "Excedente do financiamento sobre o restante a pagar da venda.",
+        },
+      });
+    }
+
     return sale;
   });
 }
@@ -764,6 +795,12 @@ export async function cancelVehicleSale(saleId: string) {
     // 2) Recebíveis criados pela venda (entrada, à vista, parcelas, repasse) são
     //    apagados — revertendo inclusive o que já estava recebido.
     await tx.receivable.deleteMany({ where: { saleId } });
+
+    // 2b) Devolução ao cliente gerada por esta venda também é revertida (se já
+    //     foi paga, apagar o título devolve o dinheiro ao caixa).
+    await tx.payable.deleteMany({
+      where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_CLIENTE" },
+    });
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.

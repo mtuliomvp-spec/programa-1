@@ -15,6 +15,7 @@ const categoryLabel = {
   COMISSAO: "Comissão",
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
+  DEVOLUCAO_CLIENTE: "Devolução ao cliente",
   OUTROS: "Outros",
 } as const;
 

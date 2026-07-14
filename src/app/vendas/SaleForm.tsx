@@ -24,14 +24,16 @@ function SummaryRow({
   label: string;
   value: number;
   strong?: boolean;
-  tone?: "muted" | "green";
+  tone?: "muted" | "green" | "rose";
   top?: boolean;
 }) {
+  const toneClass =
+    tone === "green" ? "text-emerald-700" : tone === "rose" ? "text-rose-600 font-semibold" : "text-slate-600";
   return (
     <div
       className={`flex items-center justify-between gap-3 ${top ? "border-t border-slate-200 pt-1.5 mt-1.5" : ""} ${
         strong ? "font-semibold" : ""
-      } ${tone === "green" ? "text-emerald-700" : "text-slate-600"}`}
+      } ${toneClass}`}
     >
       <span>{label}</span>
       <span className="tabular-nums whitespace-nowrap">{formatCurrency(value)}</span>
@@ -79,16 +81,17 @@ export default function SaleForm({
   const [financedAmount, setFinancedAmount] = useState<string>("");
   const [financerAccountId, setFinancerAccountId] = useState("");
   const restanteFin = Math.max(0, Math.round((restante - sinal) * 100) / 100);
-  const financed = Math.min(Number(financedAmount) || 0, restanteFin);
-  const entradaFinanciamento = Math.max(0, Math.round((restanteFin - financed) * 100) / 100);
+  const financedTyped = Number(financedAmount) || 0;
+  // Parte do financiamento que cobre o carro; o resto (se houver) é devolução.
+  const financedParaCarro = Math.min(financedTyped, restanteFin);
+  const entradaFinanciamento = Math.max(0, Math.round((restanteFin - financedParaCarro) * 100) / 100);
+  // Financiou mais do que faltava a pagar → o excedente é devolvido ao cliente.
+  const devolucaoCliente = Math.max(0, Math.round((financedTyped - restanteFin) * 100) / 100);
   // O financiado só vira "conta a receber" quando NÃO há financeira cadastrada
   // (aí é repasse pendente). Com financeira, ele entra na conta dela.
   const aReceberFin = financerAccountId
     ? entradaFinanciamento
-    : Math.round((entradaFinanciamento + financed) * 100) / 100;
-  // Digitou mais do que ainda falta pagar? O valor é limitado ao restante.
-  const financedTyped = Number(financedAmount) || 0;
-  const financedCapped = financedTyped > restanteFin + 0.005;
+    : Math.round((entradaFinanciamento + financedTyped) * 100) / 100;
   const methodLabel =
     paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
@@ -275,10 +278,7 @@ export default function SaleForm({
             <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
               <div className="space-y-1">
                 <SummaryRow label="Restante a pagar (após troca e sinal)" value={restanteFin} />
-                <SummaryRow
-                  label={`(−) Financiado pelo banco${financedCapped ? " (limitado ao restante)" : ""}`}
-                  value={financed}
-                />
+                <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
                 <SummaryRow
                   label="= Entrada do cliente → Contas a Receber"
                   value={aReceberFin}
@@ -286,12 +286,16 @@ export default function SaleForm({
                   tone="green"
                   top
                 />
+                {devolucaoCliente > 0 ? (
+                  <SummaryRow label="Devolução ao cliente → Contas a Pagar" value={devolucaoCliente} tone="rose" />
+                ) : null}
               </div>
-              {financedCapped ? (
-                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
-                  ⚠️ Você informou <strong>{formatCurrency(financedTyped)}</strong>, mas só faltam{" "}
-                  <strong>{formatCurrency(restanteFin)}</strong> a pagar. Será financiado apenas{" "}
-                  <strong>{formatCurrency(financed)}</strong>.
+              {devolucaoCliente > 0 ? (
+                <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-700">
+                  ⚠️ O banco financiou <strong>{formatCurrency(financedTyped)}</strong>, mas só faltavam{" "}
+                  <strong>{formatCurrency(restanteFin)}</strong> a pagar. A diferença de{" "}
+                  <strong>{formatCurrency(devolucaoCliente)}</strong> será <strong>devolvida ao cliente</strong>{" "}
+                  (lançada em Contas a Pagar) e aparece no card de estoque do veículo.
                 </p>
               ) : null}
               <p className="mt-2 text-xs text-slate-500">

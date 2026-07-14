@@ -401,6 +401,7 @@ export const PAYABLE_CATEGORY_LABEL: Record<CategoriaPagar, string> = {
   COMISSAO: "Comissões",
   SALARIO: "Salários",
   COMBUSTIVEL: "Combustíveis",
+  DEVOLUCAO_CLIENTE: "Devolução ao cliente",
   OUTROS: "Outros",
 };
 
