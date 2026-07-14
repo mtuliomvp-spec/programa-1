@@ -62,3 +62,33 @@ export async function deleteCustomerAction(id: string) {
   await prisma.customer.delete({ where: { id } });
   revalidatePath("/clientes");
 }
+
+/** Cadastro rápido de cliente a partir de outra tela (ex.: sinal no caixa). */
+export async function quickCreateCustomerAction(input: {
+  name: string;
+  document?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+}): Promise<{ ok: true; id: string; name: string; existed: boolean } | { ok: false; error: string }> {
+  const name = input.name?.trim();
+  if (!name) return { ok: false, error: "Informe o nome do cliente." };
+
+  const document = input.document?.trim() || null;
+  if (document) {
+    const existing = await prisma.customer.findFirst({ where: { document } });
+    if (existing) return { ok: true, id: existing.id, name: existing.name, existed: true };
+  }
+
+  const customer = await prisma.customer.create({
+    data: {
+      name,
+      document,
+      phone: input.phone?.trim() || null,
+      email: input.email?.trim() || null,
+      address: input.address?.trim() || null,
+    },
+  });
+  revalidatePath("/clientes");
+  return { ok: true, id: customer.id, name: customer.name, existed: false };
+}

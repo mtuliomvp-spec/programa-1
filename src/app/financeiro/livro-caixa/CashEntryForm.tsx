@@ -5,6 +5,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
+import NewCustomerInline from "@/components/NewCustomerInline";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
@@ -42,6 +43,9 @@ export default function CashEntryForm({
   const [newSupplier, setNewSupplier] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
   const [description, setDescription] = useState("");
+  const [customerList, setCustomerList] = useState(customers);
+  const [customerId, setCustomerId] = useState("");
+  const [newCustomer, setNewCustomer] = useState(false);
   const lastAutoDesc = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -69,6 +73,8 @@ export default function CashEntryForm({
       setNewSupplier(false);
       setVehicleId("");
       setDescription("");
+      setCustomerId("");
+      setNewCustomer(false);
       lastAutoDesc.current = "";
     }
   }, [state.ok]);
@@ -226,18 +232,31 @@ export default function CashEntryForm({
 
         {isSinal ? (
           <Field label="Cliente que está dando o sinal">
-            <Select name="customerId" defaultValue="">
+            <Select name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
               <option value="">Selecione o cliente (opcional)</option>
-              {customers.map((c) => (
+              {customerList.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </Select>
-            {customers.length === 0 ? (
-              <p className="mt-1 text-xs text-amber-600">
-                Nenhum cliente cadastrado. <a href="/clientes/novo" className="underline">Cadastrar</a>
-              </p>
+            <div className="mt-1 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setNewCustomer((v) => !v)}
+                className="text-xs font-medium text-blue-700 hover:underline"
+              >
+                {newCustomer ? "Fechar" : "➕ Cadastrar cliente"}
+              </button>
+            </div>
+            {newCustomer ? (
+              <NewCustomerInline
+                onCreated={(c) => {
+                  setCustomerList((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
+                  setCustomerId(c.id);
+                  setNewCustomer(false);
+                }}
+              />
             ) : null}
           </Field>
         ) : null}
