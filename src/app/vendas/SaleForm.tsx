@@ -48,10 +48,18 @@ export default function SaleForm({
   const sinal = advances[vehicleId] || 0;
   const restante = Math.max(0, Math.round((total - tiLiquido) * 100) / 100);
 
-  // Financiamento: valor financiado pelo banco e a entrada (restante) paga agora
+  // Financiamento: valor financiado pelo banco e a entrada (restante) paga agora.
+  // O sinal já recebido também abate do que o cliente ainda tem a pagar.
   const [financedAmount, setFinancedAmount] = useState<string>("");
-  const financed = Math.min(Number(financedAmount) || 0, restante);
-  const entradaFinanciamento = Math.max(0, Math.round((restante - financed) * 100) / 100);
+  const [financerAccountId, setFinancerAccountId] = useState("");
+  const restanteFin = Math.max(0, Math.round((restante - sinal) * 100) / 100);
+  const financed = Math.min(Number(financedAmount) || 0, restanteFin);
+  const entradaFinanciamento = Math.max(0, Math.round((restanteFin - financed) * 100) / 100);
+  // O financiado só vira "conta a receber" quando NÃO há financeira cadastrada
+  // (aí é repasse pendente). Com financeira, ele entra na conta dela.
+  const aReceberFin = financerAccountId
+    ? entradaFinanciamento
+    : Math.round((entradaFinanciamento + financed) * 100) / 100;
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
 
@@ -193,7 +201,11 @@ export default function SaleForm({
           <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do financiamento</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Financeira">
-              <Select name="financerAccountId" defaultValue="">
+              <Select
+                name="financerAccountId"
+                value={financerAccountId}
+                onChange={(e) => setFinancerAccountId(e.target.value)}
+              >
                 <option value="">Selecione a financeira</option>
                 {financers.map((f) => (
                   <option key={f.id} value={f.id}>
@@ -228,23 +240,25 @@ export default function SaleForm({
             O valor financiado vira uma conta a receber do banco/financeira (vencimento em 5 dias).
             {financedAmount === "" ? " Se ficar em branco, financia o valor total." : ""}
           </p>
-          {financedAmount !== "" && entradaFinanciamento > 0 ? (
+          {financedAmount !== "" ? (
             <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
               <p className="text-slate-600">
-                Financiado <strong>{formatCurrency(financed)}</strong> · entrada do cliente{" "}
-                <strong className="text-emerald-700">{formatCurrency(entradaFinanciamento)}</strong>
+                Valor da venda <strong>{formatCurrency(total)}</strong>
+                {tiLiquido > 0 ? <> − troca <strong>{formatCurrency(tiLiquido)}</strong></> : null}
+                {sinal > 0 ? <> − sinal já recebido <strong>{formatCurrency(sinal)}</strong></> : null}{" "}
+                − financiado <strong>{formatCurrency(financed)}</strong>
               </p>
               <p className="mt-2 border-t border-slate-100 pt-2 text-slate-700">
-                Vai para <strong>Contas a Receber</strong>:{" "}
-                <strong className="text-emerald-700">{formatCurrency(financed + entradaFinanciamento)}</strong>{" "}
-                <span className="text-xs text-slate-400">
-                  (financiado {formatCurrency(financed)} + entrada {formatCurrency(entradaFinanciamento)})
-                </span>
+                Entrada do cliente que vai para <strong>Contas a Receber</strong>:{" "}
+                <strong className="text-emerald-700">{formatCurrency(aReceberFin)}</strong>
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 A entrada vai para <strong>Contas a Receber</strong> (pendente). Quando o cliente
                 pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
-                pendente. O restante financiado é o repasse do banco.
+                pendente.{" "}
+                {financerAccountId
+                  ? "O valor financiado entra na conta da financeira."
+                  : "Sem financeira escolhida, o valor financiado também fica a receber (repasse)."}
               </p>
             </div>
           ) : null}
