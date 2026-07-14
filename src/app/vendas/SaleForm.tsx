@@ -13,6 +13,23 @@ type Financer = { id: string; name: string };
 
 const initialState: SaleFormState = {};
 
+/** Linha de informação (texto): rótulo à esquerda, valor à direita. */
+function InfoRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-0.5 text-slate-600">
+      <span className="text-slate-500">{label}</span>
+      <span className="text-right font-medium text-slate-800">{value}</span>
+    </div>
+  );
+}
+
+/** Formata "aaaa-mm-dd" (input date) para "dd/mm/aaaa". */
+function formatDateBR(value: string) {
+  if (!value) return "—";
+  const [y, m, d] = value.split("-");
+  return y && m && d ? `${d}/${m}/${y}` : value;
+}
+
 /** Linha de um resumo financeiro: rótulo à esquerda, valor à direita. */
 function SummaryRow({
   label,
@@ -104,6 +121,43 @@ export default function SaleForm({
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
 
+  // Pré-venda: antes de registrar, mostramos a ficha de negócio para revisão.
+  // Nada é gravado até o clique final em "Registrar venda".
+  const [review, setReview] = useState(false);
+  const [snap, setSnap] = useState<Record<string, string>>({});
+  const [reviewError, setReviewError] = useState<string | null>(null);
+
+  function readField(name: string) {
+    const el = formRef.current?.elements.namedItem(name) as { value?: unknown } | null;
+    return el && el.value != null ? String(el.value) : "";
+  }
+
+  function handleReview() {
+    // Validação leve só para não abrir a ficha sem o essencial.
+    if (!vehicleId) return setReviewError("Selecione o veículo.");
+    const customerId = readField("customerId");
+    if (!customerId) return setReviewError("Selecione o cliente.");
+    if (!(total > 0)) return setReviewError("Informe o valor da venda.");
+    if (tradeIn && (!readField("tiBrand") || !readField("tiModel") || !readField("tiPlate") || tiNegotiated <= 0)) {
+      return setReviewError("Para a troca, informe placa, marca, modelo e valor negociado do veículo recebido.");
+    }
+    setReviewError(null);
+    setSnap({
+      customerName: customers.find((c) => c.id === customerId)?.name ?? "",
+      sellerName: readField("sellerName"),
+      saleDate: readField("saleDate"),
+      downPayment: readField("downPayment"),
+      installmentsCount: readField("installmentsCount"),
+      notes: readField("notes"),
+      tiBrand: readField("tiBrand"),
+      tiModel: readField("tiModel"),
+      tiPlate: readField("tiPlate"),
+      tiPayoffTo: readField("tiPayoffTo"),
+    });
+    setReview(true);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   function setTiField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
     const el = formRef.current?.elements.namedItem(name);
@@ -156,6 +210,9 @@ export default function SaleForm({
         </div>
       ) : null}
 
+      {/* Formulário de edição — escondido (mas montado) durante a revisão, para
+          que os campos continuem sendo enviados ao registrar a venda. */}
+      <div className={review ? "hidden" : "space-y-6"}>
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Veículo" required>
           <Select name="vehicleId" value={vehicleId} onChange={(e) => handleVehicleChange(e.target.value)} required>
@@ -473,11 +530,114 @@ export default function SaleForm({
         <Textarea name="notes" rows={3} />
       </Field>
 
+      {reviewError ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          {reviewError}
+        </div>
+      ) : null}
+
       <div className="flex justify-end">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Registrando..." : "Registrar venda"}
+        <Button type="button" onClick={handleReview}>
+          Revisar negócio (pré-venda) →
         </Button>
       </div>
+      </div>
+
+      {review ? (
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <p className="text-lg font-bold text-slate-900">Ficha de negócio</p>
+                <p className="text-xs text-slate-500">
+                  Pré-venda — resumo da negociação. Nada foi lançado ainda; confira e confirme abaixo.
+                </p>
+              </div>
+              <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+                Pré-venda
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+              <InfoRow label="Veículo" value={selectedVehicle ? `${selectedVehicle.brand} ${selectedVehicle.model} - ${selectedVehicle.plate}` : "—"} />
+              <InfoRow label="Cliente" value={snap.customerName || "—"} />
+              <InfoRow label="Vendedor" value={snap.sellerName || "—"} />
+              <InfoRow label="Data da venda" value={formatDateBR(snap.saleDate)} />
+              <InfoRow label="Forma de pagamento" value={paymentMethod === "A_VISTA" ? "À vista" : paymentMethod === "PARCELADO" ? "Parcelado (carnê da loja)" : "Financiado"} />
+              {sinal > 0 ? <InfoRow label="Sinal já recebido" value={formatCurrency(sinal)} /> : null}
+            </div>
+
+            {tradeIn ? (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50/50 p-3 text-sm">
+                <p className="mb-2 font-semibold text-slate-700">Veículo recebido em troca</p>
+                <div className="space-y-1">
+                  <InfoRow label="Veículo da troca" value={[snap.tiBrand, snap.tiModel, snap.tiPlate].filter(Boolean).join(" ") || "—"} />
+                  <SummaryRow label="Avaliação" value={tiNegotiated} />
+                  <SummaryRow label="(−) Quitação / saldo devedor" value={tiPayoff} />
+                  <SummaryRow label="(−) Débitos (IPVA, multas)" value={tiDebts} />
+                  <SummaryRow label="= Entrada da troca" value={tiLiquido} strong tone="green" top />
+                </div>
+              </div>
+            ) : null}
+
+            {paymentMethod === "PARCELADO" ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                <p className="mb-2 font-semibold text-slate-700">Parcelamento</p>
+                <SummaryRow label="Entrada" value={Number(snap.downPayment) || 0} />
+                <div className="flex items-center justify-between gap-3 text-slate-600">
+                  <span>Número de parcelas</span>
+                  <span className="tabular-nums">{Number(snap.installmentsCount) || 0}x</span>
+                </div>
+              </div>
+            ) : null}
+
+            {paymentMethod === "FINANCIADO" ? (
+              <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+                <p className="mb-2 font-semibold text-slate-700">Financiamento</p>
+                <InfoRow
+                  label="Financeira"
+                  value={financers.find((f) => f.id === financerAccountId)?.name || "Não informada"}
+                />
+                <SummaryRow label="Valor financiado (banco)" value={financedTyped} />
+              </div>
+            ) : null}
+
+            <div className="mt-4 rounded-lg border border-slate-200 p-3 text-sm">
+              <div className="space-y-1">
+                <SummaryRow label="Valor da venda" value={total} />
+                {tiLiquido > 0 ? <SummaryRow label="(−) Entrada da troca" value={tiLiquido} /> : null}
+                {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
+                {paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
+                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
+                ) : null}
+                {devolucaoCliente > 0 ? (
+                  <SummaryRow label="= Devolução ao cliente (Contas a Pagar)" value={devolucaoCliente} strong tone="rose" top />
+                ) : paymentMethod === "FINANCIADO" ? (
+                  <SummaryRow label="= Entrada do cliente (Contas a Receber)" value={aReceberFin} strong tone="green" top />
+                ) : (
+                  <SummaryRow label={`= Restante a pagar (${methodLabel})`} value={restanteFin} strong top />
+                )}
+              </div>
+            </div>
+
+            {snap.notes ? (
+              <div className="mt-4 text-sm">
+                <p className="font-semibold text-slate-700">Observações</p>
+                <p className="mt-1 whitespace-pre-wrap text-slate-600">{snap.notes}</p>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <Button type="button" variant="secondary" onClick={() => setReview(false)}>
+              ← Editar
+            </Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Registrando..." : "Registrar venda"}
+            </Button>
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
