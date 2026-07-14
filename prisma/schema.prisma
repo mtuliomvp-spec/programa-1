@@ -338,6 +338,9 @@ model VehicleCost {
   category    CategoriaCustoVeiculo
   amount      Float
   date        DateTime              @default(now())
+  // Custo lançado depois que o veículo já foi vendido (pós-venda): não entra na
+  // margem da venda, aparece à parte no Lucro/Prejuízo e no prontuário.
+  postSale    Boolean               @default(false)
   notes       String?
   payableId   String?               @unique
   payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)

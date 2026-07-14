@@ -134,7 +134,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
 // (com sinal negativo). A soma das linhas é o lucro/prejuízo do período.
 // ---------------------------------------------------------------------------
 
-export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO";
+export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA";
 
 export type PLEntry = {
   id: string;
@@ -152,6 +152,7 @@ export type PLStatement = {
   lucroBruto: number;
   despesas: number;
   comissoes: number;
+  posVenda: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -160,7 +161,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
   const { start: rangeStart } = monthRange(months - 1);
   const { end: rangeEnd } = monthRange(0);
 
-  const [sales, partSales, expenses] = await Promise.all([
+  const [sales, partSales, expenses, postSaleCosts] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { vehicle: { include: { costs: true } } },
@@ -178,6 +179,12 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
       },
       select: { id: true, amount: true, dueDate: true, category: true, description: true, categoryLabel: true },
     }),
+    // Custos pós-venda (lançados após o veículo ser vendido): entram à parte,
+    // na data em que foram lançados — não na margem da venda.
+    prisma.vehicleCost.findMany({
+      where: { postSale: true, date: { gte: rangeStart, lt: rangeEnd } },
+      include: { vehicle: { select: { brand: true, model: true, plate: true } } },
+    }),
   ]);
 
   const fmt = (n: number) =>
@@ -185,10 +192,13 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
 
   const entries: PLEntry[] = [];
   let receitaVeiculos = 0, custoVeiculos = 0, receitaPecas = 0, custoPecas = 0;
-  let despesas = 0, comissoes = 0;
+  let despesas = 0, comissoes = 0, posVenda = 0;
 
   for (const s of sales) {
-    const custo = s.vehicle.purchasePrice + s.vehicle.costs.reduce((c, x) => c + x.amount, 0);
+    // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
+    const custo =
+      s.vehicle.purchasePrice +
+      s.vehicle.costs.filter((x) => !x.postSale).reduce((c, x) => c + x.amount, 0);
     const margem = s.totalAmount - custo;
     receitaVeiculos += s.totalAmount;
     custoVeiculos += custo;
@@ -231,6 +241,18 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     });
   }
 
+  for (const c of postSaleCosts) {
+    posVenda += c.amount;
+    entries.push({
+      id: `pv-${c.id}`,
+      date: c.date,
+      kind: "POS_VENDA",
+      description: `Pós-venda: ${c.description}`,
+      detail: `${c.vehicle.brand} ${c.vehicle.model} · ${c.vehicle.plate}`,
+      value: -c.amount,
+    });
+  }
+
   entries.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const receitaTotal = receitaVeiculos + receitaPecas;
@@ -243,7 +265,8 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     lucroBruto,
     despesas,
     comissoes,
-    lucroLiquido: lucroBruto - despesas - comissoes,
+    posVenda,
+    lucroLiquido: lucroBruto - despesas - comissoes - posVenda,
     veiculosVendidos: sales.length,
   };
 }

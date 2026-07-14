@@ -10,6 +10,7 @@ const kindMeta: Record<string, { label: string; tone: "info" | "success" | "warn
   PECA: { label: "Peça", tone: "success" },
   DESPESA: { label: "Despesa", tone: "warning" },
   COMISSAO: { label: "Comissão", tone: "danger" },
+  POS_VENDA: { label: "Pós-venda", tone: "danger" },
 };
 
 export default async function LucroPrejuizoPage({
@@ -90,6 +91,9 @@ export default async function LucroPrejuizoPage({
           <Row label="( = ) Lucro bruto" value={s.lucroBruto} kind="total" />
           <Row label="Despesas operacionais" value={-s.despesas} kind="sub" />
           <Row label="Comissões" value={-s.comissoes} kind="sub" />
+          {s.posVenda > 0 ? (
+            <Row label="Custos pós-venda (veículos já vendidos)" value={-s.posVenda} kind="sub" />
+          ) : null}
           <Row label={lucro ? "( = ) Lucro líquido" : "( = ) Prejuízo líquido"} value={s.lucroLiquido} kind="final" />
         </div>
       </Card>

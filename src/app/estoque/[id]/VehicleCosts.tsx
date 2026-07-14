@@ -13,6 +13,7 @@ type Cost = {
   category: CategoriaCustoVeiculo;
   amount: number;
   date: Date;
+  postSale?: boolean;
   payableStatus?: "PENDENTE" | "PAGO" | "ATRASADO" | null;
 };
 
@@ -52,6 +53,7 @@ export default function VehicleCosts({
                 <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                   {formatDate(c.date)}
                   <Badge>{VEHICLE_COST_CATEGORY_LABEL[c.category]}</Badge>
+                  {c.postSale ? <Badge tone="danger">Pós-venda</Badge> : null}
                   {c.payableStatus === "PENDENTE" || c.payableStatus === "ATRASADO" ? (
                     <Badge tone={c.payableStatus === "ATRASADO" ? "danger" : "warning"}>
                       {c.payableStatus === "ATRASADO" ? "Pagamento atrasado" : "A pagar"}
@@ -63,7 +65,7 @@ export default function VehicleCosts({
                 <span className="text-sm font-semibold text-slate-900">
                   {formatCurrency(c.amount)}
                 </span>
-                {!sold ? (
+                {!sold || c.postSale ? (
                   <button
                     type="button"
                     disabled={deleting}
@@ -84,6 +86,12 @@ export default function VehicleCosts({
       )}
 
       <div className="border-t border-slate-100 px-5 py-4">
+        {sold && !showForm ? (
+          <p className="mb-2 text-xs text-slate-500">
+            Veículo vendido. Novos custos entram como <strong>pós-venda</strong> (não mexem na
+            margem da venda; aparecem no Lucro/Prejuízo como pós-venda).
+          </p>
+        ) : null}
         {showForm ? (
           <form action={formAction} className="space-y-3">
             <input type="hidden" name="vehicleId" value={vehicleId} />
@@ -124,12 +132,10 @@ export default function VehicleCosts({
               </Button>
             </div>
           </form>
-        ) : !sold ? (
-          <Button type="button" variant="secondary" onClick={() => setShowForm(true)}>
-            + Lançar custo
-          </Button>
         ) : (
-          <p className="text-xs text-slate-400">Veículo vendido — custos congelados para o cálculo do lucro.</p>
+          <Button type="button" variant="secondary" onClick={() => setShowForm(true)}>
+            {sold ? "+ Lançar custo pós-venda" : "+ Lançar custo"}
+          </Button>
         )}
       </div>
     </div>

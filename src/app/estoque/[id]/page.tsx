@@ -137,6 +137,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 category: c.category,
                 amount: c.amount,
                 date: c.date,
+                postSale: c.postSale,
                 payableStatus: c.payable
                   ? effectivePayableStatus(c.payable.status, c.payable.dueDate)
                   : null,

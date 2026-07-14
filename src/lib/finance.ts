@@ -338,6 +338,8 @@ export async function addVehicleCostWithPayable(input: {
       where: { id: input.vehicleId },
     });
     const suffix = `${vehicle.brand} ${vehicle.model} (${vehicle.plate})`;
+    // Custo lançado com o veículo já vendido é um custo pós-venda.
+    const postSale = vehicle.status === "VENDIDO";
     const count = Math.max(1, input.installments ?? 1);
     const firstDue = input.alreadyPaid ? input.date : input.dueDate || input.date;
 
@@ -375,6 +377,7 @@ export async function addVehicleCostWithPayable(input: {
           category: input.category,
           amount: amounts[i],
           date: count > 1 ? dueDate : input.date,
+          postSale,
           notes: input.notes || null,
           payableId: payable.id,
         },
