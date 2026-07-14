@@ -33,18 +33,18 @@ export default async function FinanciamentosPage() {
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <StatCard
-          label="A receber de financeiras"
+          label="Saldo nas financeiras"
           value={formatCurrency(totalAReceber)}
-          hint="saldo parado nas contas das financeiras"
+          hint="valor financiado ainda na conta das financeiras"
           tone={totalAReceber > 0 ? "warning" : "default"}
         />
         <StatCard label="Total financiado (histórico)" value={formatCurrency(totalFinanciado)} />
       </div>
 
       <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-blue-800">
-        O valor financiado fica na conta da financeira até ela pagar. Quando a financeira pagar,
-        vá em <strong>Contas e caixas</strong> e faça uma <strong>transferência</strong> da conta da
-        financeira para a conta da empresa — a conta da financeira zera e o dinheiro entra no caixa.
+        O valor financiado fica na conta da financeira. Quando a financeira pagar, vá em{" "}
+        <strong>Contas e caixas</strong> e faça uma <strong>transferência</strong> da conta da
+        financeira para a conta da empresa — a conta da financeira zera e o dinheiro passa para o caixa.
       </div>
 
       <Card>
