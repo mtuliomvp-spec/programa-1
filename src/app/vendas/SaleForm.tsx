@@ -220,13 +220,13 @@ export default function SaleForm({
           {financedAmount !== "" && entradaFinanciamento > 0 ? (
             <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
               <p className="text-slate-600">
-                Financiado <strong>{formatCurrency(financed)}</strong> · restante{" "}
-                <strong className="text-emerald-700">
-                  entrada paga agora {formatCurrency(entradaFinanciamento)}
-                </strong>
+                Financiado <strong>{formatCurrency(financed)}</strong> · entrada do cliente{" "}
+                <strong className="text-emerald-700">{formatCurrency(entradaFinanciamento)}</strong>
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                A entrada é lançada como recebida na data da venda; o restante é o repasse do banco.
+                A entrada vai para <strong>Contas a Receber</strong> (pendente). Quando o cliente
+                pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
+                pendente. O restante financiado é o repasse do banco.
               </p>
             </div>
           ) : null}

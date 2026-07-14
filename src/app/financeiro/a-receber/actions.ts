@@ -3,7 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { markReceivableReceived, markReceivablePending, createManualReceivable } from "@/lib/finance";
+import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
 export async function markReceivedAction(id: string, accountId?: string) {
@@ -11,6 +11,19 @@ export async function markReceivedAction(id: string, accountId?: string) {
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
+  revalidatePath("/");
+}
+
+/**
+ * Recebe um título total ou parcialmente na conta escolhida. No parcial, o
+ * restante continua pendente em Contas a Receber.
+ */
+export async function receiveAction(id: string, amount: number, accountId?: string) {
+  await receiveReceivable(id, amount, new Date(), accountId || null);
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/");
 }
 

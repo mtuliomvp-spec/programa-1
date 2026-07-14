@@ -86,7 +86,7 @@ export default async function ContasAReceberPage({
                     <Badge tone={statusTone[r.effective]}>{statusLabelMap[r.effective]}</Badge>
                   </Td>
                   <Td>
-                    <ReceivableRowActions id={r.id} status={r.status} accounts={accounts} />
+                    <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} />
                   </Td>
                 </Tr>
               ))}

@@ -625,17 +625,18 @@ export async function registerVehicleSale(input: {
       const entrada = Math.max(0, Math.round((billable - financed) * 100) / 100);
 
       if (entrada > 0) {
+        // A entrada do cliente vai para Contas a Receber como PENDENTE: o
+        // cliente paga (total ou parcial) e aí se dá baixa na conta do depósito.
         receivablesData.push({
-          description: `${baseDescription} - Entrada`,
+          description: `${baseDescription} - Entrada do cliente`,
           category: "VENDA_VEICULO",
           amount: entrada,
           dueDate: input.saleDate,
-          receivedDate: input.saleDate,
-          status: "RECEBIDO",
+          status: "PENDENTE",
           customerId: input.customerId,
           saleId: sale.id,
           installmentNumber: 0,
-          accountId: defaultAccountId,
+          accountId: null,
         });
       }
       if (financed > 0) {
@@ -820,6 +821,58 @@ export async function markReceivablePending(id: string) {
   return prisma.receivable.update({
     where: { id },
     data: { status: "PENDENTE", receivedDate: null, accountId: null },
+  });
+}
+
+/**
+ * Recebe um título total ou PARCIALMENTE, creditando a conta escolhida. No
+ * parcial, cria um título RECEBIDO com o valor pago (na conta do depósito) e
+ * reduz o pendente do original — o restante continua a receber. Ex.: entrada
+ * de 100.000, cliente paga 50.000 → 50.000 recebido, 50.000 continua pendente.
+ */
+export async function receiveReceivable(
+  id: string,
+  amount: number,
+  receivedDate: Date,
+  accountId?: string | null,
+) {
+  const account = accountId ?? (await getDefaultAccountId());
+  const r = await prisma.receivable.findUniqueOrThrow({ where: { id } });
+  if (r.status === "RECEBIDO") return r;
+  const pay = Math.min(Math.max(0, Math.round(amount * 100) / 100), r.amount);
+  if (pay <= 0) return r;
+
+  // Pagamento integral (ou do valor cheio): baixa o próprio título.
+  if (pay >= r.amount) {
+    return prisma.receivable.update({
+      where: { id },
+      data: { status: "RECEBIDO", receivedDate, accountId: account },
+    });
+  }
+
+  // Parcial: cria a parcela recebida e reduz o pendente do original.
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.create({
+      data: {
+        description: `${r.description} - Pagamento parcial`,
+        category: r.category,
+        amount: pay,
+        dueDate: r.dueDate,
+        receivedDate,
+        status: "RECEBIDO",
+        customerId: r.customerId,
+        saleId: r.saleId,
+        vehicleId: r.vehicleId,
+        installmentNumber: r.installmentNumber,
+        totalInstallments: r.totalInstallments,
+        costCenterId: r.costCenterId,
+        accountId: account,
+      },
+    });
+    return tx.receivable.update({
+      where: { id },
+      data: { amount: Math.round((r.amount - pay) * 100) / 100 },
+    });
   });
 }
 
