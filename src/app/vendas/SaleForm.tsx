@@ -13,6 +13,32 @@ type Financer = { id: string; name: string };
 
 const initialState: SaleFormState = {};
 
+/** Linha de um resumo financeiro: rótulo à esquerda, valor à direita. */
+function SummaryRow({
+  label,
+  value,
+  strong,
+  tone = "muted",
+  top,
+}: {
+  label: string;
+  value: number;
+  strong?: boolean;
+  tone?: "muted" | "green";
+  top?: boolean;
+}) {
+  return (
+    <div
+      className={`flex items-center justify-between gap-3 ${top ? "border-t border-slate-200 pt-1.5 mt-1.5" : ""} ${
+        strong ? "font-semibold" : ""
+      } ${tone === "green" ? "text-emerald-700" : "text-slate-600"}`}
+    >
+      <span>{label}</span>
+      <span className="tabular-nums whitespace-nowrap">{formatCurrency(value)}</span>
+    </div>
+  );
+}
+
 export default function SaleForm({
   vehicles,
   customers,
@@ -60,6 +86,11 @@ export default function SaleForm({
   const aReceberFin = financerAccountId
     ? entradaFinanciamento
     : Math.round((entradaFinanciamento + financed) * 100) / 100;
+  // Digitou mais do que ainda falta pagar? O valor é limitado ao restante.
+  const financedTyped = Number(financedAmount) || 0;
+  const financedCapped = financedTyped > restanteFin + 0.005;
+  const methodLabel =
+    paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
 
@@ -232,33 +263,44 @@ export default function SaleForm({
                 name="financedAmount"
                 value={financedAmount}
                 onChange={(e) => setFinancedAmount(e.target.value)}
-                placeholder={String(restante)}
+                placeholder={String(restanteFin)}
               />
             </Field>
           </div>
           <p className="mt-2 text-xs text-slate-500">
             O valor financiado vira uma conta a receber do banco/financeira (vencimento em 5 dias).
-            {financedAmount === "" ? " Se ficar em branco, financia o valor total." : ""}
+            {financedAmount === "" ? " Se ficar em branco, financia todo o restante a pagar." : ""}
           </p>
           {financedAmount !== "" ? (
             <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
-              <p className="text-slate-600">
-                Valor da venda <strong>{formatCurrency(total)}</strong>
-                {tiLiquido > 0 ? <> − troca <strong>{formatCurrency(tiLiquido)}</strong></> : null}
-                {sinal > 0 ? <> − sinal já recebido <strong>{formatCurrency(sinal)}</strong></> : null}{" "}
-                − financiado <strong>{formatCurrency(financed)}</strong>
-              </p>
-              <p className="mt-2 border-t border-slate-100 pt-2 text-slate-700">
-                Entrada do cliente que vai para <strong>Contas a Receber</strong>:{" "}
-                <strong className="text-emerald-700">{formatCurrency(aReceberFin)}</strong>
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
-                A entrada vai para <strong>Contas a Receber</strong> (pendente). Quando o cliente
+              <div className="space-y-1">
+                <SummaryRow label="Restante a pagar (após troca e sinal)" value={restanteFin} />
+                <SummaryRow
+                  label={`(−) Financiado pelo banco${financedCapped ? " (limitado ao restante)" : ""}`}
+                  value={financed}
+                />
+                <SummaryRow
+                  label="= Entrada do cliente → Contas a Receber"
+                  value={aReceberFin}
+                  strong
+                  tone="green"
+                  top
+                />
+              </div>
+              {financedCapped ? (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+                  ⚠️ Você informou <strong>{formatCurrency(financedTyped)}</strong>, mas só faltam{" "}
+                  <strong>{formatCurrency(restanteFin)}</strong> a pagar. Será financiado apenas{" "}
+                  <strong>{formatCurrency(financed)}</strong>.
+                </p>
+              ) : null}
+              <p className="mt-2 text-xs text-slate-500">
+                A entrada do cliente vai para <strong>Contas a Receber</strong> (pendente): quando ele
                 pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
                 pendente.{" "}
                 {financerAccountId
                   ? "O valor financiado entra na conta da financeira."
-                  : "Sem financeira escolhida, o valor financiado também fica a receber (repasse)."}
+                  : "Sem financeira escolhida, o valor financiado também fica a receber (repasse) e por isso soma acima."}
               </p>
             </div>
           ) : null}
@@ -349,28 +391,27 @@ export default function SaleForm({
             </div>
 
             <div className="rounded-lg border border-amber-300 bg-white p-3 text-sm">
-              <p className="text-slate-600">
-                Avaliação <strong>{formatCurrency(tiNegotiated)}</strong> − quitação{" "}
-                <strong>{formatCurrency(tiPayoff)}</strong> − débitos{" "}
-                <strong>{formatCurrency(tiDebts)}</strong> ={" "}
-                <strong className="text-emerald-700">
-                  entrada da troca {formatCurrency(tiLiquido)}
-                </strong>
-              </p>
-              <p className="mt-1 text-slate-600">
-                Valor da venda {formatCurrency(total)} − entrada da troca{" "}
-                {formatCurrency(tiLiquido)} ={" "}
-                <strong>restante a pagar {formatCurrency(restante)}</strong> (
-                {paymentMethod === "A_VISTA"
-                  ? "à vista"
-                  : paymentMethod === "PARCELADO"
-                    ? "parcelado"
-                    : "financiado"}
-                )
-              </p>
-              <p className="mt-1 text-xs text-slate-500">
+              <div className="space-y-1">
+                <SummaryRow label="Avaliação do veículo" value={tiNegotiated} />
+                <SummaryRow label="(−) Quitação / saldo devedor" value={tiPayoff} />
+                <SummaryRow label="(−) Débitos (IPVA, multas)" value={tiDebts} />
+                <SummaryRow label="= Entrada da troca" value={tiLiquido} strong tone="green" top />
+              </div>
+              <div className="mt-3 space-y-1">
+                <SummaryRow label="Valor da venda" value={total} />
+                <SummaryRow label="(−) Entrada da troca" value={tiLiquido} />
+                {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
+                <SummaryRow
+                  label={`= Restante a pagar (${methodLabel})`}
+                  value={restanteFin}
+                  strong
+                  top
+                />
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
                 O veículo recebido entra no estoque; a quitação (ao banco) e os débitos (aos órgãos)
                 viram contas a pagar. A entrada da troca não passa pelo caixa — é quitada pelo carro.
+                {sinal > 0 ? " O sinal já recebido também abate do restante." : ""}
               </p>
             </div>
           </div>
