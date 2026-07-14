@@ -925,6 +925,35 @@ export async function resolveSupplierByName(name: string): Promise<string> {
   return created.id;
 }
 
+/**
+ * Baixa do financiamento: a financeira pagou. Transfere o valor financiado da
+ * conta da financeira para a conta da empresa escolhida (o dinheiro passa a ser
+ * caixa) e marca a venda como recebida. É o "dar baixa" do repasse.
+ */
+export async function settleFinancing(saleId: string, accountId: string, date: Date) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: { customer: { select: { name: true } }, vehicle: { select: { brand: true, model: true, plate: true } } },
+  });
+  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
+  if (!sale.financedAmount || sale.financedAmount <= 0) throw new Error("Sem valor financiado a receber.");
+  if (sale.financerSettledAt) throw new Error("Este financiamento já foi recebido.");
+  if (sale.financerAccountId === accountId) throw new Error("Escolha uma conta da empresa (diferente da financeira).");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.accountTransfer.create({
+      data: {
+        fromId: sale.financerAccountId!,
+        toId: accountId,
+        amount: sale.financedAmount!,
+        date,
+        description: `Repasse financiamento — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+      },
+    });
+    return tx.sale.update({ where: { id: saleId }, data: { financerSettledAt: date } });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Lançamento avulso no Movimento de caixa diário (livro caixa)
 // ---------------------------------------------------------------------------

@@ -371,6 +371,8 @@ model Sale {
   // financeira pagar/transferir para a conta da empresa)
   financerAccountId String?
   financerAccount   FinancialAccount? @relation("SaleFinancer", fields: [financerAccountId], references: [id])
+  // Data em que a financeira pagou (repasse transferido para a conta da empresa)
+  financerSettledAt DateTime?
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

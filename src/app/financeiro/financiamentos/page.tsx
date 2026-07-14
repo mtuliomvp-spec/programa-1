@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import FinancingSettleButton from "./FinancingSettleButton";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,10 @@ export default async function FinanciamentosPage() {
   const financers = accounts.filter((a) => a.type === "FINANCEIRA" && a.active);
   const totalAReceber = financers.reduce((s, a) => s + a.balance, 0);
   const totalFinanciado = sales.reduce((s, v) => s + (v.financedAmount ?? 0), 0);
+  // Contas da empresa (não-financeira) que podem receber o repasse.
+  const companyAccounts = accounts
+    .filter((a) => a.active && a.type !== "FINANCEIRA")
+    .map((a) => ({ id: a.id, name: a.name }));
 
   return (
     <div>
@@ -42,9 +47,9 @@ export default async function FinanciamentosPage() {
       </div>
 
       <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-blue-800">
-        O valor financiado fica na conta da financeira. Quando a financeira pagar, vá em{" "}
-        <strong>Contas e caixas</strong> e faça uma <strong>transferência</strong> da conta da
-        financeira para a conta da empresa — a conta da financeira zera e o dinheiro passa para o caixa.
+        O valor financiado fica na conta da financeira. Quando a financeira pagar, clique em{" "}
+        <strong>Receber (dar baixa)</strong> na linha do financiamento e escolha a conta da empresa —
+        o valor sai da financeira e entra no caixa automaticamente.
       </div>
 
       <Card>
@@ -63,6 +68,7 @@ export default async function FinanciamentosPage() {
                 <Th>Veículo</Th>
                 <Th>Financeira</Th>
                 <Th className="text-right">Valor financiado</Th>
+                <Th className="text-right">Situação</Th>
               </Tr>
             </Thead>
             <tbody>
@@ -82,6 +88,15 @@ export default async function FinanciamentosPage() {
                   </Td>
                   <Td className="text-right font-semibold tabular-nums">
                     {formatCurrency(s.financedAmount ?? 0)}
+                  </Td>
+                  <Td className="text-right">
+                    {s.financerSettledAt ? (
+                      <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
+                    ) : s.financerAccountId ? (
+                      <FinancingSettleButton saleId={s.id} accounts={companyAccounts} />
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
                   </Td>
                 </Tr>
               ))}
