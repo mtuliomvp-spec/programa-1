@@ -12,13 +12,18 @@ export default async function NovaVendaPage({
 }) {
   const { vehicleId } = await searchParams;
   const user = await getSessionUser();
-  const [vehicles, customers] = await Promise.all([
+  const [vehicles, customers, financers] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
       orderBy: { createdAt: "desc" },
       select: { id: true, brand: true, model: true, plate: true, salePrice: true },
     }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.financialAccount.findMany({
+      where: { active: true, type: "FINANCEIRA" },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   return (
@@ -30,6 +35,7 @@ export default async function NovaVendaPage({
           <SaleForm
             vehicles={vehicles}
             customers={customers}
+            financers={financers}
             preselectedVehicleId={vehicleId}
             currentUserName={user?.name}
           />

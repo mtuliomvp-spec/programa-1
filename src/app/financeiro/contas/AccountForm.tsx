@@ -19,6 +19,7 @@ export default function AccountForm() {
           <option value="CAIXA">Caixa físico</option>
           <option value="BANCO">Banco (conta corrente)</option>
           <option value="POUPANCA">Poupança</option>
+          <option value="FINANCEIRA">Financeira (repasses de financiamento)</option>
           <option value="OUTRO">Outro</option>
         </Select>
       </Field>

@@ -26,7 +26,7 @@ export async function getActiveAccounts() {
 export type AccountWithBalance = {
   id: string;
   name: string;
-  type: "CAIXA" | "BANCO" | "POUPANCA" | "OUTRO";
+  type: "CAIXA" | "BANCO" | "POUPANCA" | "FINANCEIRA" | "OUTRO";
   bankName: string | null;
   agency: string | null;
   accountNumber: string | null;

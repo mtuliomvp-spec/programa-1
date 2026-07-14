@@ -9,7 +9,7 @@ import DeleteTransferButton from "./DeleteTransferButton";
 
 export const dynamic = "force-dynamic";
 
-const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", OUTRO: "Outro" } as const;
+const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
 
 export default async function ContasPage() {
   const [accounts, transfers] = await Promise.all([
@@ -22,7 +22,44 @@ export default async function ContasPage() {
   ]);
 
   const active = accounts.filter((a) => a.active);
-  const totalBalance = active.reduce((s, a) => s + a.balance, 0);
+  // Financeiras ficam separadas: o saldo delas é "a receber" (repasse de
+  // financiamento) e NÃO entra no caixa da empresa até a financeira transferir.
+  const cashAccounts = active.filter((a) => a.type !== "FINANCEIRA");
+  const financerAccounts = active.filter((a) => a.type === "FINANCEIRA");
+  const totalBalance = cashAccounts.reduce((s, a) => s + a.balance, 0);
+  const totalFinancers = financerAccounts.reduce((s, a) => s + a.balance, 0);
+
+  const renderAccountCard = (a: (typeof accounts)[number]) => (
+    <Card key={a.id} className={`px-5 py-4 ${!a.active ? "opacity-60" : ""}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">
+            {a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
+            <Badge tone="default">{typeLabel[a.type]}</Badge>
+            {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
+            {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
+          </p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            {[a.bankName, a.agency && `ag. ${a.agency}`, a.accountNumber && `conta ${a.accountNumber}`]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+            {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-400">
+              {a.type === "FINANCEIRA" ? "A receber" : "Saldo"}
+            </p>
+            <p className={`text-lg font-bold ${a.balance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
+              {formatCurrency(a.balance)}
+            </p>
+          </div>
+          <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} />
+        </div>
+      </div>
+    </Card>
+  );
 
   return (
     <div>
@@ -49,7 +86,12 @@ export default async function ContasPage() {
           value={formatCurrency(totalBalance)}
           tone={totalBalance >= 0 ? "positive" : "negative"}
         />
-        <StatCard label="Contas ativas" value={String(active.length)} />
+        <StatCard
+          label="A receber de financeiras"
+          value={formatCurrency(totalFinancers)}
+          hint="repasses de financiamento ainda não pagos"
+          tone={totalFinancers > 0 ? "warning" : "default"}
+        />
         <StatCard
           label="Conta padrão"
           value={active.find((a) => a.isDefault)?.name ?? "—"}
@@ -67,35 +109,17 @@ export default async function ContasPage() {
               />
             </Card>
           ) : (
-            accounts.map((a) => (
-              <Card key={a.id} className={`px-5 py-4 ${!a.active ? "opacity-60" : ""}`}>
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900">
-                      {a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : "💵"} {a.name}
-                      <Badge tone="default">{typeLabel[a.type]}</Badge>
-                      {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
-                      {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
-                    </p>
-                    <p className="mt-0.5 text-xs text-slate-500">
-                      {[a.bankName, a.agency && `ag. ${a.agency}`, a.accountNumber && `conta ${a.accountNumber}`]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                      {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Saldo</p>
-                      <p className={`text-lg font-bold ${a.balance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
-                        {formatCurrency(a.balance)}
-                      </p>
-                    </div>
-                    <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} />
-                  </div>
-                </div>
-              </Card>
-            ))
+            <>
+              {accounts.filter((a) => a.type !== "FINANCEIRA").map((a) => renderAccountCard(a))}
+              {accounts.some((a) => a.type === "FINANCEIRA") ? (
+                <>
+                  <p className="px-1 pt-1 text-sm font-semibold text-slate-700">
+                    🏢 Financeiras — a receber (repasses de financiamento)
+                  </p>
+                  {accounts.filter((a) => a.type === "FINANCEIRA").map((a) => renderAccountCard(a))}
+                </>
+              ) : null}
+            </>
           )}
 
           <Card>

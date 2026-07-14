@@ -514,6 +514,9 @@ export async function registerVehicleSale(input: {
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
   financerName?: string | null;
   financedAmount?: number | null;
+  // Conta financeira da financeira: o valor financiado entra nela (aguardando a
+  // financeira transferir para a conta da empresa).
+  financerAccountId?: string | null;
   // Entrada dada em troca por outro veículo (não entra no caixa: é quitada
   // pelo carro recebido). Reduz o que o cliente paga em dinheiro.
   tradeInAmount?: number;
@@ -543,6 +546,7 @@ export async function registerVehicleSale(input: {
         sellerName: input.sellerName || null,
         financerName: input.paymentMethod === "FINANCIADO" ? input.financerName || null : null,
         financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
+        financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -635,14 +639,20 @@ export async function registerVehicleSale(input: {
         });
       }
       if (financed > 0) {
+        // Se a financeira tem conta financeira cadastrada, o valor financiado
+        // entra NELA (fica lá até a financeira transferir para a empresa). Sem
+        // conta, cai no fluxo antigo (a receber pendente).
+        const naFinanceira = !!input.financerAccountId;
         receivablesData.push({
           description: `${baseDescription} - Repasse financiamento${input.financerName ? ` (${input.financerName})` : ""}`,
           category: "VENDA_VEICULO",
           amount: financed,
-          dueDate: addDays(input.saleDate, 5),
-          status: "PENDENTE",
+          dueDate: naFinanceira ? input.saleDate : addDays(input.saleDate, 5),
+          receivedDate: naFinanceira ? input.saleDate : null,
+          status: naFinanceira ? "RECEBIDO" : "PENDENTE",
           customerId: input.customerId,
           saleId: sale.id,
+          accountId: naFinanceira ? input.financerAccountId : null,
         });
       }
     } else if (billable > 0) {

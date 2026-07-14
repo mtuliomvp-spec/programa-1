@@ -29,6 +29,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/financeiro/contas", label: "Contas e caixas", icon: "💳", module: "financeiro" },
       { href: "/financeiro/a-pagar", label: "Contas a pagar", icon: "📤", module: "financeiro" },
       { href: "/financeiro/a-receber", label: "Contas a receber", icon: "📥", module: "financeiro" },
+      { href: "/financeiro/financiamentos", label: "Financiamentos", icon: "🏦", module: "financeiro" },
       { href: "/financeiro/recorrentes", label: "Recorrentes", icon: "🔁", module: "financeiro" },
       { href: "/financeiro/livro-caixa", label: "Livro caixa", icon: "📒", module: "financeiro" },
       { href: "/financeiro/fluxo-caixa", label: "Fluxo de caixa", icon: "💰", module: "financeiro" },

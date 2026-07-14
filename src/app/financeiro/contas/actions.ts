@@ -9,7 +9,7 @@ export type ContaFormState = { error?: string };
 
 const accountSchema = z.object({
   name: z.string().min(1, "Informe o nome da conta"),
-  type: z.enum(["CAIXA", "BANCO", "POUPANCA", "OUTRO"]),
+  type: z.enum(["CAIXA", "BANCO", "POUPANCA", "FINANCEIRA", "OUTRO"]),
   bankName: z.string().optional(),
   agency: z.string().optional(),
   accountNumber: z.string().optional(),

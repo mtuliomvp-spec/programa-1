@@ -9,17 +9,20 @@ import BankInput from "@/components/BankInput";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
+type Financer = { id: string; name: string };
 
 const initialState: SaleFormState = {};
 
 export default function SaleForm({
   vehicles,
   customers,
+  financers,
   preselectedVehicleId,
   currentUserName,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
+  financers: Financer[];
   preselectedVehicleId?: string;
   currentUserName?: string;
 }) {
@@ -178,8 +181,25 @@ export default function SaleForm({
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do financiamento</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Banco / financeira">
-              <BankInput name="financerName" placeholder="Ex.: Banco Itaú, BV, Santander..." />
+            <Field label="Financeira">
+              <Select name="financerAccountId" defaultValue="">
+                <option value="">Selecione a financeira</option>
+                {financers.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.name}
+                  </option>
+                ))}
+              </Select>
+              {financers.length === 0 ? (
+                <p className="mt-1 text-xs text-amber-600">
+                  Nenhuma financeira cadastrada.{" "}
+                  <a href="/financeiro/contas" className="underline">Cadastrar em Contas financeiras</a> (tipo Financeira).
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-slate-400">
+                  O valor financiado fica na conta da financeira até ela pagar.
+                </p>
+              )}
             </Field>
             <Field label="Valor financiado (repasse do banco)">
               <Input

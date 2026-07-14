@@ -15,7 +15,7 @@ const saleSchema = z.object({
   paymentMethod: z.enum(["A_VISTA", "PARCELADO", "FINANCIADO"]),
   downPayment: z.coerce.number().min(0).default(0),
   installmentsCount: z.coerce.number().int().min(0).default(0),
-  financerName: z.string().optional(),
+  financerAccountId: z.string().optional(),
   financedAmount: z.coerce.number().min(0).optional(),
   sellerName: z.string().optional(),
   notes: z.string().optional(),
@@ -54,6 +54,16 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
 
   if (d.paymentMethod === "FINANCIADO" && d.financedAmount != null && d.financedAmount > d.totalAmount) {
     return { error: "O valor financiado não pode ser maior que o valor total da venda." };
+  }
+
+  // Nome da financeira vem da conta financeira escolhida (para exibição/documento).
+  let financerName: string | null = null;
+  if (d.paymentMethod === "FINANCIADO" && d.financerAccountId) {
+    const acc = await prisma.financialAccount.findUnique({
+      where: { id: d.financerAccountId },
+      select: { name: true },
+    });
+    financerName = acc?.name ?? null;
   }
 
   // Troca: cadastra o veículo recebido do cliente e usa o líquido como entrada.
@@ -120,8 +130,9 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
       installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
       paymentMethod: d.paymentMethod,
       sellerName: d.sellerName || null,
-      financerName: d.paymentMethod === "FINANCIADO" ? d.financerName || null : null,
+      financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
+      financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
       notes: d.notes || null,
       tradeInAmount,
       tradeInLabel,

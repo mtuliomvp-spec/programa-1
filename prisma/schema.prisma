@@ -90,6 +90,7 @@ enum TipoConta {
   CAIXA
   BANCO
   POUPANCA
+  FINANCEIRA
   OUTRO
 }
 
@@ -138,6 +139,7 @@ model FinancialAccount {
   receivables    Receivable[]
   transfersOut   AccountTransfer[] @relation("TransferFrom")
   transfersIn    AccountTransfer[] @relation("TransferTo")
+  financedSales  Sale[]            @relation("SaleFinancer")
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -362,6 +364,10 @@ model Sale {
   // Financiamento: banco/financeira e valor financiado (repasse)
   financerName      String?
   financedAmount    Float?
+  // Conta financeira da financeira (o valor financiado fica nela até a
+  // financeira pagar/transferir para a conta da empresa)
+  financerAccountId String?
+  financerAccount   FinancialAccount? @relation("SaleFinancer", fields: [financerAccountId], references: [id])
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]
