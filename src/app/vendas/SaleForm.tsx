@@ -234,6 +234,13 @@ export default function SaleForm({
                 Financiado <strong>{formatCurrency(financed)}</strong> · entrada do cliente{" "}
                 <strong className="text-emerald-700">{formatCurrency(entradaFinanciamento)}</strong>
               </p>
+              <p className="mt-2 border-t border-slate-100 pt-2 text-slate-700">
+                Vai para <strong>Contas a Receber</strong>:{" "}
+                <strong className="text-emerald-700">{formatCurrency(financed + entradaFinanciamento)}</strong>{" "}
+                <span className="text-xs text-slate-400">
+                  (financiado {formatCurrency(financed)} + entrada {formatCurrency(entradaFinanciamento)})
+                </span>
+              </p>
               <p className="mt-1 text-xs text-slate-500">
                 A entrada vai para <strong>Contas a Receber</strong> (pendente). Quando o cliente
                 pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
