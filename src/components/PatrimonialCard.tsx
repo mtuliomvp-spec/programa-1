@@ -27,6 +27,7 @@ export default function PatrimonialCard({
   icon,
   sub,
   subItems,
+  redItem,
   formula,
   href,
 }: {
@@ -36,6 +37,7 @@ export default function PatrimonialCard({
   icon?: string;
   sub?: string;
   subItems?: { label: string; value: number }[];
+  redItem?: { label: string; value: number };
   formula?: string;
   href?: string;
 }) {
@@ -58,6 +60,11 @@ export default function PatrimonialCard({
               {s.label}: {formatCurrency(s.value)}
             </span>
           ))}
+        </p>
+      ) : null}
+      {redItem && redItem.value > 0 ? (
+        <p className="mt-1 text-xs font-semibold text-rose-600">
+          {redItem.label}: {formatCurrency(redItem.value)}
         </p>
       ) : null}
       {sub ? <p className="mt-1 text-xs text-slate-400">{sub}</p> : null}

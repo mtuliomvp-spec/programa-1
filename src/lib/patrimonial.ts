@@ -22,6 +22,7 @@ export type PatrimonialStats = {
   estoqueVeiculosPago: number;
   veiculosNegociadoPendente: number;
   veiculosRecebido: number;
+  veiculosAReceber: number;
   almoxarifado: number;
   saldoCapital: number;
   consorcios: number;
@@ -84,10 +85,16 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   }
 
   let veiculosRecebido = 0;
+  let veiculosAReceber = 0;
   let contasAReceber = 0;
   for (const r of receivables) {
     if (r.status === "RECEBIDO" && r.saleId) veiculosRecebido += r.amount;
-    else if (isPend(r.status)) contasAReceber += r.amount;
+    else if (isPend(r.status)) {
+      contasAReceber += r.amount;
+      // Pendente de vendas de veículos: é um ativo (o carro já saiu). Entra na
+      // equação para o resultado bater com a página de Lucro/Prejuízo.
+      if (r.saleId) veiculosAReceber += r.amount;
+    }
   }
 
   const almoxarifado = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
@@ -113,13 +120,14 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   // - Consórcios: valor aplicado nas cotas
   // - Capital: aportes − retiradas dos sócios (não é lucro; entra subtraindo)
   const lucro =
-    saldoCaixa + estoqueVeiculosPago + almoxarifado + consorcios - saldoCapital;
+    saldoCaixa + estoqueVeiculosPago + veiculosAReceber + almoxarifado + consorcios - saldoCapital;
 
   return {
     saldoCaixa,
     estoqueVeiculosPago,
     veiculosNegociadoPendente,
     veiculosRecebido,
+    veiculosAReceber,
     almoxarifado,
     saldoCapital,
     consorcios,

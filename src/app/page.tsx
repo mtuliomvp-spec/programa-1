@@ -84,6 +84,7 @@ export default async function DashboardPage() {
             { label: "Negociado a pagar", value: pat.veiculosNegociadoPendente },
             { label: "Recebido em vendas", value: pat.veiculosRecebido },
           ]}
+          redItem={{ label: "Pendente receber", value: pat.veiculosAReceber }}
           href="/estoque"
         />
         <PatrimonialCard
@@ -115,7 +116,7 @@ export default async function DashboardPage() {
           value={pat.lucro}
           tone={pat.lucro >= 0 ? "green" : "red"}
           icon={pat.lucro >= 0 ? "📈" : "📉"}
-          formula="Caixa + Estoque de veículos (pago) + Almoxarifado + Consórcios − Capital"
+          formula="Caixa + Estoque de veículos (pago) + Pendente a receber de vendas + Almoxarifado + Consórcios − Capital"
         />
       </div>
 
