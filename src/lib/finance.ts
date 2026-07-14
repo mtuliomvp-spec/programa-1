@@ -630,15 +630,16 @@ export async function registerVehicleSale(input: {
       });
     }
 
-    // O que resta a cobrar em dinheiro (depois de abater troca e sinal).
-    const billable = Math.max(
-      0,
-      Math.round((input.totalAmount - tradeIn - advanceTotal) * 100) / 100,
-    );
+    // O que resta a cobrar em dinheiro (depois de abater troca e sinal). Pode
+    // ficar negativo quando a troca + o sinal já passam do valor da venda —
+    // nesse caso o excedente já é uma devolução ao cliente.
+    const rawBillable = Math.round((input.totalAmount - tradeIn - advanceTotal) * 100) / 100;
+    const billable = Math.max(0, rawBillable);
 
-    // Quando o financiamento excede o restante a pagar, o excedente vira uma
-    // devolução ao cliente (título em Contas a Pagar).
-    let devolucaoCliente = 0;
+    // Devolução ao cliente = tudo que entrou (troca + sinal + financiado) além
+    // do valor da venda. Vira título em Contas a Pagar. Começa pelo excedente
+    // de troca + sinal; o financiamento pode somar mais adiante.
+    let devolucaoCliente = Math.max(0, Math.round(-rawBillable * 100) / 100);
 
     if (input.paymentMethod === "PARCELADO") {
       const cashDown = Math.max(0, Math.min(input.downPayment, billable));
@@ -686,8 +687,9 @@ export async function registerVehicleSale(input: {
       const financedParaCarro = Math.min(financed, billable);
       // O que ainda sobra a receber do cliente (entrada).
       const entrada = Math.max(0, Math.round((billable - financedParaCarro) * 100) / 100);
-      // Excedente do financiamento sobre o restante → devolução ao cliente.
-      devolucaoCliente = Math.max(0, Math.round((financed - billable) * 100) / 100);
+      // Excedente do financiamento sobre o restante soma na devolução (que já
+      // pode conter o excedente da troca + sinal).
+      devolucaoCliente = Math.round((devolucaoCliente + Math.max(0, financed - billable)) * 100) / 100;
 
       if (entrada > 0) {
         // A entrada do cliente vai para Contas a Receber como PENDENTE: o

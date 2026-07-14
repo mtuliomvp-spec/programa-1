@@ -80,13 +80,20 @@ export default function SaleForm({
   // O sinal já recebido também abate do que o cliente ainda tem a pagar.
   const [financedAmount, setFinancedAmount] = useState<string>("");
   const [financerAccountId, setFinancerAccountId] = useState("");
-  const restanteFin = Math.max(0, Math.round((restante - sinal) * 100) / 100);
+  // Restante depois de troca e sinal — pode ficar negativo (troca + sinal já
+  // passam do valor da venda), e aí o excedente já é devolução ao cliente.
+  const rawRestante = Math.round((total - tiLiquido - sinal) * 100) / 100;
+  const restanteFin = Math.max(0, rawRestante);
+  const baseDevolucao = Math.max(0, Math.round(-rawRestante * 100) / 100);
   const financedTyped = Number(financedAmount) || 0;
   // Parte do financiamento que cobre o carro; o resto (se houver) é devolução.
   const financedParaCarro = Math.min(financedTyped, restanteFin);
   const entradaFinanciamento = Math.max(0, Math.round((restanteFin - financedParaCarro) * 100) / 100);
-  // Financiou mais do que faltava a pagar → o excedente é devolvido ao cliente.
-  const devolucaoCliente = Math.max(0, Math.round((financedTyped - restanteFin) * 100) / 100);
+  // Devolução = excedente de (troca + sinal) + excedente do financiamento.
+  const devolucaoCliente =
+    paymentMethod === "FINANCIADO"
+      ? Math.round((baseDevolucao + Math.max(0, financedTyped - restanteFin)) * 100) / 100
+      : baseDevolucao;
   // O financiado só vira "conta a receber" quando NÃO há financeira cadastrada
   // (aí é repasse pendente). Com financeira, ele entra na conta dela.
   const aReceberFin = financerAccountId
@@ -213,6 +220,14 @@ export default function SaleForm({
         </div>
       ) : null}
 
+      {paymentMethod !== "FINANCIADO" && devolucaoCliente > 0 ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          ⚠️ A troca e o sinal somam mais que o valor da venda. A diferença de{" "}
+          <strong>{formatCurrency(devolucaoCliente)}</strong> será <strong>devolvida ao cliente</strong>{" "}
+          (lançada em Contas a Pagar) e aparece no card de estoque do veículo.
+        </div>
+      ) : null}
+
       {paymentMethod === "PARCELADO" ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
           <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do parcelamento</p>
@@ -275,38 +290,52 @@ export default function SaleForm({
             {financedAmount === "" ? " Se ficar em branco, financia todo o restante a pagar." : ""}
           </p>
           {financedAmount !== "" ? (
-            <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
-              <div className="space-y-1">
-                <SummaryRow label="Restante a pagar (após troca e sinal)" value={restanteFin} />
-                <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
-                <SummaryRow
-                  label="= Entrada do cliente → Contas a Receber"
-                  value={aReceberFin}
-                  strong
-                  tone="green"
-                  top
-                />
-                {devolucaoCliente > 0 ? (
-                  <SummaryRow label="Devolução ao cliente → Contas a Pagar" value={devolucaoCliente} tone="rose" />
-                ) : null}
-              </div>
-              {devolucaoCliente > 0 ? (
+            devolucaoCliente > 0 ? (
+              // Entrou mais do que o valor da venda (troca + sinal + financiado)
+              // → o excedente é devolvido ao cliente.
+              <div className="mt-3 rounded-lg border border-rose-200 bg-white p-3 text-sm">
+                <div className="space-y-1">
+                  <SummaryRow label="Valor da venda" value={total} />
+                  {tiLiquido > 0 ? <SummaryRow label="(−) Entrada da troca" value={tiLiquido} /> : null}
+                  {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
+                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
+                  <SummaryRow
+                    label="= Devolução ao cliente → Contas a Pagar"
+                    value={devolucaoCliente}
+                    strong
+                    tone="rose"
+                    top
+                  />
+                </div>
                 <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-2 py-1.5 text-xs text-rose-700">
-                  ⚠️ O banco financiou <strong>{formatCurrency(financedTyped)}</strong>, mas só faltavam{" "}
-                  <strong>{formatCurrency(restanteFin)}</strong> a pagar. A diferença de{" "}
+                  ⚠️ A troca, o sinal e o financiamento somam mais que o valor da venda. A diferença de{" "}
                   <strong>{formatCurrency(devolucaoCliente)}</strong> será <strong>devolvida ao cliente</strong>{" "}
                   (lançada em Contas a Pagar) e aparece no card de estoque do veículo.
                 </p>
-              ) : null}
-              <p className="mt-2 text-xs text-slate-500">
-                A entrada do cliente vai para <strong>Contas a Receber</strong> (pendente): quando ele
-                pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
-                pendente.{" "}
-                {financerAccountId
-                  ? "O valor financiado entra na conta da financeira."
-                  : "Sem financeira escolhida, o valor financiado também fica a receber (repasse) e por isso soma acima."}
-              </p>
-            </div>
+              </div>
+            ) : (
+              <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
+                <div className="space-y-1">
+                  <SummaryRow label="Restante a pagar (após troca e sinal)" value={restanteFin} />
+                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
+                  <SummaryRow
+                    label="= Entrada do cliente → Contas a Receber"
+                    value={aReceberFin}
+                    strong
+                    tone="green"
+                    top
+                  />
+                </div>
+                <p className="mt-2 text-xs text-slate-500">
+                  A entrada do cliente vai para <strong>Contas a Receber</strong> (pendente): quando ele
+                  pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
+                  pendente.{" "}
+                  {financerAccountId
+                    ? "O valor financiado entra na conta da financeira."
+                    : "Sem financeira escolhida, o valor financiado também fica a receber (repasse) e por isso soma acima."}
+                </p>
+              </div>
+            )
           ) : null}
         </div>
       ) : null}
