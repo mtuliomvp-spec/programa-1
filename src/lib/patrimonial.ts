@@ -25,6 +25,7 @@ export type PatrimonialStats = {
   veiculosAReceber: number;
   sinaisRecebidos: number;
   devolucoesClientes: number;
+  veiculosAPagarPosVenda: number;
   almoxarifado: number;
   saldoCapital: number;
   consorcios: number;
@@ -72,6 +73,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let titulosVencidosCount = 0;
   let titulosVencidosValor = 0;
   let devolucoesClientes = 0;
+  let veiculosAPagarPosVenda = 0;
 
   for (const p of payables) {
     if (p.status === "PAGO") {
@@ -82,6 +84,18 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       contasAPagar += p.amount;
       if (isVeiculoEmEstoque(p)) {
         veiculosNegociadoPendente += p.amount;
+      }
+      // Dívida de COMPRA de um veículo já VENDIDO (ex.: quitação ao banco e
+      // débitos da troca): o carro (ativo pago) já saiu da equação, mas a
+      // dívida continua. Vira passivo puro e entra subtraindo — assim o lucro
+      // fica correto na hora da venda e não muda quando a dívida for paga.
+      if (
+        p.category === "COMPRA_VEICULO" &&
+        !!p.vehicleId &&
+        !!p.vehicle &&
+        p.vehicle.status === "VENDIDO"
+      ) {
+        veiculosAPagarPosVenda += p.amount;
       }
       // Devolução ao cliente ainda não paga: o dinheiro está no caixa mas é do
       // cliente, então entra na equação subtraindo (quando for paga, sai do
@@ -152,6 +166,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     consorcios -
     sinaisRecebidos -
     devolucoesClientes -
+    veiculosAPagarPosVenda -
     saldoCapital;
 
   return {
@@ -162,6 +177,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     veiculosAReceber,
     sinaisRecebidos,
     devolucoesClientes,
+    veiculosAPagarPosVenda,
     almoxarifado,
     saldoCapital,
     consorcios,

@@ -56,6 +56,10 @@ export default async function EstoquePage({
     // Custo real = tudo o que já foi efetivamente PAGO por esse veículo
     // (aquisição + manutenção/custos), pela conta financeira.
     paidCost: v.payables.filter((p) => p.status === "PAGO").reduce((s, p) => s + p.amount, 0),
+    // O que ainda falta pagar desse veículo (ex.: quitação/débitos da troca).
+    pendingCost: v.payables
+      .filter((p) => p.status === "PENDENTE" || p.status === "ATRASADO")
+      .reduce((s, p) => s + p.amount, 0),
     daysInStock: daysBetween(v.entryDate, now),
   }));
 
@@ -119,7 +123,12 @@ export default async function EstoquePage({
                     <div>
                       <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
                       <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
-                      {v.paidCost < v.invested ? (
+                      {v.pendingCost > 0 ? (
+                        <p className="text-[11px] text-slate-400">
+                          total {formatCurrency(v.invested)} ·{" "}
+                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                        </p>
+                      ) : v.paidCost < v.invested ? (
                         <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
                       ) : null}
                     </div>
@@ -167,7 +176,12 @@ export default async function EstoquePage({
                     <Td>{v.km.toLocaleString("pt-BR")} km</Td>
                     <Td className="text-right tabular-nums">
                       {formatCurrency(v.paidCost)}
-                      {v.paidCost < v.invested ? (
+                      {v.pendingCost > 0 ? (
+                        <span className="block text-[11px] text-slate-400">
+                          total {formatCurrency(v.invested)} ·{" "}
+                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                        </span>
+                      ) : v.paidCost < v.invested ? (
                         <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
                       ) : null}
                     </Td>
