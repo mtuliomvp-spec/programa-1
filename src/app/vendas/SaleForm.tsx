@@ -2,7 +2,7 @@
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import { type SaleFormState } from "./actions";
+import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";

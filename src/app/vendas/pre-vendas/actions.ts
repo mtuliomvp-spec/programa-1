@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { parseDateInput } from "@/lib/format";
-import { saleSchema, registerSaleCore, type SaleFormState, type SaleData } from "../actions";
+import { saleSchema, registerSaleCore, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
  * Cria (ou atualiza) uma pré-venda: um rascunho da negociação para revisão e
