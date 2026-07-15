@@ -9,6 +9,7 @@ import {
   type VehicleFormState,
 } from "./actions";
 import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
+import { findPersonByDocument } from "@/app/person-lookup";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
@@ -83,6 +84,24 @@ export default function VehicleForm({
     email: "",
     address: "",
   });
+  const [alsoCustomer, setAlsoCustomer] = useState(false);
+
+  // Se a pessoa já for cliente (mesmo CPF/CNPJ), traz os dados ao sair do campo.
+  function handleSupplierDocBlur() {
+    if (!newSupplier.document.trim() || newSupplier.name.trim()) return;
+    startSupplier(async () => {
+      const r = await findPersonByDocument(newSupplier.document);
+      if (!r.found) return;
+      setNewSupplier((prev) => ({
+        ...prev,
+        name: r.data.name || prev.name,
+        phone: r.data.phone || prev.phone,
+        email: r.data.email || prev.email,
+        address: r.data.address || prev.address,
+      }));
+      setSupplierMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos.` });
+    });
+  }
 
   function handleSupplierCnpj() {
     if (!newSupplier.document.trim()) {
@@ -110,7 +129,7 @@ export default function VehicleForm({
   function handleCreateSupplier() {
     setSupplierMsg(null);
     startSupplier(async () => {
-      const result = await quickCreateSupplierAction(newSupplier);
+      const result = await quickCreateSupplierAction({ ...newSupplier, alsoCustomer });
       if (!result.ok) {
         setSupplierMsg({ tone: "err", text: result.error });
         return;
@@ -121,6 +140,7 @@ export default function VehicleForm({
       setSupplierId(result.id);
       setShowNewSupplier(false);
       setNewSupplier({ name: "", document: "", phone: "", email: "", address: "" });
+      setAlsoCustomer(false);
       setSupplierMsg({
         tone: "ok",
         text: result.existed
@@ -398,6 +418,7 @@ export default function VehicleForm({
                 <Input
                   value={newSupplier.document}
                   onChange={(e) => setNewSupplier((p) => ({ ...p, document: e.target.value }))}
+                  onBlur={handleSupplierDocBlur}
                   placeholder="00.000.000/0000-00"
                   className="max-w-[200px]"
                 />
@@ -425,6 +446,15 @@ export default function VehicleForm({
               />
             </Field>
           </div>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              checked={alsoCustomer}
+              onChange={(e) => setAlsoCustomer(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Cadastrar também como <strong>cliente</strong> (mesma pessoa)
+          </label>
           <Button
             type="button"
             onClick={handleCreateSupplier}
