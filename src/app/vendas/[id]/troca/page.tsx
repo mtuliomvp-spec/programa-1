@@ -37,11 +37,32 @@ export default async function DocumentoTrocaPage({ params }: { params: Promise<{
     0,
     Math.round((ti.purchasePrice - ti.payoffAmount - ti.debtsAmount) * 100) / 100,
   );
-  const saldoAPagar = Math.max(0, Math.round((sale.totalAmount - tiLiquido) * 100) / 100);
+
+  // Sinal / entrada antecipada já recebido (recebíveis com "Sinal" na descrição)
+  // e devolução ao cliente (título em Contas a Pagar), para refletir no contrato.
+  const sinalRecebido = sale.receivables
+    .filter((r) => r.description.toLowerCase().includes("sinal"))
+    .reduce((s, r) => s + r.amount, 0);
+  const devolucaoRow = await prisma.payable.aggregate({
+    _sum: { amount: true },
+    where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_CLIENTE" },
+  });
+  const devolucao = devolucaoRow._sum.amount ?? 0;
+  const financiado = sale.paymentMethod === "FINANCIADO" ? sale.financedAmount ?? 0 : 0;
+
+  // Encontro de contas: preço − troca − sinal − financiado. Positivo = saldo a
+  // pagar pelo cliente; negativo = valor a devolver ao cliente.
+  const liquidoCliente =
+    Math.round((sale.totalAmount - tiLiquido - sinalRecebido - financiado) * 100) / 100;
+  const saldoAPagar = Math.max(0, liquidoCliente);
   const companyCity = company.city ? `${company.city}${company.uf ? `/${company.uf}` : ""}` : null;
-  // Parcelas da venda que não são a entrada em troca.
+  // O que o CLIENTE ainda paga (exclui troca, sinal já recebido e o repasse do
+  // banco/financeira, que não é dívida do cliente).
   const parcelasVenda = sale.receivables.filter(
-    (r) => !r.description.includes("Entrada em troca"),
+    (r) =>
+      !r.description.includes("Entrada em troca") &&
+      !r.description.toLowerCase().includes("sinal") &&
+      !r.description.toLowerCase().includes("repasse"),
   );
 
   const Blank = ({ w = "8rem" }: { w?: string }) => (
@@ -146,13 +167,55 @@ export default async function DocumentoTrocaPage({ params }: { params: Promise<{
 
           <div>
             <p className="font-bold">Cláusula 3ª — Do encontro de contas</p>
-            <p>
-              Preço da venda {formatCurrency(sale.totalAmount)} − entrada pela troca{" "}
-              {formatCurrency(tiLiquido)} ={" "}
-              <strong>saldo a pagar pelo CLIENTE de {formatCurrency(saldoAPagar)}</strong>
-              {saldoAPagar > 0
-                ? `, na forma ${paymentLabel[sale.paymentMethod]}, conforme abaixo:`
-                : ", ficando a venda integralmente quitada pela troca."}
+            <div className="mt-1 space-y-0.5">
+              <div className="flex justify-between gap-3">
+                <span>Preço da venda</span>
+                <span className="tabular-nums">{formatCurrency(sale.totalAmount)}</span>
+              </div>
+              <div className="flex justify-between gap-3">
+                <span>(−) Entrada pela troca (líquido)</span>
+                <span className="tabular-nums">{formatCurrency(tiLiquido)}</span>
+              </div>
+              {sinalRecebido > 0 ? (
+                <div className="flex justify-between gap-3">
+                  <span>(−) Sinal / entrada antecipada já recebido</span>
+                  <span className="tabular-nums">{formatCurrency(sinalRecebido)}</span>
+                </div>
+              ) : null}
+              {financiado > 0 ? (
+                <div className="flex justify-between gap-3">
+                  <span>
+                    (−) Financiado pelo banco/financeira
+                    {sale.financerName ? ` (${sale.financerName})` : ""}
+                  </span>
+                  <span className="tabular-nums">{formatCurrency(financiado)}</span>
+                </div>
+              ) : null}
+              <div className="flex justify-between gap-3 border-t border-slate-300 pt-0.5 font-bold">
+                <span>
+                  {devolucao > 0 ? "= Valor a devolver ao CLIENTE" : "= Saldo a pagar pelo CLIENTE"}
+                </span>
+                <span className="tabular-nums">
+                  {formatCurrency(devolucao > 0 ? devolucao : saldoAPagar)}
+                </span>
+              </div>
+            </div>
+            <p className="mt-2">
+              {devolucao > 0 ? (
+                <>
+                  As formas de pagamento (troca, sinal e financiamento) superam o preço da venda; a
+                  LOJA <strong>devolverá ao CLIENTE</strong> a diferença de{" "}
+                  <strong>{formatCurrency(devolucao)}</strong>.
+                </>
+              ) : saldoAPagar > 0 ? (
+                <>
+                  O saldo de <strong>{formatCurrency(saldoAPagar)}</strong> será pago pelo CLIENTE na
+                  forma <strong>{paymentLabel[sale.paymentMethod]}</strong>
+                  {parcelasVenda.length > 0 ? ", conforme abaixo:" : "."}
+                </>
+              ) : (
+                "A venda fica integralmente quitada pelas entradas acima."
+              )}
             </p>
             {saldoAPagar > 0 && parcelasVenda.length > 0 ? (
               <table className="mt-2 w-full text-sm">

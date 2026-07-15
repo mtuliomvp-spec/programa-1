@@ -31,6 +31,16 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
     ? Math.max(0, Math.round((ti.purchasePrice - ti.payoffAmount - ti.debtsAmount) * 100) / 100)
     : 0;
 
+  // Sinal já recebido e devolução ao cliente (quando as entradas superam o preço).
+  const sinalRecebido = sale.receivables
+    .filter((r) => r.description.toLowerCase().includes("sinal"))
+    .reduce((s, r) => s + r.amount, 0);
+  const devolucaoRow = await prisma.payable.aggregate({
+    _sum: { amount: true },
+    where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_CLIENTE" },
+  });
+  const devolucao = devolucaoRow._sum.amount ?? 0;
+
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4 flex justify-end gap-2 print:hidden">
@@ -96,7 +106,19 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
               <p><span className="text-slate-500">Parcelas:</span> {sale.installmentsCount}x</p>
             ) : null}
             <p><span className="text-slate-500">Vendedor:</span> {sale.sellerName || "—"}</p>
+            {tiLiquido > 0 ? (
+              <p><span className="text-slate-500">Entrada pela troca:</span> {formatCurrency(tiLiquido)}</p>
+            ) : null}
+            {sinalRecebido > 0 ? (
+              <p><span className="text-slate-500">Sinal já recebido:</span> {formatCurrency(sinalRecebido)}</p>
+            ) : null}
           </div>
+          {devolucao > 0 ? (
+            <p className="mt-2 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">
+              Devolução ao CLIENTE: {formatCurrency(devolucao)} — as entradas (troca, sinal e
+              financiamento) superam o preço da venda e a diferença será devolvida ao cliente.
+            </p>
+          ) : null}
           {sale.receivables.length > 1 ? (
             <table className="mt-3 w-full text-sm">
               <thead>

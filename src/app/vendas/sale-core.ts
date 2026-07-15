@@ -105,7 +105,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     const tradeVehicle = await createVehicleWithPayable({
       brand: d.tiBrand,
       model: d.tiModel,
-      manufactureYear: d.tiManufactureYear ?? new Date().getFullYear(),
+      manufactureYear: d.tiManufactureYear ?? d.tiModelYear ?? new Date().getFullYear(),
       modelYear: d.tiModelYear ?? d.tiManufactureYear ?? new Date().getFullYear(),
       plate: d.tiPlate.toUpperCase(),
       color: d.tiColor || null,
