@@ -378,10 +378,14 @@ model PreSale {
   tiPlate           String?
   tiBrand           String?
   tiModel           String?
+  tiVersion         String?
   tiManufactureYear Int?
   tiModelYear       Int?
   tiColor           String?
   tiKm              Int?
+  tiFuel            String?
+  tiTransmission    String?
+  tiChassi          String?
   tiNegotiated      Float?
   tiPayoff          Float?
   tiPayoffTo        String?

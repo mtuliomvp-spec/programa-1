@@ -28,10 +28,14 @@ export type SaleFormInitial = {
   tiPlate?: string;
   tiBrand?: string;
   tiModel?: string;
+  tiVersion?: string;
   tiManufactureYear?: number;
   tiModelYear?: number;
   tiColor?: string;
   tiKm?: number;
+  tiFuel?: string;
+  tiTransmission?: string;
+  tiChassi?: string;
   tiNegotiated?: number;
   tiPayoff?: number;
   tiPayoffTo?: string;
@@ -162,9 +166,13 @@ export default function SaleForm({
       const dt = result.data;
       setTiField("tiBrand", dt.brand);
       setTiField("tiModel", dt.model);
-      setTiField("tiManufactureYear", dt.manufactureYear);
+      setTiField("tiVersion", dt.version);
+      setTiField("tiManufactureYear", dt.manufactureYear ?? dt.modelYear);
       setTiField("tiModelYear", dt.modelYear ?? dt.manufactureYear);
       setTiField("tiColor", dt.color);
+      setTiField("tiFuel", dt.fuel);
+      setTiField("tiTransmission", dt.transmission);
+      setTiField("tiChassi", dt.chassi);
       setTiMsg(`Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}.`);
     });
   }
@@ -413,6 +421,9 @@ export default function SaleForm({
               <Field label="Modelo">
                 <Input name="tiModel" defaultValue={initial?.tiModel || ""} placeholder="Ex.: Gol" />
               </Field>
+              <Field label="Versão">
+                <Input name="tiVersion" defaultValue={initial?.tiVersion || ""} placeholder="Ex.: 1.0 Comfort" />
+              </Field>
               <Field label="Cor">
                 <Input name="tiColor" defaultValue={initial?.tiColor || ""} />
               </Field>
@@ -424,6 +435,15 @@ export default function SaleForm({
               </Field>
               <Field label="Quilometragem">
                 <Input type="number" name="tiKm" min={0} defaultValue={initial?.tiKm ?? 0} />
+              </Field>
+              <Field label="Combustível">
+                <Input name="tiFuel" defaultValue={initial?.tiFuel || ""} placeholder="Ex.: Flex" />
+              </Field>
+              <Field label="Câmbio">
+                <Input name="tiTransmission" defaultValue={initial?.tiTransmission || ""} placeholder="Ex.: Manual" />
+              </Field>
+              <Field label="Chassi">
+                <Input name="tiChassi" defaultValue={initial?.tiChassi || ""} />
               </Field>
               <Field label="Valor negociado (avaliação)">
                 <Input
