@@ -16,6 +16,7 @@ export default function NewCustomerInline({
   onCreated: (c: { id: string; name: string }) => void;
 }) {
   const [data, setData] = useState({ name: "", document: "", phone: "", email: "", address: "" });
+  const [alsoSupplier, setAlsoSupplier] = useState(false);
   const [saving, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
@@ -53,7 +54,7 @@ export default function NewCustomerInline({
     }
     setMsg(null);
     start(async () => {
-      const result = await quickCreateCustomerAction(data);
+      const result = await quickCreateCustomerAction({ ...data, alsoSupplier });
       if (!result.ok) {
         setMsg({ tone: "err", text: result.error });
         return;
@@ -90,6 +91,15 @@ export default function NewCustomerInline({
       <Field label="Endereço">
         <Input value={data.address} onChange={(e) => set("address", e.target.value)} />
       </Field>
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={alsoSupplier}
+          onChange={(e) => setAlsoSupplier(e.target.checked)}
+          className="h-4 w-4 rounded border-slate-300"
+        />
+        Cadastrar também como <strong>fornecedor</strong> (mesma pessoa)
+      </label>
       {msg ? (
         <p className={`text-sm ${msg.tone === "ok" ? "text-emerald-700" : "text-rose-600"}`}>{msg.text}</p>
       ) : null}

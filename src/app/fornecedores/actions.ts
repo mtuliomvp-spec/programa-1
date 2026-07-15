@@ -13,7 +13,38 @@ const schema = z.object({
   email: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  // Replica o mesmo cadastro como cliente (a mesma pessoa pode comprar e vender).
+  alsoCustomer: z.coerce.boolean().optional(),
 });
+
+/** Cria um cliente equivalente (mesma pessoa), sem duplicar se o documento já existir. */
+export async function replicateAsCustomer(d: {
+  name: string;
+  document?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+}) {
+  const name = d.name?.trim();
+  if (!name) return;
+  const document = d.document?.trim() || null;
+  if (document) {
+    const existing = await prisma.customer.findFirst({ where: { document } });
+    if (existing) return;
+  }
+  await prisma.customer.create({
+    data: {
+      name,
+      document,
+      phone: d.phone?.trim() || null,
+      email: d.email?.trim() || null,
+      address: d.address?.trim() || null,
+      notes: d.notes?.trim() || null,
+    },
+  });
+  revalidatePath("/clientes");
+}
 
 export async function createSupplierAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
@@ -29,6 +60,7 @@ export async function createSupplierAction(_prev: PersonFormState, formData: For
       notes: d.notes || null,
     },
   });
+  if (d.alsoCustomer) await replicateAsCustomer(d);
   revalidatePath("/fornecedores");
   redirect("/fornecedores");
 }
@@ -65,27 +97,37 @@ export async function quickCreateSupplierAction(input: {
   phone?: string;
   email?: string;
   address?: string;
+  alsoCustomer?: boolean;
 }): Promise<{ ok: true; id: string; name: string; existed: boolean } | { ok: false; error: string }> {
   const name = input.name?.trim();
   if (!name) return { ok: false, error: "Informe o nome do fornecedor." };
 
   const document = input.document?.trim() || null;
+  let result: { id: string; name: string; existed: boolean };
   if (document) {
     const existing = await prisma.supplier.findFirst({ where: { document } });
-    if (existing) return { ok: true, id: existing.id, name: existing.name, existed: true };
+    if (existing) result = { id: existing.id, name: existing.name, existed: true };
+    else result = { existed: false, ...(await createSupplier()) };
+  } else {
+    result = { existed: false, ...(await createSupplier()) };
   }
 
-  const supplier = await prisma.supplier.create({
-    data: {
-      name,
-      document,
-      phone: input.phone?.trim() || null,
-      email: input.email?.trim() || null,
-      address: input.address?.trim() || null,
-    },
-  });
-  revalidatePath("/fornecedores");
-  return { ok: true, id: supplier.id, name: supplier.name, existed: false };
+  async function createSupplier() {
+    const supplier = await prisma.supplier.create({
+      data: {
+        name,
+        document,
+        phone: input.phone?.trim() || null,
+        email: input.email?.trim() || null,
+        address: input.address?.trim() || null,
+      },
+    });
+    revalidatePath("/fornecedores");
+    return { id: supplier.id, name: supplier.name };
+  }
+
+  if (input.alsoCustomer) await replicateAsCustomer(input);
+  return { ok: true, ...result };
 }
 
 export async function deleteSupplierAction(id: string) {

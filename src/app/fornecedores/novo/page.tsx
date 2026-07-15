@@ -11,7 +11,11 @@ export default function NovoFornecedorPage() {
       <Card>
         <CardHeader title="Dados do fornecedor" />
         <div className="p-5">
-          <PersonForm action={createSupplierAction} documentLabel="CPF / CNPJ" />
+          <PersonForm
+            action={createSupplierAction}
+            documentLabel="CPF / CNPJ"
+            replicate={{ name: "alsoCustomer", label: "cliente" }}
+          />
         </div>
       </Card>
     </div>

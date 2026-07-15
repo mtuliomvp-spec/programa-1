@@ -20,10 +20,13 @@ export default function PersonForm({
   action,
   person,
   documentLabel = "CPF / CNPJ",
+  replicate,
 }: {
   action: (state: PersonFormState, formData: FormData) => Promise<PersonFormState>;
   person?: PersonData;
   documentLabel?: string;
+  // Opção de replicar o mesmo cadastro no outro papel (cliente ⇄ fornecedor).
+  replicate?: { name: string; label: string };
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -124,6 +127,13 @@ export default function PersonForm({
       <Field label="Observações">
         <Textarea name="notes" defaultValue={person?.notes || ""} rows={3} />
       </Field>
+
+      {replicate && !person ? (
+        <label className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-700">
+          <input type="checkbox" name={replicate.name} value="true" className="h-4 w-4 rounded border-slate-300" />
+          Cadastrar também como <strong>{replicate.label}</strong> — a mesma pessoa pode comprar e vender.
+        </label>
+      ) : null}
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
