@@ -5,9 +5,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
 
 export async function markPaidAction(id: string, accountId?: string) {
+  await assertBooksBalanced();
   await markPayablePaid(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -28,6 +30,11 @@ export async function payBatchAction(
 ): Promise<PayBatchResult> {
   if (!ids.length) return { ok: false, paid: 0, error: "Selecione ao menos um título." };
   if (!accountId) return { ok: false, paid: 0, error: "Escolha a conta que fará o pagamento." };
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
   const date = dateInput ? parseDateInput(dateInput) : new Date();
   let paid = 0;
   for (const id of ids) {
@@ -80,6 +87,11 @@ export async function createManualPayableAction(
   _prev: ManualPayableState,
   formData: FormData,
 ): Promise<ManualPayableState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = manualSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;

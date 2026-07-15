@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
+import { assertBooksBalanced } from "@/lib/books-health";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -45,6 +46,11 @@ export async function addCapitalTransactionAction(
   _prev: CapitalFormState,
   formData: FormData,
 ): Promise<CapitalFormState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = transactionSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;

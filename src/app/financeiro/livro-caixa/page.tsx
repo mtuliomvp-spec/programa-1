@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
+import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import BooksHealthChecks from "@/components/BooksHealthChecks";
 import CashEntryForm from "./CashEntryForm";
 import DeleteCashEntryButton from "./DeleteCashEntryButton";
 
@@ -33,7 +35,7 @@ export default async function LivroCaixaPage({
 
   const accountWhere = accountFilter ? { accountId: accountFilter } : {};
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers, health] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -74,6 +76,7 @@ export default async function LivroCaixaPage({
         select: { id: true, name: true },
       }),
       prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+      getBooksHealth(),
     ]);
 
   const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível"];
@@ -220,17 +223,25 @@ export default async function LivroCaixaPage({
         />
       </div>
 
+      <BooksHealthChecks health={health} />
+
       <div className="mb-4">
-        <CashEntryForm
-          accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
-          supplierNames={suppliers.map((s) => s.name)}
-          vehicles={vehicleOptions}
-          beneficiaries={beneficiaries}
-          customers={customers}
-          categories={categoryOptions}
-          defaultDate={toDateInputValue(new Date())}
-          preselectedAccountId={accountFilter || undefined}
-        />
+        {health.allOk ? (
+          <CashEntryForm
+            accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
+            supplierNames={suppliers.map((s) => s.name)}
+            vehicles={vehicleOptions}
+            beneficiaries={beneficiaries}
+            customers={customers}
+            categories={categoryOptions}
+            defaultDate={toDateInputValue(new Date())}
+            preselectedAccountId={accountFilter || undefined}
+          />
+        ) : (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 print:hidden">
+            🔒 Novos lançamentos bloqueados até os saldos convergirem (veja os checks acima).
+          </div>
+        )}
       </div>
 
       <Card>

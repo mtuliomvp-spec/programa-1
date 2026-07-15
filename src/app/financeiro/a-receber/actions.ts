@@ -4,9 +4,11 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
 
 export async function markReceivedAction(id: string, accountId?: string) {
+  await assertBooksBalanced();
   await markReceivableReceived(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -19,6 +21,7 @@ export async function markReceivedAction(id: string, accountId?: string) {
  * restante continua pendente em Contas a Receber.
  */
 export async function receiveAction(id: string, amount: number, accountId?: string) {
+  await assertBooksBalanced();
   await receiveReceivable(id, amount, new Date(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -51,6 +54,11 @@ export async function createManualReceivableAction(
   _prev: ManualReceivableState,
   formData: FormData,
 ): Promise<ManualReceivableState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = manualSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;

@@ -3,9 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { cancelVehicleSale } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { saleSchema, registerSaleCore, type SaleFormState } from "./sale-core";
 
 export async function createSaleAction(_prev: SaleFormState, formData: FormData): Promise<SaleFormState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = saleSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };

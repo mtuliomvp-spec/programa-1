@@ -2,12 +2,14 @@
 
 import { revalidatePath } from "next/cache";
 import { settleFinancing } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 
 export type SettleResult = { ok: boolean; error?: string };
 
 export async function settleFinancingAction(saleId: string, accountId: string): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   try {
+    await assertBooksBalanced();
     await settleFinancing(saleId, accountId, new Date());
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar baixa." };

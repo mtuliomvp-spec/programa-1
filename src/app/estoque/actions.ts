@@ -10,6 +10,7 @@ import {
   deleteVehicleCost,
   receiveVehicleAdvance,
 } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
 
 const advanceSchema = z.object({
@@ -26,6 +27,11 @@ export async function receiveVehicleAdvanceAction(
   _prev: AdvanceFormState,
   formData: FormData,
 ): Promise<AdvanceFormState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = advanceSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -89,6 +95,11 @@ export async function createVehicleAction(
   _prevState: VehicleFormState,
   formData: FormData,
 ): Promise<VehicleFormState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const raw = Object.fromEntries(formData.entries());
   const parsed = vehicleSchema.safeParse(raw);
   if (!parsed.success) {
@@ -279,6 +290,11 @@ export async function addVehicleCostAction(
   _prevState: CostFormState,
   formData: FormData,
 ): Promise<CostFormState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = costSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };

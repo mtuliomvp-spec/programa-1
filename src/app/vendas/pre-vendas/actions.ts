@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
 import { saleSchema, registerSaleCore, type SaleFormState, type SaleData } from "../sale-core";
 
@@ -89,6 +90,13 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiPayoffTo: pre.tiPayoffTo ?? undefined,
     tiDebts: pre.tiDebts ?? undefined,
   };
+
+  try {
+    await assertBooksBalanced();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Lançamento bloqueado.";
+    redirect(`/vendas/pre-vendas/${id}?erro=${encodeURIComponent(msg)}`);
+  }
 
   let saleId: string;
   try {

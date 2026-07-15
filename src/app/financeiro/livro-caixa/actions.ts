@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
 import type { CategoriaPagar } from "@prisma/client";
 
@@ -44,6 +45,11 @@ export async function createCashEntryAction(
   _prev: CashEntryState,
   formData: FormData,
 ): Promise<CashEntryState> {
+  try {
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;

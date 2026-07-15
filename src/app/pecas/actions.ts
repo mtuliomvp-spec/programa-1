@@ -5,7 +5,17 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createPartWithPayable, addPartStockWithPayable, registerPartSale } from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
 import { parseDateInput } from "@/lib/format";
+
+async function guard(): Promise<FormState | null> {
+  try {
+    await assertBooksBalanced();
+    return null;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
+}
 
 export type FormState = { error?: string };
 
@@ -23,6 +33,8 @@ const partSchema = z.object({
 });
 
 export async function createPartAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const blocked = await guard();
+  if (blocked) return blocked;
   const parsed = partSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -101,6 +113,8 @@ const addStockSchema = z.object({
 });
 
 export async function addStockAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const blocked = await guard();
+  if (blocked) return blocked;
   const parsed = addStockSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -137,6 +151,8 @@ const sellSchema = z.object({
 });
 
 export async function sellPartAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  const blocked = await guard();
+  if (blocked) return blocked;
   const parsed = sellSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;

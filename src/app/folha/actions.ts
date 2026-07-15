@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
+import { assertBooksBalanced } from "@/lib/books-health";
 
 const employeeSchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -50,6 +51,7 @@ export async function toggleEmployeeAction(id: string, active: boolean) {
 /** Gera a folha do mês corrente: uma conta a pagar por funcionário ativo,
  * com vencimento no dia 5 do mês seguinte. Idempotente por competência. */
 export async function generatePayrollAction(): Promise<{ created: number }> {
+  await assertBooksBalanced();
   const now = new Date();
   const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
   const dueDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 5, 12));
