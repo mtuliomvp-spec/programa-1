@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances } from "@/lib/accounts";
+import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getProfitLossStatement } from "@/lib/reports";
 
@@ -35,6 +35,7 @@ export type BooksHealth = {
     caixaGeral: number;
     extrato: number;
     baixasSemConta: number;
+    bancoNeutro: number;
     itens: UnattributedItem[];
   };
   check2: {
@@ -53,12 +54,10 @@ export async function getBooksHealth(): Promise<BooksHealth> {
     getAccountsWithBalances(),
     getPatrimonialStats(),
     getProfitLossStatement(LIFETIME_MONTHS),
+    // Dinheiro recebido/pago SEM conta financeira. Transações internas da troca
+    // já passam pelo Banco Neutro, então não aparecem aqui (têm conta).
     prisma.receivable.findMany({
-      where: {
-        status: "RECEBIDO",
-        accountId: null,
-        NOT: { description: { contains: "Entrada em troca" } },
-      },
+      where: { status: "RECEBIDO", accountId: null },
       select: { description: true, amount: true },
     }),
     prisma.payable.findMany({
@@ -74,11 +73,17 @@ export async function getBooksHealth(): Promise<BooksHealth> {
   const payTotal = paySemConta.reduce((s, p) => s + p.amount, 0);
   const baixasSemConta = round2(recTotal - payTotal);
   const extrato = round2(contasTotal + baixasSemConta);
+  const bancoNeutro = round2(
+    accounts.filter((a) => a.name === NEUTRAL_ACCOUNT_NAME).reduce((s, a) => s + a.balance, 0),
+  );
   const itens: UnattributedItem[] = [
     ...recSemConta.map((r) => ({ tipo: "entrada" as const, descricao: r.description, valor: r.amount })),
     ...paySemConta.map((p) => ({ tipo: "saida" as const, descricao: p.description, valor: p.amount })),
   ];
-  const check1Ok = Math.abs(baixasSemConta) <= TOLERANCE && Math.abs(caixaGeral - contasTotal) <= TOLERANCE;
+  const check1Ok =
+    Math.abs(baixasSemConta) <= TOLERANCE &&
+    Math.abs(caixaGeral - contasTotal) <= TOLERANCE &&
+    Math.abs(bancoNeutro) <= TOLERANCE;
 
   // ----- Check 2 -----
   const somaExtrato = round2(pl.entries.reduce((s, e) => s + e.value, 0));
@@ -87,7 +92,7 @@ export async function getBooksHealth(): Promise<BooksHealth> {
   const check2Ok = Math.abs(check2Diff) <= TOLERANCE;
 
   return {
-    check1: { ok: check1Ok, contasTotal, caixaGeral, extrato, baixasSemConta, itens },
+    check1: { ok: check1Ok, contasTotal, caixaGeral, extrato, baixasSemConta, bancoNeutro, itens },
     check2: { ok: check2Ok, total, somaExtrato, diff: check2Diff },
     allOk: check1Ok && check2Ok,
   };

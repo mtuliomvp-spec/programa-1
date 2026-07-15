@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { getDefaultAccountId } from "@/lib/accounts";
+import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
 import type { StructuralKey } from "@/lib/structural-flows";
 import type {
@@ -76,6 +76,9 @@ export async function createVehicleWithPayable(input: {
   tradeNote?: string | null;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
+  // Troca: o líquido é "pago" pelo carro recebido — passa pelo Banco Neutro
+  // (conta de compensação que fica sempre em zero), não pelo caixa real.
+  const neutralAccountId = input.liquidoSettledByTrade ? await getNeutralAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   const acquisitionType = input.acquisitionType ?? "A_VISTA";
   const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
@@ -132,6 +135,7 @@ export async function createVehicleWithPayable(input: {
         tradeNote: input.tradeNote || null,
         alreadyPaid: input.alreadyPaid,
         defaultAccountId,
+        neutralAccountId,
       });
     }
 
@@ -167,6 +171,7 @@ async function createAcquisitionPayables(
     tradeNote?: string | null;
     alreadyPaid: boolean;
     defaultAccountId: string | null;
+    neutralAccountId?: string | null;
   },
 ) {
   const base = {
@@ -229,7 +234,13 @@ async function createAcquisitionPayables(
         paymentDate: input.alreadyPaid || settledByTrade ? input.entryDate : null,
         status: input.alreadyPaid || settledByTrade ? "PAGO" : "PENDENTE",
         supplierId: input.supplierId,
-        accountId: input.alreadyPaid ? input.defaultAccountId : null,
+        // Troca → Banco Neutro (compensa a "Entrada em troca"); compra à vista
+        // paga → conta padrão; a prazo → sem conta até a baixa.
+        accountId: settledByTrade
+          ? input.neutralAccountId ?? null
+          : input.alreadyPaid
+            ? input.defaultAccountId
+            : null,
         notes: settledByTrade ? input.tradeNote : undefined,
       },
     });
@@ -561,6 +572,10 @@ export async function registerVehicleSale(input: {
   tradeInVehicleId?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
+  // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
+  // casando com a "Compra do veículo (líquido quitado pela troca)".
+  const neutralAccountId =
+    (input.tradeInAmount ?? 0) > 0 ? await getNeutralAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
@@ -624,7 +639,8 @@ export async function registerVehicleSale(input: {
         customerId: input.customerId,
         saleId: sale.id,
         installmentNumber: 0,
-        accountId: null,
+        // Banco Neutro: compensa a "Compra do veículo (líquido quitado pela troca)".
+        accountId: neutralAccountId,
       });
     }
 

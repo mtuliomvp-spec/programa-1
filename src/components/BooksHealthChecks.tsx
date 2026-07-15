@@ -59,8 +59,12 @@ export default function BooksHealthChecks({ health }: { health: BooksHealth }) {
               <span className="tabular-nums">{formatCurrency(check1.caixaGeral)}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span>Extrato (inclui baixas sem conta)</span>
+              <span>Extrato (livro caixa)</span>
               <span className="tabular-nums">{formatCurrency(check1.extrato)}</span>
+            </div>
+            <div className={`flex justify-between gap-3 ${Math.abs(check1.bancoNeutro) > 0.01 ? "text-rose-700 font-semibold" : ""}`}>
+              <span>Banco Neutro (deve ficar zero)</span>
+              <span className="tabular-nums">{formatCurrency(check1.bancoNeutro)}</span>
             </div>
             {!check1.ok ? (
               <>

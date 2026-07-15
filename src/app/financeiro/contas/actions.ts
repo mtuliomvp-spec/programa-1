@@ -108,24 +108,23 @@ export async function deleteTransferAction(id: string) {
 }
 
 /**
- * Corrige o Check 1 (saldos convergentes): atribui a conta padrão a todo
- * dinheiro recebido/pago que ficou SEM conta financeira (excluindo os créditos
- * de troca, que não passam pelo caixa). Assim o extrato passa a bater com o
- * saldo das contas. É uma ação de correção — por isso não é bloqueada.
+ * Corrige o Check 1 (saldos convergentes): atribui o Banco Neutro (conta de
+ * compensação que fica sempre em zero) a todo dinheiro recebido/pago que ficou
+ * SEM conta financeira. As transações internas (como a troca) se anulam ali.
+ * É uma ação de correção — por isso não é bloqueada.
  */
 export async function fixUnattributedBaixasAction(): Promise<{ error?: string; fixed?: number }> {
-  const def = await prisma.financialAccount.findFirst({ where: { isDefault: true } });
-  const account = def ?? (await prisma.financialAccount.findFirst({ where: { active: true } }));
-  if (!account) return { error: "Cadastre uma conta financeira antes de corrigir." };
+  const { getNeutralAccountId } = await import("@/lib/accounts");
+  const neutralId = await getNeutralAccountId();
 
   const [rec, pay] = await Promise.all([
     prisma.receivable.updateMany({
-      where: { status: "RECEBIDO", accountId: null, NOT: { description: { contains: "Entrada em troca" } } },
-      data: { accountId: account.id },
+      where: { status: "RECEBIDO", accountId: null },
+      data: { accountId: neutralId },
     }),
     prisma.payable.updateMany({
       where: { status: "PAGO", accountId: null },
-      data: { accountId: account.id },
+      data: { accountId: neutralId },
     }),
   ]);
 

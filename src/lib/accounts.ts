@@ -15,6 +15,34 @@ export async function getDefaultAccountId(): Promise<string | null> {
   return account?.id ?? null;
 }
 
+/**
+ * "Banco Neutro": conta usada para as transações INTERNAS do sistema que não
+ * passam pelo caixa de verdade (ex.: a entrada da troca e a compra do veículo
+ * recebido em troca — uma quita a outra). Cada operação lança um par que se
+ * anula, então o Banco Neutro sempre fica com saldo ZERO. Assim nenhum
+ * lançamento fica "sem conta" e o saldo das contas bate com o livro caixa.
+ * Encontra a conta pelo nome; cria se ainda não existir.
+ */
+export const NEUTRAL_ACCOUNT_NAME = "Banco Neutro";
+
+export async function getNeutralAccountId(): Promise<string> {
+  const existing = await prisma.financialAccount.findFirst({
+    where: { name: NEUTRAL_ACCOUNT_NAME },
+    select: { id: true },
+  });
+  if (existing) return existing.id;
+  const created = await prisma.financialAccount.create({
+    data: {
+      name: NEUTRAL_ACCOUNT_NAME,
+      type: "OUTRO",
+      initialBalance: 0,
+      notes: "Conta de compensação para transações internas (troca). Deve ficar sempre em zero.",
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
 export async function getActiveAccounts() {
   return prisma.financialAccount.findMany({
     where: { active: true },
