@@ -47,6 +47,7 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     tiPayoff: d.tradeIn ? d.tiPayoff ?? null : null,
     tiPayoffTo: d.tradeIn ? d.tiPayoffTo || null : null,
     tiDebts: d.tradeIn ? d.tiDebts ?? null : null,
+    tiSupplierName: d.tradeIn ? d.tiSupplierName || null : null,
   };
 
   let id: string;
@@ -97,6 +98,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiPayoff: pre.tiPayoff ?? undefined,
     tiPayoffTo: pre.tiPayoffTo ?? undefined,
     tiDebts: pre.tiDebts ?? undefined,
+    tiSupplierName: pre.tiSupplierName ?? undefined,
   };
 
   try {

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { registerVehicleSale, createVehicleWithPayable } from "@/lib/finance";
+import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
@@ -52,6 +52,7 @@ export const saleSchema = z.object({
   tiPayoff: z.coerce.number().min(0).optional(),
   tiPayoffTo: z.string().optional(),
   tiDebts: z.coerce.number().min(0).optional(),
+  tiSupplierName: z.string().optional(),
 });
 
 export type SaleFormState = { error?: string };
@@ -106,6 +107,10 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     }
     const customer = await prisma.customer.findUnique({ where: { id: d.customerId } });
     const sellVehicle = await prisma.vehicle.findUnique({ where: { id: d.vehicleId } });
+    // Fornecedor do veículo recebido: quem entregou o carro (por padrão, o
+    // próprio cliente da venda). Reaproveita/cria o fornecedor pelo nome.
+    const tiSupplierName = (d.tiSupplierName || customer?.name || "").trim();
+    const tradeSupplierId = tiSupplierName ? await resolveSupplierByName(tiSupplierName) : null;
     const tradeVehicle = await createVehicleWithPayable({
       brand: d.tiBrand,
       model: d.tiModel,
@@ -121,7 +126,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       purchasePrice: negociado,
       salePrice: negociado,
       entryDate: parseDateInput(d.saleDate),
-      supplierId: null,
+      supplierId: tradeSupplierId,
       alreadyPaid: false,
       acquisitionType: "A_VISTA",
       payoffAmount: payoff,

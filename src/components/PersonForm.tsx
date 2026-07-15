@@ -3,6 +3,7 @@
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Textarea } from "@/components/ui";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
+import { findPersonByDocument } from "@/app/person-lookup";
 
 export type PersonFormState = { error?: string };
 
@@ -37,6 +38,25 @@ export default function PersonForm({
     if (!value) return;
     const el = formRef.current?.elements.namedItem(name);
     if (el instanceof HTMLInputElement) el.value = value;
+  }
+
+  // Ao sair do campo de documento, procura no cadastro local (cliente/fornecedor)
+  // — se a mesma pessoa já existir, traz os dados.
+  function handleDocBlur() {
+    const docEl = formRef.current?.elements.namedItem("document");
+    const document = docEl instanceof HTMLInputElement ? docEl.value.trim() : "";
+    const nameEl = formRef.current?.elements.namedItem("name");
+    const nameFilled = nameEl instanceof HTMLInputElement && nameEl.value.trim();
+    if (!document || nameFilled) return;
+    startLookup(async () => {
+      const r = await findPersonByDocument(document);
+      if (!r.found) return;
+      setField("name", r.data.name);
+      setField("phone", r.data.phone);
+      setField("email", r.data.email);
+      setField("address", r.data.address);
+      setLookupMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos. Confira e salve.` });
+    });
   }
 
   function handleCnpjLookup() {
@@ -87,6 +107,7 @@ export default function PersonForm({
             <Input
               name="document"
               defaultValue={person?.document || ""}
+              onBlur={person ? undefined : handleDocBlur}
               placeholder="00.000.000/0000-00"
               className="max-w-[220px]"
             />

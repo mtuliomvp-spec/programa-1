@@ -390,6 +390,7 @@ model PreSale {
   tiPayoff          Float?
   tiPayoffTo        String?
   tiDebts           Float?
+  tiSupplierName    String?
   status            StatusPreVenda @default(ABERTA)
   convertedSaleId   String?
   createdAt         DateTime       @default(now())

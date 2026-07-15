@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
@@ -40,6 +40,7 @@ export type SaleFormInitial = {
   tiPayoff?: number;
   tiPayoffTo?: string;
   tiDebts?: number;
+  tiSupplierName?: string;
 };
 
 const initialState: SaleFormState = {};
@@ -94,6 +95,8 @@ export default function SaleForm({
   const [state, formAction, pending] = useActionState(createPreSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
+  const [customerId, setCustomerId] = useState(initial?.customerId || "");
+  const customerName = customers.find((c) => c.id === customerId)?.name ?? "";
   const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">(
     initial?.paymentMethod || "A_VISTA",
   );
@@ -108,6 +111,13 @@ export default function SaleForm({
   const [tiNegotiated, setTiNegotiated] = useState(initial?.tiNegotiated ?? 0);
   const [tiPayoff, setTiPayoff] = useState(initial?.tiPayoff ?? 0);
   const [tiDebts, setTiDebts] = useState(initial?.tiDebts ?? 0);
+  // Fornecedor do veículo recebido em troca: por padrão é o próprio cliente que
+  // está comprando (foi ele que "vendeu" o carro à loja). Editável.
+  const [tiSupplier, setTiSupplier] = useState(initial?.tiSupplierName ?? "");
+  const tiSupplierEdited = useRef(!!initial?.tiSupplierName);
+  useEffect(() => {
+    if (tradeIn && !tiSupplierEdited.current && customerName) setTiSupplier(customerName);
+  }, [tradeIn, customerName]);
   const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
   const total = Number(totalAmount) || 0;
   const sinal = advances[vehicleId] || 0;
@@ -213,7 +223,12 @@ export default function SaleForm({
           </Select>
         </Field>
         <Field label="Cliente" required>
-          <Select name="customerId" required defaultValue={initial?.customerId || ""}>
+          <Select
+            name="customerId"
+            required
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+          >
             <option value="">Selecione um cliente</option>
             {customers.map((c) => (
               <option key={c.id} value={c.id}>
@@ -444,6 +459,17 @@ export default function SaleForm({
               </Field>
               <Field label="Chassi">
                 <Input name="tiChassi" defaultValue={initial?.tiChassi || ""} />
+              </Field>
+              <Field label="Fornecedor (quem entregou o veículo)">
+                <Input
+                  name="tiSupplierName"
+                  value={tiSupplier}
+                  onChange={(e) => {
+                    tiSupplierEdited.current = true;
+                    setTiSupplier(e.target.value);
+                  }}
+                  placeholder="Nome de quem entregou o carro"
+                />
               </Field>
               <Field label="Valor negociado (avaliação)">
                 <Input

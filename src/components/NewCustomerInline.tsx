@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { quickCreateCustomerAction } from "@/app/clientes/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
+import { findPersonByDocument } from "@/app/person-lookup";
 
 /**
  * Painel para cadastrar um cliente sem sair da tela. Opcionalmente busca por
@@ -22,6 +23,22 @@ export default function NewCustomerInline({
 
   function set(field: keyof typeof data, value: string) {
     setData((prev) => ({ ...prev, [field]: value }));
+  }
+
+  function handleDocBlur() {
+    if (!data.document.trim() || data.name.trim()) return;
+    start(async () => {
+      const r = await findPersonByDocument(data.document);
+      if (!r.found) return;
+      setData((prev) => ({
+        ...prev,
+        name: r.data.name || prev.name,
+        phone: r.data.phone || prev.phone,
+        email: r.data.email || prev.email,
+        address: r.data.address || prev.address,
+      }));
+      setMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos. Confira e cadastre.` });
+    });
   }
 
   function handleCnpj() {
@@ -70,6 +87,7 @@ export default function NewCustomerInline({
           <Input
             value={data.document}
             onChange={(e) => set("document", e.target.value)}
+            onBlur={handleDocBlur}
             placeholder="000.000.000-00 ou CNPJ"
           />
         </Field>

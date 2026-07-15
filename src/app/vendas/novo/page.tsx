@@ -47,6 +47,7 @@ export default async function NovaVendaPage({
         tiPayoff: pre.tiPayoff ?? undefined,
         tiPayoffTo: pre.tiPayoffTo ?? undefined,
         tiDebts: pre.tiDebts ?? undefined,
+        tiSupplierName: pre.tiSupplierName ?? undefined,
       };
     }
   }

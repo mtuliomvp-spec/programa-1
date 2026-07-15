@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
+import { findPersonByDocument } from "@/app/person-lookup";
 
 /**
  * Painel para cadastrar um fornecedor sem sair da tela: digita o CNPJ, busca os
@@ -18,6 +19,24 @@ export default function NewSupplierInline({ onCreated }: { onCreated: (name: str
 
   function set(field: keyof typeof data, value: string) {
     setData((prev) => ({ ...prev, [field]: value }));
+  }
+
+  // Ao sair do campo de documento, procura no cadastro local (cliente/fornecedor)
+  // e traz os dados se a mesma pessoa já existir.
+  function handleDocBlur() {
+    if (!data.document.trim() || data.name.trim()) return;
+    start(async () => {
+      const r = await findPersonByDocument(data.document);
+      if (!r.found) return;
+      setData((prev) => ({
+        ...prev,
+        name: r.data.name || prev.name,
+        phone: r.data.phone || prev.phone,
+        email: r.data.email || prev.email,
+        address: r.data.address || prev.address,
+      }));
+      setMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos. Confira e cadastre.` });
+    });
   }
 
   function handleCnpj() {
@@ -66,6 +85,7 @@ export default function NewSupplierInline({ onCreated }: { onCreated: (name: str
           <Input
             value={data.document}
             onChange={(e) => set("document", e.target.value)}
+            onBlur={handleDocBlur}
             placeholder="00.000.000/0000-00"
           />
         </Field>
