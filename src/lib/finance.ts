@@ -571,6 +571,19 @@ export async function registerVehicleSale(input: {
       throw new Error("Este veículo já foi vendido.");
     }
 
+    // Sale.vehicleId é único: uma venda ANTERIOR cancelada deste veículo ainda
+    // ocupa esse "slot" e impediria a nova venda. Como a venda cancelada já foi
+    // totalmente revertida, removemos o registro-tumba para liberar a revenda.
+    const canceladas = await tx.sale.findMany({
+      where: { vehicleId: input.vehicleId, status: "CANCELADA" },
+      select: { id: true },
+    });
+    if (canceladas.length > 0) {
+      const ids = canceladas.map((s) => s.id);
+      await tx.receivable.deleteMany({ where: { saleId: { in: ids } } });
+      await tx.sale.deleteMany({ where: { id: { in: ids } } });
+    }
+
     const sale = await tx.sale.create({
       data: {
         vehicleId: input.vehicleId,

@@ -315,10 +315,14 @@ export async function deleteVehicleCostAction(costId: string, vehicleId: string)
 }
 
 export async function deleteVehicleAction(id: string) {
-  const sale = await prisma.sale.findUnique({ where: { vehicleId: id } });
+  const sale = await prisma.sale.findFirst({ where: { vehicleId: id, status: { not: "CANCELADA" } } });
   if (sale) {
     throw new Error("Não é possível excluir um veículo que já possui venda registrada.");
   }
+  // Remove tudo que depende do veículo para a exclusão não falhar por vínculo
+  // (custos, adiantamentos/recebíveis, contas a pagar).
+  await prisma.vehicleCost.deleteMany({ where: { vehicleId: id } });
+  await prisma.receivable.deleteMany({ where: { vehicleId: id } });
   await prisma.payable.deleteMany({ where: { vehicleId: id } });
   await prisma.vehicle.delete({ where: { id } });
   revalidatePath("/estoque");

@@ -41,8 +41,15 @@ function Row({
   );
 }
 
-export default async function PreVendaFichaPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PreVendaFichaPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ erro?: string }>;
+}) {
   const { id } = await params;
+  const { erro } = await searchParams;
   const pre = await prisma.preSale.findUnique({ where: { id } });
   if (!pre) notFound();
 
@@ -88,6 +95,13 @@ export default async function PreVendaFichaPage({ params }: { params: Promise<{ 
       <div className="mb-4">
         <PreSaleActions id={pre.id} editHref={editHref} />
       </div>
+
+      {erro ? (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 print:hidden">
+          <strong>Não foi possível registrar a venda:</strong> {erro} A pré-venda continua aberta e
+          nada foi lançado — ajuste e tente novamente.
+        </div>
+      ) : null}
 
       {converted ? (
         <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 print:hidden">

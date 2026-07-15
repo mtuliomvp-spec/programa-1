@@ -90,7 +90,14 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiDebts: pre.tiDebts ?? undefined,
   };
 
-  const saleId = await registerSaleCore(d);
+  let saleId: string;
+  try {
+    saleId = await registerSaleCore(d);
+  } catch (err) {
+    // Mostra o erro real na própria ficha em vez de uma tela de erro genérica.
+    const msg = err instanceof Error ? err.message : "Não foi possível registrar a venda.";
+    redirect(`/vendas/pre-vendas/${id}?erro=${encodeURIComponent(msg)}`);
+  }
   await prisma.preSale.update({
     where: { id },
     data: { status: "CONVERTIDA", convertedSaleId: saleId },

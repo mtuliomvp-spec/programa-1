@@ -3,6 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createVehicleWithPayable } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
 
+/** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
+ *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
+async function undoTradeInVehicle(vehicleId: string) {
+  try {
+    await prisma.$transaction([
+      prisma.vehicleCost.deleteMany({ where: { vehicleId } }),
+      prisma.payable.deleteMany({ where: { vehicleId } }),
+      prisma.vehicle.delete({ where: { id: vehicleId } }),
+    ]);
+  } catch {
+    // best-effort: se não der para limpar, a venda já falhou de qualquer forma.
+  }
+}
+
 /**
  * Módulo comum (SEM "use server") com o schema, os tipos e o núcleo do registro
  * de venda. Fica separado das server actions porque um arquivo "use server" só
@@ -116,22 +130,30 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     tradeInVehicleId = tradeVehicle.id;
   }
 
-  const sale = await registerVehicleSale({
-    vehicleId: d.vehicleId,
-    customerId: d.customerId,
-    saleDate: parseDateInput(d.saleDate),
-    totalAmount: d.totalAmount,
-    downPayment: d.paymentMethod === "PARCELADO" ? d.downPayment : 0,
-    installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
-    paymentMethod: d.paymentMethod,
-    sellerName: d.sellerName || null,
-    financerName,
-    financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
-    financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
-    notes: d.notes || null,
-    tradeInAmount,
-    tradeInLabel,
-    tradeInVehicleId,
-  });
-  return sale.id;
+  try {
+    const sale = await registerVehicleSale({
+      vehicleId: d.vehicleId,
+      customerId: d.customerId,
+      saleDate: parseDateInput(d.saleDate),
+      totalAmount: d.totalAmount,
+      downPayment: d.paymentMethod === "PARCELADO" ? d.downPayment : 0,
+      installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
+      paymentMethod: d.paymentMethod,
+      sellerName: d.sellerName || null,
+      financerName,
+      financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
+      financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
+      notes: d.notes || null,
+      tradeInAmount,
+      tradeInLabel,
+      tradeInVehicleId,
+    });
+    return sale.id;
+  } catch (err) {
+    // A venda falhou DEPOIS de o veículo da troca ter sido criado (em outra
+    // transação). Desfaz a troca para não deixar o carro "órfão" no estoque —
+    // troca e venda passam a acontecer de forma tudo-ou-nada.
+    if (tradeInVehicleId) await undoTradeInVehicle(tradeInVehicleId);
+    throw err;
+  }
 }
