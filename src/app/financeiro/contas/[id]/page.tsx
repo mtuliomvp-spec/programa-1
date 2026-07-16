@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import AccountFinancerSettings from "./AccountFinancerSettings";
 
 export const dynamic = "force-dynamic";
 
@@ -95,6 +96,10 @@ export default async function AccountStatementPage({ params }: { params: Promise
           </LinkButton>
         }
       />
+
+      {account.type === "FINANCEIRA" ? (
+        <AccountFinancerSettings id={account.id} initialPercent={account.returnTaxPercent} />
+      ) : null}
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-4">
         <StatCard label="Saldo atual" value={formatCurrency(bal?.balance ?? account.initialBalance)} tone={(bal?.balance ?? 0) >= 0 ? "positive" : "negative"} />

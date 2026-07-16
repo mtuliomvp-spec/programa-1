@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import BankInput from "@/components/BankInput";
 import { createAccountAction, type ContaFormState } from "./actions";
 
 export default function AccountForm() {
   const [state, formAction, pending] = useActionState(createAccountAction, {} as ContaFormState);
+  const [type, setType] = useState("CAIXA");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -15,7 +16,7 @@ export default function AccountForm() {
         <Input name="name" required placeholder="Ex: Caixa da loja / Banco Itaú" />
       </Field>
       <Field label="Tipo" required>
-        <Select name="type" defaultValue="CAIXA">
+        <Select name="type" value={type} onChange={(e) => setType(e.target.value)}>
           <option value="CAIXA">Caixa físico</option>
           <option value="BANCO">Banco (conta corrente)</option>
           <option value="POUPANCA">Poupança</option>
@@ -23,6 +24,22 @@ export default function AccountForm() {
           <option value="OUTRO">Outro</option>
         </Select>
       </Field>
+      {type === "FINANCEIRA" ? (
+        <Field label="Desconto de impostos sobre o retorno (%)">
+          <Input
+            name="returnTaxPercent"
+            type="number"
+            step="0.01"
+            min={0}
+            max={100}
+            defaultValue={0}
+            placeholder="Ex: 15"
+          />
+          <p className="mt-1 text-xs text-slate-400">
+            Percentual que a financeira retém sobre o retorno. A loja recebe o líquido.
+          </p>
+        </Field>
+      ) : null}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Banco">
           <BankInput name="bankName" placeholder="Ex: Itaú" />

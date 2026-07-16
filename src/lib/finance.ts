@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
+import { computeReturn, retornoLabel } from "@/lib/retorno";
 import type { StructuralKey } from "@/lib/structural-flows";
 import type {
   CategoriaCustoVeiculo,
@@ -568,6 +569,8 @@ export async function registerVehicleSale(input: {
   // Conta financeira da financeira: o valor financiado entra nela (aguardando a
   // financeira transferir para a conta da empresa).
   financerAccountId?: string | null;
+  // Retorno da financeira (nível R-xx; 0 = sem retorno).
+  returnLevel?: number;
   // Entrada dada em troca por outro veículo (não entra no caixa: é quitada
   // pelo carro recebido). Reduz o que o cliente paga em dinheiro.
   tradeInAmount?: number;
@@ -615,6 +618,7 @@ export async function registerVehicleSale(input: {
         financerName: input.paymentMethod === "FINANCIADO" ? input.financerName || null : null,
         financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
+        returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -754,6 +758,38 @@ export async function registerVehicleSale(input: {
           saleId: sale.id,
           accountId: naFinanceira ? input.financerAccountId : null,
         });
+
+        // Retorno da financeira: comissão sobre o valor financiado. Só quando há
+        // financeira cadastrada (é ela quem paga) e nível > 0. Espelha o repasse:
+        // entra RECEBIDO na conta da financeira (que passa a dever o líquido) e
+        // é liquidado separado do financiamento. O imposto é retido pela
+        // financeira — a loja recebe só o líquido.
+        const level = Math.max(0, Math.floor(input.returnLevel ?? 0));
+        if (naFinanceira && level > 0) {
+          const financerAcc = await tx.financialAccount.findUnique({
+            where: { id: input.financerAccountId! },
+            select: { returnTaxPercent: true },
+          });
+          const { gross, tax, net } = computeReturn(
+            financed,
+            level,
+            financerAcc?.returnTaxPercent ?? 0,
+          );
+          if (net > 0) {
+            receivablesData.push({
+              description: `${baseDescription} - Retorno da financeira ${retornoLabel(level)} (bruto ${gross.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} − imposto ${tax.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })})`,
+              category: "RETORNO_FINANCEIRA",
+              amount: net,
+              dueDate: input.saleDate,
+              receivedDate: input.saleDate,
+              status: "RECEBIDO",
+              customerId: input.customerId,
+              saleId: sale.id,
+              accountId: input.financerAccountId,
+            });
+            await tx.sale.update({ where: { id: sale.id }, data: { returnNet: net } });
+          }
+        }
       }
     } else if (billable > 0) {
       receivablesData.push({
@@ -848,6 +884,18 @@ export async function cancelVehicleSale(saleId: string) {
       });
     }
 
+    // 3b) Se o retorno já foi recebido (transferência separada da financeira),
+    //     estorna essa transferência também.
+    if (sale.returnSettledAt && sale.financerAccountId && sale.returnNet > 0) {
+      await tx.accountTransfer.deleteMany({
+        where: {
+          fromId: sale.financerAccountId,
+          amount: sale.returnNet,
+          description: { contains: sale.vehicle.plate },
+        },
+      });
+    }
+
     // 4) Desfaz o veículo recebido em troca (e suas contas).
     if (sale.tradeInVehicleId) {
       const tradeId = sale.tradeInVehicleId;
@@ -869,7 +917,7 @@ export async function cancelVehicleSale(saleId: string) {
     }
     await tx.sale.update({
       where: { id: saleId },
-      data: { status: "CANCELADA", financerSettledAt: null },
+      data: { status: "CANCELADA", financerSettledAt: null, returnSettledAt: null },
     });
     return sale;
   });
@@ -1128,6 +1176,35 @@ export async function settleFinancing(saleId: string, accountId: string, date: D
       },
     });
     return tx.sale.update({ where: { id: saleId }, data: { financerSettledAt: date } });
+  });
+}
+
+/**
+ * Recebe o RETORNO da financeira: transfere o valor líquido da conta da
+ * financeira para uma conta da empresa. É liquidado SEPARADO do repasse do
+ * financiamento (a financeira paga os dois em momentos diferentes).
+ */
+export async function settleReturn(saleId: string, accountId: string, date: Date) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: { customer: { select: { name: true } }, vehicle: { select: { brand: true, model: true, plate: true } } },
+  });
+  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
+  if (!sale.returnNet || sale.returnNet <= 0) throw new Error("Sem retorno a receber nesta venda.");
+  if (sale.returnSettledAt) throw new Error("O retorno desta venda já foi recebido.");
+  if (sale.financerAccountId === accountId) throw new Error("Escolha uma conta da empresa (diferente da financeira).");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.accountTransfer.create({
+      data: {
+        fromId: sale.financerAccountId!,
+        toId: accountId,
+        amount: sale.returnNet,
+        date,
+        description: `Retorno financiamento ${retornoLabel(sale.returnLevel)} — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+      },
+    });
+    return tx.sale.update({ where: { id: saleId }, data: { returnSettledAt: date } });
   });
 }
 

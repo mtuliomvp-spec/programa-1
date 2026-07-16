@@ -22,10 +22,11 @@ export default async function DrePage({
       lucroBruto: acc.lucroBruto + m.lucroBruto,
       despesas: acc.despesas + m.despesas,
       comissoes: acc.comissoes + m.comissoes,
+      retornos: acc.retornos + m.retornos,
       lucroLiquido: acc.lucroLiquido + m.lucroLiquido,
       veiculosVendidos: acc.veiculosVendidos + m.veiculosVendidos,
     }),
-    { receitaTotal: 0, custoTotal: 0, lucroBruto: 0, despesas: 0, comissoes: 0, lucroLiquido: 0, veiculosVendidos: 0 },
+    { receitaTotal: 0, custoTotal: 0, lucroBruto: 0, despesas: 0, comissoes: 0, retornos: 0, lucroLiquido: 0, veiculosVendidos: 0 },
   );
 
   return (
@@ -68,6 +69,7 @@ export default async function DrePage({
               <Th className="text-right">Lucro bruto</Th>
               <Th className="text-right">Despesas</Th>
               <Th className="text-right">Comissões</Th>
+              <Th className="text-right">Retorno</Th>
               <Th className="text-right">Lucro líquido</Th>
             </Tr>
           </Thead>
@@ -81,6 +83,9 @@ export default async function DrePage({
                 <Td className="text-right tabular-nums">{formatCurrency(m.lucroBruto)}</Td>
                 <Td className="text-right tabular-nums">{formatCurrency(m.despesas)}</Td>
                 <Td className="text-right tabular-nums">{formatCurrency(m.comissoes)}</Td>
+                <Td className="text-right tabular-nums text-emerald-600">
+                  {m.retornos > 0 ? formatCurrency(m.retornos) : "—"}
+                </Td>
                 <Td
                   className={`text-right font-semibold tabular-nums ${
                     m.lucroLiquido >= 0 ? "text-emerald-600" : "text-rose-600"
@@ -98,6 +103,9 @@ export default async function DrePage({
               <Td className="text-right tabular-nums">{formatCurrency(totals.lucroBruto)}</Td>
               <Td className="text-right tabular-nums">{formatCurrency(totals.despesas)}</Td>
               <Td className="text-right tabular-nums">{formatCurrency(totals.comissoes)}</Td>
+              <Td className="text-right tabular-nums text-emerald-600">
+                {totals.retornos > 0 ? formatCurrency(totals.retornos) : "—"}
+              </Td>
               <Td
                 className={`text-right tabular-nums ${
                   totals.lucroLiquido >= 0 ? "text-emerald-600" : "text-rose-600"

@@ -29,6 +29,7 @@ export default async function NovaVendaPage({
         installmentsCount: pre.installmentsCount,
         financerAccountId: pre.financerAccountId ?? undefined,
         financedAmount: pre.financedAmount ?? undefined,
+        returnLevel: pre.returnLevel ?? 0,
         sellerName: pre.sellerName ?? undefined,
         notes: pre.notes ?? undefined,
         tradeIn: pre.tradeIn,
@@ -61,7 +62,7 @@ export default async function NovaVendaPage({
     prisma.financialAccount.findMany({
       where: { active: true, type: "FINANCEIRA" },
       orderBy: { name: "asc" },
-      select: { id: true, name: true },
+      select: { id: true, name: true, returnTaxPercent: true },
     }),
   ]);
 

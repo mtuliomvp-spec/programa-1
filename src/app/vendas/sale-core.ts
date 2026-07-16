@@ -33,6 +33,8 @@ export const saleSchema = z.object({
   installmentsCount: z.coerce.number().int().min(0).default(0),
   financerAccountId: z.string().optional(),
   financedAmount: z.coerce.number().min(0).optional(),
+  // Retorno da financeira (nível R-xx; 0 = sem retorno)
+  returnLevel: z.coerce.number().int().min(0).default(0),
   sellerName: z.string().optional(),
   notes: z.string().optional(),
   // Troca: veículo recebido do cliente cadastrado aqui mesmo.
@@ -76,6 +78,12 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
 
   if (d.paymentMethod === "FINANCIADO" && d.financedAmount != null && d.financedAmount > d.totalAmount) {
     throw new Error("O valor financiado não pode ser maior que o valor total da venda.");
+  }
+
+  // Retorno: só existe em venda financiada e exige a financeira (quem paga).
+  const returnLevel = d.paymentMethod === "FINANCIADO" ? Math.max(0, d.returnLevel || 0) : 0;
+  if (returnLevel > 0 && !d.financerAccountId) {
+    throw new Error("Para usar o retorno, selecione a financeira do financiamento.");
   }
 
   let financerName: string | null = null;
@@ -156,6 +164,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
+      returnLevel,
       notes: d.notes || null,
       tradeInAmount,
       tradeInLabel,

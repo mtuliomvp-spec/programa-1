@@ -69,6 +69,17 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
+      {sale.returnLevel > 0 && sale.returnNet > 0 ? (
+        <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/60 px-5 py-3 text-sm text-emerald-800">
+          <strong>Retorno da financeira R-{String(sale.returnLevel).padStart(2, "0")}</strong>: líquido{" "}
+          {formatCurrency(sale.returnNet)}{" "}
+          {sale.returnSettledAt
+            ? `· recebido em ${formatDate(sale.returnSettledAt)}`
+            : "· a receber da financeira (tela Financiamentos)"}
+          .
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <Card>
           <CardHeader title="Contas a receber geradas" description="Parcelas e valores vinculados a esta venda" />

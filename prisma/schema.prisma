@@ -50,6 +50,7 @@ enum CategoriaPagar {
 enum CategoriaReceber {
   VENDA_VEICULO
   VENDA_PECA
+  RETORNO_FINANCEIRA
   OUTROS
 }
 
@@ -135,6 +136,8 @@ model FinancialAccount {
   initialBalance Float             @default(0)
   isDefault      Boolean           @default(false)
   active         Boolean           @default(true)
+  // % de imposto que a financeira retém sobre o retorno (só p/ tipo FINANCEIRA)
+  returnTaxPercent Float           @default(0)
   notes          String?
   payables       Payable[]
   receivables    Receivable[]
@@ -391,6 +394,8 @@ model PreSale {
   tiPayoffTo        String?
   tiDebts           Float?
   tiSupplierName    String?
+  // Retorno da financeira (nível R-xx; 0 = sem retorno)
+  returnLevel       Int            @default(0)
   status            StatusPreVenda @default(ABERTA)
   convertedSaleId   String?
   createdAt         DateTime       @default(now())
@@ -423,6 +428,11 @@ model Sale {
   financerAccount   FinancialAccount? @relation("SaleFinancer", fields: [financerAccountId], references: [id])
   // Data em que a financeira pagou (repasse transferido para a conta da empresa)
   financerSettledAt DateTime?
+  // Retorno da financeira: nível R-xx usado, valor líquido (após imposto) e a
+  // data em que a financeira pagou o retorno (liquidado separado do repasse).
+  returnLevel       Int            @default(0)
+  returnNet         Float          @default(0)
+  returnSettledAt   DateTime?
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

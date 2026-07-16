@@ -8,7 +8,7 @@ import ReceivableRowActions from "./ReceivableRowActions";
 
 export const dynamic = "force-dynamic";
 
-const categoryLabel = { VENDA_VEICULO: "Venda de veículo", VENDA_PECA: "Venda de peça", OUTROS: "Outros" } as const;
+const categoryLabel = { VENDA_VEICULO: "Venda de veículo", VENDA_PECA: "Venda de peça", RETORNO_FINANCEIRA: "Retorno financeira", OUTROS: "Outros" } as const;
 const statusTone = { PENDENTE: "warning", RECEBIDO: "success", ATRASADO: "danger" } as const;
 const statusLabelMap = { PENDENTE: "Pendente", RECEBIDO: "Recebido", ATRASADO: "Atrasado" } as const;
 

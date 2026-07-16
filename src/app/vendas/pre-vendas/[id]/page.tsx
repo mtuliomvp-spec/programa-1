@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { computeReturn, retornoLabel } from "@/lib/retorno";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import PreSaleActions from "./PreSaleActions";
 
@@ -58,7 +59,7 @@ export default async function PreVendaFichaPage({
     prisma.vehicle.findUnique({ where: { id: pre.vehicleId } }),
     prisma.customer.findUnique({ where: { id: pre.customerId } }),
     pre.financerAccountId
-      ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId }, select: { name: true } })
+      ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId }, select: { name: true, returnTaxPercent: true } })
       : Promise.resolve(null),
     prisma.receivable.aggregate({
       _sum: { amount: true },
@@ -86,6 +87,10 @@ export default async function PreVendaFichaPage({
     : Math.round((entradaFin + financedTyped) * 100) / 100;
   const methodLabel =
     pre.paymentMethod === "A_VISTA" ? "à vista" : pre.paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
+  const retorno =
+    pre.paymentMethod === "FINANCIADO" && pre.returnLevel > 0
+      ? computeReturn(financedTyped > 0 ? financedTyped : restanteFin, pre.returnLevel, financer?.returnTaxPercent ?? 0)
+      : null;
 
   const editHref = `/vendas/novo?preSale=${pre.id}`;
   const converted = pre.status === "CONVERTIDA";
@@ -187,6 +192,13 @@ export default async function PreVendaFichaPage({
             </h2>
             <p className="mb-1"><span className="text-slate-500">Financeira:</span> {financer?.name || "Não informada"}</p>
             <Row label="Valor financiado (banco)" value={financedTyped} />
+            {retorno && retorno.net > 0 ? (
+              <>
+                <Row label={`Retorno ${retornoLabel(pre.returnLevel)} (bruto)`} value={retorno.gross} />
+                <Row label="(−) Imposto retido" value={retorno.tax} tone="rose" />
+                <Row label="= Retorno líquido (recebe da financeira)" value={retorno.net} strong tone="green" />
+              </>
+            ) : null}
           </section>
         ) : null}
 

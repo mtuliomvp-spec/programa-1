@@ -1,21 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { settleFinancingAction } from "./actions";
+import { settleFinancingAction, settleReturnAction } from "./actions";
 
 type Account = { id: string; name: string };
 
 export default function FinancingSettleButton({
   saleId,
   accounts,
+  mode = "financing",
+  label,
 }: {
   saleId: string;
   accounts: Account[];
+  mode?: "financing" | "return";
+  label?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const action = mode === "return" ? settleReturnAction : settleFinancingAction;
+  const openLabel = label ?? "Receber (dar baixa)";
 
   if (accounts.length === 0) {
     return <span className="text-xs text-amber-600">Cadastre uma conta da empresa</span>;
@@ -28,7 +34,7 @@ export default function FinancingSettleButton({
         onClick={() => setOpen(true)}
         className="text-sm font-medium text-emerald-700 hover:underline"
       >
-        Receber (dar baixa)
+        {openLabel}
       </button>
     );
   }
@@ -53,7 +59,7 @@ export default function FinancingSettleButton({
           onClick={() =>
             start(async () => {
               setError(null);
-              const res = await settleFinancingAction(saleId, accountId);
+              const res = await action(saleId, accountId);
               if (!res.ok) setError(res.error || "Erro");
               else setOpen(false);
             })

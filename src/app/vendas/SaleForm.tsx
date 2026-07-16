@@ -6,11 +6,12 @@ import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
+import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
-type Financer = { id: string; name: string };
+type Financer = { id: string; name: string; returnTaxPercent: number };
 
 export type SaleFormInitial = {
   vehicleId?: string;
@@ -22,6 +23,7 @@ export type SaleFormInitial = {
   installmentsCount?: number;
   financerAccountId?: string;
   financedAmount?: number;
+  returnLevel?: number;
   sellerName?: string;
   notes?: string;
   tradeIn?: boolean;
@@ -129,6 +131,11 @@ export default function SaleForm({
     initial?.financedAmount != null ? String(initial.financedAmount) : "",
   );
   const [financerAccountId, setFinancerAccountId] = useState(initial?.financerAccountId || "");
+  // Retorno da financeira (comissão sobre o financiado); 0 = sem retorno.
+  const [returnLevel, setReturnLevel] = useState<string>(
+    initial?.returnLevel ? String(initial.returnLevel) : "0",
+  );
+  const financerTaxPercent = financers.find((f) => f.id === financerAccountId)?.returnTaxPercent ?? 0;
   // Restante depois de troca e sinal — pode ficar negativo (troca + sinal já
   // passam do valor da venda), e aí o excedente já é devolução ao cliente.
   const rawRestante = Math.round((total - tiLiquido - sinal) * 100) / 100;
@@ -148,6 +155,11 @@ export default function SaleForm({
   const aReceberFin = financerAccountId
     ? entradaFinanciamento
     : Math.round((entradaFinanciamento + financedTyped) * 100) / 100;
+  // Retorno da financeira: incide sobre o valor financiado (o typed; se vazio,
+  // financia todo o restante). Só vale com financeira escolhida.
+  const financedEffetivo = financedTyped > 0 ? financedTyped : restanteFin;
+  const retornoNivel = Math.max(0, Math.floor(Number(returnLevel) || 0));
+  const retorno = computeReturn(financedEffetivo, retornoNivel, financerTaxPercent);
   const methodLabel =
     paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
@@ -349,6 +361,46 @@ export default function SaleForm({
             O valor financiado vira uma conta a receber do banco/financeira (vencimento em 5 dias).
             {financedAmount === "" ? " Se ficar em branco, financia todo o restante a pagar." : ""}
           </p>
+
+          <div className="mt-4 border-t border-slate-200 pt-3">
+            <Field label="Retorno da financeira (R-xx)">
+              <Input
+                type="number"
+                min={0}
+                step={1}
+                name="returnLevel"
+                value={returnLevel}
+                onChange={(e) => setReturnLevel(e.target.value)}
+                className="max-w-[140px]"
+              />
+            </Field>
+            <p className="mt-1 text-xs text-slate-500">
+              Comissão que a financeira paga à loja: {(RETORNO_RATE_PER_LEVEL * 100).toLocaleString("pt-BR")}% do
+              financiado por nível (R-01 = 1,2%, R-02 = 2,4%…). Deixe 0 para nenhuma comissão.
+            </p>
+            {retornoNivel > 0 ? (
+              !financerAccountId ? (
+                <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1.5 text-xs text-amber-700">
+                  Escolha a financeira acima para calcular e receber o retorno.
+                </p>
+              ) : (
+                <div className="mt-2 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
+                  <div className="space-y-1">
+                    <SummaryRow
+                      label={`${retornoLabel(retornoNivel)} · ${(retornoNivel * RETORNO_RATE_PER_LEVEL * 100).toLocaleString("pt-BR")}% de ${formatCurrency(financedEffetivo)}`}
+                      value={retorno.gross}
+                    />
+                    <SummaryRow label={`(−) Imposto retido (${financerTaxPercent.toLocaleString("pt-BR")}%)`} value={retorno.tax} tone="rose" />
+                    <SummaryRow label="= Retorno líquido (entra como receita/lucro)" value={retorno.net} strong tone="green" top />
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    O líquido entra na conta da financeira (que passa a dever à loja) e é recebido
+                    separado do repasse, na tela Financiamentos.
+                  </p>
+                </div>
+              )
+            ) : null}
+          </div>
           {financedAmount !== "" ? (
             devolucaoCliente > 0 ? (
               // Entrou mais do que o valor da venda (troca + sinal + financiado)

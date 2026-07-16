@@ -49,6 +49,7 @@ export type DreMonth = {
   lucroBruto: number;
   despesas: number;
   comissoes: number;
+  retornos: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -57,7 +58,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
   const { start: rangeStart } = monthRange(months - 1);
   const { end: rangeEnd } = monthRange(0);
 
-  const [sales, partSales, expenses] = await Promise.all([
+  const [sales, partSales, expenses, retornoRecs] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { vehicle: { include: { costs: true } } },
@@ -77,6 +78,15 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       },
       select: { amount: true, paymentDate: true, category: true },
     }),
+    // Retorno da financeira recebido no período (regime de caixa).
+    prisma.receivable.findMany({
+      where: {
+        category: "RETORNO_FINANCEIRA",
+        status: "RECEBIDO",
+        receivedDate: { gte: rangeStart, lt: rangeEnd },
+      },
+      select: { amount: true, receivedDate: true },
+    }),
   ]);
 
   const result: DreMonth[] = [];
@@ -85,6 +95,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const monthSales = sales.filter((s) => s.saleDate >= start && s.saleDate < end);
     const monthPartSales = partSales.filter((p) => p.saleDate >= start && p.saleDate < end);
     const monthExpenses = expenses.filter((e) => e.paymentDate! >= start && e.paymentDate! < end);
+    const retornos = retornoRecs
+      .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
+      .reduce((sum, r) => sum + r.amount, 0);
 
     const receitaVeiculos = monthSales.reduce((sum, s) => sum + s.totalAmount, 0);
     const receitaPecas = monthPartSales.reduce((sum, p) => sum + p.totalAmount, 0);
@@ -121,7 +134,8 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       lucroBruto,
       despesas,
       comissoes,
-      lucroLiquido: lucroBruto - despesas - comissoes,
+      retornos,
+      lucroLiquido: lucroBruto - despesas - comissoes + retornos,
       veiculosVendidos: monthSales.length,
     });
   }
@@ -136,7 +150,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
 // (com sinal negativo). A soma das linhas é o lucro/prejuízo do período.
 // ---------------------------------------------------------------------------
 
-export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA";
+export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA" | "RETORNO";
 
 export type PLEntry = {
   id: string;
@@ -155,6 +169,7 @@ export type PLStatement = {
   despesas: number;
   comissoes: number;
   posVenda: number;
+  retornos: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -193,12 +208,23 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     }),
   ]);
 
+  // Retorno da financeira: receita recebida no período (comissão de
+  // financiamento). Só o RECEBIDO conta (regime de caixa).
+  const retornoRecs = await prisma.receivable.findMany({
+    where: {
+      category: "RETORNO_FINANCEIRA",
+      status: "RECEBIDO",
+      receivedDate: { gte: rangeStart, lt: rangeEnd },
+    },
+    include: { sale: { include: { vehicle: { select: { brand: true, model: true, plate: true } } } } },
+  });
+
   const fmt = (n: number) =>
     n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   const entries: PLEntry[] = [];
   let receitaVeiculos = 0, custoVeiculos = 0, receitaPecas = 0, custoPecas = 0;
-  let despesas = 0, comissoes = 0, posVenda = 0;
+  let despesas = 0, comissoes = 0, posVenda = 0, retornos = 0;
 
   for (const s of sales) {
     // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
@@ -259,6 +285,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     });
   }
 
+  for (const r of retornoRecs) {
+    retornos += r.amount;
+    entries.push({
+      id: `ret-${r.id}`,
+      date: r.receivedDate!,
+      kind: "RETORNO",
+      description: r.description,
+      detail: r.sale?.vehicle
+        ? `${r.sale.vehicle.brand} ${r.sale.vehicle.model} · ${r.sale.vehicle.plate}`
+        : null,
+      value: r.amount,
+    });
+  }
+
   entries.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const receitaTotal = receitaVeiculos + receitaPecas;
@@ -272,7 +312,8 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     despesas,
     comissoes,
     posVenda,
-    lucroLiquido: lucroBruto - despesas - comissoes - posVenda,
+    retornos,
+    lucroLiquido: lucroBruto - despesas - comissoes - posVenda + retornos,
     veiculosVendidos: sales.length,
   };
 }

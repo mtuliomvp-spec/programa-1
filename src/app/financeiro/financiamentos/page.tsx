@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { retornoLabel } from "@/lib/retorno";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import FinancingSettleButton from "./FinancingSettleButton";
 
@@ -69,6 +70,7 @@ export default async function FinanciamentosPage() {
                 <Th>Financeira</Th>
                 <Th className="text-right">Valor financiado</Th>
                 <Th className="text-right">Situação</Th>
+                <Th className="text-right">Retorno</Th>
               </Tr>
             </Thead>
             <tbody>
@@ -94,6 +96,27 @@ export default async function FinanciamentosPage() {
                       <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
                     ) : s.financerAccountId ? (
                       <FinancingSettleButton saleId={s.id} accounts={companyAccounts} />
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </Td>
+                  <Td className="text-right">
+                    {s.returnLevel > 0 && s.returnNet > 0 ? (
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-xs text-slate-500">
+                          {retornoLabel(s.returnLevel)} · {formatCurrency(s.returnNet)}
+                        </span>
+                        {s.returnSettledAt ? (
+                          <Badge tone="success">Recebido {formatDate(s.returnSettledAt)}</Badge>
+                        ) : s.financerAccountId ? (
+                          <FinancingSettleButton
+                            saleId={s.id}
+                            accounts={companyAccounts}
+                            mode="return"
+                            label="Receber retorno"
+                          />
+                        ) : null}
+                      </div>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
                     )}

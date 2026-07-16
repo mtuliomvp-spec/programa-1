@@ -16,6 +16,7 @@ const accountSchema = z.object({
   accountNumber: z.string().optional(),
   initialBalance: z.coerce.number().default(0),
   isDefault: z.coerce.boolean().optional(),
+  returnTaxPercent: z.coerce.number().min(0).max(100).default(0),
 });
 
 export async function createAccountAction(
@@ -42,11 +43,27 @@ export async function createAccountAction(
         accountNumber: data.accountNumber || null,
         initialBalance: data.initialBalance,
         isDefault,
+        returnTaxPercent: data.type === "FINANCEIRA" ? data.returnTaxPercent : 0,
       },
     });
   });
   revalidatePath("/financeiro/contas");
   return {};
+}
+
+/** Atualiza o % de imposto retido pela financeira sobre o retorno. */
+export async function updateFinancerTaxAction(
+  id: string,
+  percent: number,
+): Promise<{ ok: boolean; error?: string }> {
+  const p = Number(percent);
+  if (!Number.isFinite(p) || p < 0 || p > 100) {
+    return { ok: false, error: "Informe um percentual entre 0 e 100." };
+  }
+  await prisma.financialAccount.update({ where: { id }, data: { returnTaxPercent: p } });
+  revalidatePath("/financeiro/contas");
+  revalidatePath(`/financeiro/contas/${id}`);
+  return { ok: true };
 }
 
 export async function setDefaultAccountAction(id: string) {
