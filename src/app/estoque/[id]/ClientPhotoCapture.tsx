@@ -21,6 +21,67 @@ function getLocation(): Promise<Coords | null> {
   });
 }
 
+/** fetch com tempo limite (aborta em `ms`). */
+async function fetchJson(url: string, ms: number): Promise<unknown | null> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
+  try {
+    const res = await fetch(url, { signal: ctrl.signal, headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Nominatim (OpenStreetMap): endereço com rua/número quando disponível. */
+async function geocodeNominatim(lat: number, lon: number): Promise<string | null> {
+  const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&accept-language=pt-BR&lat=${lat}&lon=${lon}`;
+  const json = (await fetchJson(url, 8000)) as { display_name?: string; address?: Record<string, string> } | null;
+  if (!json) return null;
+  const a = json.address || {};
+  const uf = a["ISO3166-2-lvl4"]?.split("-")[1] || a.state || "";
+  const rua = a.road || a.pedestrian || a.footway || "";
+  const numero = a.house_number ? `, ${a.house_number}` : "";
+  const bairro = a.suburb || a.neighbourhood || a.city_district || "";
+  const cidade = a.city || a.town || a.village || a.municipality || "";
+  const cep = a.postcode ? ` · CEP ${a.postcode}` : "";
+  const partes: string[] = [];
+  if (rua) partes.push(`${rua}${numero}`);
+  if (bairro) partes.push(bairro);
+  if (cidade) partes.push(uf ? `${cidade} - ${uf}` : cidade);
+  else if (uf) partes.push(uf);
+  const texto = (partes.join(", ") + cep).trim();
+  return texto || json.display_name || null;
+}
+
+/** BigDataCloud (endpoint cliente, sem token): reserva — pelo menos cidade/UF. */
+async function geocodeBigDataCloud(lat: number, lon: number): Promise<string | null> {
+  const url = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lon}&localityLanguage=pt`;
+  const j = (await fetchJson(url, 8000)) as
+    | { city?: string; locality?: string; principalSubdivision?: string; principalSubdivisionCode?: string; postcode?: string }
+    | null;
+  if (!j) return null;
+  const uf = j.principalSubdivisionCode?.split("-")[1] || j.principalSubdivision || "";
+  const cidade = j.city || j.locality || "";
+  const cep = j.postcode ? ` · CEP ${j.postcode}` : "";
+  const base = cidade ? (uf ? `${cidade} - ${uf}` : cidade) : uf;
+  const texto = (base + cep).trim();
+  return texto || null;
+}
+
+/**
+ * Converte coordenadas em endereço legível (cidade, rua, bairro). Tenta o
+ * Nominatim (rua/número) e, se falhar, o BigDataCloud (cidade/UF). Ambos são
+ * gratuitos e sem token. Resolve null se os dois falharem: a foto continua
+ * sendo anexada só com as coordenadas.
+ */
+async function reverseGeocode(lat: number, lon: number): Promise<string | null> {
+  return (await geocodeNominatim(lat, lon)) || (await geocodeBigDataCloud(lat, lon));
+}
+
 /** Decodifica o arquivo respeitando a orientação EXIF (com fallback). */
 async function loadBitmap(file: File): Promise<{ width: number; height: number; draw: (ctx: CanvasRenderingContext2D, w: number, h: number) => void }> {
   if (typeof createImageBitmap === "function") {
@@ -42,8 +103,26 @@ async function loadBitmap(file: File): Promise<{ width: number; height: number; 
   }
 }
 
-/** Reduz + carimba data/hora e coordenadas na imagem; devolve um JPEG. */
-async function stampPhoto(file: File, coords: Coords | null): Promise<Blob> {
+/** Quebra um texto em várias linhas para caber na largura dada. */
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number): string[] {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let cur = "";
+  for (const word of words) {
+    const test = cur ? `${cur} ${word}` : word;
+    if (cur && ctx.measureText(test).width > maxWidth) {
+      lines.push(cur);
+      cur = word;
+    } else {
+      cur = test;
+    }
+  }
+  if (cur) lines.push(cur);
+  return lines;
+}
+
+/** Reduz + carimba data/hora, endereço e coordenadas na imagem; devolve JPEG. */
+async function stampPhoto(file: File, coords: Coords | null, address: string | null): Promise<Blob> {
   const src = await loadBitmap(file);
   const scale = Math.min(1, MAX_SIDE / Math.max(src.width, src.height));
   const w = Math.round(src.width * scale);
@@ -54,19 +133,21 @@ async function stampPhoto(file: File, coords: Coords | null): Promise<Blob> {
   const ctx = canvas.getContext("2d")!;
   src.draw(ctx, w, h);
 
-  const now = new Date();
-  const dataHora = now.toLocaleString("pt-BR");
-  const linhas = [
-    `MVP Veículos · ${dataHora}`,
-    coords
-      ? `Local: ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`
-      : "Localização não disponível",
-  ];
-
   const fontSize = Math.max(16, Math.round(w * 0.028));
   ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
   ctx.textBaseline = "bottom";
   const pad = Math.round(fontSize * 0.5);
+  const maxTextWidth = w - pad * 2;
+
+  const now = new Date();
+  const linhas: string[] = [`MVP Veículos · ${now.toLocaleString("pt-BR")}`];
+  if (address) linhas.push(...wrapText(ctx, `📍 ${address}`, maxTextWidth));
+  linhas.push(
+    coords
+      ? `GPS: ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`
+      : "Localização não disponível",
+  );
+
   const lineH = Math.round(fontSize * 1.35);
   const boxH = lineH * linhas.length + pad;
   // Faixa escura no rodapé para o texto ficar legível sobre qualquer foto.
@@ -92,10 +173,21 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
   const [preview, setPreview] = useState<string | null>(null);
   const [blob, setBlob] = useState<Blob | null>(null);
   const [coords, setCoords] = useState<Coords | null>(null);
+  const [address, setAddress] = useState<string | null>(null);
   const [processing, setProcessing] = useState(false);
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+
+  function clearPreview() {
+    setPreview((old) => {
+      if (old) URL.revokeObjectURL(old);
+      return null;
+    });
+    setBlob(null);
+    setCoords(null);
+    setAddress(null);
+  }
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -106,8 +198,10 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
     setProcessing(true);
     try {
       const loc = await getLocation();
-      const stamped = await stampPhoto(file, loc);
+      const addr = loc ? await reverseGeocode(loc.latitude, loc.longitude) : null;
+      const stamped = await stampPhoto(file, loc, addr);
       setCoords(loc);
+      setAddress(addr);
       setBlob(stamped);
       setPreview((old) => {
         if (old) URL.revokeObjectURL(old);
@@ -132,17 +226,13 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
         fd.set("longitude", String(coords.longitude));
         fd.set("geoAccuracy", String(coords.accuracy));
       }
+      if (address) fd.set("address", address);
       const res = await uploadClientPhotoAction({}, fd);
       if (res.error) {
         setError(res.error);
       } else {
         setDone(true);
-        setBlob(null);
-        setPreview((old) => {
-          if (old) URL.revokeObjectURL(old);
-          return null;
-        });
-        setCoords(null);
+        clearPreview();
       }
     });
   }
@@ -150,8 +240,8 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
   return (
     <div className="p-5">
       <p className="mb-3 text-sm text-slate-600">
-        Registre uma foto do comprador com data/hora e localização carimbadas — prova contra alegação de
-        fraude. A localização é opcional: se você negar o acesso, a foto é anexada mesmo assim.
+        Registre uma foto do comprador com data/hora, endereço e localização carimbados — prova contra
+        alegação de fraude. A localização é opcional: se você negar o acesso, a foto é anexada mesmo assim.
       </p>
 
       <input ref={rearRef} type="file" accept="image/*" capture="environment" onChange={onFile} className="hidden" />
@@ -166,7 +256,7 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
         </Button>
       </div>
 
-      {processing ? <p className="mt-3 text-sm text-slate-500">Preparando a foto e a localização…</p> : null}
+      {processing ? <p className="mt-3 text-sm text-slate-500">Preparando a foto, o endereço e a localização…</p> : null}
 
       {error ? (
         <p className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</p>
@@ -181,28 +271,19 @@ export default function ClientPhotoCapture({ vehicleId }: { vehicleId: string })
         <div className="mt-4 space-y-3">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={preview} alt="Prévia da foto do cliente" className="max-h-80 w-auto rounded-lg border border-slate-200" />
-          <p className="text-xs text-slate-500">
-            {coords
-              ? `Localização: ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`
-              : "Sem localização (acesso negado ou indisponível)."}
-          </p>
+          <div className="text-xs text-slate-500">
+            {address ? <p>📍 {address}</p> : null}
+            <p>
+              {coords
+                ? `GPS: ${coords.latitude.toFixed(6)}, ${coords.longitude.toFixed(6)} (±${Math.round(coords.accuracy)}m)`
+                : "Sem localização (acesso negado ou indisponível)."}
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button type="button" disabled={pending} onClick={submit}>
               {pending ? "Anexando..." : "Anexar foto"}
             </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              disabled={pending}
-              onClick={() => {
-                setPreview((old) => {
-                  if (old) URL.revokeObjectURL(old);
-                  return null;
-                });
-                setBlob(null);
-                setCoords(null);
-              }}
-            >
+            <Button type="button" variant="secondary" disabled={pending} onClick={clearPreview}>
               Descartar
             </Button>
           </div>

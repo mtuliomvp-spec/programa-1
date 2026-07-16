@@ -355,6 +355,8 @@ model VehicleAttachment {
   latitude    Float?
   longitude   Float?
   geoAccuracy Float?
+  // Endereço legível resolvido a partir das coordenadas (cidade, rua...).
+  address     String?
   createdAt   DateTime       @default(now())
 
   @@index([vehicleId])

@@ -420,6 +420,7 @@ export async function uploadClientPhotoAction(
   const latitude = parseCoord(formData.get("latitude"), 90);
   const longitude = parseCoord(formData.get("longitude"), 180);
   const geoAccuracy = parseCoord(formData.get("geoAccuracy"), Number.MAX_SAFE_INTEGER);
+  const address = String(formData.get("address") || "").trim().slice(0, 300) || null;
 
   const buffer = Buffer.from(await file.arrayBuffer());
   await prisma.vehicleAttachment.create({
@@ -434,6 +435,7 @@ export async function uploadClientPhotoAction(
       latitude,
       longitude,
       geoAccuracy,
+      address,
     },
   });
   revalidatePath(`/estoque/${vehicleId}`);

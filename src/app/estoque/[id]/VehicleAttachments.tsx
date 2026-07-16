@@ -18,6 +18,7 @@ type Attachment = {
   latitude?: number | null;
   longitude?: number | null;
   geoAccuracy?: number | null;
+  address?: string | null;
   createdAt: Date;
 };
 
@@ -58,6 +59,7 @@ export default function VehicleAttachments({
                 <p className="truncate text-xs text-slate-400">
                   {a.filename} · {humanSize(a.size)} · {formatDate(a.createdAt)}
                 </p>
+                {a.address ? <p className="truncate text-xs text-slate-500">📍 {a.address}</p> : null}
                 {a.latitude != null && a.longitude != null ? (
                   <a
                     href={`https://www.google.com/maps?q=${a.latitude},${a.longitude}`}
@@ -65,7 +67,7 @@ export default function VehicleAttachments({
                     rel="noopener noreferrer"
                     className="text-xs font-medium text-blue-700 hover:underline"
                   >
-                    📍 Ver no mapa
+                    Ver no mapa
                     {a.geoAccuracy != null ? ` (±${Math.round(a.geoAccuracy)}m)` : ""}
                   </a>
                 ) : null}

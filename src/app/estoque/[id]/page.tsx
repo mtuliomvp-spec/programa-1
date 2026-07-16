@@ -42,6 +42,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           latitude: true,
           longitude: true,
           geoAccuracy: true,
+          address: true,
           createdAt: true,
         },
         orderBy: { createdAt: "desc" },
