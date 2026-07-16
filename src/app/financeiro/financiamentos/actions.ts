@@ -20,11 +20,18 @@ export async function settleFinancingAction(saleId: string, accountId: string): 
   return { ok: true };
 }
 
-export async function settleReturnAction(saleId: string, accountId: string): Promise<SettleResult> {
+export async function settleReturnAction(
+  saleId: string,
+  accountId: string,
+  actualAmount: number,
+): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
+  if (!Number.isFinite(actualAmount) || actualAmount < 0) {
+    return { ok: false, error: "Informe o valor recebido." };
+  }
   try {
     await assertBooksBalanced();
-    await settleReturn(saleId, accountId, new Date());
+    await settleReturn(saleId, accountId, actualAmount, new Date());
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível receber o retorno." };
   }

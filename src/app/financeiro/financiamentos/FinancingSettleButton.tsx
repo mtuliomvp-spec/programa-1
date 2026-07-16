@@ -10,17 +10,20 @@ export default function FinancingSettleButton({
   accounts,
   mode = "financing",
   label,
+  programmedAmount = 0,
 }: {
   saleId: string;
   accounts: Account[];
   mode?: "financing" | "return";
   label?: string;
+  programmedAmount?: number;
 }) {
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [amount, setAmount] = useState(String(programmedAmount || ""));
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const action = mode === "return" ? settleReturnAction : settleFinancingAction;
+  const isReturn = mode === "return";
   const openLabel = label ?? "Receber (dar baixa)";
 
   if (accounts.length === 0) {
@@ -52,6 +55,18 @@ export default function FinancingSettleButton({
           </option>
         ))}
       </select>
+      {isReturn ? (
+        <input
+          type="number"
+          step="0.01"
+          min={0}
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          placeholder="Valor recebido"
+          title="Valor realmente pago pela financeira"
+          className="h-8 w-44 rounded-lg border border-slate-300 bg-white px-2 text-right text-xs tabular-nums text-slate-900"
+        />
+      ) : null}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -59,7 +74,9 @@ export default function FinancingSettleButton({
           onClick={() =>
             start(async () => {
               setError(null);
-              const res = await action(saleId, accountId);
+              const res = isReturn
+                ? await settleReturnAction(saleId, accountId, Number(amount))
+                : await settleFinancingAction(saleId, accountId);
               if (!res.ok) setError(res.error || "Erro");
               else setOpen(false);
             })

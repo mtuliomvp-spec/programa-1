@@ -452,6 +452,8 @@ model Sale {
   returnLevel       Int            @default(0)
   returnNet         Float          @default(0)
   returnSettledAt   DateTime?
+  // Valor realmente pago pela financeira (pode diferir do programado returnNet)
+  returnPaidAmount  Float?
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

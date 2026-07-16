@@ -884,16 +884,28 @@ export async function cancelVehicleSale(saleId: string) {
       });
     }
 
-    // 3b) Se o retorno já foi recebido (transferência separada da financeira),
-    //     estorna essa transferência também.
+    // 3b) Se o retorno já foi recebido, estorna as transferências (para o banco e
+    //     para o Banco Neutro) e os ajustes administrativos de diferença.
     if (sale.returnSettledAt && sale.financerAccountId && sale.returnNet > 0) {
       await tx.accountTransfer.deleteMany({
         where: {
           fromId: sale.financerAccountId,
-          amount: sale.returnNet,
           description: { contains: sale.vehicle.plate },
+          OR: [
+            { description: { contains: "Retorno financiamento" } },
+            { description: { contains: "Diferença de retorno" } },
+          ],
         },
       });
+      // Crédito/débito administrativo de "diferença de retorno" deste veículo.
+      const diffFilter = {
+        AND: [
+          { description: { contains: "Diferença de retorno" } },
+          { description: { contains: sale.vehicle.plate } },
+        ],
+      };
+      await tx.receivable.deleteMany({ where: diffFilter });
+      await tx.payable.deleteMany({ where: diffFilter });
     }
 
     // 4) Desfaz o veículo recebido em troca (e suas contas).
@@ -1180,11 +1192,23 @@ export async function settleFinancing(saleId: string, accountId: string, date: D
 }
 
 /**
- * Recebe o RETORNO da financeira: transfere o valor líquido da conta da
- * financeira para uma conta da empresa. É liquidado SEPARADO do repasse do
- * financiamento (a financeira paga os dois em momentos diferentes).
+ * Recebe o RETORNO da financeira. A conta da financeira SEMPRE zera (sai o valor
+ * programado). O banco da empresa recebe o valor REAL pago (`actualAmount`). A
+ * diferença vira ajuste administrativo:
+ *  - pagou igual: só a transferência financeira → banco;
+ *  - pagou a mais: transfere o programado e credita a diferença como RECEITA
+ *    administrativa no banco (o banco recebe o total real);
+ *  - pagou a menos: transfere o real para o banco e a diferença para o Banco
+ *    Neutro (zera a financeira); depois um DÉBITO administrativo pago a partir do
+ *    Banco Neutro zera o neutro e vira despesa "diferença de retorno".
+ * Liquidado SEPARADO do repasse do financiamento.
  */
-export async function settleReturn(saleId: string, accountId: string, date: Date) {
+export async function settleReturn(
+  saleId: string,
+  accountId: string,
+  actualAmount: number,
+  date: Date,
+) {
   const sale = await prisma.sale.findUniqueOrThrow({
     where: { id: saleId },
     include: { customer: { select: { name: true } }, vehicle: { select: { brand: true, model: true, plate: true } } },
@@ -1194,17 +1218,67 @@ export async function settleReturn(saleId: string, accountId: string, date: Date
   if (sale.returnSettledAt) throw new Error("O retorno desta venda já foi recebido.");
   if (sale.financerAccountId === accountId) throw new Error("Escolha uma conta da empresa (diferente da financeira).");
 
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const programmed = round2(sale.returnNet);
+  const actual = round2(actualAmount);
+  if (!Number.isFinite(actual) || actual < 0) throw new Error("Informe um valor recebido válido.");
+  const diff = round2(actual - programmed);
+
+  const label = `${retornoLabel(sale.returnLevel)} — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`;
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
+  const neutralAccountId = diff < 0 ? await getNeutralAccountId() : null;
+
   return prisma.$transaction(async (tx) => {
-    await tx.accountTransfer.create({
-      data: {
-        fromId: sale.financerAccountId!,
-        toId: accountId,
-        amount: sale.returnNet,
-        date,
-        description: `Retorno financiamento ${retornoLabel(sale.returnLevel)} — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
-      },
-    });
-    return tx.sale.update({ where: { id: saleId }, data: { returnSettledAt: date } });
+    if (diff === 0) {
+      await tx.accountTransfer.create({
+        data: { fromId: sale.financerAccountId!, toId: accountId, amount: programmed, date, description: `Retorno financiamento ${label}` },
+      });
+    } else if (diff > 0) {
+      // Pagou a mais: financeira zera (programado) e a diferença é receita
+      // administrativa creditada no banco → o banco recebe o total real.
+      await tx.accountTransfer.create({
+        data: { fromId: sale.financerAccountId!, toId: accountId, amount: programmed, date, description: `Retorno financiamento ${label}` },
+      });
+      await tx.receivable.create({
+        data: {
+          description: `Diferença de retorno (crédito) ${label}`,
+          category: "OUTROS",
+          amount: diff,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId,
+          costCenterId: adminCenterId,
+          notes: "Financeira pagou a mais que o retorno programado.",
+        },
+      });
+    } else {
+      // Pagou a menos: real para o banco, a falta para o Banco Neutro (zera a
+      // financeira) e um débito administrativo pago do neutro (zera o neutro).
+      const falta = round2(programmed - actual);
+      if (actual > 0) {
+        await tx.accountTransfer.create({
+          data: { fromId: sale.financerAccountId!, toId: accountId, amount: actual, date, description: `Retorno financiamento ${label}` },
+        });
+      }
+      await tx.accountTransfer.create({
+        data: { fromId: sale.financerAccountId!, toId: neutralAccountId!, amount: falta, date, description: `Diferença de retorno ${label}` },
+      });
+      await tx.payable.create({
+        data: {
+          description: `Diferença de retorno (débito) ${label}`,
+          category: "OUTROS",
+          amount: falta,
+          dueDate: date,
+          paymentDate: date,
+          status: "PAGO",
+          accountId: neutralAccountId,
+          costCenterId: adminCenterId,
+          notes: "Financeira pagou a menos que o retorno programado.",
+        },
+      });
+    }
+    return tx.sale.update({ where: { id: saleId }, data: { returnSettledAt: date, returnPaidAmount: actual } });
   });
 }
 

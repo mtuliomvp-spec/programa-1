@@ -107,13 +107,25 @@ export default async function FinanciamentosPage() {
                           {retornoLabel(s.returnLevel)} · {formatCurrency(s.returnNet)}
                         </span>
                         {s.returnSettledAt ? (
-                          <Badge tone="success">Recebido {formatDate(s.returnSettledAt)}</Badge>
+                          <>
+                            <Badge tone="success">Recebido {formatDate(s.returnSettledAt)}</Badge>
+                            {s.returnPaidAmount != null && Math.abs(s.returnPaidAmount - s.returnNet) > 0.005 ? (
+                              <span className="text-[11px] text-slate-400">
+                                pago {formatCurrency(s.returnPaidAmount)} ·{" "}
+                                <span className={s.returnPaidAmount > s.returnNet ? "text-emerald-600" : "text-rose-500"}>
+                                  {s.returnPaidAmount > s.returnNet ? "+" : "−"}
+                                  {formatCurrency(Math.abs(s.returnPaidAmount - s.returnNet))}
+                                </span>
+                              </span>
+                            ) : null}
+                          </>
                         ) : s.financerAccountId ? (
                           <FinancingSettleButton
                             saleId={s.id}
                             accounts={companyAccounts}
                             mode="return"
                             label="Receber retorno"
+                            programmedAmount={s.returnNet}
                           />
                         ) : null}
                       </div>
