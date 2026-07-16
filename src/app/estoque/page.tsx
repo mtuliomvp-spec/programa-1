@@ -30,30 +30,45 @@ export default async function EstoquePage({
   const q = params.q?.trim();
   const now = new Date();
 
-  const vehicles = await prisma.vehicle.findMany({
-    where: {
-      status,
-      ...(q
-        ? {
-            OR: [
-              { brand: { contains: q, mode: "insensitive" } },
-              { model: { contains: q, mode: "insensitive" } },
-              { plate: { contains: q, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    include: {
-      costs: { select: { amount: true } },
-      payables: { select: { amount: true, status: true } },
-      // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
-      attachments: { select: { kind: true, description: true } },
-    },
-    orderBy: { createdAt: "desc" },
-  });
+  const [vehicles, openPreSales] = await Promise.all([
+    prisma.vehicle.findMany({
+      where: {
+        status,
+        ...(q
+          ? {
+              OR: [
+                { brand: { contains: q, mode: "insensitive" } },
+                { model: { contains: q, mode: "insensitive" } },
+                { plate: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      include: {
+        costs: { select: { amount: true } },
+        payables: { select: { amount: true, status: true } },
+        // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
+        attachments: { select: { kind: true, description: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    // Pré-vendas em aberto: o veículo continua no estoque, mas já está pré-vendido.
+    prisma.preSale.findMany({
+      where: { status: "ABERTA" },
+      select: { vehicleId: true, number: true },
+      orderBy: { number: "desc" },
+    }),
+  ]);
+
+  // vehicleId → número da pré-venda aberta mais recente (ordenado desc: 1º = maior).
+  const preSaleByVehicle = new Map<string, number>();
+  for (const ps of openPreSales) {
+    if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
+  }
 
   const rows = vehicles.map((v) => ({
     ...v,
+    preSaleNumber: preSaleByVehicle.get(v.id) ?? null,
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     invested: v.purchasePrice + v.costs.reduce((sum, c) => sum + c.amount, 0),
@@ -121,7 +136,12 @@ export default async function EstoquePage({
                         {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
                       </p>
                     </div>
-                    <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+                        <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+                      ) : null}
+                    </div>
                   </div>
                   <div className="mt-3 flex items-end justify-between gap-3">
                     <div>
@@ -208,6 +228,11 @@ export default async function EstoquePage({
                     </Td>
                     <Td>
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+                        <span className="mt-1 block">
+                          <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+                        </span>
+                      ) : null}
                       {v.status === "VENDIDO" ? (
                         <span className="mt-1 flex flex-col items-start gap-1">
                           <Badge tone={v.hasComunicacao ? "success" : "warning"}>
