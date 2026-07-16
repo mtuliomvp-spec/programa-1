@@ -8,6 +8,7 @@ import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
+import VehicleAttachments from "./VehicleAttachments";
 import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
@@ -29,6 +30,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       payables: { orderBy: { dueDate: "asc" } },
       costs: { include: { payable: { select: { status: true, dueDate: true } } }, orderBy: { date: "asc" } },
       sale: { include: { customer: true, receivables: true } },
+      attachments: {
+        select: { id: true, description: true, filename: true, mimeType: true, size: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+      },
     },
   });
 
@@ -229,6 +234,14 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               </div>
             </Card>
           ) : null}
+
+          <Card>
+            <CardHeader
+              title="Documentos do veículo"
+              description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
+            />
+            <VehicleAttachments vehicleId={vehicle.id} attachments={vehicle.attachments} />
+          </Card>
         </div>
 
         <div className="space-y-4">

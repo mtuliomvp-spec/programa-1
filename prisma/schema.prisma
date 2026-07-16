@@ -323,12 +323,31 @@ model Vehicle {
   receivables      Receivable[]
   costs            VehicleCost[]
   fuelEntries      FuelEntry[]
+  attachments      VehicleAttachment[]
   sale             Sale?         @relation("SaleVehicle")
   tradeInForSale   Sale?         @relation("SaleTradeIn")
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
   @@map("vehicles")
+}
+
+// Documento anexado a um veículo (ex.: "Comunicação de venda" do Detran). O
+// arquivo é guardado no próprio banco (bytea), então funciona no Vercel/Neon
+// sem storage externo.
+model VehicleAttachment {
+  id          String   @id @default(cuid())
+  vehicleId   String
+  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description String
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  @@index([vehicleId])
+  @@map("vehicle_attachments")
 }
 
 // Custo lançado sobre um veículo específico (preparação, documentação,

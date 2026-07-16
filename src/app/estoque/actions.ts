@@ -330,6 +330,54 @@ export async function deleteVehicleCostAction(costId: string, vehicleId: string)
   revalidatePath("/");
 }
 
+// ---------------------------------------------------------------------------
+// Documentos anexados ao veículo (ex.: Comunicação de venda)
+// ---------------------------------------------------------------------------
+
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export type AttachmentState = { error?: string; ok?: boolean };
+
+export async function uploadVehicleAttachmentAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  const { getSessionUser } = await import("@/lib/auth");
+  const user = await getSessionUser();
+  if (!user) return { error: "Sessão expirada. Faça login novamente." };
+
+  const vehicleId = String(formData.get("vehicleId") || "").trim();
+  const description = String(formData.get("description") || "").trim() || "Comunicação de venda";
+  const file = formData.get("file");
+  if (!vehicleId) return { error: "Veículo inválido." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!vehicle) return { error: "Veículo não encontrado." };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await prisma.vehicleAttachment.create({
+    data: {
+      vehicleId,
+      description,
+      filename: file.name || "documento",
+      mimeType: file.type || "application/octet-stream",
+      size: file.size,
+      data: buffer,
+    },
+  });
+  revalidatePath(`/estoque/${vehicleId}`);
+  return { ok: true };
+}
+
+export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
+  await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
+  revalidatePath(`/estoque/${vehicleId}`);
+}
+
 export async function deleteVehicleAction(id: string) {
   const sale = await prisma.sale.findFirst({ where: { vehicleId: id, status: { not: "CANCELADA" } } });
   if (sale) {
