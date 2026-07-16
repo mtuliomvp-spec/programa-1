@@ -187,9 +187,9 @@ export default function VehicleForm({
       setField("color", d.color);
       setField("fuel", d.fuel);
       setField("transmission", d.transmission);
-      // sugere o preço FIPE como preço de venda se ainda não preenchido
+      // preenche sempre o preço de venda com o valor FIPE (continua editável)
       const saleEl = formRef.current?.elements.namedItem("salePrice");
-      if (d.fipePrice && saleEl instanceof HTMLInputElement && !saleEl.value) {
+      if (d.fipePrice && saleEl instanceof HTMLInputElement) {
         saleEl.value = String(d.fipePrice);
       }
       setFipeOptions(d.fipeOptions ?? []);
