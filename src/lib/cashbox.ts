@@ -17,10 +17,25 @@ export async function getCashboxState(): Promise<CashboxState> {
   return { open: !!session && session.closedAt == null, session };
 }
 
-/** Abre o caixa (no-op se já estiver aberto). */
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Abre OU reabre o caixa. Se já estiver aberto, não faz nada. Se a última sessão
+ * estiver FECHADA e for do MESMO dia de trabalho, **reabre** aquela sessão (limpa
+ * o fechamento) — como no Agrasty, sem duplicar o dia no histórico. Se for um dia
+ * diferente (ou não houver sessão), cria uma sessão nova.
+ */
 export async function openCashbox(userName: string | null, workDate: Date): Promise<void> {
-  const { open } = await getCashboxState();
-  if (open) return;
+  const last = await prisma.cashboxSession.findFirst({ orderBy: { openedAt: "desc" } });
+  if (last && last.closedAt == null) return; // já aberto
+  if (last && last.closedAt != null && dayKey(last.workDate) === dayKey(workDate)) {
+    // Reabre a sessão fechada do mesmo dia.
+    await prisma.cashboxSession.update({
+      where: { id: last.id },
+      data: { closedAt: null, closedBy: null },
+    });
+    return;
+  }
   await prisma.cashboxSession.create({
     data: { workDate, openedBy: userName || null },
   });

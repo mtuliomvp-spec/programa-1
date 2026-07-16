@@ -32,6 +32,10 @@ export default function CashboxCard({
   const [showHistory, setShowHistory] = useState(false);
   const [workDate, setWorkDate] = useState(todayInput());
 
+  // Reabrir = a última sessão está fechada e é do MESMO dia selecionado.
+  const lastDay = session ? new Date(session.workDate).toISOString().slice(0, 10) : null;
+  const willReopen = !open && !!session?.closedAt && lastDay === workDate;
+
   function doOpen() {
     setError(null);
     start(async () => {
@@ -117,7 +121,7 @@ export default function CashboxCard({
               disabled={pending}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
             >
-              🔓 {pending ? "Abrindo..." : "Abrir Caixa"}
+              🔓 {pending ? (willReopen ? "Reabrindo..." : "Abrindo...") : willReopen ? "Reabrir Caixa" : "Abrir Caixa"}
             </button>
           )}
         </div>
