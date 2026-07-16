@@ -63,7 +63,10 @@ export default function ManualPayableForm({
             ))}
           </Select>
           {vehicles.length > 0 ? (
-            <p className="mt-1 text-xs text-slate-400">O valor entra no custo desse veículo.</p>
+            <p className="mt-1 text-xs text-slate-400">
+              O valor entra no custo desse veículo. Se já foi vendido (vendido),
+              entra como despesa pós-venda (centro Administrativo).
+            </p>
           ) : null}
         </Field>
       ) : null}

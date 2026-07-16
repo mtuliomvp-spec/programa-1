@@ -224,7 +224,7 @@ export default function CashEntryForm({
               <p className="mt-1 text-xs text-slate-400">
                 {kind === "entrada"
                   ? "Escolhendo um veículo, o valor entra como SINAL / entrada antecipada dele e é abatido quando a venda for fechada."
-                  : "O valor entra no custo pago desse veículo."}
+                  : "O valor entra no custo pago desse veículo. Se já foi vendido (vendido), entra como despesa pós-venda (centro Administrativo)."}
               </p>
             )}
           </Field>

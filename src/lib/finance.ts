@@ -1165,10 +1165,21 @@ export async function createExpensePayable(input: {
   structuralKey?: StructuralKey;
   notes?: string | null;
 }) {
+  // Se o veículo já foi vendido, a despesa é pós-venda: sai do centro Veículos
+  // (o carro não está mais no estoque) e vira despesa Administrativa; o custo é
+  // marcado como pós-venda (não mexe na margem da venda já realizada).
+  let vehicleSold = false;
+  if (input.vehicleId) {
+    const v = await prisma.vehicle.findUnique({
+      where: { id: input.vehicleId },
+      select: { status: true },
+    });
+    vehicleSold = v?.status === "VENDIDO";
+  }
   const centerId =
     input.costCenterId ||
     (input.vehicleId
-      ? await structuralCenterId("VEICULOS")
+      ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
       : input.capitalBeneficiaryId
         ? await structuralCenterId("CAPITAL")
         : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO"));
@@ -1202,6 +1213,7 @@ export async function createExpensePayable(input: {
           category: "OUTROS",
           amount: input.amount,
           date: input.dueDate,
+          postSale: vehicleSold,
           notes: input.notes || null,
           payableId: payable.id,
         },

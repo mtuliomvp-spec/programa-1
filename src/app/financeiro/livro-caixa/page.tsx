@@ -65,9 +65,9 @@ export default async function LivroCaixaPage({
       }),
       prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       prisma.vehicle.findMany({
-        where: { status: { not: "VENDIDO" } },
-        orderBy: { createdAt: "desc" },
-        select: { id: true, brand: true, model: true, plate: true },
+        // Inclui vendidos (para lançar despesas pós-venda); em estoque primeiro.
+        orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+        select: { id: true, brand: true, model: true, plate: true, status: true },
       }),
       prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
       prisma.capitalBeneficiary.findMany({
@@ -85,7 +85,7 @@ export default async function LivroCaixaPage({
   );
   const vehicleOptions = stockVehicles.map((v) => ({
     id: v.id,
-    label: `${v.brand} ${v.model} · ${v.plate}`,
+    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
   }));
 
   // saldo inicial considera o saldo de abertura das contas e as

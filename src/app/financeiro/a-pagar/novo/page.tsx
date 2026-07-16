@@ -15,9 +15,9 @@ export default async function NovaContaPagarPage() {
       select: { id: true, name: true },
     }),
     prisma.vehicle.findMany({
-      where: { status: { not: "VENDIDO" } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, brand: true, model: true, plate: true },
+      // Inclui vendidos (para lançar despesas pós-venda); em estoque primeiro.
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
     }),
     prisma.capitalBeneficiary.findMany({
       where: { active: true },
@@ -30,7 +30,10 @@ export default async function NovaContaPagarPage() {
   const categories = Array.from(
     new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
   );
-  const vehicles = stockVehicles.map((v) => ({ id: v.id, label: `${v.brand} ${v.model} · ${v.plate}` }));
+  const vehicles = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+  }));
 
   return (
     <div className="mx-auto max-w-2xl">
