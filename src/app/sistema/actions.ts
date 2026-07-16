@@ -89,6 +89,7 @@ export async function restoreBackupAction(
   try {
     const ops: unknown[] = [
       // Apaga tudo (filhos primeiro).
+      prisma.vehicleAttachment.deleteMany(),
       prisma.accountTransfer.deleteMany(),
       prisma.capitalTransaction.deleteMany(),
       prisma.fuelEntry.deleteMany(),
@@ -139,6 +140,16 @@ export async function restoreBackupAction(
     for (const [model, key] of inserts) {
       const rows = arr(key);
       if (rows.length) ops.push(model.createMany({ data: rows }));
+    }
+
+    // Anexos de veículo: o arquivo vem em base64 no backup; volta para Bytes.
+    // Entram depois dos veículos (têm FK para eles).
+    const attachmentRows = arr("vehicleAttachments").map((a) => {
+      const { data, ...rest } = a as Record<string, unknown>;
+      return { ...rest, data: Buffer.from(String(data ?? ""), "base64") };
+    });
+    if (attachmentRows.length) {
+      ops.push(prisma.vehicleAttachment.createMany({ data: attachmentRows as never[] }));
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

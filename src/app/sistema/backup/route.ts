@@ -36,6 +36,7 @@ export async function GET() {
     fuelEntries,
     purchaseRequests,
     consortiums,
+    vehicleAttachments,
   ] = await Promise.all([
     prisma.companySettings.findMany(),
     prisma.user.findMany(),
@@ -58,6 +59,7 @@ export async function GET() {
     prisma.fuelEntry.findMany(),
     prisma.purchaseRequest.findMany(),
     prisma.consortium.findMany(),
+    prisma.vehicleAttachment.findMany(),
   ]);
 
   const backup = {
@@ -83,6 +85,11 @@ export async function GET() {
     fuelEntries,
     purchaseRequests,
     consortiums,
+    // O arquivo (bytea) vai em base64 para caber no JSON.
+    vehicleAttachments: vehicleAttachments.map((a) => ({
+      ...a,
+      data: Buffer.from(a.data).toString("base64"),
+    })),
   };
 
   const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
