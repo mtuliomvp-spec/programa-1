@@ -334,17 +334,28 @@ model Vehicle {
 
 // Documento anexado a um veículo (ex.: "Comunicação de venda" do Detran). O
 // arquivo é guardado no próprio banco (bytea), então funciona no Vercel/Neon
-// sem storage externo.
+// sem storage externo. Também guarda a "Foto do cliente" (antifraude) com a
+// geolocalização do momento da captura.
+enum AttachmentKind {
+  DOCUMENTO
+  FOTO_CLIENTE
+}
+
 model VehicleAttachment {
-  id          String   @id @default(cuid())
+  id          String         @id @default(cuid())
   vehicleId   String
-  vehicle     Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  vehicle     Vehicle        @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  kind        AttachmentKind @default(DOCUMENTO)
   description String
   filename    String
   mimeType    String
   size        Int
   data        Bytes
-  createdAt   DateTime @default(now())
+  // Geolocalização da foto do cliente (nula nos documentos comuns).
+  latitude    Float?
+  longitude   Float?
+  geoAccuracy Float?
+  createdAt   DateTime       @default(now())
 
   @@index([vehicleId])
   @@map("vehicle_attachments")

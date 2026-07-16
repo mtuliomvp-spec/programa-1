@@ -46,19 +46,16 @@ export default async function EstoquePage({
     include: {
       costs: { select: { amount: true } },
       payables: { select: { amount: true, status: true } },
-      // Só precisa saber SE existe a comunicação de venda anexada.
-      attachments: {
-        where: { description: { contains: "comunica", mode: "insensitive" } },
-        select: { id: true },
-        take: 1,
-      },
+      // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
+      attachments: { select: { kind: true, description: true } },
     },
     orderBy: { createdAt: "desc" },
   });
 
   const rows = vehicles.map((v) => ({
     ...v,
-    hasComunicacao: v.attachments.length > 0,
+    hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
+    hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     invested: v.purchasePrice + v.costs.reduce((sum, c) => sum + c.amount, 0),
     // Custo real = tudo o que já foi efetivamente PAGO por esse veículo
     // (aquisição + manutenção/custos), pela conta financeira.
@@ -149,9 +146,12 @@ export default async function EstoquePage({
                       <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
                     </div>
                   ) : (
-                    <div className="mt-2 flex justify-end">
+                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
                       <Badge tone={v.hasComunicacao ? "success" : "warning"}>
                         {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
+                      </Badge>
+                      <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+                        {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
                       </Badge>
                     </div>
                   )}
@@ -209,9 +209,12 @@ export default async function EstoquePage({
                     <Td>
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
                       {v.status === "VENDIDO" ? (
-                        <span className="mt-1 block">
+                        <span className="mt-1 flex flex-col items-start gap-1">
                           <Badge tone={v.hasComunicacao ? "success" : "warning"}>
                             {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
+                          </Badge>
+                          <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+                            {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
                           </Badge>
                         </span>
                       ) : null}

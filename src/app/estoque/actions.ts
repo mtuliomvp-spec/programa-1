@@ -380,6 +380,66 @@ export async function uploadVehicleAttachmentAction(
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+}
+
+/** Coordenada válida ou null (aceita string vazia / fora de faixa → null). */
+function parseCoord(value: FormDataEntryValue | null, max: number): number | null {
+  if (value == null || value === "") return null;
+  const n = Number(value);
+  if (!Number.isFinite(n) || Math.abs(n) > max) return null;
+  return n;
+}
+
+/**
+ * Anexa a "Foto do cliente" (antifraude) ao prontuário do veículo, com a
+ * geolocalização do momento da captura. Mesma tabela dos documentos, então já
+ * aparece na listagem e entra no backup. A imagem já vem carimbada do cliente.
+ */
+export async function uploadClientPhotoAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  const { getSessionUser } = await import("@/lib/auth");
+  const user = await getSessionUser();
+  if (!user) return { error: "Sessão expirada. Faça login novamente." };
+
+  const vehicleId = String(formData.get("vehicleId") || "").trim();
+  const description = String(formData.get("description") || "").trim() || "Foto do cliente (comprador)";
+  const file = formData.get("file");
+  if (!vehicleId) return { error: "Veículo inválido." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Tire ou selecione uma foto." };
+  if (!file.type.startsWith("image/")) return { error: "O anexo precisa ser uma imagem." };
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { error: "Foto muito grande (máximo 15 MB)." };
+  }
+
+  const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!vehicle) return { error: "Veículo não encontrado." };
+
+  const latitude = parseCoord(formData.get("latitude"), 90);
+  const longitude = parseCoord(formData.get("longitude"), 180);
+  const geoAccuracy = parseCoord(formData.get("geoAccuracy"), Number.MAX_SAFE_INTEGER);
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await prisma.vehicleAttachment.create({
+    data: {
+      vehicleId,
+      kind: "FOTO_CLIENTE",
+      description,
+      filename: file.name || "foto-cliente.jpg",
+      mimeType: file.type || "image/jpeg",
+      size: file.size,
+      data: buffer,
+      latitude,
+      longitude,
+      geoAccuracy,
+    },
+  });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/vendas");
+  return { ok: true };
 }
 
 export async function deleteVehicleAction(id: string) {

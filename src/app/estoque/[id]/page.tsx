@@ -9,6 +9,7 @@ import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
+import ClientPhotoCapture from "./ClientPhotoCapture";
 import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
@@ -31,7 +32,18 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       costs: { include: { payable: { select: { status: true, dueDate: true } } }, orderBy: { date: "asc" } },
       sale: { include: { customer: true, receivables: true } },
       attachments: {
-        select: { id: true, description: true, filename: true, mimeType: true, size: true, createdAt: true },
+        select: {
+          id: true,
+          kind: true,
+          description: true,
+          filename: true,
+          mimeType: true,
+          size: true,
+          latitude: true,
+          longitude: true,
+          geoAccuracy: true,
+          createdAt: true,
+        },
         orderBy: { createdAt: "desc" },
       },
     },
@@ -241,6 +253,14 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
             <VehicleAttachments vehicleId={vehicle.id} attachments={vehicle.attachments} />
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Foto do cliente (antifraude)"
+              description="Registre o comprador com data/hora e localização — prova contra alegação de fraude"
+            />
+            <ClientPhotoCapture vehicleId={vehicle.id} />
           </Card>
         </div>
 
