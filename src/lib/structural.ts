@@ -97,6 +97,10 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
     });
   }
 
+  // Combustível ligado a um veículo precisa existir como VehicleCost, senão o
+  // valor fica invisível ao Lucro/Prejuízo (divergindo da equação patrimonial).
+  await ensureVehicleFuelCosts();
+
   // Custos de veículo marcados como PÓS-VENDA que ficaram no Veículos →
   // Administrativo (o carro não está mais no estoque).
   const postSaleCosts = await prisma.vehicleCost.findMany({
@@ -124,6 +128,41 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
   });
 
   return ids;
+}
+
+/**
+ * Cria o VehicleCost faltante para notas de combustível ligadas a um veículo
+ * (idempotente). Sem esse custo, o valor do combustível fica invisível ao
+ * Lucro/Prejuízo, divergindo da equação patrimonial. postSale = status atual do
+ * veículo (em estoque → custo da venda; vendido → custo pós-venda).
+ */
+export async function ensureVehicleFuelCosts(): Promise<void> {
+  const fuelSemCusto = await prisma.payable.findMany({
+    where: { category: "COMBUSTIVEL", vehicleId: { not: null }, vehicleCost: null },
+    select: {
+      id: true,
+      amount: true,
+      dueDate: true,
+      notes: true,
+      vehicleId: true,
+      vehicle: { select: { status: true } },
+    },
+  });
+  for (const p of fuelSemCusto) {
+    if (!p.vehicleId) continue;
+    await prisma.vehicleCost.create({
+      data: {
+        vehicleId: p.vehicleId,
+        description: "Combustível",
+        category: "OUTROS",
+        amount: p.amount,
+        date: p.dueDate,
+        postSale: p.vehicle?.status === "VENDIDO",
+        notes: p.notes,
+        payableId: p.id,
+      },
+    });
+  }
 }
 
 /** Id de um centro estrutural, criando os três se ainda não existirem. */

@@ -50,6 +50,7 @@ export type DreMonth = {
   despesas: number;
   comissoes: number;
   retornos: number;
+  outrasReceitas: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -58,7 +59,18 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
   const { start: rangeStart } = monthRange(months - 1);
   const { end: rangeEnd } = monthRange(0);
 
-  const [sales, partSales, expenses, retornoRecs] = await Promise.all([
+  // Capital não é resultado: exclui RETIRADA das despesas e APORTE das receitas.
+  const capitalTx = await prisma.capitalTransaction.findMany({
+    select: { payableId: true, receivableId: true, kind: true },
+  });
+  const retiradaPayableIds = capitalTx
+    .filter((t) => t.kind === "RETIRADA" && t.payableId)
+    .map((t) => t.payableId as string);
+  const aporteReceivableIds = capitalTx
+    .filter((t) => t.kind === "APORTE" && t.receivableId)
+    .map((t) => t.receivableId as string);
+
+  const [sales, partSales, expenses, retornoRecs, outrasRecs] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { vehicle: { include: { costs: true } } },
@@ -75,6 +87,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null, // custos de veículo já entram no custo da venda
         vehicleId: null, // idem para contas manuais ligadas a veículos
+        id: { notIn: retiradaPayableIds }, // retirada de capital não é despesa
       },
       select: { amount: true, paymentDate: true, category: true },
     }),
@@ -87,6 +100,19 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       },
       select: { amount: true, receivedDate: true },
     }),
+    // Outras receitas avulsas (RECEBIDO sem venda/peça/sinal/aporte).
+    prisma.receivable.findMany({
+      where: {
+        status: "RECEBIDO",
+        category: "OUTROS",
+        saleId: null,
+        partSaleId: null,
+        vehicleId: null,
+        receivedDate: { gte: rangeStart, lt: rangeEnd },
+        id: { notIn: aporteReceivableIds },
+      },
+      select: { amount: true, receivedDate: true },
+    }),
   ]);
 
   const result: DreMonth[] = [];
@@ -96,6 +122,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const monthPartSales = partSales.filter((p) => p.saleDate >= start && p.saleDate < end);
     const monthExpenses = expenses.filter((e) => e.paymentDate! >= start && e.paymentDate! < end);
     const retornos = retornoRecs
+      .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
+      .reduce((sum, r) => sum + r.amount, 0);
+    const outrasReceitas = outrasRecs
       .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
       .reduce((sum, r) => sum + r.amount, 0);
 
@@ -135,7 +164,8 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       despesas,
       comissoes,
       retornos,
-      lucroLiquido: lucroBruto - despesas - comissoes + retornos,
+      outrasReceitas,
+      lucroLiquido: lucroBruto - despesas - comissoes + retornos + outrasReceitas,
       veiculosVendidos: monthSales.length,
     });
   }
@@ -150,7 +180,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
 // (com sinal negativo). A soma das linhas é o lucro/prejuízo do período.
 // ---------------------------------------------------------------------------
 
-export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA" | "RETORNO";
+export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA" | "RETORNO" | "RECEITA";
 
 export type PLEntry = {
   id: string;
@@ -170,6 +200,7 @@ export type PLStatement = {
   comissoes: number;
   posVenda: number;
   retornos: number;
+  outrasReceitas: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -178,7 +209,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
   const { start: rangeStart } = monthRange(months - 1);
   const { end: rangeEnd } = monthRange(0);
 
-  const [sales, partSales, expenses, postSaleCosts] = await Promise.all([
+  // Movimentações de capital não entram no resultado: o APORTE (recebível) não é
+  // receita e a RETIRADA (a pagar) não é despesa — elas mexem no capital, não no
+  // lucro. O PRÓ-LABORE é despesa real e continua contando.
+  const capitalTx = await prisma.capitalTransaction.findMany({
+    select: { payableId: true, receivableId: true, kind: true },
+  });
+  const retiradaPayableIds = capitalTx
+    .filter((t) => t.kind === "RETIRADA" && t.payableId)
+    .map((t) => t.payableId as string);
+  const aporteReceivableIds = capitalTx
+    .filter((t) => t.kind === "APORTE" && t.receivableId)
+    .map((t) => t.receivableId as string);
+
+  const [sales, partSales, expenses, postSaleCosts, outrasRecs] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { vehicle: { include: { costs: true } } },
@@ -195,6 +239,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null,
         vehicleId: null,
+        id: { notIn: retiradaPayableIds },
       },
       select: { id: true, amount: true, paymentDate: true, category: true, description: true, categoryLabel: true },
     }),
@@ -205,6 +250,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         vehicle: { select: { brand: true, model: true, plate: true } },
         payable: { select: { paymentDate: true } },
       },
+    }),
+    // Outras receitas avulsas: dinheiro que entrou (RECEBIDO) sem ser venda,
+    // peça, sinal (veículo) nem aporte de capital. É receita e conta no lucro.
+    prisma.receivable.findMany({
+      where: {
+        status: "RECEBIDO",
+        category: "OUTROS",
+        saleId: null,
+        partSaleId: null,
+        vehicleId: null,
+        receivedDate: { gte: rangeStart, lt: rangeEnd },
+        id: { notIn: aporteReceivableIds },
+      },
+      select: { id: true, amount: true, receivedDate: true, description: true },
     }),
   ]);
 
@@ -224,7 +283,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
 
   const entries: PLEntry[] = [];
   let receitaVeiculos = 0, custoVeiculos = 0, receitaPecas = 0, custoPecas = 0;
-  let despesas = 0, comissoes = 0, posVenda = 0, retornos = 0;
+  let despesas = 0, comissoes = 0, posVenda = 0, retornos = 0, outrasReceitas = 0;
 
   for (const s of sales) {
     // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
@@ -299,6 +358,18 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     });
   }
 
+  for (const r of outrasRecs) {
+    outrasReceitas += r.amount;
+    entries.push({
+      id: `or-${r.id}`,
+      date: r.receivedDate!,
+      kind: "RECEITA",
+      description: r.description,
+      detail: null,
+      value: r.amount,
+    });
+  }
+
   entries.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const receitaTotal = receitaVeiculos + receitaPecas;
@@ -313,7 +384,8 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     comissoes,
     posVenda,
     retornos,
-    lucroLiquido: lucroBruto - despesas - comissoes - posVenda + retornos,
+    outrasReceitas,
+    lucroLiquido: lucroBruto - despesas - comissoes - posVenda + retornos + outrasReceitas,
     veiculosVendidos: sales.length,
   };
 }

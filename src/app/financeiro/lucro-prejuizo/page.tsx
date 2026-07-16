@@ -12,6 +12,7 @@ const kindMeta: Record<string, { label: string; tone: "info" | "success" | "warn
   COMISSAO: { label: "Comissão", tone: "danger" },
   POS_VENDA: { label: "Pós-venda", tone: "danger" },
   RETORNO: { label: "Retorno financ.", tone: "success" },
+  RECEITA: { label: "Outra receita", tone: "success" },
 };
 
 export default async function LucroPrejuizoPage({
@@ -97,6 +98,9 @@ export default async function LucroPrejuizoPage({
           ) : null}
           {s.retornos > 0 ? (
             <Row label="Retorno de financiamento (financeiras)" value={s.retornos} kind="sub" />
+          ) : null}
+          {s.outrasReceitas > 0 ? (
+            <Row label="Outras receitas (avulsas)" value={s.outrasReceitas} kind="sub" />
           ) : null}
           <Row label={lucro ? "( = ) Lucro líquido" : "( = ) Prejuízo líquido"} value={s.lucroLiquido} kind="final" />
         </div>

@@ -12,6 +12,7 @@ import { fixUnattributedBaixasAction } from "@/app/financeiro/contas/actions";
 export default function BooksHealthChecks({ health }: { health: BooksHealth }) {
   const { check1, check2 } = health;
   const [open1, setOpen1] = useState(false);
+  const [open2, setOpen2] = useState(false);
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -104,12 +105,37 @@ export default function BooksHealthChecks({ health }: { health: BooksHealth }) {
           check2.ok ? "border-emerald-200 bg-emerald-50" : "border-rose-300 bg-rose-50"
         }`}
       >
-        <p className={`flex items-start gap-2 text-sm font-medium ${check2.ok ? "text-emerald-800" : "text-rose-800"}`}>
-          <span aria-hidden>{check2.ok ? "✅" : "⚠️"}</span>
-          {check2.ok
-            ? "Os saldos de Lucro/Prejuízo estão corretos"
-            : `Os saldos de Lucro/Prejuízo estão divergentes (diferença de ${formatCurrency(Math.abs(check2.diff))})`}
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <p className={`flex items-start gap-2 text-sm font-medium ${check2.ok ? "text-emerald-800" : "text-rose-800"}`}>
+            <span aria-hidden>{check2.ok ? "✅" : "⚠️"}</span>
+            {check2.ok
+              ? "A equação patrimonial e o Lucro/Prejuízo estão convergentes"
+              : `A equação patrimonial e o Lucro/Prejuízo estão divergentes (diferença de ${formatCurrency(Math.abs(check2.diff))})`}
+          </p>
+          <button
+            type="button"
+            onClick={() => setOpen2((v) => !v)}
+            className="shrink-0 text-xs font-medium text-slate-500 hover:underline"
+          >
+            {open2 ? "Ocultar" : "Ver fontes"}
+          </button>
+        </div>
+        {open2 || !check2.ok ? (
+          <div className="mt-2 space-y-1 text-xs text-slate-600">
+            <div className="flex justify-between gap-3">
+              <span>Lucro (patrimonial) — equação</span>
+              <span className="tabular-nums">{formatCurrency(check2.equacao)}</span>
+            </div>
+            <div className="flex justify-between gap-3">
+              <span>Lucro/Prejuízo (histórico)</span>
+              <span className="tabular-nums">{formatCurrency(check2.lucroPrejuizo)}</span>
+            </div>
+            <div className={`flex justify-between gap-3 ${Math.abs(check2.diff) > 0.01 ? "text-rose-700 font-semibold" : ""}`}>
+              <span>Diferença (deve ficar zero)</span>
+              <span className="tabular-nums">{formatCurrency(check2.diff)}</span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {!health.allOk ? (

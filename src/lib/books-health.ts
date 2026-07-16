@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getProfitLossStatement } from "@/lib/reports";
+import { ensureVehicleFuelCosts } from "@/lib/structural";
 
 /**
  * "Farol" de integridade do financeiro, no estilo Agrasty. Dois checks que
@@ -19,8 +20,11 @@ import { getProfitLossStatement } from "@/lib/reports";
  *       Créditos que não passam pelo caixa (ex.: "Entrada em troca") são
  *       ignorados de propósito para não gerar falso vermelho.
  *
- *  2) Lucro/Prejuízo correto: o extrato de Lucro/Prejuízo soma exatamente ao
- *     total exibido (consistência interna do resultado).
+ *  2) Equação patrimonial × Lucro/Prejuízo convergentes: o lucro/prejuízo
+ *     acumulado da equação patrimonial (Ativos − Passivos − Capital) tem de bater
+ *     com o Lucro/Prejuízo do histórico. Num sistema de custo pago os dois são o
+ *     mesmo número; se divergirem, há um lançamento incompleto (vermelho +
+ *     bloqueio). Também confere a consistência interna da DRE como guarda extra.
  */
 
 const TOLERANCE = 0.01;
@@ -40,8 +44,8 @@ export type BooksHealth = {
   };
   check2: {
     ok: boolean;
-    total: number;
-    somaExtrato: number;
+    equacao: number;
+    lucroPrejuizo: number;
     diff: number;
   };
   allOk: boolean;
@@ -50,6 +54,9 @@ export type BooksHealth = {
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
 export async function getBooksHealth(): Promise<BooksHealth> {
+  // Garante que o combustível de veículo tenha VehicleCost (senão some da DRE e
+  // faz o Check 2 divergir por um furo de escrituração, não por erro real).
+  await ensureVehicleFuelCosts();
   const [accounts, pat, pl, recSemConta, paySemConta] = await Promise.all([
     getAccountsWithBalances(),
     getPatrimonialStats(),
@@ -86,14 +93,19 @@ export async function getBooksHealth(): Promise<BooksHealth> {
     Math.abs(bancoNeutro) <= TOLERANCE;
 
   // ----- Check 2 -----
+  // Guarda secundária: a DRE tem de somar internamente ao seu próprio total.
   const somaExtrato = round2(pl.entries.reduce((s, e) => s + e.value, 0));
-  const total = round2(pl.lucroLiquido);
-  const check2Diff = round2(somaExtrato - total);
-  const check2Ok = Math.abs(check2Diff) <= TOLERANCE;
+  const drInternoOk = Math.abs(round2(somaExtrato - pl.lucroLiquido)) <= TOLERANCE;
+  // Principal: a equação patrimonial (lucro acumulado) tem de bater com o
+  // Lucro/Prejuízo do histórico.
+  const equacao = round2(pat.lucro);
+  const lucroPrejuizo = round2(pl.lucroLiquido);
+  const check2Diff = round2(equacao - lucroPrejuizo);
+  const check2Ok = drInternoOk && Math.abs(check2Diff) <= TOLERANCE;
 
   return {
     check1: { ok: check1Ok, contasTotal, caixaGeral, extrato, baixasSemConta, bancoNeutro, itens },
-    check2: { ok: check2Ok, total, somaExtrato, diff: check2Diff },
+    check2: { ok: check2Ok, equacao, lucroPrejuizo, diff: check2Diff },
     allOk: check1Ok && check2Ok,
   };
 }

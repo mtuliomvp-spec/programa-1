@@ -26,6 +26,7 @@ export type PatrimonialStats = {
   sinaisRecebidos: number;
   devolucoesClientes: number;
   veiculosAPagarPosVenda: number;
+  pecasAPagar: number;
   almoxarifado: number;
   saldoCapital: number;
   consorcios: number;
@@ -74,6 +75,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let titulosVencidosValor = 0;
   let devolucoesClientes = 0;
   let veiculosAPagarPosVenda = 0;
+  let pecasAPagar = 0;
 
   for (const p of payables) {
     if (p.status === "PAGO") {
@@ -84,6 +86,12 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       contasAPagar += p.amount;
       if (isVeiculoEmEstoque(p)) {
         veiculosNegociadoPendente += p.amount;
+      }
+      // Peça comprada a prazo (ainda não paga): a peça já está no almoxarifado
+      // (ativo) mas a loja deve por ela. Vira passivo puro e entra subtraindo,
+      // para o almoxarifado não superavaliar o patrimônio.
+      if (p.category === "COMPRA_PECA") {
+        pecasAPagar += p.amount;
       }
       // Dívida de COMPRA de um veículo já VENDIDO (ex.: quitação ao banco e
       // débitos da troca): o carro (ativo pago) já saiu da equação, mas a
@@ -167,6 +175,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     sinaisRecebidos -
     devolucoesClientes -
     veiculosAPagarPosVenda -
+    pecasAPagar -
     saldoCapital;
 
   return {
@@ -178,6 +187,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     sinaisRecebidos,
     devolucoesClientes,
     veiculosAPagarPosVenda,
+    pecasAPagar,
     almoxarifado,
     saldoCapital,
     consorcios,

@@ -97,6 +97,25 @@ export async function createFuelEntryAction(
           payableId: payable.id,
         },
       });
+
+      // Combustível de um veículo é custo daquele carro: registra também como
+      // VehicleCost (igual aos demais lançamentos com veículo). Sem isso o valor
+      // ficava invisível ao Lucro/Prejuízo (divergindo da equação patrimonial).
+      // Em estoque entra no custo da venda; vendido vira custo pós-venda.
+      if (data.vehicleId) {
+        await tx.vehicleCost.create({
+          data: {
+            vehicleId: data.vehicleId,
+            description: `Combustível${data.station ? ` - ${data.station}` : ""}`,
+            category: "OUTROS",
+            amount: total,
+            date,
+            postSale: vehicleSold,
+            notes: data.notes || null,
+            payableId: payable.id,
+          },
+        });
+      }
     });
   } catch {
     return { error: "Não foi possível registrar o abastecimento." };
@@ -111,6 +130,9 @@ export async function deleteFuelEntryAction(id: string) {
     const entry = await tx.fuelEntry.findUniqueOrThrow({ where: { id } });
     await tx.fuelEntry.delete({ where: { id } });
     if (entry.payableId) {
+      // O custo de veículo referencia a conta a pagar (SetNull no delete);
+      // apaga primeiro para não deixar custo órfão contando na margem.
+      await tx.vehicleCost.deleteMany({ where: { payableId: entry.payableId } });
       await tx.payable.deleteMany({ where: { id: entry.payableId } });
     }
   });
