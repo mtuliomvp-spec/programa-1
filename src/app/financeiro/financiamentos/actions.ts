@@ -1,11 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { settleFinancing, settleReturn } from "@/lib/finance";
+import { settleFinancing, settleReturn, reverseFinancing, reverseReturn } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 
 export type SettleResult = { ok: boolean; error?: string };
+
+function revalidateFinancing() {
+  revalidatePath("/financeiro/financiamentos");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/");
+}
 
 export async function settleFinancingAction(saleId: string, accountId: string): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
@@ -16,9 +22,29 @@ export async function settleFinancingAction(saleId: string, accountId: string): 
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar baixa." };
   }
-  revalidatePath("/financeiro/financiamentos");
-  revalidatePath("/financeiro/contas");
-  revalidatePath("/");
+  revalidateFinancing();
+  return { ok: true };
+}
+
+/** Estorna a baixa do financiamento (correção — não passa pelas travas). */
+export async function reverseFinancingAction(saleId: string): Promise<SettleResult> {
+  try {
+    await reverseFinancing(saleId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar." };
+  }
+  revalidateFinancing();
+  return { ok: true };
+}
+
+/** Estorna a baixa do retorno (correção — não passa pelas travas). */
+export async function reverseReturnAction(saleId: string): Promise<SettleResult> {
+  try {
+    await reverseReturn(saleId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar." };
+  }
+  revalidateFinancing();
   return { ok: true };
 }
 
@@ -38,8 +64,6 @@ export async function settleReturnAction(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível receber o retorno." };
   }
-  revalidatePath("/financeiro/financiamentos");
-  revalidatePath("/financeiro/contas");
-  revalidatePath("/");
+  revalidateFinancing();
   return { ok: true };
 }

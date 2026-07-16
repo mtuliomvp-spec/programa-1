@@ -1282,6 +1282,74 @@ export async function settleReturn(
   });
 }
 
+/**
+ * Estorna a baixa do FINANCIAMENTO: apaga a transferência da financeira para a
+ * empresa (o valor financiado volta a ficar na conta da financeira) e marca a
+ * venda como não recebida — como se a baixa nunca tivesse acontecido. É uma
+ * ação de correção; não passa pelas travas de caixa fechado.
+ */
+export async function reverseFinancing(saleId: string) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: { vehicle: { select: { plate: true } } },
+  });
+  if (!sale.financerSettledAt) throw new Error("Este financiamento ainda não foi recebido.");
+  if (!sale.financerAccountId || !sale.financedAmount) {
+    throw new Error("Venda sem financeira/valor financiado — nada a estornar.");
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.accountTransfer.deleteMany({
+      where: {
+        fromId: sale.financerAccountId!,
+        amount: sale.financedAmount!,
+        description: { contains: sale.vehicle.plate },
+      },
+    });
+    return tx.sale.update({ where: { id: saleId }, data: { financerSettledAt: null } });
+  });
+}
+
+/**
+ * Estorna a baixa do RETORNO: apaga as transferências (para o banco e, quando a
+ * financeira pagou a menos, para o Banco Neutro) e os ajustes administrativos de
+ * "diferença de retorno" (crédito/débito). A venda volta a ter o retorno a
+ * receber. Espelha o estorno do retorno feito no cancelamento da venda.
+ */
+export async function reverseReturn(saleId: string) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: { vehicle: { select: { plate: true } } },
+  });
+  if (!sale.returnSettledAt) throw new Error("O retorno desta venda ainda não foi recebido.");
+  if (!sale.financerAccountId || !sale.returnNet || sale.returnNet <= 0) {
+    throw new Error("Venda sem retorno lançado — nada a estornar.");
+  }
+  const diffFilter = {
+    AND: [
+      { description: { contains: "Diferença de retorno" } },
+      { description: { contains: sale.vehicle.plate } },
+    ],
+  };
+  return prisma.$transaction(async (tx) => {
+    await tx.accountTransfer.deleteMany({
+      where: {
+        fromId: sale.financerAccountId!,
+        description: { contains: sale.vehicle.plate },
+        OR: [
+          { description: { contains: "Retorno financiamento" } },
+          { description: { contains: "Diferença de retorno" } },
+        ],
+      },
+    });
+    await tx.receivable.deleteMany({ where: diffFilter });
+    await tx.payable.deleteMany({ where: diffFilter });
+    return tx.sale.update({
+      where: { id: saleId },
+      data: { returnSettledAt: null, returnPaidAmount: null },
+    });
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Lançamento avulso no Movimento de caixa diário (livro caixa)
 // ---------------------------------------------------------------------------

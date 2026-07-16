@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { retornoLabel } from "@/lib/retorno";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import FinancingSettleButton from "./FinancingSettleButton";
+import ReverseSettleButton from "./ReverseSettleButton";
 
 export const dynamic = "force-dynamic";
 
@@ -93,7 +94,10 @@ export default async function FinanciamentosPage() {
                   </Td>
                   <Td className="text-right">
                     {s.financerSettledAt ? (
-                      <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
+                      <div className="flex flex-col items-end gap-0.5">
+                        <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
+                        <ReverseSettleButton saleId={s.id} mode="financing" />
+                      </div>
                     ) : s.financerAccountId ? (
                       <FinancingSettleButton saleId={s.id} accounts={companyAccounts} />
                     ) : (
@@ -118,6 +122,7 @@ export default async function FinanciamentosPage() {
                                 </span>
                               </span>
                             ) : null}
+                            <ReverseSettleButton saleId={s.id} mode="return" />
                           </>
                         ) : s.financerAccountId ? (
                           <FinancingSettleButton
