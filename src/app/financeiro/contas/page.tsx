@@ -2,9 +2,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
+import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
+import CashboxCard from "./CashboxCard";
 import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
 import AccountRowActions from "./AccountRowActions";
@@ -15,7 +17,7 @@ export const dynamic = "force-dynamic";
 const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
 
 export default async function ContasPage() {
-  const [accounts, transfers, health] = await Promise.all([
+  const [accounts, transfers, health, cashbox, cashboxHistory] = await Promise.all([
     getAccountsWithBalances(),
     prisma.accountTransfer.findMany({
       include: { from: { select: { name: true } }, to: { select: { name: true } } },
@@ -23,6 +25,8 @@ export default async function ContasPage() {
       take: 20,
     }),
     getBooksHealth(),
+    getCashboxState(),
+    prisma.cashboxSession.findMany({ orderBy: { openedAt: "desc" }, take: 30 }),
   ]);
 
   const active = accounts.filter((a) => a.active);
@@ -67,6 +71,8 @@ export default async function ContasPage() {
         title="Contas e caixas"
         description="Cadastre as contas da loja — toda baixa de pagamento/recebimento passa por uma delas"
       />
+
+      <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} />
 
       <BooksHealthChecks health={health} />
 

@@ -4,9 +4,35 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
+import { getSessionUser } from "@/lib/auth";
 import { parseDateInput } from "@/lib/format";
 
 export type ContaFormState = { error?: string };
+
+/**
+ * Abre o caixa (todos os caixas/bancos de uma vez). Sem abrir, nenhum lançamento
+ * é permitido. `workDate` é a "data de trabalho" (default hoje).
+ */
+export async function openCashboxAction(workDate?: string): Promise<{ ok: boolean; error?: string }> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
+  const date = workDate ? parseDateInput(workDate) : new Date();
+  await openCashbox(user.name, date);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
+/** Fecha o caixa: bloqueia novos lançamentos até reabrir. */
+export async function closeCashboxAction(): Promise<{ ok: boolean; error?: string }> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
+  await closeCashbox(user.name);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
 
 const accountSchema = z.object({
   name: z.string().min(1, "Informe o nome da conta"),
@@ -96,6 +122,7 @@ export async function createTransferAction(
 ): Promise<ContaFormState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

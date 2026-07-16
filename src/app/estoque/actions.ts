@@ -11,6 +11,7 @@ import {
   receiveVehicleAdvance,
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 
 const advanceSchema = z.object({
@@ -29,6 +30,7 @@ export async function receiveVehicleAdvanceAction(
 ): Promise<AdvanceFormState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
@@ -97,6 +99,7 @@ export async function createVehicleAction(
 ): Promise<VehicleFormState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
@@ -292,6 +295,7 @@ export async function addVehicleCostAction(
 ): Promise<CostFormState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

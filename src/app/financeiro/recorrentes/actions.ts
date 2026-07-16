@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 
 const recurringSchema = z.object({
@@ -75,6 +76,7 @@ export async function deleteRecurringAction(id: string) {
 
 export async function generateNowAction() {
   await assertBooksBalanced();
+  await assertCashboxOpen();
   const created = await ensureRecurringGenerated();
   revalidatePath("/financeiro/recorrentes");
   revalidatePath("/financeiro/a-pagar");

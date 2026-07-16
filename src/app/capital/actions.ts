@@ -8,6 +8,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -48,6 +49,7 @@ export async function addCapitalTransactionAction(
 ): Promise<CapitalFormState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

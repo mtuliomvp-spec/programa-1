@@ -6,10 +6,12 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 
 export async function markPaidAction(id: string, accountId?: string) {
   await assertBooksBalanced();
+  await assertCashboxOpen();
   await markPayablePaid(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -32,6 +34,7 @@ export async function payBatchAction(
   if (!accountId) return { ok: false, paid: 0, error: "Escolha a conta que fará o pagamento." };
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Bloqueado." };
   }
@@ -89,6 +92,7 @@ export async function createManualPayableAction(
 ): Promise<ManualPayableState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

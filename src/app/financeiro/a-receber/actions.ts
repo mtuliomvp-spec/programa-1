@@ -5,10 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 
 export async function markReceivedAction(id: string, accountId?: string) {
   await assertBooksBalanced();
+  await assertCashboxOpen();
   await markReceivableReceived(id, new Date(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -22,6 +24,7 @@ export async function markReceivedAction(id: string, accountId?: string) {
  */
 export async function receiveAction(id: string, amount: number, accountId?: string) {
   await assertBooksBalanced();
+  await assertCashboxOpen();
   await receiveReceivable(id, amount, new Date(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -56,6 +59,7 @@ export async function createManualReceivableAction(
 ): Promise<ManualReceivableState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

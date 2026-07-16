@@ -568,6 +568,21 @@ model Receivable {
   @@map("receivables")
 }
 
+// Sessão de caixa: controle global de abertura/fechamento (estilo Agrasty). Um
+// único estado para toda a loja — enquanto não há sessão aberta, os lançamentos
+// ficam bloqueados. workDate é a "data de trabalho" do dia.
+model CashboxSession {
+  id        String    @id @default(cuid())
+  workDate  DateTime
+  openedAt  DateTime  @default(now())
+  openedBy  String?
+  closedAt  DateTime?
+  closedBy  String?
+  createdAt DateTime  @default(now())
+
+  @@map("cashbox_sessions")
+}
+
 // Categoria personalizada de lançamento, cadastrada pelo usuário para
 // reaproveitar nas telas de lançamento (ex.: "Revisão", "Documentação").
 model LaunchCategory {

@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import type { CategoriaPagar } from "@prisma/client";
 
@@ -47,6 +48,7 @@ export async function createCashEntryAction(
 ): Promise<CashEntryState> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }

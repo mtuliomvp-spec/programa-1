@@ -6,11 +6,13 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createPartWithPayable, addPartStockWithPayable, registerPartSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 
 async function guard(): Promise<FormState | null> {
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
     return null;
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };

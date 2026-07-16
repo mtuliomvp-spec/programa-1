@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { settleFinancing, settleReturn } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen } from "@/lib/cashbox";
 
 export type SettleResult = { ok: boolean; error?: string };
 
@@ -10,6 +11,7 @@ export async function settleFinancingAction(saleId: string, accountId: string): 
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
     await settleFinancing(saleId, accountId, new Date());
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar baixa." };
@@ -31,6 +33,7 @@ export async function settleReturnAction(
   }
   try {
     await assertBooksBalanced();
+    await assertCashboxOpen();
     await settleReturn(saleId, accountId, actualAmount, new Date());
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível receber o retorno." };
