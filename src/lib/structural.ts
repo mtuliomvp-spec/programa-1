@@ -60,6 +60,18 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
     data: { costCenterId: ids.VEICULOS },
   });
 
+  // 2b) Combustível lançado como custo de um veículo específico pertence ao
+  // centro Veículos, não ao Administrativo (corrige notas antigas mal
+  // classificadas). Idempotente: só move as que estão hoje em Administrativo.
+  await prisma.payable.updateMany({
+    where: {
+      category: "COMBUSTIVEL",
+      vehicleId: { not: null },
+      costCenterId: ids.ADMINISTRATIVO,
+    },
+    data: { costCenterId: ids.VEICULOS },
+  });
+
   // 3) Todo o restante → Administrativo
   await prisma.payable.updateMany({
     where: { costCenterId: null },

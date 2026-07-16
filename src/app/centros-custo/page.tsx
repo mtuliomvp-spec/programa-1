@@ -25,14 +25,30 @@ export default async function CentrosCustoPage() {
   const withTotals = centers.map((c) => {
     const isVeiculos = c.key === "VEICULOS";
     let despesas = 0;
-    let imobilizado = 0;
+    let imobilizado = 0; // veículos em estoque JÁ PAGOS (ativo)
+    let pendente = 0; // contas a pagar ainda não pagas (não entram no resultado)
     for (const p of c.payables) {
-      // Veículo em estoque é capital imobilizado (ativo), não despesa.
-      if (isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO") imobilizado += p.amount;
-      else despesas += p.amount;
+      const paid = p.status === "PAGO";
+      // Veículo em estoque é capital imobilizado (ativo), não despesa — e, como
+      // no resto do sistema, só conta o que já foi efetivamente pago.
+      if (isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO") {
+        if (paid) imobilizado += p.amount;
+        else pendente += p.amount;
+      } else if (paid) {
+        // Regime de caixa: só o que foi pago vira despesa realizada.
+        despesas += p.amount;
+      } else {
+        pendente += p.amount;
+      }
     }
-    const receitas = c.receivables.reduce((s, r) => s + r.amount, 0);
-    return { ...c, despesas, receitas, imobilizado, resultado: receitas - despesas };
+    // Só o que foi efetivamente recebido vira receita realizada.
+    let receitas = 0;
+    let aReceber = 0;
+    for (const r of c.receivables) {
+      if (r.status === "RECEBIDO") receitas += r.amount;
+      else aReceber += r.amount;
+    }
+    return { ...c, despesas, receitas, imobilizado, pendente, aReceber, resultado: receitas - despesas };
   });
 
   return (
@@ -79,6 +95,13 @@ export default async function CentrosCustoPage() {
                         ? ` · Em estoque ${formatCurrency(c.imobilizado)} (imobilizado)`
                         : ""}
                     </p>
+                    {c.pendente > 0 || c.aReceber > 0 ? (
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        Só entram no resultado quando pagas/recebidas
+                        {c.pendente > 0 ? ` · a pagar ${formatCurrency(c.pendente)}` : ""}
+                        {c.aReceber > 0 ? ` · a receber ${formatCurrency(c.aReceber)}` : ""}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-4">
                     <div className="text-right">
