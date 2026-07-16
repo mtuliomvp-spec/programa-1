@@ -46,15 +46,24 @@ export async function createFuelEntryAction(
   const defaultAccountId = data.alreadyPaid ? await getDefaultAccountId() : null;
 
   try {
-    // Combustível de um veículo específico é custo daquele veículo → centro
-    // Veículos. Sem veículo (frota geral/placa avulsa) → Administrativo.
-    const centerId = await structuralCenterId(data.vehicleId ? "VEICULOS" : "ADMINISTRATIVO");
+    // Combustível de um veículo EM ESTOQUE é custo daquele veículo → centro
+    // Veículos. Se o veículo já foi vendido (despesa pós-venda) ou não há
+    // veículo (frota geral/placa avulsa) → Administrativo.
+    let vehiclePlate: string | null = null;
+    let vehicleSold = false;
+    if (data.vehicleId) {
+      const vehicle = await prisma.vehicle.findUniqueOrThrow({
+        where: { id: data.vehicleId },
+        select: { plate: true, status: true },
+      });
+      vehiclePlate = vehicle.plate;
+      vehicleSold = vehicle.status === "VENDIDO";
+    }
+    const centerId = await structuralCenterId(
+      data.vehicleId && !vehicleSold ? "VEICULOS" : "ADMINISTRATIVO",
+    );
     await prisma.$transaction(async (tx) => {
-      let plate = data.plate?.trim().toUpperCase() || null;
-      if (data.vehicleId) {
-        const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: data.vehicleId } });
-        plate = vehicle.plate;
-      }
+      const plate = data.vehicleId ? vehiclePlate : data.plate?.trim().toUpperCase() || null;
 
       const paid = Boolean(data.alreadyPaid);
       const payable = await tx.payable.create({

@@ -344,13 +344,16 @@ export async function addVehicleCostWithPayable(input: {
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
     });
     const suffix = `${vehicle.brand} ${vehicle.model} (${vehicle.plate})`;
-    // Custo lançado com o veículo já vendido é um custo pós-venda.
+    // Custo lançado com o veículo já vendido é um custo pós-venda: sai do centro
+    // Veículos (o carro não está mais no estoque) e vira despesa Administrativa.
     const postSale = vehicle.status === "VENDIDO";
+    const costCenterId = postSale ? adminCenterId : veiculosCenterId;
     const count = Math.max(1, input.installments ?? 1);
     const firstDue = input.alreadyPaid ? input.date : input.dueDate || input.date;
 
@@ -377,7 +380,7 @@ export async function addVehicleCostWithPayable(input: {
           vehicleId: vehicle.id,
           notes: input.notes || null,
           accountId: paid ? defaultAccountId : null,
-          costCenterId: veiculosCenterId,
+          costCenterId,
         },
       });
 

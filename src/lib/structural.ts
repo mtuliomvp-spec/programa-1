@@ -60,17 +60,58 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
     data: { costCenterId: ids.VEICULOS },
   });
 
-  // 2b) Combustível lançado como custo de um veículo específico pertence ao
-  // centro Veículos, não ao Administrativo (corrige notas antigas mal
-  // classificadas). Idempotente: só move as que estão hoje em Administrativo.
-  await prisma.payable.updateMany({
+  // 2b) Reclassifica despesas ligadas a um veículo conforme a regra da loja:
+  //   - veículo EM ESTOQUE → centro Veículos (é custo do carro)
+  //   - veículo já VENDIDO → centro Administrativo (despesa pós-venda)
+  // Idempotente. (updateMany não filtra por relação, então buscamos os ids.)
+
+  // Combustível de veículo EM ESTOQUE que ficou no Administrativo → Veículos.
+  const fuelToVeiculos = await prisma.payable.findMany({
     where: {
       category: "COMBUSTIVEL",
-      vehicleId: { not: null },
       costCenterId: ids.ADMINISTRATIVO,
+      vehicle: { is: { status: { not: "VENDIDO" } } },
     },
-    data: { costCenterId: ids.VEICULOS },
+    select: { id: true },
   });
+  if (fuelToVeiculos.length) {
+    await prisma.payable.updateMany({
+      where: { id: { in: fuelToVeiculos.map((p) => p.id) } },
+      data: { costCenterId: ids.VEICULOS },
+    });
+  }
+
+  // Combustível de veículo já VENDIDO que está no Veículos → Administrativo.
+  const fuelToAdmin = await prisma.payable.findMany({
+    where: {
+      category: "COMBUSTIVEL",
+      costCenterId: ids.VEICULOS,
+      vehicle: { is: { status: "VENDIDO" } },
+    },
+    select: { id: true },
+  });
+  if (fuelToAdmin.length) {
+    await prisma.payable.updateMany({
+      where: { id: { in: fuelToAdmin.map((p) => p.id) } },
+      data: { costCenterId: ids.ADMINISTRATIVO },
+    });
+  }
+
+  // Custos de veículo marcados como PÓS-VENDA que ficaram no Veículos →
+  // Administrativo (o carro não está mais no estoque).
+  const postSaleCosts = await prisma.vehicleCost.findMany({
+    where: { postSale: true, payableId: { not: null } },
+    select: { payableId: true },
+  });
+  const postSalePayableIds = postSaleCosts
+    .map((c) => c.payableId)
+    .filter((x): x is string => !!x);
+  if (postSalePayableIds.length) {
+    await prisma.payable.updateMany({
+      where: { id: { in: postSalePayableIds }, costCenterId: ids.VEICULOS },
+      data: { costCenterId: ids.ADMINISTRATIVO },
+    });
+  }
 
   // 3) Todo o restante → Administrativo
   await prisma.payable.updateMany({
