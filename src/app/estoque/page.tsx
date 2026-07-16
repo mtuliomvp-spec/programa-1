@@ -46,12 +46,19 @@ export default async function EstoquePage({
     include: {
       costs: { select: { amount: true } },
       payables: { select: { amount: true, status: true } },
+      // Só precisa saber SE existe a comunicação de venda anexada.
+      attachments: {
+        where: { description: { contains: "comunica", mode: "insensitive" } },
+        select: { id: true },
+        take: 1,
+      },
     },
     orderBy: { createdAt: "desc" },
   });
 
   const rows = vehicles.map((v) => ({
     ...v,
+    hasComunicacao: v.attachments.length > 0,
     invested: v.purchasePrice + v.costs.reduce((sum, c) => sum + c.amount, 0),
     // Custo real = tudo o que já foi efetivamente PAGO por esse veículo
     // (aquisição + manutenção/custos), pela conta financeira.
@@ -141,7 +148,13 @@ export default async function EstoquePage({
                     <div className="mt-2 flex justify-end">
                       <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="mt-2 flex justify-end">
+                      <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+                        {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
+                      </Badge>
+                    </div>
+                  )}
                 </Card>
               </Link>
             ))}
@@ -195,6 +208,13 @@ export default async function EstoquePage({
                     </Td>
                     <Td>
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                      {v.status === "VENDIDO" ? (
+                        <span className="mt-1 block">
+                          <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+                            {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
+                          </Badge>
+                        </span>
+                      ) : null}
                     </Td>
                     <Td>
                       <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
