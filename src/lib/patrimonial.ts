@@ -27,6 +27,7 @@ export type PatrimonialStats = {
   devolucoesClientes: number;
   veiculosAPagarPosVenda: number;
   pecasAPagar: number;
+  comissoesAPagar: number;
   almoxarifado: number;
   saldoCapital: number;
   consorcios: number;
@@ -48,6 +49,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
         status: true,
         dueDate: true,
         vehicleId: true,
+        saleId: true,
         consortiumId: true,
         category: true,
         vehicle: { select: { status: true } },
@@ -76,6 +78,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let devolucoesClientes = 0;
   let veiculosAPagarPosVenda = 0;
   let pecasAPagar = 0;
+  let comissoesAPagar = 0;
 
   for (const p of payables) {
     if (p.status === "PAGO") {
@@ -110,6 +113,13 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       // caixa e o efeito já está refletido — não conta duas vezes).
       if (p.category === "DEVOLUCAO_CLIENTE") {
         devolucoesClientes += p.amount;
+      }
+      // Comissão do vendedor de uma venda: custo direto da venda já realizada.
+      // Entra subtraindo enquanto pendente (competência), casando com a
+      // comissão reconhecida no Lucro/Prejuízo na data da venda. Ao ser paga,
+      // sai do caixa e o efeito continua o mesmo (não conta duas vezes).
+      if (p.category === "COMISSAO" && p.saleId) {
+        comissoesAPagar += p.amount;
       }
       if (p.dueDate < now) {
         titulosVencidosCount++;
@@ -176,6 +186,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     devolucoesClientes -
     veiculosAPagarPosVenda -
     pecasAPagar -
+    comissoesAPagar -
     saldoCapital;
 
   return {
@@ -188,6 +199,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     devolucoesClientes,
     veiculosAPagarPosVenda,
     pecasAPagar,
+    comissoesAPagar,
     almoxarifado,
     saldoCapital,
     consorcios,

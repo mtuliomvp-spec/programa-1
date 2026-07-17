@@ -79,7 +79,8 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
       include: { part: { select: { costPrice: true } } },
     }),
-    // Despesas: regime de CAIXA — só as PAGAS, na data do pagamento.
+    // Despesas: regime de CAIXA — só as PAGAS, na data do pagamento. A comissão
+    // de venda (saleId) fica de fora: entra por competência, na data da venda.
     prisma.payable.findMany({
       where: {
         status: "PAGO",
@@ -87,6 +88,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null, // custos de veículo já entram no custo da venda
         vehicleId: null, // idem para contas manuais ligadas a veículos
+        saleId: null, // comissão de venda entra por competência (abaixo)
         id: { notIn: retiradaPayableIds }, // retirada de capital não é despesa
       },
       select: { amount: true, paymentDate: true, category: true },
@@ -141,9 +143,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, p) => sum + p.quantity * p.part.costPrice,
       0,
     );
-    const comissoes = monthExpenses
-      .filter((e) => e.category === "COMISSAO")
-      .reduce((sum, e) => sum + e.amount, 0);
+    // Comissão de venda por competência (na data da venda) + comissões manuais
+    // pagas (sem venda vinculada) no mês.
+    const comissoes =
+      monthSales.reduce((sum, s) => sum + (s.commissionAmount || 0), 0) +
+      monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
       .reduce((sum, e) => sum + e.amount, 0);
@@ -232,6 +236,8 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
       include: { part: { select: { name: true, costPrice: true } } },
     }),
     // Despesas: regime de CAIXA — só contam quando PAGAS, na data do pagamento.
+    // A comissão de venda (saleId != null) fica de fora: ela é reconhecida por
+    // COMPETÊNCIA na própria venda (abaixo), como custo direto daquela venda.
     prisma.payable.findMany({
       where: {
         status: "PAGO",
@@ -239,6 +245,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
         vehicleCost: null,
         vehicleId: null,
+        saleId: null,
         id: { notIn: retiradaPayableIds },
       },
       select: { id: true, amount: true, paymentDate: true, category: true, description: true, categoryLabel: true },
@@ -301,6 +308,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
       detail: `venda ${fmt(s.totalAmount)} − custo ${fmt(custo)}`,
       value: margem,
     });
+    // Comissão do vendedor: custo direto da venda, reconhecido por competência
+    // (na data da venda), independente de já ter sido paga. Casa com a conta a
+    // pagar da comissão subtraída na equação patrimonial.
+    if (s.commissionAmount > 0) {
+      comissoes += s.commissionAmount;
+      entries.push({
+        id: `com-${s.id}`,
+        date: s.saleDate,
+        kind: "COMISSAO",
+        description: `Comissão de venda${s.sellerName ? ` — ${s.sellerName}` : ""}`,
+        detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        value: -s.commissionAmount,
+      });
+    }
   }
 
   for (const p of partSales) {
