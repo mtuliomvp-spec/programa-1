@@ -4,6 +4,7 @@ import { useActionState, useEffect, useMemo, useRef, useState, useTransition } f
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
+import { checkPreSaleConflictAction } from "./actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
@@ -100,6 +101,21 @@ export default function SaleForm({
   const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
   const [customerId, setCustomerId] = useState(initial?.customerId || "");
   const customerName = customers.find((c) => c.id === customerId)?.name ?? "";
+
+  // Aviso em tempo real: veículo já pré-vendido para OUTRO cliente. Checa assim
+  // que veículo + cliente estão escolhidos, sem esperar o envio.
+  const [conflictMsg, setConflictMsg] = useState<string | null>(null);
+  useEffect(() => {
+    // A action já devolve { conflict: false } quando falta veículo ou cliente,
+    // então a mensagem é limpa sozinha ao trocar a seleção.
+    let cancelled = false;
+    checkPreSaleConflictAction(vehicleId, customerId, preSaleId).then((r) => {
+      if (!cancelled) setConflictMsg(r.conflict ? r.message ?? null : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [vehicleId, customerId, preSaleId]);
   const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">(
     initial?.paymentMethod || "A_VISTA",
   );
@@ -216,7 +232,12 @@ export default function SaleForm({
 
   return (
     <form ref={formRef} action={formAction} className="space-y-6">
-      {state.error ? (
+      {conflictMsg ? (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+          {conflictMsg}
+        </div>
+      ) : null}
+      {state.error && state.error !== conflictMsg ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}
         </div>
@@ -624,7 +645,7 @@ export default function SaleForm({
           Ao gerar, cria-se uma <strong>pré-venda</strong> (ficha de negócio) para revisar e imprimir.
           Nada é lançado no financeiro até você clicar em “Registrar venda” na ficha.
         </p>
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending || !!conflictMsg}>
           {pending ? "Gerando..." : preSaleId ? "Salvar pré-venda →" : "Gerar pré-venda →"}
         </Button>
       </div>

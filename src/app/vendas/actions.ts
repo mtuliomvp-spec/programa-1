@@ -5,7 +5,26 @@ import { redirect } from "next/navigation";
 import { cancelVehicleSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { saleSchema, registerSaleCore, type SaleFormState } from "./sale-core";
+import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState } from "./sale-core";
+
+/**
+ * Verifica, em tempo real (ao escolher veículo/cliente no formulário), se o
+ * veículo já tem uma pré-venda em aberto para OUTRO cliente. Devolve a mensagem
+ * a ser exibida imediatamente, sem esperar o envio.
+ */
+export async function checkPreSaleConflictAction(
+  vehicleId: string,
+  customerId: string,
+  excludePreSaleId?: string,
+): Promise<{ conflict: boolean; message?: string }> {
+  if (!vehicleId || !customerId) return { conflict: false };
+  try {
+    await assertNoConflictingPreSale(vehicleId, customerId, excludePreSaleId || undefined);
+    return { conflict: false };
+  } catch (e) {
+    return { conflict: true, message: e instanceof Error ? e.message : "Veículo já pré-vendido para outro cliente." };
+  }
+}
 
 export async function createSaleAction(_prev: SaleFormState, formData: FormData): Promise<SaleFormState> {
   try {
