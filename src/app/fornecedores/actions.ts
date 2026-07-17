@@ -13,9 +13,26 @@ const schema = z.object({
   email: z.string().optional(),
   address: z.string().optional(),
   notes: z.string().optional(),
+  // Dados bancários (para a Ordem de Pagamento).
+  bankName: z.string().optional(),
+  bankAgency: z.string().optional(),
+  bankAccount: z.string().optional(),
+  bankAccountType: z.string().optional(),
+  pixKey: z.string().optional(),
   // Replica o mesmo cadastro como cliente (a mesma pessoa pode comprar e vender).
   alsoCustomer: z.coerce.boolean().optional(),
 });
+
+/** Campos bancários normalizados (string vazia → null) para gravar no banco. */
+function bankData(d: z.infer<typeof schema>) {
+  return {
+    bankName: d.bankName?.trim() || null,
+    bankAgency: d.bankAgency?.trim() || null,
+    bankAccount: d.bankAccount?.trim() || null,
+    bankAccountType: d.bankAccountType?.trim() || null,
+    pixKey: d.pixKey?.trim() || null,
+  };
+}
 
 /** Cria um cliente equivalente (mesma pessoa), sem duplicar se o documento já existir. */
 export async function replicateAsCustomer(d: {
@@ -58,6 +75,7 @@ export async function createSupplierAction(_prev: PersonFormState, formData: For
       email: d.email || null,
       address: d.address || null,
       notes: d.notes || null,
+      ...bankData(d),
     },
   });
   if (d.alsoCustomer) await replicateAsCustomer(d);
@@ -80,6 +98,7 @@ export async function updateSupplierAction(_prev: PersonFormState, formData: For
       email: d.email || null,
       address: d.address || null,
       notes: d.notes || null,
+      ...bankData(d),
     },
   });
   revalidatePath("/fornecedores");

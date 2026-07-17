@@ -15,6 +15,7 @@ export default function NovoFornecedorPage() {
             action={createSupplierAction}
             documentLabel="CPF / CNPJ"
             replicate={{ name: "alsoCustomer", label: "cliente" }}
+            showBankData
           />
         </div>
       </Card>

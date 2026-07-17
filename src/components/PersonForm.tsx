@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState, useTransition } from "react";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { findPersonByDocument } from "@/app/person-lookup";
 
@@ -15,6 +15,11 @@ type PersonData = {
   email: string | null;
   address: string | null;
   notes: string | null;
+  bankName?: string | null;
+  bankAgency?: string | null;
+  bankAccount?: string | null;
+  bankAccountType?: string | null;
+  pixKey?: string | null;
 };
 
 export default function PersonForm({
@@ -22,12 +27,15 @@ export default function PersonForm({
   person,
   documentLabel = "CPF / CNPJ",
   replicate,
+  showBankData = false,
 }: {
   action: (state: PersonFormState, formData: FormData) => Promise<PersonFormState>;
   person?: PersonData;
   documentLabel?: string;
   // Opção de replicar o mesmo cadastro no outro papel (cliente ⇄ fornecedor).
   replicate?: { name: string; label: string };
+  // Mostra a seção "Dados para pagamento" (usada no cadastro de fornecedor).
+  showBankData?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(action, {});
   const formRef = useRef<HTMLFormElement>(null);
@@ -145,6 +153,38 @@ export default function PersonForm({
           <Input name="address" defaultValue={person?.address || ""} />
         </Field>
       </div>
+      {showBankData ? (
+        <fieldset className="rounded-lg border border-slate-200 p-4">
+          <legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+            Dados para pagamento
+          </legend>
+          <p className="mb-3 text-xs text-slate-500">
+            Aparecem na Ordem de Pagamento gerada a partir dos títulos deste fornecedor.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Banco">
+              <Input name="bankName" defaultValue={person?.bankName || ""} placeholder="Ex: 001 - Banco do Brasil" />
+            </Field>
+            <Field label="Chave PIX">
+              <Input name="pixKey" defaultValue={person?.pixKey || ""} placeholder="CPF/CNPJ, e-mail, telefone ou aleatória" />
+            </Field>
+            <Field label="Agência">
+              <Input name="bankAgency" defaultValue={person?.bankAgency || ""} placeholder="0000" />
+            </Field>
+            <Field label="Conta">
+              <Input name="bankAccount" defaultValue={person?.bankAccount || ""} placeholder="00000-0" />
+            </Field>
+            <Field label="Tipo de conta">
+              <Select name="bankAccountType" defaultValue={person?.bankAccountType || ""}>
+                <option value="">—</option>
+                <option value="corrente">Corrente</option>
+                <option value="poupanca">Poupança</option>
+              </Select>
+            </Field>
+          </div>
+        </fieldset>
+      ) : null}
+
       <Field label="Observações">
         <Textarea name="notes" defaultValue={person?.notes || ""} rows={3} />
       </Field>

@@ -117,7 +117,13 @@ export default function PayablesTable({
                   ) : null}
                 </Td>
                 <Td className="font-medium text-slate-900">
-                  {p.description}
+                  <Link
+                    href={`/financeiro/a-pagar/${p.id}/ordem`}
+                    className="text-blue-700 hover:underline"
+                    title="Abrir ordem de pagamento"
+                  >
+                    {p.description}
+                  </Link>
                   {p.recurring ? (
                     <span className="ml-1.5 text-xs text-slate-400" title="Gerada por recorrência">
                       🔁

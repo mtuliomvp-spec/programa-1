@@ -17,7 +17,7 @@ export default async function EditarFornecedorPage({ params }: { params: Promise
       <Card>
         <CardHeader title="Dados do fornecedor" />
         <div className="p-5">
-          <PersonForm action={updateSupplierAction} person={supplier} documentLabel="CPF / CNPJ" />
+          <PersonForm action={updateSupplierAction} person={supplier} documentLabel="CPF / CNPJ" showBankData />
         </div>
       </Card>
     </div>

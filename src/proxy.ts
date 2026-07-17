@@ -44,6 +44,9 @@ export default function proxy(request: NextRequest) {
   // /login e subpáginas (ex.: /login/redefinir) são públicas
   if (pathname === "/login" || pathname.startsWith("/login/")) return NextResponse.next();
 
+  // Verificação pública de autenticidade (QR Code da Ordem de Pagamento).
+  if (pathname.startsWith("/verificar/")) return NextResponse.next();
+
   const loginUrl = new URL("/login", request.url);
   if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
   return NextResponse.redirect(loginUrl);
