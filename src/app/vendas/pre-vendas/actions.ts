@@ -6,7 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
-import { saleSchema, registerSaleCore, type SaleFormState, type SaleData } from "../sale-core";
+import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
  * Cria (ou atualiza) uma pré-venda: um rascunho da negociação para revisão e
@@ -19,6 +19,14 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
   }
   const d = parsed.data;
   const preSaleId = String(formData.get("preSaleId") || "").trim();
+
+  // Não permitir pré-vender o mesmo veículo para outro cliente enquanto houver
+  // pré-venda em aberto (ignora a própria pré-venda ao editá-la).
+  try {
+    await assertNoConflictingPreSale(d.vehicleId, d.customerId, preSaleId || undefined);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Veículo já pré-vendido para outro cliente." };
+  }
 
   const data = {
     vehicleId: d.vehicleId,

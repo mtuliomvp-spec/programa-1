@@ -63,12 +63,50 @@ export type SaleFormState = { error?: string };
 export type SaleData = z.infer<typeof saleSchema>;
 
 /**
+ * Impede vender / pré-vender um veículo que já tem uma pré-venda EM ABERTO para
+ * OUTRO cliente. O usuário deve cancelar a pré-venda existente antes de negociar
+ * o mesmo carro com um cliente diferente. `excludePreSaleId` ignora a própria
+ * pré-venda ao editá-la.
+ */
+export async function assertNoConflictingPreSale(
+  vehicleId: string,
+  customerId: string,
+  excludePreSaleId?: string,
+): Promise<void> {
+  const conflict = await prisma.preSale.findFirst({
+    where: {
+      vehicleId,
+      status: "ABERTA",
+      customerId: { not: customerId },
+      ...(excludePreSaleId ? { id: { not: excludePreSaleId } } : {}),
+    },
+    select: { number: true, customerId: true },
+    orderBy: { number: "asc" },
+  });
+  if (!conflict) return;
+  const cust = await prisma.customer.findUnique({
+    where: { id: conflict.customerId },
+    select: { name: true },
+  });
+  const num = String(conflict.number).padStart(4, "0");
+  throw new Error(
+    `Este veículo já tem uma pré-venda em aberto (nº ${num} — ${cust?.name ?? "outro cliente"}). ` +
+      `Cancele a pré-venda antes de negociar este veículo com um cliente diferente.`,
+  );
+}
+
+/**
  * Núcleo do registro de venda: valida regras, cadastra o veículo da troca (se
  * houver) e cria a venda com todos os lançamentos. Lança Error em caso de
  * problema. Reutilizado tanto pela venda direta quanto pela conversão de uma
  * pré-venda. Retorna o id da venda criada.
  */
 export async function registerSaleCore(d: SaleData): Promise<string> {
+  // Trava: não vender um veículo pré-vendido para outro cliente sem cancelar a
+  // pré-venda antes (a conversão da própria pré-venda usa o mesmo cliente, então
+  // não é bloqueada).
+  await assertNoConflictingPreSale(d.vehicleId, d.customerId);
+
   if (d.paymentMethod === "PARCELADO") {
     if (d.downPayment > d.totalAmount) {
       throw new Error("A entrada não pode ser maior que o valor total da venda.");
