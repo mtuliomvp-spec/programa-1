@@ -144,9 +144,17 @@ export async function convertPreSaleAction(id: string): Promise<void> {
   redirect(`/vendas/${saleId}`);
 }
 
-/** Exclui a pré-venda (não afeta nada financeiro). */
-export async function deletePreSaleAction(id: string): Promise<void> {
-  await prisma.preSale.delete({ where: { id } });
+/**
+ * Exclui a pré-venda (não afeta nada financeiro). Idempotente (deleteMany não
+ * estoura se já tiver sido removida). A navegação é feita no cliente após a
+ * conclusão — mais confiável que redirect() dentro de useTransition.
+ */
+export async function deletePreSaleAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await prisma.preSale.deleteMany({ where: { id } });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível excluir a pré-venda." };
+  }
   revalidatePath("/vendas");
-  redirect("/vendas");
+  return { ok: true };
 }
