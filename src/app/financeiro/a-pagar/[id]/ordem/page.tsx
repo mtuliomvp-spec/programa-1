@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
-import { headers } from "next/headers";
 import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
+import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
@@ -64,11 +64,9 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   // Forma de pagamento sugerida a partir dos dados bancários do fornecedor.
   const formaPagamento = s?.pixKey ? "PIX" : s?.bankName || s?.bankAccount ? "Transferência" : "—";
 
-  // URL pública de verificação + QR Code (gerado no servidor).
-  const h = await headers();
-  const host = h.get("host") || "";
-  const proto = h.get("x-forwarded-proto") || (host.startsWith("localhost") ? "http" : "https");
-  const verifyUrl = `${proto}://${host}/verificar/pagamento/${payable.publicToken}`;
+  // URL pública de verificação + QR Code (gerado no servidor). Usa o domínio
+  // oficial (NEXT_PUBLIC_APP_URL) quando definido; senão, o endereço de acesso.
+  const verifyUrl = `${await getBaseUrl()}/verificar/pagamento/${payable.publicToken}`;
   const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 320 });
 
   const generatedAt = `Gerado em: ${new Date().toLocaleString("pt-BR")}`;
