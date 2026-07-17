@@ -21,7 +21,7 @@ const statusMeta = {
 } as const;
 
 export default async function ComprasPage() {
-  const [user, requests, suppliers] = await Promise.all([
+  const [user, requests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
     getSessionUser(),
     prisma.purchaseRequest.findMany({
       include: { supplier: true },
@@ -29,7 +29,21 @@ export default async function ComprasPage() {
       take: 100,
     }),
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.vehicle.findMany({
+      where: { status: "ESTOQUE" },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, brand: true, model: true, plate: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
+  const vehicles = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}`,
+  }));
 
   const pendentes = requests.filter((r) => r.status === "PENDENTE");
   const aprovadas = requests.filter((r) => r.status === "APROVADA");
@@ -125,7 +139,7 @@ export default async function ComprasPage() {
         <Card className="h-fit">
           <CardHeader title="Nova solicitação" />
           <div className="p-5">
-            <NewRequestForm suppliers={suppliers} />
+            <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />
           </div>
         </Card>
       </div>

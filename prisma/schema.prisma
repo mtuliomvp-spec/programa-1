@@ -221,6 +221,12 @@ model PurchaseRequest {
   requestedBy     String
   // Fluxo estrutural indicado pelo solicitante (CAPITAL/VEICULOS/ADMINISTRATIVO)
   structuralKey   String?
+  // Destino específico do lançamento conforme o fluxo: veículo (fluxo Veículos)
+  // ou beneficiário do capital (fluxo Capital). Levados até a conta a pagar.
+  vehicleId       String?
+  vehicle         Vehicle?          @relation(fields: [vehicleId], references: [id])
+  capitalBeneficiaryId String?
+  capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id])
   status          StatusSolicitacao @default(PENDENTE)
   decidedBy       String?
   decidedAt       DateTime?
@@ -363,6 +369,7 @@ model Vehicle {
   attachments      VehicleAttachment[]
   sale             Sale?         @relation("SaleVehicle")
   tradeInForSale   Sale?         @relation("SaleTradeIn")
+  purchaseRequests PurchaseRequest[]
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
@@ -673,6 +680,7 @@ model CapitalBeneficiary {
   active       Boolean              @default(true)
   notes        String?
   transactions CapitalTransaction[]
+  purchaseRequests PurchaseRequest[]
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 

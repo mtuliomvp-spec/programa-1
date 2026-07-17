@@ -12,27 +12,39 @@ import { Button, Field, Input, Select } from "@/components/ui";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 
 type Status = "PENDENTE" | "APROVADA" | "REJEITADA" | "CONCLUIDA" | "CANCELADA";
+type Vehicle = { id: string; label: string };
+type Beneficiary = { id: string; name: string };
 
 /**
  * Ações da solicitação na página de detalhe (versão espaçosa, boa no celular).
  * - Pendente: aprovar / rejeitar (quem pode aprovar) ou cancelar (quem criou).
- * - Aprovada: concluir a compra → lança direto em Contas a pagar.
+ * - Aprovada: concluir a compra → lança direto em Contas a pagar. Ao escolher o
+ *   fluxo Veículos aparece o veículo; no Capital, o beneficiário.
  */
 export default function RequestDetailActions({
   id,
   status,
   structuralKey,
+  vehicleId,
+  capitalBeneficiaryId,
+  vehicles,
+  beneficiaries,
   canApprove,
   canCreate,
 }: {
   id: string;
   status: Status;
   structuralKey?: string | null;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  vehicles: Vehicle[];
+  beneficiaries: Beneficiary[];
   canApprove: boolean;
   canCreate: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [flow, setFlow] = useState(structuralKey || "ADMINISTRATIVO");
   const [state, formAction, concludePending] = useActionState(
     async (prev: ComprasFormState, formData: FormData) => {
       const result = await concludeRequestAction(prev, formData);
@@ -110,7 +122,7 @@ export default function RequestDetailActions({
           </Select>
         </Field>
         <Field label="Fluxo">
-          <Select name="structuralKey" defaultValue={structuralKey || "ADMINISTRATIVO"}>
+          <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
             {STRUCTURAL_FLOWS.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.name}
@@ -118,6 +130,36 @@ export default function RequestDetailActions({
             ))}
           </Select>
         </Field>
+
+        {flow === "VEICULOS" ? (
+          <Field label="Veículo (opcional)">
+            <Select name="vehicleId" defaultValue={vehicleId || ""}>
+              <option value="">Nenhum (custo geral de veículos)</option>
+              {vehicles.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.label}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              O valor entra no custo desse veículo (ou pós-venda, se já vendido).
+            </p>
+          </Field>
+        ) : null}
+
+        {flow === "CAPITAL" ? (
+          <Field label="Beneficiário do capital" required>
+            <Select name="capitalBeneficiaryId" defaultValue={capitalBeneficiaryId || ""} required>
+              <option value="">Selecione o beneficiário</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
         <label className="flex items-center gap-2 text-sm text-slate-600">
           <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4" />
           Já foi pago (lança como pago)

@@ -3,11 +3,10 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { structuralCenterId } from "@/lib/structural";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
-import { getDefaultAccountId } from "@/lib/accounts";
+import { createManualPayable } from "@/lib/finance";
 import { formatRequestNumber } from "@/lib/format";
 
 export type ComprasFormState = { error?: string; success?: string };
@@ -24,6 +23,8 @@ const createSchema = z.object({
   estimatedAmount: z.coerce.number().min(0).optional(),
   supplierId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  vehicleId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
 });
 
 export async function createRequestAction(
@@ -45,13 +46,17 @@ export async function createRequestAction(
   await prisma.$transaction(async (tx) => {
     const last = await tx.purchaseRequest.aggregate({ where: { year }, _max: { seq: true } });
     const seq = (last._max.seq ?? 0) + 1;
+    const flow = parsed.data.structuralKey || "ADMINISTRATIVO";
     await tx.purchaseRequest.create({
       data: {
         description: parsed.data.description,
         details: parsed.data.details || null,
         estimatedAmount: parsed.data.estimatedAmount || null,
         supplierId: parsed.data.supplierId || null,
-        structuralKey: parsed.data.structuralKey || "ADMINISTRATIVO",
+        structuralKey: flow,
+        // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
+        vehicleId: flow === "VEICULOS" ? parsed.data.vehicleId || null : null,
+        capitalBeneficiaryId: flow === "CAPITAL" ? parsed.data.capitalBeneficiaryId || null : null,
         requestedBy: user.name,
         year,
         seq,
@@ -91,6 +96,8 @@ const concludeSchema = z.object({
   finalAmount: z.coerce.number().positive("Informe o valor pago/combinado"),
   category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  vehicleId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
 
@@ -110,42 +117,42 @@ export async function concludeRequestAction(
   const data = parsed.data;
 
   try {
-    const request0 = await prisma.purchaseRequest.findUniqueOrThrow({
+    const request = await prisma.purchaseRequest.findUniqueOrThrow({
       where: { id: data.requestId },
     });
-    const flowKey = (data.structuralKey || request0.structuralKey || "ADMINISTRATIVO") as
+    if (request.status !== "APROVADA") throw new Error("Somente aprovadas podem ser concluídas");
+
+    const flowKey = (data.structuralKey || request.structuralKey || "ADMINISTRATIVO") as
       | "CAPITAL"
       | "VEICULOS"
       | "ADMINISTRATIVO";
-    const centerId = await structuralCenterId(flowKey);
-    await prisma.$transaction(async (tx) => {
-      const request = await tx.purchaseRequest.findUniqueOrThrow({
-        where: { id: data.requestId },
-      });
-      if (request.status !== "APROVADA") throw new Error("Somente aprovadas podem ser concluídas");
+    // Destino do lançamento conforme o fluxo (o do formulário, ou o já guardado
+    // na solicitação). No Capital o beneficiário é obrigatório.
+    const vehicleId = flowKey === "VEICULOS" ? data.vehicleId || request.vehicleId || null : null;
+    const capitalBeneficiaryId =
+      flowKey === "CAPITAL" ? data.capitalBeneficiaryId || request.capitalBeneficiaryId || null : null;
+    if (flowKey === "CAPITAL" && !capitalBeneficiaryId) {
+      return { error: "Escolha o beneficiário do capital." };
+    }
 
-      const now = new Date();
-      const paid = Boolean(data.alreadyPaid);
-      const accountId = paid ? await getDefaultAccountId() : null;
-      const payable = await tx.payable.create({
-        data: {
-          costCenterId: centerId,
-          description: `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`,
-          category: data.category,
-          amount: data.finalAmount,
-          dueDate: now,
-          paymentDate: paid ? now : null,
-          status: paid ? "PAGO" : "PENDENTE",
-          supplierId: request.supplierId,
-          accountId,
-          notes: request.details,
-        },
-      });
+    // Usa o mesmo lançamento das contas manuais: cria a conta a pagar e, quando
+    // há veículo, o custo do veículo; quando há beneficiário, a retirada de capital.
+    const payable = await createManualPayable({
+      description: `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`,
+      category: data.category,
+      amount: data.finalAmount,
+      dueDate: new Date(),
+      supplierId: request.supplierId,
+      structuralKey: flowKey,
+      vehicleId,
+      capitalBeneficiaryId,
+      notes: request.details,
+      alreadyPaid: Boolean(data.alreadyPaid),
+    });
 
-      await tx.purchaseRequest.update({
-        where: { id: request.id },
-        data: { status: "CONCLUIDA", finalAmount: data.finalAmount, payableId: payable.id },
-      });
+    await prisma.purchaseRequest.update({
+      where: { id: request.id },
+      data: { status: "CONCLUIDA", finalAmount: data.finalAmount, payableId: payable.id },
     });
   } catch {
     return { error: "Não foi possível concluir a solicitação." };

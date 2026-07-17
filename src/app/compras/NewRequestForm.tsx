@@ -1,14 +1,24 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import StructuralFlowSelect from "@/components/StructuralFlowSelect";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createRequestAction, type ComprasFormState } from "./actions";
 
 type Option = { id: string; name: string };
+type Vehicle = { id: string; label: string };
 
-export default function NewRequestForm({ suppliers }: { suppliers: Option[] }) {
+export default function NewRequestForm({
+  suppliers,
+  vehicles,
+  beneficiaries,
+}: {
+  suppliers: Option[];
+  vehicles: Vehicle[];
+  beneficiaries: Option[];
+}) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
+  const [flow, setFlow] = useState("ADMINISTRATIVO");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -23,7 +33,43 @@ export default function NewRequestForm({ suppliers }: { suppliers: Option[] }) {
       <Field label="Valor estimado (R$)">
         <Input name="estimatedAmount" type="number" step="0.01" min={0} />
       </Field>
-      <StructuralFlowSelect />
+
+      <Field label="Fluxo (obra estrutural)">
+        <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
+          {STRUCTURAL_FLOWS.map((f) => (
+            <option key={f.key} value={f.key}>
+              {f.name}
+            </option>
+          ))}
+        </Select>
+      </Field>
+
+      {flow === "VEICULOS" ? (
+        <Field label="Veículo (opcional)">
+          <Select name="vehicleId" defaultValue="">
+            <option value="">Nenhum (custo geral de veículos)</option>
+            {vehicles.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.label}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+
+      {flow === "CAPITAL" ? (
+        <Field label="Beneficiário do capital">
+          <Select name="capitalBeneficiaryId" defaultValue="">
+            <option value="">Selecione o beneficiário</option>
+            {beneficiaries.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
+
       <Field label="Fornecedor sugerido">
         <Select name="supplierId" defaultValue="">
           <option value="">Sem sugestão</option>

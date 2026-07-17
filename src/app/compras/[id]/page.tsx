@@ -39,7 +39,7 @@ export default async function SolicitacaoDetalhePage({
 
   const request = await prisma.purchaseRequest.findUnique({
     where: { id },
-    include: { supplier: true },
+    include: { supplier: true, vehicle: true, capitalBeneficiary: true },
   });
   if (!request) notFound();
 
@@ -50,10 +50,23 @@ export default async function SolicitacaoDetalhePage({
       })
     : null;
 
-  const [canApprove, canCreate] = await Promise.all([
+  const [canApprove, canCreate, stockVehicles, beneficiaries] = await Promise.all([
     userCan("compras", "aprovar"),
     userCan("compras", "criar"),
+    prisma.vehicle.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
+  const vehicles = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+  }));
 
   const meta = statusMeta[request.status];
 
@@ -78,6 +91,14 @@ export default async function SolicitacaoDetalhePage({
         <Linha label="Solicitante">{request.requestedBy}</Linha>
         <Linha label="Data do pedido">{formatDate(request.createdAt)}</Linha>
         <Linha label="Fluxo">{flowName(request.structuralKey)}</Linha>
+        {request.vehicle ? (
+          <Linha label="Veículo">
+            {request.vehicle.brand} {request.vehicle.model} · {request.vehicle.plate}
+          </Linha>
+        ) : null}
+        {request.capitalBeneficiary ? (
+          <Linha label="Beneficiário">{request.capitalBeneficiary.name}</Linha>
+        ) : null}
         {request.supplier ? <Linha label="Fornecedor">{request.supplier.name}</Linha> : null}
         <Linha label="Valor estimado">
           {request.estimatedAmount ? formatCurrency(request.estimatedAmount) : "—"}
@@ -110,6 +131,10 @@ export default async function SolicitacaoDetalhePage({
               id={request.id}
               status={request.status}
               structuralKey={request.structuralKey}
+              vehicleId={request.vehicleId}
+              capitalBeneficiaryId={request.capitalBeneficiaryId}
+              vehicles={vehicles}
+              beneficiaries={beneficiaries}
               canApprove={canApprove}
               canCreate={canCreate}
             />
