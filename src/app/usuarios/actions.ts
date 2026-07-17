@@ -41,9 +41,52 @@ const createSchema = z.object({
   name: z.string().min(1, "Informe o nome"),
   email: z.string().email("Informe um e-mail válido"),
   password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres"),
-  role: z.enum(["ADMIN", "OPERADOR"]),
+  // "ADMIN" | "MANUAL" | <profileId>
+  perfil: z.string().min(1, "Escolha o perfil"),
   ...bankSchema,
 });
+
+/**
+ * Resolve a escolha de perfil no cadastro/edição em role + permissões +
+ * profileId. "ADMIN" = admin; "MANUAL" = operador com permissões do checklist;
+ * senão é o id de um perfil (operador que herda as permissões dele).
+ */
+async function resolvePerfil(
+  perfil: string,
+  formData: FormData,
+): Promise<{ role: "ADMIN" | "OPERADOR"; permissions: string[]; profileId: string | null }> {
+  if (perfil === "ADMIN") return { role: "ADMIN", permissions: [], profileId: null };
+  if (perfil === "MANUAL") {
+    return { role: "OPERADOR", permissions: formData.getAll("permissions").map(String), profileId: null };
+  }
+  const profile = await prisma.profile.findUnique({ where: { id: perfil } });
+  if (!profile) return { role: "OPERADOR", permissions: [], profileId: null };
+  return { role: "OPERADOR", permissions: profile.permissions, profileId: profile.id };
+}
+
+/** Aplica um perfil a um usuário já existente (copia as permissões). */
+export async function applyProfileAction(userId: string, profileId: string): Promise<UserFormState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Apenas administradores podem gerenciar usuários." };
+  }
+  if (profileId === "MANUAL") {
+    // Solta do perfil, mantém as permissões atuais (edição manual pela lista).
+    await prisma.user.update({ where: { id: userId }, data: { profileId: null } });
+  } else if (profileId === "ADMIN") {
+    await prisma.user.update({ where: { id: userId }, data: { role: "ADMIN", profileId: null, permissions: [] } });
+  } else {
+    const profile = await prisma.profile.findUnique({ where: { id: profileId } });
+    if (!profile) return { error: "Perfil não encontrado." };
+    await prisma.user.update({
+      where: { id: userId },
+      data: { role: "OPERADOR", profileId: profile.id, permissions: profile.permissions },
+    });
+  }
+  revalidatePath("/usuarios");
+  return { success: "Perfil aplicado." };
+}
 
 const bankUpdateSchema = z.object({ userId: z.string().min(1), ...bankSchema });
 
@@ -80,16 +123,16 @@ export async function createUserAction(
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "Já existe um usuário com esse e-mail." };
 
-  const permissions =
-    parsed.data.role === "OPERADOR" ? formData.getAll("permissions").map(String) : [];
+  const { role, permissions, profileId } = await resolvePerfil(parsed.data.perfil, formData);
 
   await prisma.user.create({
     data: {
       name: parsed.data.name,
       email,
       passwordHash: hashPassword(parsed.data.password),
-      role: parsed.data.role,
+      role,
       permissions,
+      profileId,
       ...bankData(parsed.data),
     },
   });

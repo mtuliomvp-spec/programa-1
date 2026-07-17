@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
-import { Badge, Card, CardHeader, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewUserForm from "./NewUserForm";
 import UserRowActions from "./UserRowActions";
 import type { UserBank } from "./UserBankFields";
@@ -25,7 +25,10 @@ export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
 
-  const users = await prisma.user.findMany({ orderBy: { createdAt: "asc" } });
+  const [users, profiles] = await Promise.all([
+    prisma.user.findMany({ orderBy: { createdAt: "asc" }, include: { profile: { select: { name: true } } } }),
+    prisma.profile.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+  ]);
   const pendingUsers = users.filter((u) => u.pending);
   const regularUsers = users.filter((u) => !u.pending);
 
@@ -34,6 +37,7 @@ export default async function UsuariosPage() {
       <PageHeader
         title="Usuários"
         description="Quem pode acessar o sistema — administradores gerenciam usuários; operadores usam o restante"
+        action={<LinkButton href="/usuarios/perfis" variant="secondary">Perfis de acesso</LinkButton>}
       />
 
       {pendingUsers.length > 0 ? (
@@ -62,6 +66,8 @@ export default async function UsuariosPage() {
                   role={u.role}
                   permissions={u.permissions}
                   bank={bankOf(u)}
+                  profiles={profiles}
+                  profileId={u.profileId}
                 />
               </div>
             ))}
@@ -88,7 +94,7 @@ export default async function UsuariosPage() {
                     <p className="truncate text-xs text-slate-500">{u.email}</p>
                   </div>
                   <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                    {u.role === "ADMIN" ? "Administrador" : "Operador"}
+                    {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
                   </Badge>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -107,6 +113,8 @@ export default async function UsuariosPage() {
                     role={u.role}
                     permissions={u.permissions}
                     bank={bankOf(u)}
+                    profiles={profiles}
+                    profileId={u.profileId}
                   />
                 </div>
               </div>
@@ -138,7 +146,7 @@ export default async function UsuariosPage() {
                     <Td>{u.email}</Td>
                     <Td>
                       <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                        {u.role === "ADMIN" ? "Administrador" : "Operador"}
+                        {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
                       </Badge>
                     </Td>
                     <Td>{formatDate(u.createdAt)}</Td>
@@ -159,6 +167,8 @@ export default async function UsuariosPage() {
                         role={u.role}
                         permissions={u.permissions}
                         bank={bankOf(u)}
+                        profiles={profiles}
+                        profileId={u.profileId}
                       />
                     </Td>
                   </Tr>
@@ -171,7 +181,7 @@ export default async function UsuariosPage() {
         <Card className="h-fit">
           <CardHeader title="Novo usuário" />
           <div className="p-5">
-            <NewUserForm />
+            <NewUserForm profiles={profiles} />
           </div>
         </Card>
       </div>

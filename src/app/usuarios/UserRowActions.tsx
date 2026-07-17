@@ -6,13 +6,16 @@ import {
   resetPasswordAction,
   updatePermissionsAction,
   updateUserBankAction,
+  applyProfileAction,
   approveUserAction,
   rejectUserAction,
   type UserFormState,
 } from "./actions";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import PermissionsChecklist from "./PermissionsChecklist";
 import UserBankFields, { type UserBank } from "./UserBankFields";
+
+type ProfileOption = { id: string; name: string };
 
 export default function UserRowActions({
   id,
@@ -22,6 +25,8 @@ export default function UserRowActions({
   role,
   permissions,
   bank,
+  profiles,
+  profileId,
 }: {
   id: string;
   active: boolean;
@@ -30,8 +35,13 @@ export default function UserRowActions({
   role: "ADMIN" | "OPERADOR";
   permissions: string[];
   bank: UserBank;
+  profiles: ProfileOption[];
+  profileId: string | null;
 }) {
   const [pending, startTransition] = useTransition();
+  const [showProfile, setShowProfile] = useState(false);
+  const [profileSel, setProfileSel] = useState(role === "ADMIN" ? "ADMIN" : profileId ?? "MANUAL");
+  const [profileMsg, setProfileMsg] = useState<string | null>(null);
   const [showReset, setShowReset] = useState(false);
   const [showPerms, setShowPerms] = useState(false);
   const [showBank, setShowBank] = useState(false);
@@ -101,6 +111,13 @@ export default function UserRowActions({
         ) : null}
         <button
           type="button"
+          onClick={() => setShowProfile((v) => !v)}
+          className="text-blue-700 hover:underline"
+        >
+          Perfil
+        </button>
+        <button
+          type="button"
           onClick={() => setShowBank((v) => !v)}
           className="text-blue-700 hover:underline"
         >
@@ -129,6 +146,44 @@ export default function UserRowActions({
           </button>
         ) : null}
       </div>
+      {showProfile ? (
+        <div className="flex flex-col items-end gap-1">
+          <Select
+            value={profileSel}
+            onChange={(e) => setProfileSel(e.target.value)}
+            className="h-8 w-56 text-xs"
+          >
+            <option value="ADMIN">Administrador</option>
+            {profiles.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+            <option value="MANUAL">Operador — permissões manuais</option>
+          </Select>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              disabled={pending}
+              onClick={() =>
+                startTransition(async () => {
+                  setProfileMsg(null);
+                  const r = await applyProfileAction(id, profileSel);
+                  if (r.error) setProfileMsg(r.error);
+                  else setShowProfile(false);
+                })
+              }
+              className="h-8 px-2.5 text-xs"
+            >
+              Aplicar
+            </Button>
+            <button type="button" onClick={() => setShowProfile(false)} className="text-xs text-slate-400 hover:underline">
+              ✕
+            </button>
+          </div>
+          {profileMsg ? <p className="text-xs text-rose-600">{profileMsg}</p> : null}
+        </div>
+      ) : null}
       {showBank ? (
         <form action={bankAction} className="w-72 space-y-2 text-left">
           <input type="hidden" name="userId" value={id} />

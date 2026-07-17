@@ -6,9 +6,11 @@ import { createUserAction, type UserFormState } from "./actions";
 import PermissionsChecklist from "./PermissionsChecklist";
 import UserBankFields from "./UserBankFields";
 
-export default function NewUserForm() {
+type ProfileOption = { id: string; name: string };
+
+export default function NewUserForm({ profiles = [] }: { profiles?: ProfileOption[] }) {
   const [state, formAction, pending] = useActionState(createUserAction, {} as UserFormState);
-  const [role, setRole] = useState("OPERADOR");
+  const [perfil, setPerfil] = useState("MANUAL");
 
   return (
     <form action={formAction} className="space-y-3">
@@ -24,12 +26,17 @@ export default function NewUserForm() {
         <Input name="password" type="password" minLength={6} required />
       </Field>
       <Field label="Perfil" required>
-        <Select name="role" value={role} onChange={(e) => setRole(e.target.value)}>
-          <option value="OPERADOR">Operador (usa o sistema)</option>
+        <Select name="perfil" value={perfil} onChange={(e) => setPerfil(e.target.value)}>
           <option value="ADMIN">Administrador (acessa tudo e gerencia usuários)</option>
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+          <option value="MANUAL">Operador — permissões personalizadas</option>
         </Select>
       </Field>
-      {role === "OPERADOR" ? (
+      {perfil === "MANUAL" ? (
         <Field label="O que este usuário pode acessar">
           <PermissionsChecklist />
         </Field>

@@ -254,6 +254,9 @@ model User {
   commissionPayables Payable[] @relation("PayableBeneficiary")
   sales            Sale[]    @relation("SaleSeller")
   preSales         PreSale[] @relation("PreSaleSeller")
+  // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
+  profileId        String?
+  profile          Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
   active           Boolean   @default(true)
   pending             Boolean   @default(false)
   resetRequestedAt    DateTime?
@@ -263,6 +266,19 @@ model User {
   updatedAt        DateTime  @updatedAt
 
   @@map("users")
+}
+
+// Perfil de acesso personalizado (ex.: "Vendedor", "Financeiro"): um conjunto
+// nomeado de permissões que pode ser aplicado a vários usuários.
+model Profile {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  permissions String[] @default([])
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("profiles")
 }
 
 model Supplier {
