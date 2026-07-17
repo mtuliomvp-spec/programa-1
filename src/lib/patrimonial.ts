@@ -93,7 +93,10 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       // Peça comprada a prazo (ainda não paga): a peça já está no almoxarifado
       // (ativo) mas a loja deve por ela. Vira passivo puro e entra subtraindo,
       // para o almoxarifado não superavaliar o patrimônio.
-      if (p.category === "COMPRA_PECA") {
+      // Só conta se NÃO for um custo de veículo (vehicleId): uma compra de peça
+      // ligada a um carro virou custo do veículo (VehicleCost), não entrou no
+      // almoxarifado — quem cuida dela é a lógica de veículos, não esta.
+      if (p.category === "COMPRA_PECA" && !p.vehicleId) {
         pecasAPagar += p.amount;
       }
       // Dívida de COMPRA de um veículo já VENDIDO (ex.: quitação ao banco e

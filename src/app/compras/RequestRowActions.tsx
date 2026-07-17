@@ -90,11 +90,11 @@ export default function RequestRowActions({
               placeholder="Valor final"
               className="h-8 w-32 text-xs"
             />
-            <Select name="category" defaultValue="COMPRA_PECA" className="h-8 w-40 py-1 text-xs">
+            <Select name="category" defaultValue="OUTROS" className="h-8 w-40 py-1 text-xs">
+              <option value="OUTROS">Outros</option>
               <option value="COMPRA_PECA">Compra de peças</option>
               <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
               <option value="COMBUSTIVEL">Combustível</option>
-              <option value="OUTROS">Outros</option>
             </Select>
             <Select
               name="structuralKey"

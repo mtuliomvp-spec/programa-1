@@ -114,11 +114,11 @@ export default function RequestDetailActions({
           <Input name="finalAmount" type="number" step="0.01" min={0.01} required placeholder="0,00" />
         </Field>
         <Field label="Categoria">
-          <Select name="category" defaultValue="COMPRA_PECA">
+          <Select name="category" defaultValue="OUTROS">
+            <option value="OUTROS">Outros</option>
             <option value="COMPRA_PECA">Compra de peças</option>
             <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
             <option value="COMBUSTIVEL">Combustível</option>
-            <option value="OUTROS">Outros</option>
           </Select>
         </Field>
         <Field label="Fluxo">
