@@ -148,6 +148,9 @@ export default async function PreVendaFichaPage({
             <p><span className="text-slate-500">Veículo:</span> <strong>{vehicle ? `${vehicle.brand} ${vehicle.model} - ${vehicle.plate}` : "—"}</strong></p>
             <p><span className="text-slate-500">Cliente:</span> <strong>{customer?.name ?? "—"}</strong></p>
             <p><span className="text-slate-500">Vendedor:</span> {pre.sellerName || "—"}</p>
+            {pre.commissionAmount > 0 ? (
+              <p><span className="text-slate-500">Comissão do vendedor:</span> {money(pre.commissionAmount)}</p>
+            ) : null}
             <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
             <p><span className="text-slate-500">Forma de pagamento:</span> {paymentLabel[pre.paymentMethod]}</p>
             {sinal > 0 ? <p><span className="text-slate-500">Sinal já recebido:</span> {money(sinal)}</p> : null}
