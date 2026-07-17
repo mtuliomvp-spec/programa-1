@@ -1235,11 +1235,31 @@ export async function settleFinancing(saleId: string, accountId: string, date: D
   if (sale.financerSettledAt) throw new Error("Este financiamento já foi recebido.");
   if (sale.financerAccountId === accountId) throw new Error("Escolha uma conta da empresa (diferente da financeira).");
 
+  // Conciliações antigas davam baixa reescrevendo a CONTA do recebível do
+  // repasse (financeira → empresa), sem criar a transferência nem marcar a
+  // venda como recebida. Nesse estado herdado, criar a transferência de novo
+  // contaria o dinheiro em dobro. Reparo: devolve o recebível para a conta da
+  // financeira e transfere para a conta onde a conciliação creditou o valor —
+  // o efeito líquido nos saldos é zero e o estado final fica idêntico ao da
+  // baixa normal (inclusive para o estorno).
+  const repasse = await prisma.receivable.findFirst({
+    where: { saleId, category: "VENDA_VEICULO", description: { contains: "Repasse financiamento" } },
+    select: { id: true, accountId: true },
+  });
+  const reconAccountId =
+    repasse?.accountId && repasse.accountId !== sale.financerAccountId ? repasse.accountId : null;
+
   return prisma.$transaction(async (tx) => {
+    if (reconAccountId) {
+      await tx.receivable.update({
+        where: { id: repasse!.id },
+        data: { accountId: sale.financerAccountId },
+      });
+    }
     await tx.accountTransfer.create({
       data: {
         fromId: sale.financerAccountId!,
-        toId: accountId,
+        toId: reconAccountId ?? accountId,
         amount: sale.financedAmount!,
         date,
         description: `Repasse financiamento — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
@@ -1283,6 +1303,33 @@ export async function settleReturn(
   const diff = round2(actual - programmed);
 
   const label = `${retornoLabel(sale.returnLevel)} — ${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`;
+
+  // Mesmo reparo do repasse: conciliações antigas moviam o recebível do retorno
+  // para a conta da empresa sem transferência nem returnSettledAt. Nesse estado,
+  // devolve o recebível à financeira e transfere o programado para a conta onde
+  // a conciliação creditou (o banco pagou exatamente o valor casado no extrato).
+  const retornoRec = await prisma.receivable.findFirst({
+    where: { saleId, category: "RETORNO_FINANCEIRA" },
+    select: { id: true, accountId: true },
+  });
+  const reconAccountId =
+    retornoRec?.accountId && retornoRec.accountId !== sale.financerAccountId ? retornoRec.accountId : null;
+  if (reconAccountId) {
+    return prisma.$transaction(async (tx) => {
+      await tx.receivable.update({
+        where: { id: retornoRec!.id },
+        data: { accountId: sale.financerAccountId },
+      });
+      await tx.accountTransfer.create({
+        data: { fromId: sale.financerAccountId!, toId: reconAccountId, amount: programmed, date, description: `Retorno financiamento ${label}` },
+      });
+      return tx.sale.update({
+        where: { id: saleId },
+        data: { returnSettledAt: date, returnPaidAmount: programmed },
+      });
+    });
+  }
+
   const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
   const neutralAccountId = diff < 0 ? await getNeutralAccountId() : null;
 
