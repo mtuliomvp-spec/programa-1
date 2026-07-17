@@ -59,6 +59,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/clientes", label: "Clientes", icon: "👤", module: "cadastros" },
       { href: "/fornecedores", label: "Fornecedores", icon: "🏭", module: "cadastros" },
       { href: "/usuarios", label: "Usuários", icon: "🔐", adminOnly: true },
+      { href: "/usuarios/perfis", label: "Perfis de acesso", icon: "🧩", adminOnly: true },
       { href: "/parametros", label: "Parâmetros da empresa", icon: "⚙️", adminOnly: true },
       { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", adminOnly: true },
     ],
