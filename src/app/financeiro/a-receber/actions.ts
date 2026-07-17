@@ -6,9 +6,11 @@ import { redirect } from "next/navigation";
 import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 export async function markReceivedAction(id: string, accountId?: string) {
+  await assertCan("financeiro", "receber");
   await assertBooksBalanced();
   await assertCashboxOpen();
   await markReceivableReceived(id, new Date(), accountId || null);
@@ -23,6 +25,7 @@ export async function markReceivedAction(id: string, accountId?: string) {
  * restante continua pendente em Contas a Receber.
  */
 export async function receiveAction(id: string, amount: number, accountId?: string) {
+  await assertCan("financeiro", "receber");
   await assertBooksBalanced();
   await assertCashboxOpen();
   await receiveReceivable(id, amount, new Date(), accountId || null);
@@ -34,6 +37,7 @@ export async function receiveAction(id: string, amount: number, accountId?: stri
 }
 
 export async function markPendingAction(id: string) {
+  await assertCan("financeiro", "receber");
   await markReceivablePending(id);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -58,6 +62,7 @@ export async function createManualReceivableAction(
   formData: FormData,
 ): Promise<ManualReceivableState> {
   try {
+    await assertCan("financeiro", "criar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { assertCan } from "@/lib/guards";
 import type { PersonFormState } from "@/components/PersonForm";
 
 const schema = z.object({
@@ -64,6 +65,11 @@ export async function replicateAsCustomer(d: {
 }
 
 export async function createSupplierAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
+  try {
+    await assertCan("cadastros", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -86,6 +92,11 @@ export async function createSupplierAction(_prev: PersonFormState, formData: For
 const updateSchema = schema.extend({ id: z.string().min(1) });
 
 export async function updateSupplierAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
+  try {
+    await assertCan("cadastros", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -118,6 +129,11 @@ export async function quickCreateSupplierAction(input: {
   address?: string;
   alsoCustomer?: boolean;
 }): Promise<{ ok: true; id: string; name: string; existed: boolean } | { ok: false; error: string }> {
+  try {
+    await assertCan("cadastros", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const name = input.name?.trim();
   if (!name) return { ok: false, error: "Informe o nome do fornecedor." };
 
@@ -150,6 +166,7 @@ export async function quickCreateSupplierAction(input: {
 }
 
 export async function deleteSupplierAction(id: string) {
+  await assertCan("cadastros", "excluir");
   const [vehicleCount, partCount] = await Promise.all([
     prisma.vehicle.count({ where: { supplierId: id } }),
     prisma.part.count({ where: { supplierId: id } }),

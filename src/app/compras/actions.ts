@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
+import { assertCan } from "@/lib/guards";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { formatRequestNumber } from "@/lib/format";
 
@@ -32,8 +33,9 @@ export async function createRequestAction(
   let user;
   try {
     user = await requireCompras();
-  } catch {
-    return { error: "Sem acesso ao módulo de compras." };
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
   }
   const parsed = createSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -61,8 +63,7 @@ export async function createRequestAction(
 }
 
 export async function decideRequestAction(id: string, approve: boolean, notes?: string) {
-  const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") throw new Error("Apenas administradores aprovam compras.");
+  const user = await assertCan("compras", "aprovar");
   await prisma.purchaseRequest.update({
     where: { id, status: "PENDENTE" },
     data: {
@@ -77,6 +78,7 @@ export async function decideRequestAction(id: string, approve: boolean, notes?: 
 
 export async function cancelRequestAction(id: string) {
   await requireCompras();
+  await assertCan("compras", "criar");
   await prisma.purchaseRequest.update({
     where: { id, status: "PENDENTE" },
     data: { status: "CANCELADA" },
@@ -99,8 +101,9 @@ export async function concludeRequestAction(
 ): Promise<ComprasFormState> {
   try {
     await requireCompras();
-  } catch {
-    return { error: "Sem acesso ao módulo de compras." };
+    await assertCan("compras", "aprovar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
   }
   const parsed = concludeSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };

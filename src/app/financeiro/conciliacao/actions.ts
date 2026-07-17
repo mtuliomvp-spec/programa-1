@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { parseOfx } from "@/lib/ofx";
 import { getDefaultAccountId } from "@/lib/accounts";
+import { assertCan } from "@/lib/guards";
 
 /**
  * Conciliação bancária: importa o extrato OFX, casa cada transação do
@@ -49,6 +50,11 @@ function dayDiff(a: Date, isoB: string) {
 }
 
 export async function parseAndMatchAction(formData: FormData): Promise<ReconcileResult> {
+  try {
+    await assertCan("financeiro", "conciliar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const file = formData.get("ofx");
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Selecione o arquivo OFX exportado do seu banco." };
@@ -150,6 +156,7 @@ export async function confirmMatchesAction(
   matches: { kind: "payable" | "receivable"; id: string; fitId: string; date: string }[],
   accountId?: string,
 ): Promise<{ done: number }> {
+  await assertCan("financeiro", "conciliar");
   const account = accountId || (await getDefaultAccountId());
   let done = 0;
   for (const m of matches.slice(0, 500)) {
@@ -190,6 +197,7 @@ export async function createFromBankTxnAction(
   txn: BankTxn,
   accountId?: string,
 ): Promise<{ ok: boolean }> {
+  await assertCan("financeiro", "conciliar");
   const account = accountId || (await getDefaultAccountId());
   const when = new Date(`${txn.date}T12:00:00Z`);
   if (txn.amount < 0) {

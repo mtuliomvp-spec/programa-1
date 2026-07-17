@@ -8,6 +8,7 @@ import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 
 const fuelSchema = z.object({
   date: z.string().min(1),
@@ -30,6 +31,7 @@ export async function createFuelEntryAction(
   formData: FormData,
 ): Promise<FuelFormState> {
   try {
+    await assertCan("administrativo", "combustiveis");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -128,6 +130,7 @@ export async function createFuelEntryAction(
 }
 
 export async function deleteFuelEntryAction(id: string) {
+  await assertCan("administrativo", "combustiveis");
   await prisma.$transaction(async (tx) => {
     const entry = await tx.fuelEntry.findUniqueOrThrow({ where: { id } });
     await tx.fuelEntry.delete({ where: { id } });

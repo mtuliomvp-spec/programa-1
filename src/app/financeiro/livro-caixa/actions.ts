@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import type { CategoriaPagar } from "@prisma/client";
 
@@ -47,6 +48,7 @@ export async function createCashEntryAction(
   formData: FormData,
 ): Promise<CashEntryState> {
   try {
+    await assertCan("financeiro", "criar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -116,6 +118,7 @@ export async function createCashEntryAction(
 }
 
 export async function deleteCashEntryAction(kind: "entrada" | "saida", id: string) {
+  await assertCan("financeiro", "criar");
   await deleteCashEntry(kind, id);
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/contas");

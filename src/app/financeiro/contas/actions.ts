@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 export type ContaFormState = { error?: string };
@@ -17,6 +18,11 @@ export type ContaFormState = { error?: string };
 export async function openCashboxAction(workDate?: string): Promise<{ ok: boolean; error?: string }> {
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const date = workDate ? parseDateInput(workDate) : new Date();
   await openCashbox(user.name, date);
   revalidatePath("/financeiro/contas");
@@ -28,6 +34,11 @@ export async function openCashboxAction(workDate?: string): Promise<{ ok: boolea
 export async function closeCashboxAction(): Promise<{ ok: boolean; error?: string }> {
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   await closeCashbox(user.name);
   revalidatePath("/financeiro/contas");
   revalidatePath("/", "layout");
@@ -49,6 +60,11 @@ export async function createAccountAction(
   _prev: ContaFormState,
   formData: FormData,
 ): Promise<ContaFormState> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = accountSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;
@@ -82,6 +98,11 @@ export async function updateFinancerTaxAction(
   id: string,
   percent: number,
 ): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const p = Number(percent);
   if (!Number.isFinite(p) || p < 0 || p > 100) {
     return { ok: false, error: "Informe um percentual entre 0 e 100." };
@@ -93,6 +114,7 @@ export async function updateFinancerTaxAction(
 }
 
 export async function setDefaultAccountAction(id: string) {
+  await assertCan("financeiro", "contas");
   await prisma.$transaction(async (tx) => {
     await tx.financialAccount.updateMany({ data: { isDefault: false } });
     await tx.financialAccount.update({ where: { id }, data: { isDefault: true, active: true } });
@@ -101,6 +123,7 @@ export async function setDefaultAccountAction(id: string) {
 }
 
 export async function toggleAccountAction(id: string, active: boolean) {
+  await assertCan("financeiro", "contas");
   await prisma.financialAccount.update({
     where: { id },
     data: { active, isDefault: active ? undefined : false },
@@ -121,6 +144,7 @@ export async function createTransferAction(
   formData: FormData,
 ): Promise<ContaFormState> {
   try {
+    await assertCan("financeiro", "contas");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -146,6 +170,7 @@ export async function createTransferAction(
 }
 
 export async function deleteTransferAction(id: string) {
+  await assertCan("financeiro", "contas");
   await prisma.accountTransfer.delete({ where: { id } });
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
@@ -158,6 +183,11 @@ export async function deleteTransferAction(id: string) {
  * É uma ação de correção — por isso não é bloqueada.
  */
 export async function fixUnattributedBaixasAction(): Promise<{ error?: string; fixed?: number }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const { getNeutralAccountId } = await import("@/lib/accounts");
   const neutralId = await getNeutralAccountId();
 

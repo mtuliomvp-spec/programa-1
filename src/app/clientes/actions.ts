@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { assertCan } from "@/lib/guards";
 import type { PersonFormState } from "@/components/PersonForm";
 
 const schema = z.object({
@@ -47,6 +48,11 @@ export async function replicateAsSupplier(d: {
 }
 
 export async function createCustomerAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
+  try {
+    await assertCan("cadastros", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -68,6 +74,11 @@ export async function createCustomerAction(_prev: PersonFormState, formData: For
 const updateSchema = schema.extend({ id: z.string().min(1) });
 
 export async function updateCustomerAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
+  try {
+    await assertCan("cadastros", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -87,6 +98,7 @@ export async function updateCustomerAction(_prev: PersonFormState, formData: For
 }
 
 export async function deleteCustomerAction(id: string) {
+  await assertCan("cadastros", "excluir");
   const salesCount = await prisma.sale.count({ where: { customerId: id } });
   if (salesCount > 0) {
     throw new Error("Não é possível excluir um cliente com vendas registradas.");
@@ -104,6 +116,11 @@ export async function quickCreateCustomerAction(input: {
   address?: string;
   alsoSupplier?: boolean;
 }): Promise<{ ok: true; id: string; name: string; existed: boolean } | { ok: false; error: string }> {
+  try {
+    await assertCan("cadastros", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const name = input.name?.trim();
   if (!name) return { ok: false, error: "Informe o nome do cliente." };
 

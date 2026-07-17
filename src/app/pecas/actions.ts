@@ -7,10 +7,12 @@ import { prisma } from "@/lib/prisma";
 import { createPartWithPayable, addPartStockWithPayable, registerPartSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
-async function guard(): Promise<FormState | null> {
+async function guard(action: string): Promise<FormState | null> {
   try {
+    await assertCan("pecas", action);
     await assertBooksBalanced();
     await assertCashboxOpen();
     return null;
@@ -35,7 +37,7 @@ const partSchema = z.object({
 });
 
 export async function createPartAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const blocked = await guard();
+  const blocked = await guard("criar");
   if (blocked) return blocked;
   const parsed = partSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -81,6 +83,11 @@ const updateSchema = z.object({
 });
 
 export async function updatePartAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    await assertCan("pecas", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
@@ -115,7 +122,7 @@ const addStockSchema = z.object({
 });
 
 export async function addStockAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const blocked = await guard();
+  const blocked = await guard("repor");
   if (blocked) return blocked;
   const parsed = addStockSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -153,7 +160,7 @@ const sellSchema = z.object({
 });
 
 export async function sellPartAction(_prev: FormState, formData: FormData): Promise<FormState> {
-  const blocked = await guard();
+  const blocked = await guard("vender");
   if (blocked) return blocked;
   const parsed = sellSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -184,6 +191,7 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
 }
 
 export async function deletePartAction(id: string) {
+  await assertCan("pecas", "excluir");
   const salesCount = await prisma.partSale.count({ where: { partId: id } });
   if (salesCount > 0) {
     throw new Error("Não é possível excluir uma peça com vendas registradas.");

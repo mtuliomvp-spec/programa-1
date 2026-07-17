@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { ensureConsortiumInstallments } from "@/lib/recurring";
 import { parseDateInput } from "@/lib/format";
+import { assertCan } from "@/lib/guards";
 
 export type ConsorcioFormState = { error?: string };
 
@@ -23,6 +24,11 @@ export async function createConsortiumAction(
   _prev: ConsorcioFormState,
   formData: FormData,
 ): Promise<ConsorcioFormState> {
+  try {
+    await assertCan("administrativo", "consorcios");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
 
@@ -48,6 +54,7 @@ export async function setConsortiumStatusAction(
   id: string,
   status: "ATIVO" | "CONTEMPLADO" | "ENCERRADO",
 ) {
+  await assertCan("administrativo", "consorcios");
   await prisma.consortium.update({
     where: { id },
     data: { status, contemplatedAt: status === "CONTEMPLADO" ? new Date() : undefined },
@@ -61,6 +68,7 @@ export async function setConsortiumStatusAction(
 }
 
 export async function deleteConsortiumAction(id: string) {
+  await assertCan("administrativo", "consorcios");
   await prisma.$transaction(async (tx) => {
     await tx.payable.deleteMany({ where: { consortiumId: id, status: "PENDENTE" } });
     await tx.consortium.delete({ where: { id } });

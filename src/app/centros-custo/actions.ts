@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { assertCan } from "@/lib/guards";
 
 export type CentroCustoFormState = { error?: string };
 
@@ -16,6 +17,11 @@ export async function createCostCenterAction(
   _prev: CentroCustoFormState,
   formData: FormData,
 ): Promise<CentroCustoFormState> {
+  try {
+    await assertCan("administrativo", "centros");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   await prisma.costCenter.create({
@@ -30,6 +36,7 @@ export async function createCostCenterAction(
 }
 
 export async function toggleCostCenterAction(id: string, active: boolean) {
+  await assertCan("administrativo", "centros");
   await prisma.costCenter.update({ where: { id }, data: { active } });
   revalidatePath("/centros-custo");
 }

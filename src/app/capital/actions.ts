@@ -9,6 +9,7 @@ import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -22,6 +23,11 @@ export async function createBeneficiaryAction(
   _prev: CapitalFormState,
   formData: FormData,
 ): Promise<CapitalFormState> {
+  try {
+    await assertCan("administrativo", "capital");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = beneficiarySchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const beneficiary = await prisma.capitalBeneficiary.create({
@@ -48,6 +54,7 @@ export async function addCapitalTransactionAction(
   formData: FormData,
 ): Promise<CapitalFormState> {
   try {
+    await assertCan("administrativo", "capital");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -126,6 +133,7 @@ export async function addCapitalTransactionAction(
 }
 
 export async function deleteCapitalTransactionAction(id: string, beneficiaryId: string) {
+  await assertCan("administrativo", "capital");
   await prisma.$transaction(async (tx) => {
     const transaction = await tx.capitalTransaction.findUniqueOrThrow({ where: { id } });
     await tx.capitalTransaction.delete({ where: { id } });

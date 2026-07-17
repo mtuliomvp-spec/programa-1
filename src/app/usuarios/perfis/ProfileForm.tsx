@@ -19,7 +19,8 @@ export default function ProfileForm({ profile }: { profile?: Profile }) {
         <Input name="name" defaultValue={profile?.name || ""} placeholder="Ex.: Vendedor, Financeiro" required />
       </Field>
       <Field label="O que este perfil pode acessar">
-        <PermissionsChecklist defaults={profile?.permissions} />
+        {/* Novo perfil começa em branco (defaults=[]); ao editar, usa as do perfil. */}
+        <PermissionsChecklist defaults={profile?.permissions ?? []} />
       </Field>
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Salvando..." : profile ? "Salvar perfil" : "Criar perfil"}

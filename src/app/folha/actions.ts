@@ -7,6 +7,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 
 const employeeSchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -24,6 +25,11 @@ export async function createEmployeeAction(
   _prev: FolhaFormState,
   formData: FormData,
 ): Promise<FolhaFormState> {
+  try {
+    await assertCan("administrativo", "folha");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = employeeSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   await prisma.employee.create({
@@ -42,6 +48,7 @@ export async function createEmployeeAction(
 }
 
 export async function toggleEmployeeAction(id: string, active: boolean) {
+  await assertCan("administrativo", "folha");
   await prisma.employee.update({
     where: { id },
     data: { active, dismissalDate: active ? null : new Date() },
@@ -52,6 +59,7 @@ export async function toggleEmployeeAction(id: string, active: boolean) {
 /** Gera a folha do mês corrente: uma conta a pagar por funcionário ativo,
  * com vencimento no dia 5 do mês seguinte. Idempotente por competência. */
 export async function generatePayrollAction(): Promise<{ created: number }> {
+  await assertCan("administrativo", "folha");
   await assertBooksBalanced();
   await assertCashboxOpen();
   const now = new Date();

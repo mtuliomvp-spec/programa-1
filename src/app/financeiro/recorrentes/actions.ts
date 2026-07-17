@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 const recurringSchema = z.object({
@@ -31,6 +32,11 @@ export async function createRecurringAction(
   _prev: RecurringFormState,
   formData: FormData,
 ): Promise<RecurringFormState> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = recurringSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -64,17 +70,20 @@ export async function createRecurringAction(
 }
 
 export async function toggleRecurringAction(id: string, active: boolean) {
+  await assertCan("financeiro", "criar");
   await prisma.recurringEntry.update({ where: { id }, data: { active } });
   revalidatePath("/financeiro/recorrentes");
 }
 
 export async function deleteRecurringAction(id: string) {
+  await assertCan("financeiro", "criar");
   // as contas já geradas ficam no financeiro; apenas param de ser criadas
   await prisma.recurringEntry.delete({ where: { id } });
   revalidatePath("/financeiro/recorrentes");
 }
 
 export async function generateNowAction() {
+  await assertCan("financeiro", "criar");
   await assertBooksBalanced();
   await assertCashboxOpen();
   const created = await ensureRecurringGenerated();

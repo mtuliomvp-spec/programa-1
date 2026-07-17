@@ -12,6 +12,7 @@ import {
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 const advanceSchema = z.object({
@@ -29,6 +30,7 @@ export async function receiveVehicleAdvanceAction(
   formData: FormData,
 ): Promise<AdvanceFormState> {
   try {
+    await assertCan("estoque", "editar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -56,6 +58,7 @@ export async function receiveVehicleAdvanceAction(
 }
 
 export async function deleteVehicleAdvanceAction(id: string, vehicleId: string) {
+  await assertCan("estoque", "editar");
   // Só remove sinal ainda não vinculado a uma venda.
   await prisma.receivable.deleteMany({ where: { id, saleId: null, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
@@ -98,6 +101,7 @@ export async function createVehicleAction(
   formData: FormData,
 ): Promise<VehicleFormState> {
   try {
+    await assertCan("estoque", "criar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -160,6 +164,11 @@ export async function updateVehicleAction(
   _prevState: VehicleFormState,
   formData: FormData,
 ): Promise<VehicleFormState> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const raw = Object.fromEntries(formData.entries());
   const parsed = updateSchema.safeParse(raw);
   if (!parsed.success) {
@@ -219,6 +228,7 @@ export async function updateVehicleAction(
 }
 
 export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RESERVADO") {
+  await assertCan("estoque", "editar");
   await prisma.vehicle.update({ where: { id }, data: { status } });
   revalidatePath("/estoque");
   revalidatePath(`/estoque/${id}`);
@@ -231,6 +241,7 @@ export async function lookupPlateAction(plate: string) {
 }
 
 export async function fetchVehicleDebtsAction(vehicleId: string) {
+  await assertCan("estoque", "debitos");
   const vehicle = await prisma.vehicle.findUniqueOrThrow({
     where: { id: vehicleId },
     select: { plate: true },
@@ -243,6 +254,7 @@ export async function importVehicleDebtsAction(
   vehicleId: string,
   debts: { category: "IPVA" | "MULTA" | "LICENCIAMENTO"; description: string; amount: number; dueDate: string }[],
 ): Promise<{ imported: number }> {
+  await assertCan("estoque", "debitos");
   let imported = 0;
   for (const debt of debts.slice(0, 50)) {
     if (!debt.amount || debt.amount <= 0) continue;
@@ -294,6 +306,7 @@ export async function addVehicleCostAction(
   formData: FormData,
 ): Promise<CostFormState> {
   try {
+    await assertCan("estoque", "custos");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -327,6 +340,7 @@ export async function addVehicleCostAction(
 }
 
 export async function deleteVehicleCostAction(costId: string, vehicleId: string) {
+  await assertCan("estoque", "custos");
   await deleteVehicleCost(costId);
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
@@ -349,6 +363,11 @@ export async function uploadVehicleAttachmentAction(
   const { getSessionUser } = await import("@/lib/auth");
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
 
   const vehicleId = String(formData.get("vehicleId") || "").trim();
   const description = String(formData.get("description") || "").trim() || "Comunicação de venda";
@@ -378,6 +397,7 @@ export async function uploadVehicleAttachmentAction(
 }
 
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
+  await assertCan("estoque", "editar");
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
@@ -403,6 +423,11 @@ export async function uploadClientPhotoAction(
   const { getSessionUser } = await import("@/lib/auth");
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
 
   const vehicleId = String(formData.get("vehicleId") || "").trim();
   const description = String(formData.get("description") || "").trim() || "Foto do cliente (comprador)";
@@ -445,6 +470,7 @@ export async function uploadClientPhotoAction(
 }
 
 export async function deleteVehicleAction(id: string) {
+  await assertCan("estoque", "excluir");
   const sale = await prisma.sale.findFirst({ where: { vehicleId: id, status: { not: "CANCELADA" } } });
   if (sale) {
     throw new Error("Não é possível excluir um veículo que já possui venda registrada.");

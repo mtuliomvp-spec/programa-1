@@ -7,9 +7,11 @@ import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 export async function markPaidAction(id: string, accountId?: string) {
+  await assertCan("financeiro", "pagar");
   await assertBooksBalanced();
   await assertCashboxOpen();
   await markPayablePaid(id, new Date(), accountId || null);
@@ -33,6 +35,7 @@ export async function payBatchAction(
   if (!ids.length) return { ok: false, paid: 0, error: "Selecione ao menos um título." };
   if (!accountId) return { ok: false, paid: 0, error: "Escolha a conta que fará o pagamento." };
   try {
+    await assertCan("financeiro", "pagar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -53,6 +56,7 @@ export async function payBatchAction(
 }
 
 export async function markPendingAction(id: string) {
+  await assertCan("financeiro", "pagar");
   await markPayablePending(id);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -91,6 +95,7 @@ export async function createManualPayableAction(
   formData: FormData,
 ): Promise<ManualPayableState> {
   try {
+    await assertCan("financeiro", "criar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
