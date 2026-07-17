@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
@@ -13,6 +14,11 @@ import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleForm
  * impressão. NÃO gera nenhum lançamento financeiro. Redireciona para a ficha.
  */
 export async function createPreSaleAction(_prev: SaleFormState, formData: FormData): Promise<SaleFormState> {
+  try {
+    await assertCan("vendas", "prevenda");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
   const parsed = saleSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
@@ -84,6 +90,12 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
 
 /** Converte a pré-venda em venda de fato (gera os lançamentos). */
 export async function convertPreSaleAction(id: string): Promise<void> {
+  try {
+    await assertCan("vendas", "registrar");
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Sem permissão.";
+    redirect(`/vendas/pre-vendas/${id}?erro=${encodeURIComponent(msg)}`);
+  }
   const pre = await prisma.preSale.findUniqueOrThrow({ where: { id } });
   if (pre.status === "CONVERTIDA" && pre.convertedSaleId) {
     redirect(`/vendas/${pre.convertedSaleId}`);
@@ -160,6 +172,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
  */
 export async function deletePreSaleAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
+    await assertCan("vendas", "prevenda");
     await prisma.preSale.deleteMany({ where: { id } });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível excluir a pré-venda." };

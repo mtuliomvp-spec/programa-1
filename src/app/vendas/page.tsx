@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { userCan } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
@@ -10,6 +11,7 @@ const statusTone = { CONCLUIDA: "success", CANCELADA: "danger" } as const;
 const statusLabel = { CONCLUIDA: "Concluída", CANCELADA: "Cancelada" } as const;
 
 export default async function VendasPage() {
+  const canPreSale = await userCan("vendas", "prevenda");
   const [sales, preSales] = await Promise.all([
     prisma.sale.findMany({
       orderBy: { saleDate: "desc" },
@@ -41,7 +43,7 @@ export default async function VendasPage() {
       <PageHeader
         title="Vendas de veículos"
         description={`${sales.length} venda(s) · total: ${formatCurrency(totalConcluidas)}`}
-        action={<LinkButton href="/vendas/novo">+ Nova venda</LinkButton>}
+        action={canPreSale ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined}
       />
 
       {preSales.length > 0 ? (
@@ -87,7 +89,7 @@ export default async function VendasPage() {
       ) : null}
       <Card>
         {sales.length === 0 ? (
-          <EmptyState title="Nenhuma venda registrada" action={<LinkButton href="/vendas/novo">+ Nova venda</LinkButton>} />
+          <EmptyState title="Nenhuma venda registrada" action={canPreSale ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined} />
         ) : (
           <Table>
             <Thead>

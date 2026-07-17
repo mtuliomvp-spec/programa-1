@@ -6,7 +6,7 @@ import { Button, LinkButton } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import { convertPreSaleAction, deletePreSaleAction } from "../actions";
 
-export default function PreSaleActions({ id, editHref }: { id: string; editHref: string }) {
+export default function PreSaleActions({ id, editHref, canRegister = true }: { id: string; editHref: string; canRegister?: boolean }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
@@ -43,9 +43,11 @@ export default function PreSaleActions({ id, editHref }: { id: string; editHref:
         <Button type="button" variant="danger" onClick={handleDelete} disabled={pending}>
           {pending ? "..." : "Excluir"}
         </Button>
-        <Button type="button" onClick={handleConvert} disabled={pending}>
-          {pending ? "Registrando..." : "✓ Registrar venda"}
-        </Button>
+        {canRegister ? (
+          <Button type="button" onClick={handleConvert} disabled={pending}>
+            {pending ? "Registrando..." : "✓ Registrar venda"}
+          </Button>
+        ) : null}
       </div>
       {error ? (
         <p className="mt-2 text-right text-sm font-medium text-rose-600">{error}</p>

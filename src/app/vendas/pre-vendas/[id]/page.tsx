@@ -5,6 +5,7 @@ import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
+import { userCan } from "@/lib/guards";
 import PreSaleActions from "./PreSaleActions";
 
 export const dynamic = "force-dynamic";
@@ -98,7 +99,7 @@ export default async function PreVendaFichaPage({
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4">
-        <PreSaleActions id={pre.id} editHref={editHref} />
+        <PreSaleActions id={pre.id} editHref={editHref} canRegister={await userCan("vendas", "registrar")} />
       </div>
 
       {erro ? (

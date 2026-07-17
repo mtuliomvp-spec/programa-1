@@ -34,7 +34,8 @@ export const MODULES: ModuleConfig[] = [
     label: "Vendas",
     acoes: [
       VER,
-      { acao: "registrar", label: "Registrar venda" },
+      { acao: "prevenda", label: "Criar/editar pré-venda" },
+      { acao: "registrar", label: "Registrar venda (efetivar)" },
       { acao: "cancelar", label: "Cancelar venda" },
     ],
   },

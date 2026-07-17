@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { cancelVehicleSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCan } from "@/lib/guards";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState } from "./sale-core";
 
 /**
@@ -28,6 +29,7 @@ export async function checkPreSaleConflictAction(
 
 export async function createSaleAction(_prev: SaleFormState, formData: FormData): Promise<SaleFormState> {
   try {
+    await assertCan("vendas", "registrar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -55,6 +57,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
 }
 
 export async function cancelSaleAction(id: string) {
+  await assertCan("vendas", "cancelar");
   await cancelVehicleSale(id);
   revalidatePath("/vendas");
   revalidatePath("/estoque");
