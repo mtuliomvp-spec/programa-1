@@ -69,6 +69,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   const verifyUrl = `${await getBaseUrl()}/verificar/pagamento/${payable.publicToken}`;
   const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 320 });
 
+  const orderNo = `Nº ${String(payable.orderNumber).padStart(4, "0")}`;
   const generatedAt = `Gerado em: ${new Date().toLocaleString("pt-BR")}`;
   const bankType = s?.bankAccountType ? accountTypeLabel[s.bankAccountType] || s.bankAccountType : null;
   const hasBankData = Boolean(s && (s.bankName || s.bankAccount || s.pixKey));
@@ -119,6 +120,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
       .filter(Boolean)
       .join(" · ") || null,
     title: "ORDEM DE PAGAMENTO",
+    number: orderNo,
     generatedAt,
     valorLabel: "Valor a pagar",
     valor: formatCurrency(payable.amount),
@@ -141,6 +143,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
           right={
             <>
               <p className="font-bold">ORDEM DE PAGAMENTO</p>
+              <p className="text-slate-500">{orderNo}</p>
               <p className="text-slate-500">{generatedAt.replace("Gerado em: ", "")}</p>
               <Badge tone={statusInfo[effective].tone}>{statusInfo[effective].label}</Badge>
             </>

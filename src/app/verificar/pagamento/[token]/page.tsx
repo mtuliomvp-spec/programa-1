@@ -54,7 +54,9 @@ export default async function VerificarPagamentoPage({ params }: { params: Promi
               <div className="bg-emerald-600 px-6 py-5 text-center text-white">
                 <p className="text-3xl">✅</p>
                 <h1 className="mt-1 text-lg font-bold">Documento autêntico</h1>
-                <p className="text-sm text-emerald-50">Ordem de Pagamento emitida por {empresa}</p>
+                <p className="text-sm text-emerald-50">
+                  Ordem de Pagamento Nº {String(payable.orderNumber).padStart(4, "0")} emitida por {empresa}
+                </p>
               </div>
               <div className="p-6">
                 <dl className="divide-y divide-slate-100">

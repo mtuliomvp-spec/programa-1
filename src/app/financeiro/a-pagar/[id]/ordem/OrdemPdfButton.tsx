@@ -8,6 +8,7 @@ export type OrdemPdfData = {
   companyName: string;
   companySub: string | null;
   title: string;
+  number: string;
   generatedAt: string;
   valorLabel: string;
   valor: string;
@@ -61,6 +62,8 @@ export default function OrdemPdfButton({ data }: { data: OrdemPdfData }) {
       // Título do documento
       doc.setFont("helvetica", "bold").setFontSize(14).setTextColor(15, 23, 42);
       doc.text(data.title, margin, y);
+      doc.setFontSize(12).setTextColor(71, 85, 105);
+      doc.text(data.number, pageW - margin, y, { align: "right" });
       y += 15;
       doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(100, 116, 139);
       doc.text(data.generatedAt, margin, y);
