@@ -8,7 +8,12 @@ import { navGroupsFor, isNavActive } from "@/lib/nav";
 import BrandMark from "@/components/BrandMark";
 import UserFooter from "@/components/UserFooter";
 
-type SessionUser = { name: string; role: "ADMIN" | "OPERADOR"; permissions: string[] };
+type SessionUser = {
+  name: string;
+  role: "ADMIN" | "OPERADOR";
+  permissions: string[];
+  roleLabel?: string;
+};
 type Brand = { name: string; logoDataUrl: string | null };
 
 export default function MobileNav({ user, brand }: { user: SessionUser; brand?: Brand }) {
@@ -97,7 +102,7 @@ export default function MobileNav({ user, brand }: { user: SessionUser; brand?: 
               ))}
             </nav>
             <div className="border-t border-white/10 px-4 py-3">
-              <UserFooter user={user} dark />
+              <UserFooter user={user} roleLabel={user.roleLabel} dark />
             </div>
           </div>
         </div>

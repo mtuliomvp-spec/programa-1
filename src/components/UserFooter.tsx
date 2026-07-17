@@ -5,11 +5,14 @@ import clsx from "@/lib/clsx";
 
 export default function UserFooter({
   user,
+  roleLabel,
   dark = false,
 }: {
   user: { name: string; role: "ADMIN" | "OPERADOR" };
+  roleLabel?: string;
   dark?: boolean;
 }) {
+  const label = roleLabel ?? (user.role === "ADMIN" ? "Administrador" : "Operador");
   return (
     <div className="flex items-center justify-between gap-2">
       <div className="min-w-0 leading-tight">
@@ -17,7 +20,7 @@ export default function UserFooter({
           {user.name}
         </p>
         <p className={clsx("text-[11px]", dark ? "text-slate-400" : "text-slate-500")}>
-          {user.role === "ADMIN" ? "Administrador" : "Operador"}
+          {label}
         </p>
       </div>
       <form action={logoutAction}>

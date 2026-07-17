@@ -33,7 +33,16 @@ export default async function RootLayout({
     );
   }
 
-  const sessionUser = { name: user.name, role: user.role, permissions: user.permissions };
+  // Rótulo do cargo mostrado no rodapé do menu: administrador, o nome do perfil
+  // (ex.: "Vendedor") quando houver, ou "Operador" como padrão.
+  const roleLabel =
+    user.role === "ADMIN" ? "Administrador" : user.profile?.name || "Operador";
+  const sessionUser = {
+    name: user.name,
+    role: user.role,
+    permissions: user.permissions,
+    roleLabel,
+  };
   const { getCompany } = await import("@/lib/company");
   const company = await getCompany().catch(() => null);
   const brand = {
