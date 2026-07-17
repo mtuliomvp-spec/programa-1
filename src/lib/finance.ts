@@ -561,6 +561,8 @@ export async function registerVehicleSale(input: {
   installmentsCount: number;
   paymentMethod: FormaPagamento;
   sellerName?: string | null;
+  // Comissão do vendedor (R$): vira conta a pagar (Comissão, Administrativo).
+  commissionAmount?: number | null;
   notes?: string | null;
   // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
@@ -583,6 +585,8 @@ export async function registerVehicleSale(input: {
   const neutralAccountId =
     (input.tradeInAmount ?? 0) > 0 ? await getNeutralAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const commission = Math.max(0, Math.round((input.commissionAmount ?? 0) * 100) / 100);
+  const adminCenterId = commission > 0 ? await structuralCenterId("ADMINISTRATIVO") : null;
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -619,6 +623,7 @@ export async function registerVehicleSale(input: {
         financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
+        commissionAmount: commission,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -628,6 +633,23 @@ export async function registerVehicleSale(input: {
       where: { id: input.vehicleId },
       data: { status: "VENDIDO" },
     });
+
+    // Comissão do vendedor: conta a pagar avulsa (categoria Comissão, centro
+    // Administrativo), vinculada à venda. NÃO é custo do veículo (vehicleId
+    // nulo) — é despesa de venda, entra no resultado quando for paga.
+    if (commission > 0 && adminCenterId) {
+      await tx.payable.create({
+        data: {
+          description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          category: "COMISSAO",
+          amount: commission,
+          dueDate: input.saleDate,
+          status: "PENDENTE",
+          costCenterId: adminCenterId,
+          saleId: sale.id,
+        },
+      });
+    }
 
     const receivablesData: Prisma.ReceivableCreateManyInput[] = [];
     const baseDescription = `Venda do veículo ${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
@@ -871,6 +893,10 @@ export async function cancelVehicleSale(saleId: string) {
     await tx.payable.deleteMany({
       where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_CLIENTE" },
     });
+
+    // 2c) Comissão do vendedor gerada por esta venda: apagar o título (se já foi
+    //     pago, o dinheiro volta ao caixa).
+    await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.

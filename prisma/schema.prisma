@@ -434,6 +434,8 @@ model PreSale {
   tiSupplierName    String?
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel       Int            @default(0)
+  // Comissão do vendedor (R$) — convertida em conta a pagar ao fechar a venda.
+  commissionAmount  Float          @default(0)
   status            StatusPreVenda @default(ABERTA)
   convertedSaleId   String?
   createdAt         DateTime       @default(now())
@@ -473,9 +475,13 @@ model Sale {
   returnSettledAt   DateTime?
   // Valor realmente pago pela financeira (pode diferir do programado returnNet)
   returnPaidAmount  Float?
+  // Comissão do vendedor (valor em R$, digitado na venda). Gera uma conta a
+  // pagar (categoria Comissão, centro Administrativo) quando > 0.
+  commissionAmount  Float          @default(0)
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]
+  payables          Payable[]
   createdAt         DateTime       @default(now())
 
   @@map("sales")
@@ -538,6 +544,9 @@ model Payable {
   partId       String?
   part         Part?           @relation(fields: [partId], references: [id])
   vehicleCost  VehicleCost?
+  // Venda de origem (ex.: comissão do vendedor gerada por uma venda).
+  saleId       String?
+  sale         Sale?           @relation(fields: [saleId], references: [id], onDelete: SetNull)
   recurringId  String?
   recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   reconciledAt DateTime?

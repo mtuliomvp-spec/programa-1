@@ -108,10 +108,16 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      {sale.sellerName || sale.notes ? (
+      {sale.sellerName || sale.commissionAmount > 0 || sale.notes ? (
         <div className="mt-4">
           <Card className="p-5 text-sm text-slate-600">
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}
+            {sale.commissionAmount > 0 ? (
+              <p className="mt-1">
+                <span className="font-medium text-slate-800">Comissão do vendedor:</span> {formatCurrency(sale.commissionAmount)}{" "}
+                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+              </p>
+            ) : null}
             {sale.notes ? <p className="mt-1"><span className="font-medium text-slate-800">Observações:</span> {sale.notes}</p> : null}
           </Card>
         </div>

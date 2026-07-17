@@ -25,6 +25,7 @@ export type SaleFormInitial = {
   financedAmount?: number;
   returnLevel?: number;
   sellerName?: string;
+  commissionAmount?: number;
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -270,6 +271,16 @@ export default function SaleForm({
         </Field>
         <Field label="Vendedor">
           <Input name="sellerName" defaultValue={initial?.sellerName ?? currentUserName ?? ""} />
+        </Field>
+        <Field label="Comissão do vendedor (R$)">
+          <Input
+            type="number"
+            step="0.01"
+            min={0}
+            name="commissionAmount"
+            defaultValue={initial?.commissionAmount ? String(initial.commissionAmount) : ""}
+            placeholder="0,00 — opcional"
+          />
         </Field>
         <Field label="Forma de pagamento" required>
           <Select

@@ -36,6 +36,8 @@ export const saleSchema = z.object({
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel: z.coerce.number().int().min(0).default(0),
   sellerName: z.string().optional(),
+  // Comissão do vendedor (R$) — vira conta a pagar (categoria Comissão).
+  commissionAmount: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
   // Troca: veículo recebido do cliente cadastrado aqui mesmo.
   tradeIn: z.coerce.boolean().optional(),
@@ -161,6 +163,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
       paymentMethod: d.paymentMethod,
       sellerName: d.sellerName || null,
+      commissionAmount: Math.max(0, d.commissionAmount || 0),
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
