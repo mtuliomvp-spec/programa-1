@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { parseReferrals } from "@/lib/referrals";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CancelSaleButton from "./CancelSaleButton";
 import { userCan } from "@/lib/guards";
@@ -32,6 +33,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
   const canCancel = await userCan("vendas", "cancelar");
 
   const totalRecebido = sale.receivables.filter((r) => r.status === "RECEBIDO").reduce((s, r) => s + r.amount, 0);
+  const referrals = parseReferrals(sale.referrals);
   // Venda cancelada que ainda tem lançamentos vinculados (cancelada por uma
   // versão antiga que não revertia tudo): oferece corrigir e limpar os resíduos.
   const cancelamentoResidual =
@@ -113,7 +115,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      {sale.sellerName || sale.commissionAmount > 0 || sale.notes ? (
+      {sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || sale.notes ? (
         <div className="mt-4">
           <Card className="p-5 text-sm text-slate-600">
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}
@@ -123,6 +125,13 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
                 <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
               </p>
             ) : null}
+            {referrals.map((r, i) => (
+              <p key={i} className="mt-1">
+                <span className="font-medium text-slate-800">Indicação de venda{referrals.length > 1 ? ` ${i + 1}` : ""}:</span>{" "}
+                {r.name || "—"}{r.amount > 0 ? <> — {formatCurrency(r.amount)}{" "}
+                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span></> : null}
+              </p>
+            ))}
             {sale.notes ? <p className="mt-1"><span className="font-medium text-slate-800">Observações:</span> {sale.notes}</p> : null}
           </Card>
         </div>

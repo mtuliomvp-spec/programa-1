@@ -29,6 +29,7 @@ export type SaleFormInitial = {
   sellerName?: string;
   sellerId?: string;
   commissionAmount?: number;
+  referrals?: { name: string; amount: number }[];
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -127,6 +128,34 @@ export default function SaleForm({
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
   const [totalAmount, setTotalAmount] = useState<string>(
     initial?.totalAmount != null ? String(initial.totalAmount) : selectedVehicle ? String(selectedVehicle.salePrice) : "",
+  );
+
+  // Indicações de venda: nome + valor; preencher a última linha abre a próxima
+  // (sem limite). Cada indicação com valor vira conta a pagar (Comissão).
+  type ReferralRow = { name: string; amount: string };
+  const [referrals, setReferrals] = useState<ReferralRow[]>(
+    (initial?.referrals ?? []).map((r) => ({ name: r.name, amount: r.amount ? String(r.amount) : "" })),
+  );
+  const referralRows: ReferralRow[] = [...referrals, { name: "", amount: "" }];
+  function setReferralField(index: number, field: keyof ReferralRow, value: string) {
+    setReferrals((prev) => {
+      const rows = [...prev];
+      if (index === rows.length) rows.push({ name: "", amount: "" });
+      rows[index] = { ...rows[index], [field]: value };
+      // Remove linhas vazias do fim (a linha "próxima" é renderizada à parte).
+      while (rows.length > 0 && !rows[rows.length - 1].name.trim() && !rows[rows.length - 1].amount) {
+        rows.pop();
+      }
+      return rows;
+    });
+  }
+  function removeReferral(index: number) {
+    setReferrals((prev) => prev.filter((_, i) => i !== index));
+  }
+  const referralsJson = JSON.stringify(
+    referrals
+      .filter((r) => r.name.trim() || Number(r.amount) > 0)
+      .map((r) => ({ name: r.name.trim(), amount: Number(r.amount) || 0 })),
   );
 
   // Troca (veículo recebido do cliente, cadastrado aqui mesmo)
@@ -248,6 +277,7 @@ export default function SaleForm({
       ) : null}
 
       {preSaleId ? <input type="hidden" name="preSaleId" value={preSaleId} /> : null}
+      <input type="hidden" name="referrals" value={referralsJson} />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Veículo" required>
@@ -314,6 +344,41 @@ export default function SaleForm({
             placeholder="0,00 — opcional"
           />
         </Field>
+        {referralRows.map((row, i) => (
+          // Sem `name` nos inputs: as indicações vão juntas no hidden "referrals".
+          <div key={i} className="contents">
+            <Field label={i === 0 ? "Indicação de Venda" : `Indicação de venda - ${i + 1}`}>
+              <Input
+                value={row.name}
+                onChange={(e) => setReferralField(i, "name", e.target.value)}
+                placeholder="Nome de quem indicou — opcional"
+              />
+              {i < referrals.length ? (
+                <button
+                  type="button"
+                  onClick={() => removeReferral(i)}
+                  className="mt-1 text-xs text-rose-600 underline"
+                >
+                  Remover indicação
+                </button>
+              ) : (
+                <p className="mt-1 text-xs text-slate-400">
+                  Cada indicação com valor vira uma conta a pagar (Comissão) ao registrar a venda.
+                </p>
+              )}
+            </Field>
+            <Field label={i === 0 ? "Valor da indicação (R$)" : `Valor da indicação - ${i + 1} (R$)`}>
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                value={row.amount}
+                onChange={(e) => setReferralField(i, "amount", e.target.value)}
+                placeholder="0,00 — opcional"
+              />
+            </Field>
+          </div>
+        ))}
         <Field label="Forma de pagamento" required>
           <Select
             name="paymentMethod"

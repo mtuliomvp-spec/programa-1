@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { parseReferrals } from "@/lib/referrals";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import { userCan } from "@/lib/guards";
@@ -95,6 +96,7 @@ export default async function PreVendaFichaPage({
 
   const editHref = `/vendas/novo?preSale=${pre.id}`;
   const converted = pre.status === "CONVERTIDA";
+  const referrals = parseReferrals(pre.referrals);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -152,6 +154,12 @@ export default async function PreVendaFichaPage({
             {pre.commissionAmount > 0 ? (
               <p><span className="text-slate-500">Comissão do vendedor:</span> {money(pre.commissionAmount)}</p>
             ) : null}
+            {referrals.map((r, i) => (
+              <p key={i}>
+                <span className="text-slate-500">Indicação de venda{referrals.length > 1 ? ` ${i + 1}` : ""}:</span>{" "}
+                {r.name || "—"}{r.amount > 0 ? ` — ${money(r.amount)}` : ""}
+              </p>
+            ))}
             <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
             <p><span className="text-slate-500">Forma de pagamento:</span> {paymentLabel[pre.paymentMethod]}</p>
             {sinal > 0 ? <p><span className="text-slate-500">Sinal já recebido:</span> {money(sinal)}</p> : null}

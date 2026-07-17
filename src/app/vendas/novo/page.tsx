@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { toDateInputValue } from "@/lib/format";
+import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import SaleForm, { type SaleFormInitial } from "../SaleForm";
 
@@ -33,6 +34,7 @@ export default async function NovaVendaPage({
         sellerName: pre.sellerName ?? undefined,
         sellerId: pre.sellerId ?? undefined,
         commissionAmount: pre.commissionAmount ?? undefined,
+        referrals: parseReferrals(pre.referrals),
         notes: pre.notes ?? undefined,
         tradeIn: pre.tradeIn,
         tiPlate: pre.tiPlate ?? undefined,

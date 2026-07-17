@@ -7,6 +7,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
+import { parseReferrals } from "@/lib/referrals";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
@@ -55,6 +56,7 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     sellerName,
     sellerId: d.sellerId || null,
     commissionAmount: Math.max(0, d.commissionAmount || 0),
+    referrals: d.referrals ?? [],
     notes: d.notes || null,
     tradeIn: !!d.tradeIn,
     tiPlate: d.tradeIn ? d.tiPlate?.toUpperCase() || null : null,
@@ -115,6 +117,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     sellerName: pre.sellerName ?? undefined,
     sellerId: pre.sellerId ?? undefined,
     commissionAmount: pre.commissionAmount ?? 0,
+    referrals: parseReferrals(pre.referrals),
     notes: pre.notes ?? undefined,
     tradeIn: pre.tradeIn,
     tiPlate: pre.tiPlate ?? undefined,

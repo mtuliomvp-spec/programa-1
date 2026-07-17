@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import type { CategoriaPagar } from "@prisma/client";
+import { parseReferrals, sumReferrals } from "@/lib/referrals";
 
 /**
  * Consultas dos relatórios gerenciais: DRE mensal, lucro por veículo,
@@ -143,10 +144,10 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, p) => sum + p.quantity * p.part.costPrice,
       0,
     );
-    // Comissão de venda por competência (na data da venda) + comissões manuais
-    // pagas (sem venda vinculada) no mês.
+    // Comissão de venda + indicações de venda por competência (na data da
+    // venda) + comissões manuais pagas (sem venda vinculada) no mês.
     const comissoes =
-      monthSales.reduce((sum, s) => sum + (s.commissionAmount || 0), 0) +
+      monthSales.reduce((sum, s) => sum + (s.commissionAmount || 0) + sumReferrals(s.referrals), 0) +
       monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
@@ -320,6 +321,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         description: `Comissão de venda${s.sellerName ? ` — ${s.sellerName}` : ""}`,
         detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
         value: -s.commissionAmount,
+      });
+    }
+    // Indicações de venda: mesma competência da comissão do vendedor, casando
+    // com as contas a pagar (Comissão) criadas no registro da venda.
+    for (const [i, ref] of parseReferrals(s.referrals).entries()) {
+      if (ref.amount <= 0) continue;
+      comissoes += ref.amount;
+      entries.push({
+        id: `ind-${s.id}-${i}`,
+        date: s.saleDate,
+        kind: "COMISSAO",
+        description: `Comissão de indicação${ref.name ? ` — ${ref.name}` : ""}`,
+        detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        value: -ref.amount,
       });
     }
   }

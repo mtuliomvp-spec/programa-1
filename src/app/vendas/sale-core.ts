@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } from "@/lib/finance";
 import { parseDateInput } from "@/lib/format";
+import { parseReferrals } from "@/lib/referrals";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
  *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
@@ -40,6 +41,12 @@ export const saleSchema = z.object({
   sellerId: z.string().optional(),
   // Comissão do vendedor (R$) — vira conta a pagar (categoria Comissão).
   commissionAmount: z.coerce.number().min(0).default(0),
+  // Indicações de venda: JSON [{ name, amount }] serializado num input hidden.
+  // Cada indicação vira conta a pagar (Comissão), como a do vendedor.
+  referrals: z
+    .string()
+    .optional()
+    .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
   // Troca: veículo recebido do cliente cadastrado aqui mesmo.
   tradeIn: z.coerce.boolean().optional(),
@@ -213,6 +220,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       sellerName,
       sellerId: d.sellerId || null,
       commissionAmount: Math.max(0, d.commissionAmount || 0),
+      referrals: d.referrals ?? [],
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,

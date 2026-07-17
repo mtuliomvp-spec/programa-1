@@ -476,6 +476,9 @@ model PreSale {
   returnLevel       Int            @default(0)
   // Comissão do vendedor (R$) — convertida em conta a pagar ao fechar a venda.
   commissionAmount  Float          @default(0)
+  // Indicações de venda: [{ name, amount }] — cada uma vira conta a pagar
+  // (categoria Comissão) ao converter a pré-venda.
+  referrals         Json           @default("[]")
   status            StatusPreVenda @default(ABERTA)
   convertedSaleId   String?
   createdAt         DateTime       @default(now())
@@ -520,6 +523,9 @@ model Sale {
   // Comissão do vendedor (valor em R$, digitado na venda). Gera uma conta a
   // pagar (categoria Comissão, centro Administrativo) quando > 0.
   commissionAmount  Float          @default(0)
+  // Indicações de venda: [{ name, amount }] — cada uma gera uma conta a pagar
+  // (categoria Comissão, centro Administrativo), como a comissão do vendedor.
+  referrals         Json           @default("[]")
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

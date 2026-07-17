@@ -565,6 +565,9 @@ export async function registerVehicleSale(input: {
   sellerId?: string | null;
   // Comissão do vendedor (R$): vira conta a pagar (Comissão, Administrativo).
   commissionAmount?: number | null;
+  // Indicações de venda ({ name, amount }): cada uma com valor > 0 também vira
+  // conta a pagar (Comissão, Administrativo), como a comissão do vendedor.
+  referrals?: { name: string; amount: number }[] | null;
   notes?: string | null;
   // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
@@ -588,7 +591,13 @@ export async function registerVehicleSale(input: {
     (input.tradeInAmount ?? 0) > 0 ? await getNeutralAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   const commission = Math.max(0, Math.round((input.commissionAmount ?? 0) * 100) / 100);
-  const adminCenterId = commission > 0 ? await structuralCenterId("ADMINISTRATIVO") : null;
+  const referrals = (input.referrals ?? [])
+    .map((r) => ({ name: (r.name || "").trim(), amount: Math.max(0, Math.round((r.amount || 0) * 100) / 100) }))
+    .filter((r) => r.name || r.amount > 0);
+  const adminCenterId =
+    commission > 0 || referrals.some((r) => r.amount > 0)
+      ? await structuralCenterId("ADMINISTRATIVO")
+      : null;
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({
       where: { id: input.vehicleId },
@@ -627,6 +636,7 @@ export async function registerVehicleSale(input: {
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
         commissionAmount: commission,
+        referrals,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -651,6 +661,24 @@ export async function registerVehicleSale(input: {
           costCenterId: adminCenterId,
           saleId: sale.id,
           beneficiaryUserId: input.sellerId || null,
+        },
+      });
+    }
+
+    // Indicações de venda: mesma mecânica da comissão do vendedor (Comissão,
+    // Administrativo, vencendo na data da venda). O indicador não é usuário do
+    // sistema — fica identificado só na descrição (beneficiário nulo).
+    for (const ref of referrals) {
+      if (ref.amount <= 0 || !adminCenterId) continue;
+      await tx.payable.create({
+        data: {
+          description: `Comissão de indicação${ref.name ? ` — ${ref.name}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          category: "COMISSAO",
+          amount: ref.amount,
+          dueDate: input.saleDate,
+          status: "PENDENTE",
+          costCenterId: adminCenterId,
+          saleId: sale.id,
         },
       });
     }
