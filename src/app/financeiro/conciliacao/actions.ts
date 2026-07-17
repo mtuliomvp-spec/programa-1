@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { parseOfx } from "@/lib/ofx";
 import { getDefaultAccountId } from "@/lib/accounts";
+import { settleFinancing, settleReturn } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 
 /**
@@ -173,22 +174,78 @@ export async function confirmMatchesAction(
         },
       });
     } else {
-      await prisma.receivable.update({
+      // Repasse do financiamento e retorno da financeira ficam RECEBIDO na conta
+      // DA FINANCEIRA (é ela quem deve à empresa). Dar baixa é transferir esse
+      // valor para a conta da empresa e marcar a venda como recebida — o que os
+      // botões "dar baixa"/"Receber retorno" fazem via settleFinancing/settleReturn.
+      // Se a conciliação só reescrevesse accountId, o dinheiro até se moveria, mas
+      // Sale.financerSettledAt/returnSettledAt não seriam setados e a tela de
+      // Financiamentos continuaria oferecendo a baixa (risco de baixa dupla).
+      // Então, quando o recebível casado é o repasse/retorno parado na conta da
+      // financeira, roteamos pela mesma função de baixa dos botões manuais.
+      const rec = await prisma.receivable.findUnique({
         where: { id: m.id },
-        data: {
-          reconciledAt: new Date(),
-          bankRef: m.fitId,
-          status: "RECEBIDO",
-          receivedDate: { set: when },
-          accountId: account,
+        select: {
+          accountId: true,
+          category: true,
+          sale: {
+            select: {
+              id: true,
+              financerAccountId: true,
+              financedAmount: true,
+              financerSettledAt: true,
+              returnNet: true,
+              returnSettledAt: true,
+            },
+          },
         },
       });
+      const s = rec?.sale;
+      const naFinanceira =
+        !!s && !!account && !!s.financerAccountId && rec!.accountId === s.financerAccountId && account !== s.financerAccountId;
+      const isRepasse =
+        naFinanceira && rec!.category === "VENDA_VEICULO" && !s!.financerSettledAt && !!s!.financedAmount && s!.financedAmount > 0;
+      const isRetorno =
+        naFinanceira && rec!.category === "RETORNO_FINANCEIRA" && !s!.returnSettledAt && !!s!.returnNet && s!.returnNet > 0;
+
+      let settled = false;
+      if (isRepasse || isRetorno) {
+        try {
+          if (isRepasse) await settleFinancing(s!.id, account!, when);
+          else await settleReturn(s!.id, account!, s!.returnNet!, when);
+          // Baixa feita via transferência; o recebível continua na conta da
+          // financeira. Só registramos a marca da conciliação.
+          await prisma.receivable.update({
+            where: { id: m.id },
+            data: { reconciledAt: new Date(), bankRef: m.fitId },
+          });
+          settled = true;
+        } catch {
+          // Falha na baixa específica não deve abortar o lote — cai no update comum.
+          settled = false;
+        }
+      }
+
+      if (!settled) {
+        await prisma.receivable.update({
+          where: { id: m.id },
+          data: {
+            reconciledAt: new Date(),
+            bankRef: m.fitId,
+            status: "RECEBIDO",
+            receivedDate: { set: when },
+            accountId: account,
+          },
+        });
+      }
     }
     done++;
   }
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/financiamentos");
+  revalidatePath("/financeiro/contas");
   revalidatePath("/");
   return { done };
 }
