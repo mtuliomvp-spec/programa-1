@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
@@ -79,15 +80,21 @@ export default async function ComprasPage() {
               <tbody>
                 {requests.map((r) => (
                   <Tr key={r.id}>
-                    <Td className="whitespace-nowrap tabular-nums text-slate-500">{formatRequestNumber(r.seq, r.year)}</Td>
+                    <Td className="whitespace-nowrap tabular-nums text-slate-500">
+                      <Link href={`/compras/${r.id}`} className="text-blue-700 hover:underline">
+                        {formatRequestNumber(r.seq, r.year)}
+                      </Link>
+                    </Td>
                     <Td className="max-w-[260px] font-medium text-slate-900">
-                      <p className="truncate">{r.description}</p>
-                      <p className="truncate text-xs font-normal text-slate-400">
-                        {formatDate(r.createdAt)}
-                        {flowName(r.structuralKey) ? ` · ${flowName(r.structuralKey)}` : ""}
-                        {r.supplier ? ` · ${r.supplier.name}` : ""}
-                        {r.decisionNotes ? ` · ${r.decisionNotes}` : ""}
-                      </p>
+                      <Link href={`/compras/${r.id}`} className="block hover:underline">
+                        <span className="block truncate">{r.description}</span>
+                        <span className="block truncate text-xs font-normal text-slate-400">
+                          {formatDate(r.createdAt)}
+                          {flowName(r.structuralKey) ? ` · ${flowName(r.structuralKey)}` : ""}
+                          {r.supplier ? ` · ${r.supplier.name}` : ""}
+                          {r.decisionNotes ? ` · ${r.decisionNotes}` : ""}
+                        </span>
+                      </Link>
                     </Td>
                     <Td>{r.requestedBy}</Td>
                     <Td className="text-right tabular-nums">
