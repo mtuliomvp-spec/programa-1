@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewRequestForm from "./NewRequestForm";
 import RequestRowActions from "./RequestRowActions";
@@ -79,7 +79,7 @@ export default async function ComprasPage() {
               <tbody>
                 {requests.map((r) => (
                   <Tr key={r.id}>
-                    <Td className="tabular-nums text-slate-500">#{r.number}</Td>
+                    <Td className="whitespace-nowrap tabular-nums text-slate-500">{formatRequestNumber(r.seq, r.year)}</Td>
                     <Td className="max-w-[260px] font-medium text-slate-900">
                       <p className="truncate">{r.description}</p>
                       <p className="truncate text-xs font-normal text-slate-400">

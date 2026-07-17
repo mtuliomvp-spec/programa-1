@@ -210,6 +210,9 @@ model CostCenter {
 model PurchaseRequest {
   id              String            @id @default(cuid())
   number          Int               @unique @default(autoincrement())
+  // Numeração por ano (0001/2026, reinicia em 0001 a cada ano).
+  year            Int               @default(0)
+  seq             Int               @default(0)
   description     String
   details         String?
   estimatedAmount Float?
@@ -227,6 +230,7 @@ model PurchaseRequest {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  @@unique([year, seq])
   @@map("purchase_requests")
 }
 

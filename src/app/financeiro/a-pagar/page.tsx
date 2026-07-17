@@ -44,6 +44,7 @@ export default async function ContasAPagarPage({
 
   const tableRows: PayableRow[] = filtered.map((p) => ({
     id: p.id,
+    orderNumber: p.orderNumber,
     description: p.description,
     categoryLabel: p.categoryLabel || categoryLabel[p.category],
     supplierName: p.supplier?.name ?? null,

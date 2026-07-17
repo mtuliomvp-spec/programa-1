@@ -10,6 +10,7 @@ type Account = { id: string; name: string };
 
 export type PayableRow = {
   id: string;
+  orderNumber: number;
   description: string;
   categoryLabel: string;
   supplierName: string | null;
@@ -91,6 +92,7 @@ export default function PayablesTable({
                 className="h-4 w-4 rounded border-slate-300"
               />
             </Th>
+            <Th>Nº</Th>
             <Th>Descrição</Th>
             <Th>Categoria</Th>
             <Th>Fornecedor</Th>
@@ -115,6 +117,15 @@ export default function PayablesTable({
                       className="h-4 w-4 rounded border-slate-300"
                     />
                   ) : null}
+                </Td>
+                <Td className="whitespace-nowrap tabular-nums text-slate-500">
+                  <Link
+                    href={`/financeiro/a-pagar/${p.id}/ordem`}
+                    className="font-medium text-blue-700 hover:underline"
+                    title="Abrir ordem de pagamento"
+                  >
+                    {String(p.orderNumber).padStart(4, "0")}
+                  </Link>
                 </Td>
                 <Td className="font-medium text-slate-900">
                   <Link

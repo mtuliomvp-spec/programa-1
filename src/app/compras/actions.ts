@@ -7,6 +7,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { getDefaultAccountId } from "@/lib/accounts";
+import { formatRequestNumber } from "@/lib/format";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -37,15 +38,23 @@ export async function createRequestAction(
   const parsed = createSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
 
-  await prisma.purchaseRequest.create({
-    data: {
-      description: parsed.data.description,
-      details: parsed.data.details || null,
-      estimatedAmount: parsed.data.estimatedAmount || null,
-      supplierId: parsed.data.supplierId || null,
-      structuralKey: parsed.data.structuralKey || "ADMINISTRATIVO",
-      requestedBy: user.name,
-    },
+  // Numeração por ano: 0001/2026, reiniciando a cada ano.
+  const year = new Date().getFullYear();
+  await prisma.$transaction(async (tx) => {
+    const last = await tx.purchaseRequest.aggregate({ where: { year }, _max: { seq: true } });
+    const seq = (last._max.seq ?? 0) + 1;
+    await tx.purchaseRequest.create({
+      data: {
+        description: parsed.data.description,
+        details: parsed.data.details || null,
+        estimatedAmount: parsed.data.estimatedAmount || null,
+        supplierId: parsed.data.supplierId || null,
+        structuralKey: parsed.data.structuralKey || "ADMINISTRATIVO",
+        requestedBy: user.name,
+        year,
+        seq,
+      },
+    });
   });
   revalidatePath("/compras");
   return { success: "Solicitação registrada. Aguardando aprovação." };
@@ -118,7 +127,7 @@ export async function concludeRequestAction(
       const payable = await tx.payable.create({
         data: {
           costCenterId: centerId,
-          description: `Compra #${request.number}: ${request.description}`,
+          description: `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`,
           category: data.category,
           amount: data.finalAmount,
           dueDate: now,

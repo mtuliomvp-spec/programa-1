@@ -1,3 +1,8 @@
+/** Número da solicitação de compra por ano: 0001/2026. */
+export function formatRequestNumber(seq: number, year: number): string {
+  return `${String(seq).padStart(4, "0")}/${year}`;
+}
+
 export function formatCurrency(value: number): string {
   return value.toLocaleString("pt-BR", {
     style: "currency",
