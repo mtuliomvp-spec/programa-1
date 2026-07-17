@@ -5,8 +5,21 @@ import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewUserForm from "./NewUserForm";
 import UserRowActions from "./UserRowActions";
+import type { UserBank } from "./UserBankFields";
 
 export const dynamic = "force-dynamic";
+
+function bankOf(u: UserBank): UserBank {
+  return {
+    document: u.document,
+    phone: u.phone,
+    bankName: u.bankName,
+    bankAgency: u.bankAgency,
+    bankAccount: u.bankAccount,
+    bankAccountType: u.bankAccountType,
+    pixKey: u.pixKey,
+  };
+}
 
 export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
@@ -48,6 +61,7 @@ export default async function UsuariosPage() {
                   isSelf={false}
                   role={u.role}
                   permissions={u.permissions}
+                  bank={bankOf(u)}
                 />
               </div>
             ))}
@@ -92,6 +106,7 @@ export default async function UsuariosPage() {
                     isSelf={u.id === sessionUser.id}
                     role={u.role}
                     permissions={u.permissions}
+                    bank={bankOf(u)}
                   />
                 </div>
               </div>
@@ -143,6 +158,7 @@ export default async function UsuariosPage() {
                         isSelf={u.id === sessionUser.id}
                         role={u.role}
                         permissions={u.permissions}
+                        bank={bankOf(u)}
                       />
                     </Td>
                   </Tr>

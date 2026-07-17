@@ -13,6 +13,7 @@ import BankInput from "@/components/BankInput";
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number };
+type UserOption = { id: string; name: string };
 
 export type SaleFormInitial = {
   vehicleId?: string;
@@ -26,6 +27,7 @@ export type SaleFormInitial = {
   financedAmount?: number;
   returnLevel?: number;
   sellerName?: string;
+  sellerId?: string;
   commissionAmount?: number;
   notes?: string;
   tradeIn?: boolean;
@@ -81,18 +83,20 @@ export default function SaleForm({
   vehicles,
   customers,
   financers,
+  users = [],
   advances = {},
   preselectedVehicleId,
-  currentUserName,
+  currentUserId,
   initial,
   preSaleId,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
   financers: Financer[];
+  users?: UserOption[];
   advances?: Record<string, number>;
   preselectedVehicleId?: string;
-  currentUserName?: string;
+  currentUserId?: string;
   initial?: SaleFormInitial;
   preSaleId?: string;
 }) {
@@ -291,7 +295,14 @@ export default function SaleForm({
           />
         </Field>
         <Field label="Vendedor">
-          <Input name="sellerName" defaultValue={initial?.sellerName ?? currentUserName ?? ""} />
+          <Select name="sellerId" defaultValue={initial?.sellerId ?? currentUserId ?? ""}>
+            <option value="">— selecione —</option>
+            {users.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
         </Field>
         <Field label="Comissão do vendedor (R$)">
           <Input

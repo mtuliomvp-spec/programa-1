@@ -5,12 +5,14 @@ import {
   toggleUserAction,
   resetPasswordAction,
   updatePermissionsAction,
+  updateUserBankAction,
   approveUserAction,
   rejectUserAction,
   type UserFormState,
 } from "./actions";
 import { Button, Input } from "@/components/ui";
 import PermissionsChecklist from "./PermissionsChecklist";
+import UserBankFields, { type UserBank } from "./UserBankFields";
 
 export default function UserRowActions({
   id,
@@ -19,6 +21,7 @@ export default function UserRowActions({
   isSelf,
   role,
   permissions,
+  bank,
 }: {
   id: string;
   active: boolean;
@@ -26,10 +29,20 @@ export default function UserRowActions({
   isSelf: boolean;
   role: "ADMIN" | "OPERADOR";
   permissions: string[];
+  bank: UserBank;
 }) {
   const [pending, startTransition] = useTransition();
   const [showReset, setShowReset] = useState(false);
   const [showPerms, setShowPerms] = useState(false);
+  const [showBank, setShowBank] = useState(false);
+  const [bankState, bankAction, bankPending] = useActionState(
+    async (prev: UserFormState, formData: FormData) => {
+      const result = await updateUserBankAction(prev, formData);
+      if (result.success) setShowBank(false);
+      return result;
+    },
+    {} as UserFormState,
+  );
   const [permsState, permsAction, permsPending] = useActionState(
     async (prev: UserFormState, formData: FormData) => {
       const result = await updatePermissionsAction(prev, formData);
@@ -88,6 +101,13 @@ export default function UserRowActions({
         ) : null}
         <button
           type="button"
+          onClick={() => setShowBank((v) => !v)}
+          className="text-blue-700 hover:underline"
+        >
+          Dados bancários
+        </button>
+        <button
+          type="button"
           onClick={() => setShowReset((v) => !v)}
           className="text-blue-700 hover:underline"
         >
@@ -109,6 +129,17 @@ export default function UserRowActions({
           </button>
         ) : null}
       </div>
+      {showBank ? (
+        <form action={bankAction} className="w-72 space-y-2 text-left">
+          <input type="hidden" name="userId" value={id} />
+          <UserBankFields user={bank} compact />
+          <Button type="submit" disabled={bankPending} className="h-8 w-full px-2.5 text-xs">
+            {bankPending ? "Salvando..." : "Salvar dados bancários"}
+          </Button>
+          {bankState.error ? <p className="text-xs text-rose-600">{bankState.error}</p> : null}
+          {bankState.success ? <p className="text-xs text-emerald-700">{bankState.success}</p> : null}
+        </form>
+      ) : null}
       {showReset ? (
         <form action={formAction} className="flex items-center gap-2">
           <input type="hidden" name="userId" value={id} />

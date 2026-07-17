@@ -20,6 +20,13 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
   const d = parsed.data;
   const preSaleId = String(formData.get("preSaleId") || "").trim();
 
+  // Vendedor = usuário: resolve o nome (foto) a partir do id escolhido.
+  let sellerName: string | null = d.sellerName || null;
+  if (d.sellerId) {
+    const u = await prisma.user.findUnique({ where: { id: d.sellerId }, select: { name: true } });
+    sellerName = u?.name ?? sellerName;
+  }
+
   // Não permitir pré-vender o mesmo veículo para outro cliente enquanto houver
   // pré-venda em aberto (ignora a própria pré-venda ao editá-la).
   try {
@@ -39,7 +46,8 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
     financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
     returnLevel: d.paymentMethod === "FINANCIADO" ? Math.max(0, d.returnLevel || 0) : 0,
-    sellerName: d.sellerName || null,
+    sellerName,
+    sellerId: d.sellerId || null,
     commissionAmount: Math.max(0, d.commissionAmount || 0),
     notes: d.notes || null,
     tradeIn: !!d.tradeIn,
@@ -93,6 +101,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     financedAmount: pre.financedAmount ?? undefined,
     returnLevel: pre.returnLevel ?? 0,
     sellerName: pre.sellerName ?? undefined,
+    sellerId: pre.sellerId ?? undefined,
     commissionAmount: pre.commissionAmount ?? 0,
     notes: pre.notes ?? undefined,
     tradeIn: pre.tradeIn,

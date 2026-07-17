@@ -14,12 +14,55 @@ async function requireAdmin() {
   return user;
 }
 
+const bankSchema = {
+  document: z.string().optional(),
+  phone: z.string().optional(),
+  bankName: z.string().optional(),
+  bankAgency: z.string().optional(),
+  bankAccount: z.string().optional(),
+  bankAccountType: z.string().optional(),
+  pixKey: z.string().optional(),
+};
+
+/** Campos bancários normalizados (string vazia → null). */
+function bankData(d: Record<string, string | undefined>) {
+  return {
+    document: d.document?.trim() || null,
+    phone: d.phone?.trim() || null,
+    bankName: d.bankName?.trim() || null,
+    bankAgency: d.bankAgency?.trim() || null,
+    bankAccount: d.bankAccount?.trim() || null,
+    bankAccountType: d.bankAccountType?.trim() || null,
+    pixKey: d.pixKey?.trim() || null,
+  };
+}
+
 const createSchema = z.object({
   name: z.string().min(1, "Informe o nome"),
   email: z.string().email("Informe um e-mail válido"),
   password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres"),
   role: z.enum(["ADMIN", "OPERADOR"]),
+  ...bankSchema,
 });
+
+const bankUpdateSchema = z.object({ userId: z.string().min(1), ...bankSchema });
+
+/** Atualiza os dados bancários de um usuário (para a Ordem de Pagamento). */
+export async function updateUserBankAction(
+  _prev: UserFormState,
+  formData: FormData,
+): Promise<UserFormState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Apenas administradores podem gerenciar usuários." };
+  }
+  const parsed = bankUpdateSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  await prisma.user.update({ where: { id: parsed.data.userId }, data: bankData(parsed.data) });
+  revalidatePath("/usuarios");
+  return { success: "Dados bancários salvos." };
+}
 
 export async function createUserAction(
   _prev: UserFormState,
@@ -47,6 +90,7 @@ export async function createUserAction(
       passwordHash: hashPassword(parsed.data.password),
       role: parsed.data.role,
       permissions,
+      ...bankData(parsed.data),
     },
   });
   revalidatePath("/usuarios");

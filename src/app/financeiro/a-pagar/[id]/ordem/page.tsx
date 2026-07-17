@@ -52,17 +52,44 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   const { id } = await params;
   const payable = await prisma.payable.findUnique({
     where: { id },
-    include: { supplier: true, costCenter: { select: { name: true } }, account: { select: { name: true } }, vehicle: { select: { brand: true, model: true, plate: true } } },
+    include: {
+      supplier: true,
+      beneficiaryUser: { select: { id: true, name: true, email: true, document: true, phone: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true } },
+      costCenter: { select: { name: true } },
+      account: { select: { name: true } },
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
   });
   if (!payable) notFound();
 
   const company = await getCompany();
-  const s = payable.supplier;
   const effective = effectivePayableStatus(payable.status, payable.dueDate);
   const catLabel = payable.categoryLabel || categoryLabel[payable.category];
 
-  // Forma de pagamento sugerida a partir dos dados bancários do fornecedor.
-  const formaPagamento = s?.pixKey ? "PIX" : s?.bankName || s?.bankAccount ? "Transferência" : "—";
+  // Beneficiário do pagamento: o fornecedor tem prioridade; sem fornecedor, usa
+  // o usuário vinculado (ex.: vendedor da comissão), com seus dados bancários.
+  const src = payable.supplier ?? payable.beneficiaryUser ?? null;
+  const beneKind: "fornecedor" | "usuario" | null = payable.supplier
+    ? "fornecedor"
+    : payable.beneficiaryUser
+      ? "usuario"
+      : null;
+  const bene = src
+    ? {
+        name: src.name,
+        document: src.document,
+        phone: src.phone,
+        email: src.email,
+        bankName: src.bankName,
+        bankAgency: src.bankAgency,
+        bankAccount: src.bankAccount,
+        bankAccountType: src.bankAccountType,
+        pixKey: src.pixKey,
+      }
+    : null;
+
+  // Forma de pagamento sugerida a partir dos dados bancários do beneficiário.
+  const formaPagamento = bene?.pixKey ? "PIX" : bene?.bankName || bene?.bankAccount ? "Transferência" : "—";
 
   // URL pública de verificação + QR Code (gerado no servidor). Usa o domínio
   // oficial (NEXT_PUBLIC_APP_URL) quando definido; senão, o endereço de acesso.
@@ -71,8 +98,10 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
 
   const orderNo = `Nº ${String(payable.orderNumber).padStart(4, "0")}`;
   const generatedAt = `Gerado em: ${new Date().toLocaleString("pt-BR")}`;
-  const bankType = s?.bankAccountType ? accountTypeLabel[s.bankAccountType] || s.bankAccountType : null;
-  const hasBankData = Boolean(s && (s.bankName || s.bankAccount || s.pixKey));
+  const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
+  const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
+  const beneTitle = beneKind === "usuario" ? "Dados do beneficiário" : "Dados do fornecedor";
+  const beneEditHref = beneKind === "usuario" ? "/usuarios" : payable.supplier ? `/fornecedores/${payable.supplier.id}/editar` : null;
 
   // Dados estruturados para o PDF (mesmo conteúdo mostrado na tela).
   const tituloRows: [string, string][] = [
@@ -87,28 +116,32 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   if (payable.status === "PAGO" && payable.paymentDate) tituloRows.push(["Pago em", formatDate(payable.paymentDate)]);
   if (payable.account?.name) tituloRows.push(["Conta", payable.account.name]);
 
-  const fornecedorRows: [string, string][] = s
+  const fornecedorRows: [string, string][] = bene
     ? [
-        ["Nome", s.name],
-        ["CPF/CNPJ", s.document || "—"],
-        ["Telefone", s.phone || "—"],
-        ["E-mail", s.email || "—"],
+        ["Nome", bene.name],
+        ["CPF/CNPJ", bene.document || "—"],
+        ["Telefone", bene.phone || "—"],
+        ["E-mail", bene.email || "—"],
       ]
-    : [["Fornecedor", "Não informado"]];
+    : [["Beneficiário", "Não informado"]];
 
+  const naoCadMsg =
+    beneKind === "usuario"
+      ? "Não cadastrados — informe na ficha do usuário (Usuários)."
+      : "Não cadastrados — informe na ficha do fornecedor.";
   const pagamentoRows: [string, string][] = hasBankData
     ? [
-        ["Banco", s!.bankName || "—"],
-        ["Agência", s!.bankAgency || "—"],
-        ["Conta", s!.bankAccount || "—"],
+        ["Banco", bene!.bankName || "—"],
+        ["Agência", bene!.bankAgency || "—"],
+        ["Conta", bene!.bankAccount || "—"],
         ["Tipo", bankType || "—"],
-        ["Chave PIX", s!.pixKey || "—"],
+        ["Chave PIX", bene!.pixKey || "—"],
       ]
-    : [["Dados bancários", "Não cadastrados — informe na ficha do fornecedor."]];
+    : [["Dados bancários", naoCadMsg]];
 
   const sections: OrdemPdfData["sections"] = [
     { title: "Dados do título", rows: tituloRows },
-    { title: "Dados do fornecedor", rows: fornecedorRows },
+    { title: beneTitle, rows: fornecedorRows },
     { title: "Dados para pagamento", rows: pagamentoRows },
   ];
   if (payable.notes) sections.push({ title: "Observação", rows: [["Observação", payable.notes]] });
@@ -161,7 +194,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
           <span className="text-2xl font-black text-slate-900">{formatCurrency(payable.amount)}</span>
         </div>
 
-        <Section title="Dados do fornecedor">
+        <Section title={beneTitle}>
           {fornecedorRows.map(([label, value]) => (
             <Row key={label} label={label} value={value} />
           ))}
@@ -169,16 +202,16 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
 
         <Section title="Dados para pagamento">
           {hasBankData ? (
-            pagamentoRows.map(([label, value]) => <Row key={label} label={label} value={value} strong={label === "Chave PIX" && !!s?.pixKey} />)
+            pagamentoRows.map(([label, value]) => <Row key={label} label={label} value={value} strong={label === "Chave PIX" && !!bene?.pixKey} />)
           ) : (
             <p className="py-1.5 text-sm text-amber-700">
               Dados bancários não cadastrados.{" "}
-              {s ? (
-                <a href={`/fornecedores/${s.id}/editar`} className="font-medium text-blue-700 hover:underline">
-                  Cadastrar na ficha do fornecedor
+              {beneEditHref ? (
+                <a href={beneEditHref} className="font-medium text-blue-700 hover:underline">
+                  {beneKind === "usuario" ? "Cadastrar na ficha do usuário" : "Cadastrar na ficha do fornecedor"}
                 </a>
               ) : (
-                "Vincule um fornecedor a este título."
+                "Vincule um fornecedor ou vendedor a este título."
               )}
             </p>
           )}

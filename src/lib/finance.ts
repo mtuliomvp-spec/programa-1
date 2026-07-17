@@ -561,6 +561,8 @@ export async function registerVehicleSale(input: {
   installmentsCount: number;
   paymentMethod: FormaPagamento;
   sellerName?: string | null;
+  // Vendedor = usuário (beneficiário da comissão, com dados bancários).
+  sellerId?: string | null;
   // Comissão do vendedor (R$): vira conta a pagar (Comissão, Administrativo).
   commissionAmount?: number | null;
   notes?: string | null;
@@ -619,6 +621,7 @@ export async function registerVehicleSale(input: {
         installmentsCount: input.installmentsCount,
         paymentMethod: input.paymentMethod,
         sellerName: input.sellerName || null,
+        sellerId: input.sellerId || null,
         financerName: input.paymentMethod === "FINANCIADO" ? input.financerName || null : null,
         financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
@@ -647,6 +650,7 @@ export async function registerVehicleSale(input: {
           status: "PENDENTE",
           costCenterId: adminCenterId,
           saleId: sale.id,
+          beneficiaryUserId: input.sellerId || null,
         },
       });
     }

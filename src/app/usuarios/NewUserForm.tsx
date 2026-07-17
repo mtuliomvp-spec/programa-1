@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { createUserAction, type UserFormState } from "./actions";
 import PermissionsChecklist from "./PermissionsChecklist";
+import UserBankFields from "./UserBankFields";
 
 export default function NewUserForm() {
   const [state, formAction, pending] = useActionState(createUserAction, {} as UserFormState);
@@ -33,6 +34,13 @@ export default function NewUserForm() {
           <PermissionsChecklist />
         </Field>
       ) : null}
+      <fieldset className="rounded-lg border border-slate-200 p-3">
+        <legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">
+          Dados para pagamento (comissão)
+        </legend>
+        <p className="mb-2 text-xs text-slate-500">Saem na Ordem de Pagamento da comissão deste vendedor.</p>
+        <UserBankFields />
+      </fieldset>
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Criando..." : "Criar usuário"}
       </Button>

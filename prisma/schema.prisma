@@ -243,6 +243,17 @@ model User {
   passwordHash String
   role             UserRole  @default(OPERADOR)
   permissions      String[]  @default([])
+  // Dados do beneficiário para a Ordem de Pagamento (ex.: comissão de venda).
+  document         String?
+  phone            String?
+  bankName         String?
+  bankAgency       String?
+  bankAccount      String?
+  bankAccountType  String?
+  pixKey           String?
+  commissionPayables Payable[] @relation("PayableBeneficiary")
+  sales            Sale[]    @relation("SaleSeller")
+  preSales         PreSale[] @relation("PreSaleSeller")
   active           Boolean   @default(true)
   pending             Boolean   @default(false)
   resetRequestedAt    DateTime?
@@ -416,6 +427,8 @@ model PreSale {
   financerAccountId String?
   financedAmount    Float?
   sellerName        String?
+  sellerId          String?
+  seller            User?          @relation("PreSaleSeller", fields: [sellerId], references: [id])
   notes             String?
   // Troca (veículo recebido do cliente) — dados brutos, o veículo só é criado
   // ao converter em venda.
@@ -463,6 +476,8 @@ model Sale {
   installmentsCount Int            @default(0)
   paymentMethod     FormaPagamento
   sellerName        String?
+  sellerId          String?
+  seller            User?          @relation("SaleSeller", fields: [sellerId], references: [id])
   // Financiamento: banco/financeira e valor financiado (repasse)
   financerName      String?
   financedAmount    Float?
@@ -553,6 +568,9 @@ model Payable {
   // Venda de origem (ex.: comissão do vendedor gerada por uma venda).
   saleId       String?
   sale         Sale?           @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  // Beneficiário usuário (ex.: vendedor da comissão) — dados bancários na ordem.
+  beneficiaryUserId String?
+  beneficiaryUser   User?      @relation("PayableBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: SetNull)
   recurringId  String?
   recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   reconciledAt DateTime?

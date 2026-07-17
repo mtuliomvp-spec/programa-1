@@ -36,6 +36,8 @@ export const saleSchema = z.object({
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel: z.coerce.number().int().min(0).default(0),
   sellerName: z.string().optional(),
+  // Vendedor = usuário do sistema (para puxar dados bancários na comissão).
+  sellerId: z.string().optional(),
   // Comissão do vendedor (R$) — vira conta a pagar (categoria Comissão).
   commissionAmount: z.coerce.number().min(0).default(0),
   notes: z.string().optional(),
@@ -192,6 +194,14 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
   }
 
   try {
+    // Vendedor é um usuário do sistema; grava o id (para dados bancários da
+    // comissão) e o nome como "foto" (documentos, DRE).
+    let sellerName: string | null = d.sellerName || null;
+    if (d.sellerId) {
+      const u = await prisma.user.findUnique({ where: { id: d.sellerId }, select: { name: true } });
+      sellerName = u?.name ?? sellerName;
+    }
+
     const sale = await registerVehicleSale({
       vehicleId: d.vehicleId,
       customerId: d.customerId,
@@ -200,7 +210,8 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       downPayment: d.paymentMethod === "PARCELADO" ? d.downPayment : 0,
       installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
       paymentMethod: d.paymentMethod,
-      sellerName: d.sellerName || null,
+      sellerName,
+      sellerId: d.sellerId || null,
       commissionAmount: Math.max(0, d.commissionAmount || 0),
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,

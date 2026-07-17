@@ -31,6 +31,7 @@ export default async function NovaVendaPage({
         financedAmount: pre.financedAmount ?? undefined,
         returnLevel: pre.returnLevel ?? 0,
         sellerName: pre.sellerName ?? undefined,
+        sellerId: pre.sellerId ?? undefined,
         commissionAmount: pre.commissionAmount ?? undefined,
         notes: pre.notes ?? undefined,
         tradeIn: pre.tradeIn,
@@ -53,7 +54,7 @@ export default async function NovaVendaPage({
       };
     }
   }
-  const [vehicles, customers, financers] = await Promise.all([
+  const [vehicles, customers, financers, users] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
       orderBy: { createdAt: "desc" },
@@ -65,6 +66,7 @@ export default async function NovaVendaPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true, returnTaxPercent: true },
     }),
+    prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
   // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
@@ -93,9 +95,10 @@ export default async function NovaVendaPage({
             vehicles={vehicles}
             customers={customers}
             financers={financers}
+            users={users}
             advances={advances}
             preselectedVehicleId={vehicleId}
-            currentUserName={user?.name}
+            currentUserId={user?.id}
             initial={initial}
             preSaleId={initial ? preSaleId : undefined}
           />
