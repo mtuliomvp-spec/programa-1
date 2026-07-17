@@ -12,7 +12,7 @@ export type NavItem = {
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Visão geral",
-    items: [{ href: "/", label: "Dashboard", icon: "📊" }],
+    items: [{ href: "/", label: "Dashboard", icon: "📊", module: "dashboard" }],
   },
   {
     title: "Operação",
@@ -70,13 +70,31 @@ export function isNavActive(href: string, pathname: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-export function navGroupsFor(user: { role: "ADMIN" | "OPERADOR"; permissions: string[] }) {
+type NavUser = { role: "ADMIN" | "OPERADOR"; permissions: string[] };
+
+function canSeeItem(user: NavUser, item: NavItem) {
+  if (item.adminOnly) return user.role === "ADMIN";
+  if (item.module) return hasModuleAccess(user, item.module);
+  return true;
+}
+
+export function navGroupsFor(user: NavUser) {
   return NAV_GROUPS.map((group) => ({
     ...group,
-    items: group.items.filter((item) => {
-      if (item.adminOnly) return user.role === "ADMIN";
-      if (item.module) return hasModuleAccess(user, item.module);
-      return true;
-    }),
+    items: group.items.filter((item) => canSeeItem(user, item)),
   })).filter((group) => group.items.length > 0);
+}
+
+/**
+ * Primeira tela que o usuário pode abrir (na ordem do menu). Serve de destino
+ * pós-login e de redirecionamento quando alguém sem acesso ao painel cai no "/".
+ * Se nada estiver liberado, devolve null (o chamador trata).
+ */
+export function firstAccessibleHref(user: NavUser): string | null {
+  for (const group of NAV_GROUPS) {
+    for (const item of group.items) {
+      if (item.href !== "/" && canSeeItem(user, item)) return item.href;
+    }
+  }
+  return null;
 }

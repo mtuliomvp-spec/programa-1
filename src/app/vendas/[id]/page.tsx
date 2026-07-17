@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CancelSaleButton from "./CancelSaleButton";
+import { userCan } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,10 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
 
   if (!sale) notFound();
 
+  // Só quem tem a permissão "Cancelar venda" vê o botão (a ação também é
+  // bloqueada no servidor).
+  const canCancel = await userCan("vendas", "cancelar");
+
   const totalRecebido = sale.receivables.filter((r) => r.status === "RECEBIDO").reduce((s, r) => s + r.amount, 0);
   // Venda cancelada que ainda tem lançamentos vinculados (cancelada por uma
   // versão antiga que não revertia tudo): oferece corrigir e limpar os resíduos.
@@ -48,8 +53,8 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
                 🔁 Documento de troca
               </LinkButton>
             ) : null}
-            {sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
-            {cancelamentoResidual ? <CancelSaleButton id={sale.id} mode="fix" /> : null}
+            {canCancel && sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
+            {canCancel && cancelamentoResidual ? <CancelSaleButton id={sale.id} mode="fix" /> : null}
           </div>
         }
       />

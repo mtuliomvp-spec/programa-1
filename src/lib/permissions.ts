@@ -18,6 +18,11 @@ const EXCLUIR: ModuleAction = { acao: "excluir", label: "Excluir" };
 
 export const MODULES: ModuleConfig[] = [
   {
+    key: "dashboard",
+    label: "Painel inicial (Dashboard)",
+    acoes: [{ acao: "visualizar", label: "Ver o painel inicial" }],
+  },
+  {
     key: "estoque",
     label: "Estoque de veículos",
     acoes: [

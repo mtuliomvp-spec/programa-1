@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
 import { getStructuralSummary } from "@/lib/structural";
 import { getPatrimonialStats } from "@/lib/patrimonial";
@@ -6,6 +7,9 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
 import PatrimonialCard from "@/components/PatrimonialCard";
+import { getSessionUser } from "@/lib/auth";
+import { hasModuleAccess } from "@/lib/permissions";
+import { firstAccessibleHref } from "@/lib/nav";
 
 export const dynamic = "force-dynamic";
 
@@ -16,6 +20,13 @@ const structuralIcon: Record<string, string> = {
 };
 
 export default async function DashboardPage() {
+  // Painel inicial é uma permissão: quem não tem acesso (ex.: vendedor) é levado
+  // à primeira tela que pode abrir, em vez de ver o resumo financeiro da loja.
+  const user = await getSessionUser();
+  if (user && !hasModuleAccess(user, "dashboard")) {
+    redirect(firstAccessibleHref(user) ?? "/vendas");
+  }
+
   const [stats, upcoming, monthly, structural, pat] = await Promise.all([
     getDashboardStats(),
     getUpcomingDue(7),

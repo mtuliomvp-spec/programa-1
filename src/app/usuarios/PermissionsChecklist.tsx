@@ -29,6 +29,7 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
     // Cuida de todo o financeiro (lançar, pagar, receber, contas, conciliação),
     // vê estoque/vendas/cadastros e os relatórios.
     permissions: [
+      "dashboard.visualizar",
       "estoque.visualizar",
       "vendas.visualizar",
       "cadastros.visualizar",
