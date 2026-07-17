@@ -258,6 +258,12 @@ model Supplier {
   email     String?
   address   String?
   notes     String?
+  // Dados bancários para pagamento (usados na Ordem de Pagamento).
+  bankName        String?
+  bankAgency      String?
+  bankAccount     String?
+  bankAccountType String?
+  pixKey          String?
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   vehicles         Vehicle[]
@@ -514,6 +520,8 @@ model PartSale {
 
 model Payable {
   id           String          @id @default(cuid())
+  // Token público para verificação da Ordem de Pagamento via QR Code.
+  publicToken  String          @unique @default(uuid())
   description  String
   category     CategoriaPagar
   // Categoria livre/personalizada informada pelo usuário (ex.: "Revisão").
