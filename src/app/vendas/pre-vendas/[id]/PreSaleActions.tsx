@@ -39,6 +39,9 @@ export default function PreSaleActions({ id, editHref, canRegister = true }: { i
         <LinkButton variant="secondary" href={editHref}>
           ✏️ Editar
         </LinkButton>
+        <LinkButton variant="secondary" href={`/vendas/pre-vendas/${id}/contrato`}>
+          📄 Contrato de venda
+        </LinkButton>
         <PrintButton />
         <Button type="button" variant="danger" onClick={handleDelete} disabled={pending}>
           {pending ? "..." : "Excluir"}
