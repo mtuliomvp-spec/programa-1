@@ -50,6 +50,9 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             <LinkButton href={`/vendas/${sale.id}/documento`} variant="secondary">
               📄 Ordem de venda
             </LinkButton>
+            <LinkButton href={`/vendas/${sale.id}/contrato`} variant="secondary">
+              📝 Contrato de venda
+            </LinkButton>
             {sale.tradeInVehicle ? (
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca
