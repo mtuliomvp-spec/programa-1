@@ -24,7 +24,25 @@ export default async function DashboardPage() {
   // à primeira tela que pode abrir, em vez de ver o resumo financeiro da loja.
   const user = await getSessionUser();
   if (user && !hasModuleAccess(user, "dashboard")) {
-    redirect(firstAccessibleHref(user) ?? "/vendas");
+    const destino = firstAccessibleHref(user);
+    if (destino) redirect(destino);
+    // NENHUM módulo liberado: mostrar um aviso em vez de redirecionar. Um
+    // redirect fixo (ex.: /vendas) criaria loop infinito — a tela de destino
+    // devolveria para "/" por falta de permissão ("muitos redirecionamentos").
+    return (
+      <div className="mx-auto max-w-lg py-16">
+        <Card className="p-8 text-center">
+          <p className="text-4xl">🔒</p>
+          <h1 className="mt-3 text-lg font-semibold text-slate-900">
+            Seu acesso foi aprovado, mas nenhuma tela está liberada ainda
+          </h1>
+          <p className="mt-2 text-sm text-slate-600">
+            Peça ao administrador para abrir <strong>Usuários</strong> e marcar as permissões do seu
+            perfil (ex.: Vendas, Estoque). Assim que liberar, é só recarregar esta página.
+          </p>
+        </Card>
+      </div>
+    );
   }
 
   const [stats, upcoming, monthly, structural, pat] = await Promise.all([

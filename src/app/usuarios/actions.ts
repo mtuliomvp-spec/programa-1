@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser, hashPassword } from "@/lib/auth";
+import { DEFAULT_OPERATOR_PERMISSIONS } from "@/lib/permissions";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 
 export type UserFormState = { error?: string; success?: string };
@@ -159,9 +160,19 @@ export async function updatePermissionsAction(
 
 export async function approveUserAction(id: string) {
   await requireAdmin();
+  // Cadastro novo nasce sem permissão nenhuma; aprovar sem liberar nada
+  // deixaria o usuário preso numa tela de aviso. Concede o padrão de operador
+  // (só visualizar) — o administrador ajusta depois na tela de permissões.
+  const current = await prisma.user.findUnique({ where: { id }, select: { permissions: true } });
   const user = await prisma.user.update({
     where: { id },
-    data: { pending: false, active: true },
+    data: {
+      pending: false,
+      active: true,
+      ...(current && current.permissions.length === 0
+        ? { permissions: DEFAULT_OPERATOR_PERMISSIONS }
+        : {}),
+    },
   });
   if (isEmailConfigured()) {
     // aviso de liberação — falha de envio não impede a aprovação
