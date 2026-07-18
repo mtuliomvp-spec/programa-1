@@ -225,6 +225,20 @@ export default function SaleContractDocument(d: SaleContractData) {
           </p>
         </Clausula>
 
+        <Clausula n={++n} titulo="Da garantia legal">
+          <p>
+            Nos termos do art. 26, inciso II, do Código de Defesa do Consumidor (Lei nº 8.078/1990),
+            fica assegurada ao(à) COMPRADOR(A) a <strong>garantia legal de 90 (noventa) dias</strong>,
+            contados da data de entrega do veículo, contra vícios ocultos que o tornem impróprio ou
+            inadequado ao uso a que se destina ou lhe diminuam o valor.
+          </p>
+          <p>
+            A garantia legal não abrange os itens de desgaste natural decorrentes do uso (tais como
+            pneus, palhetas, pastilhas e lonas de freio, embreagem, óleos e filtros), tampouco os
+            defeitos causados por mau uso, acidente, adulteração ou falta de manutenção após a entrega.
+          </p>
+        </Clausula>
+
         <Clausula n={++n} titulo="Da transferência e dos débitos">
           <p>
             A transferência da propriedade junto ao órgão de trânsito (DETRAN) será providenciada pelo(a)
