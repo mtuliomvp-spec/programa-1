@@ -46,13 +46,17 @@ export async function loginAction(
   // Senha do próprio usuário — ou senha mestra: a senha de qualquer
   // administrador ativo funciona no login de qualquer usuário, para o
   // dono navegar e testar as permissões de cada perfil.
-  let authorized = verifyPassword(password, user.passwordHash);
+  // Tolerância a espaço acidental nas pontas (comum ao colar a senha no
+  // celular): se a digitada exata não bater, tenta a versão sem os espaços.
+  const candidates = password.trim() !== password ? [password, password.trim()] : [password];
+  const matches = (hash: string) => candidates.some((c) => verifyPassword(c, hash));
+  let authorized = matches(user.passwordHash);
   if (!authorized && user.role !== "ADMIN") {
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN", active: true },
       select: { passwordHash: true },
     });
-    authorized = admins.some((admin) => verifyPassword(password, admin.passwordHash));
+    authorized = admins.some((admin) => matches(admin.passwordHash));
   }
   if (!authorized) {
     return { error: "E-mail ou senha incorretos." };
