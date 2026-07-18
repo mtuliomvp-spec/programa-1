@@ -3,7 +3,8 @@ import { ensureRecurringGenerated } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectiveReceivableStatus } from "@/lib/status";
-import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch } from "@/lib/search";
+import { Badge, Card, EmptyState, Input, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReceivableRowActions from "./ReceivableRowActions";
 
 export const dynamic = "force-dynamic";
@@ -15,9 +16,10 @@ const statusLabelMap = { PENDENTE: "Pendente", RECEBIDO: "Recebido", ATRASADO: "
 export default async function ContasAReceberPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string }>;
+  searchParams: Promise<{ status?: string; q?: string }>;
 }) {
-  const { status: statusFilter } = await searchParams;
+  const { status: statusFilter, q: qParam } = await searchParams;
+  const q = (qParam || "").trim();
   await ensureRecurringGenerated();
 
   const [receivables, accounts] = await Promise.all([
@@ -29,7 +31,23 @@ export default async function ContasAReceberPage({
   ]);
 
   const withStatus = receivables.map((r) => ({ ...r, effective: effectiveReceivableStatus(r.status, r.dueDate) }));
-  const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((r) => r.effective === statusFilter) : withStatus;
+  const byStatus = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((r) => r.effective === statusFilter) : withStatus;
+  // Busca livre pelos campos exibidos.
+  const filtered = q
+    ? byStatus.filter((r) =>
+        matchesSearch(
+          q,
+          r.description,
+          categoryLabel[r.category],
+          r.customer?.name,
+          formatDate(r.dueDate),
+          r.amount,
+          formatCurrency(r.amount),
+          statusLabelMap[r.effective],
+          r.account?.name,
+        ),
+      )
+    : byStatus;
 
   const totalPendente = withStatus.filter((r) => r.effective !== "RECEBIDO").reduce((s, r) => s + r.amount, 0);
   const totalAtrasado = withStatus.filter((r) => r.effective === "ATRASADO").reduce((s, r) => s + r.amount, 0);
@@ -44,6 +62,9 @@ export default async function ContasAReceberPage({
 
       <Card className="mb-4 px-4 py-3">
         <form className="flex flex-wrap items-end gap-3">
+          <div className="w-full max-w-sm">
+            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (descrição, cliente, valor...)" />
+          </div>
           <div className="w-56">
             <Select name="status" defaultValue={statusFilter || "TODOS"}>
               <option value="TODOS">Todos os status</option>
@@ -55,12 +76,17 @@ export default async function ContasAReceberPage({
           <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
             Filtrar
           </button>
+          {q ? (
+            <LinkButton variant="secondary" href="/financeiro/a-receber">
+              Limpar
+            </LinkButton>
+          ) : null}
         </form>
       </Card>
 
       <Card>
         {filtered.length === 0 ? (
-          <EmptyState title="Nenhuma conta a receber encontrada" />
+          <EmptyState title={q ? "Nada encontrado para a busca" : "Nenhuma conta a receber encontrada"} />
         ) : (
           <Table>
             <Thead>

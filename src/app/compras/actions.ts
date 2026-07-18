@@ -98,6 +98,7 @@ const concludeSchema = z.object({
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
+  supplierId: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
 
@@ -142,7 +143,8 @@ export async function concludeRequestAction(
       category: data.category,
       amount: data.finalAmount,
       dueDate: new Date(),
-      supplierId: request.supplierId,
+      // Fornecedor escolhido na conclusão (ou o sugerido na solicitação).
+      supplierId: data.supplierId || request.supplierId,
       structuralKey: flowKey,
       vehicleId,
       capitalBeneficiaryId,

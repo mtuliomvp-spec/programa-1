@@ -55,6 +55,29 @@ export async function payBatchAction(
   return { ok: true, paid };
 }
 
+/**
+ * Define (ou corrige) o fornecedor de um título já lançado. Metadado puro —
+ * não mexe em valores, status nem saldos. Serve para consertar contas antigas
+ * lançadas sem fornecedor (ex.: compra concluída sem fornecedor sugerido).
+ */
+export async function setPayableSupplierAction(
+  id: string,
+  supplierId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "criar");
+    await prisma.payable.update({
+      where: { id },
+      data: { supplierId: supplierId || null },
+    });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível salvar." };
+  }
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/livro-caixa");
+  return { ok: true };
+}
+
 export async function markPendingAction(id: string) {
   await assertCan("financeiro", "pagar");
   await markPayablePending(id);

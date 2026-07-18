@@ -8,6 +8,7 @@ import { effectivePayableStatus } from "@/lib/status";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
+import SetSupplierForm from "./SetSupplierForm";
 
 export const dynamic = "force-dynamic";
 
@@ -63,6 +64,11 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   if (!payable) notFound();
 
   const company = await getCompany();
+  // Título sem fornecedor nem beneficiário: oferece corrigir aqui mesmo.
+  const allSuppliers =
+    !payable.supplier && !payable.beneficiaryUser
+      ? await prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } })
+      : [];
   const effective = effectivePayableStatus(payable.status, payable.dueDate);
   const catLabel = payable.categoryLabel || categoryLabel[payable.category];
 
@@ -198,6 +204,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
           {fornecedorRows.map(([label, value]) => (
             <Row key={label} label={label} value={value} />
           ))}
+          {!bene ? <SetSupplierForm payableId={payable.id} suppliers={allSuppliers} /> : null}
         </Section>
 
         <Section title="Dados para pagamento">

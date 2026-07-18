@@ -14,6 +14,7 @@ import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 type Status = "PENDENTE" | "APROVADA" | "REJEITADA" | "CONCLUIDA" | "CANCELADA";
 type Vehicle = { id: string; label: string };
 type Beneficiary = { id: string; name: string };
+type Supplier = { id: string; name: string };
 
 /**
  * Ações da solicitação na página de detalhe (versão espaçosa, boa no celular).
@@ -27,8 +28,10 @@ export default function RequestDetailActions({
   structuralKey,
   vehicleId,
   capitalBeneficiaryId,
+  supplierId,
   vehicles,
   beneficiaries,
+  suppliers,
   canApprove,
   canCreate,
 }: {
@@ -37,8 +40,10 @@ export default function RequestDetailActions({
   structuralKey?: string | null;
   vehicleId?: string | null;
   capitalBeneficiaryId?: string | null;
+  supplierId?: string | null;
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
+  suppliers: Supplier[];
   canApprove: boolean;
   canCreate: boolean;
 }) {
@@ -120,6 +125,19 @@ export default function RequestDetailActions({
             <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
             <option value="COMBUSTIVEL">Combustível</option>
           </Select>
+        </Field>
+        <Field label="Fornecedor (quem será pago)">
+          <Select name="supplierId" defaultValue={supplierId || ""}>
+            <option value="">— sem fornecedor —</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-slate-400">
+            Aparece na conta a pagar e no livro caixa como quem recebeu o pagamento.
+          </p>
         </Field>
         <Field label="Fluxo">
           <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>

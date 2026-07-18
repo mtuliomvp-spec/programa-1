@@ -50,7 +50,7 @@ export default async function SolicitacaoDetalhePage({
       })
     : null;
 
-  const [canApprove, canCreate, stockVehicles, beneficiaries] = await Promise.all([
+  const [canApprove, canCreate, stockVehicles, beneficiaries, suppliers] = await Promise.all([
     userCan("compras", "aprovar"),
     userCan("compras", "criar"),
     prisma.vehicle.findMany({
@@ -62,6 +62,7 @@ export default async function SolicitacaoDetalhePage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -133,8 +134,10 @@ export default async function SolicitacaoDetalhePage({
               structuralKey={request.structuralKey}
               vehicleId={request.vehicleId}
               capitalBeneficiaryId={request.capitalBeneficiaryId}
+              supplierId={request.supplierId}
               vehicles={vehicles}
               beneficiaries={beneficiaries}
+              suppliers={suppliers}
               canApprove={canApprove}
               canCreate={canCreate}
             />

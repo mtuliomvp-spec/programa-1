@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
+import { matchesSearch } from "@/lib/search";
 import { daysBetween } from "@/lib/reports";
 import { Badge, Button, Card, EmptyState, Input, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
 import type { StatusVeiculo } from "@prisma/client";
@@ -32,18 +33,7 @@ export default async function EstoquePage({
 
   const [vehicles, openPreSales] = await Promise.all([
     prisma.vehicle.findMany({
-      where: {
-        status,
-        ...(q
-          ? {
-              OR: [
-                { brand: { contains: q, mode: "insensitive" } },
-                { model: { contains: q, mode: "insensitive" } },
-                { plate: { contains: q, mode: "insensitive" } },
-              ],
-            }
-          : {}),
-      },
+      where: { status },
       include: {
         costs: { select: { amount: true } },
         payables: { select: { amount: true, status: true } },
@@ -66,7 +56,7 @@ export default async function EstoquePage({
     if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
   }
 
-  const rows = vehicles.map((v) => ({
+  const allRows = vehicles.map((v) => ({
     ...v,
     preSaleNumber: preSaleByVehicle.get(v.id) ?? null,
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
@@ -81,6 +71,33 @@ export default async function EstoquePage({
       .reduce((s, p) => s + p.amount, 0),
     daysInStock: daysBetween(v.entryDate, now),
   }));
+
+  // Busca livre pelos campos exibidos (marca, modelo, versão, placa, ano, cor,
+  // km, valores, status, dias em estoque).
+  const rows = q
+    ? allRows.filter((v) =>
+        matchesSearch(
+          q,
+          v.brand,
+          v.model,
+          v.version,
+          v.plate,
+          v.color,
+          `${v.manufactureYear}/${v.modelYear}`,
+          v.manufactureYear,
+          v.modelYear,
+          v.km,
+          v.paidCost,
+          formatCurrency(v.paidCost),
+          v.invested,
+          formatCurrency(v.invested),
+          v.salePrice,
+          formatCurrency(v.salePrice),
+          statusLabel[v.status].label,
+          v.daysInStock,
+        ),
+      )
+    : allRows;
 
   const active = rows.filter((v) => v.status !== "VENDIDO");
   const totalValue = active.reduce((sum, v) => sum + v.salePrice, 0);
@@ -98,7 +115,7 @@ export default async function EstoquePage({
       <Card className="mb-4 px-4 py-3">
         <form className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px] flex-1">
-            <Input name="q" placeholder="Buscar por marca, modelo ou placa" defaultValue={q} />
+            <Input name="q" placeholder="Buscar em todos os campos (marca, placa, cor, ano, valor...)" defaultValue={q} />
           </div>
           <div className="w-44">
             <Select name="status" defaultValue={params.status || "TODOS"}>

@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { userCan } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +11,14 @@ const paymentLabel = { A_VISTA: "À vista", PARCELADO: "Parcelado", FINANCIADO: 
 const statusTone = { CONCLUIDA: "success", CANCELADA: "danger" } as const;
 const statusLabel = { CONCLUIDA: "Concluída", CANCELADA: "Cancelada" } as const;
 
-export default async function VendasPage() {
+export default async function VendasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const q = ((await searchParams).q || "").trim();
   const canPreSale = await userCan("vendas", "prevenda");
-  const [sales, preSales] = await Promise.all([
+  const [allSales, allPreSales] = await Promise.all([
     prisma.sale.findMany({
       orderBy: { saleDate: "desc" },
       include: { vehicle: true, customer: true },
@@ -21,8 +27,8 @@ export default async function VendasPage() {
   ]);
 
   // Dados dos veículos/clientes das pré-vendas abertas (para exibir na lista).
-  const preVehicleIds = [...new Set(preSales.map((p) => p.vehicleId))];
-  const preCustomerIds = [...new Set(preSales.map((p) => p.customerId))];
+  const preVehicleIds = [...new Set(allPreSales.map((p) => p.vehicleId))];
+  const preCustomerIds = [...new Set(allPreSales.map((p) => p.customerId))];
   const [preVehicles, preCustomers] = await Promise.all([
     preVehicleIds.length
       ? prisma.vehicle.findMany({ where: { id: { in: preVehicleIds } }, select: { id: true, brand: true, model: true, plate: true } })
@@ -33,6 +39,39 @@ export default async function VendasPage() {
   ]);
   const vehicleById = new Map(preVehicles.map((v) => [v.id, v]));
   const customerById = new Map(preCustomers.map((c) => [c.id, c]));
+
+  // Busca livre pelos campos exibidos (vendas e pré-vendas).
+  const sales = q
+    ? allSales.filter((s) =>
+        matchesSearch(
+          q,
+          s.vehicle.brand,
+          s.vehicle.model,
+          s.vehicle.plate,
+          s.customer.name,
+          formatDate(s.saleDate),
+          s.totalAmount,
+          formatCurrency(s.totalAmount),
+          paymentLabel[s.paymentMethod],
+          statusLabel[s.status],
+          s.sellerName,
+        ),
+      )
+    : allSales;
+  const preSales = q
+    ? allPreSales.filter((p) => {
+        const v = vehicleById.get(p.vehicleId);
+        return matchesSearch(
+          q,
+          String(p.number).padStart(4, "0"),
+          v ? `${v.brand} ${v.model} ${v.plate}` : null,
+          customerById.get(p.customerId)?.name,
+          formatDate(p.saleDate),
+          p.totalAmount,
+          formatCurrency(p.totalAmount),
+        );
+      })
+    : allPreSales;
 
   const totalConcluidas = sales
     .filter((s) => s.status === "CONCLUIDA")
@@ -45,6 +84,18 @@ export default async function VendasPage() {
         description={`${sales.length} venda(s) · total: ${formatCurrency(totalConcluidas)}`}
         action={canPreSale ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined}
       />
+
+      <Card className="mb-4 px-4 py-3">
+        <form className="flex flex-wrap items-end gap-3">
+          <div className="min-w-[200px] flex-1">
+            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (veículo, cliente, valor, data...)" />
+          </div>
+          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
+            Buscar
+          </button>
+          {q ? <LinkButton variant="secondary" href="/vendas">Limpar</LinkButton> : null}
+        </form>
+      </Card>
 
       {preSales.length > 0 ? (
         <Card className="mb-4">
@@ -89,7 +140,10 @@ export default async function VendasPage() {
       ) : null}
       <Card>
         {sales.length === 0 ? (
-          <EmptyState title="Nenhuma venda registrada" action={canPreSale ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined} />
+          <EmptyState
+            title={q ? "Nada encontrado para a busca" : "Nenhuma venda registrada"}
+            action={canPreSale && !q ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined}
+          />
         ) : (
           <Table>
             <Thead>

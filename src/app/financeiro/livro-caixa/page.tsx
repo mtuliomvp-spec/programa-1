@@ -1,7 +1,9 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
 import CashEntryForm from "./CashEntryForm";
@@ -19,11 +21,12 @@ function parseMonth(value: string | undefined): { year: number; month: number } 
 export default async function LivroCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; conta?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string; q?: string }>;
 }) {
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
   const accountFilter = params.conta || "";
+  const q = (params.q || "").trim();
   const monthStart = new Date(Date.UTC(year, month, 1));
   const monthEnd = new Date(Date.UTC(year, month + 1, 1));
   const monthValue = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -47,11 +50,19 @@ export default async function LivroCaixaPage({
       }),
       prisma.payable.findMany({
         where: { status: "PAGO", paymentDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
-        include: { supplier: true, account: { select: { name: true } } },
+        include: {
+          supplier: true,
+          account: { select: { name: true } },
+          vehicle: { select: { brand: true, model: true, plate: true } },
+        },
       }),
       prisma.receivable.findMany({
         where: { status: "RECEBIDO", receivedDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
-        include: { customer: true, account: { select: { name: true } } },
+        include: {
+          customer: true,
+          account: { select: { name: true } },
+          vehicle: { select: { brand: true, model: true, plate: true } },
+        },
       }),
       prisma.financialAccount.findMany({
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
@@ -107,11 +118,17 @@ export default async function LivroCaixaPage({
     date: Date;
     description: string;
     who: string;
+    vehicle: string | null;
     kind: "entrada" | "saida";
     amount: number;
+    // link para a ordem de pagamento (saídas com conta a pagar)
+    href?: string;
     // preenchido só em lançamentos avulsos que podem ser excluídos daqui
     deletable?: { kind: "entrada" | "saida"; id: string };
   };
+
+  const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
+    v ? `${v.brand} ${v.model} · ${v.plate}` : null;
 
   const transferMovements: Movement[] = transfers
     .filter((t) => t.date >= monthStart && t.date < monthEnd)
@@ -120,6 +137,7 @@ export default async function LivroCaixaPage({
       date: t.date,
       description: t.description || `Transferência ${t.from.name} → ${t.to.name}`,
       who: t.toId === accountFilter ? t.from.name : t.to.name,
+      vehicle: null,
       kind: (t.toId === accountFilter ? "entrada" : "saida") as "entrada" | "saida",
       amount: t.amount,
     }));
@@ -131,6 +149,7 @@ export default async function LivroCaixaPage({
       date: r.receivedDate!,
       description: r.description,
       who: r.customer?.name || "-",
+      vehicle: vehicleLabel(r.vehicle),
       kind: "entrada" as const,
       amount: r.amount,
       deletable:
@@ -143,8 +162,10 @@ export default async function LivroCaixaPage({
       date: p.paymentDate!,
       description: p.description,
       who: p.supplier?.name || "-",
+      vehicle: vehicleLabel(p.vehicle),
       kind: "saida" as const,
       amount: p.amount,
+      href: `/financeiro/a-pagar/${p.id}/ordem`,
       deletable:
         !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId
           ? ({ kind: "saida", id: p.id } as const)
@@ -153,10 +174,26 @@ export default async function LivroCaixaPage({
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
   let running = openingBalance;
-  const rows = movements.map((m) => {
+  const allRows = movements.map((m) => {
     running += m.kind === "entrada" ? m.amount : -m.amount;
     return { ...m, balance: running };
   });
+  // Busca: filtra pelas colunas exibidas. O saldo corrente só faz sentido com
+  // o mês completo, então a coluna Saldo fica oculta enquanto há busca ativa.
+  const rows = q
+    ? allRows.filter((m) =>
+        matchesSearch(
+          q,
+          formatDate(m.date),
+          m.description,
+          m.who,
+          m.vehicle,
+          m.amount,
+          formatCurrency(m.amount),
+          m.kind,
+        ),
+      )
+    : allRows;
 
   const totalIn = movements.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0);
   const totalOut = movements.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0);
@@ -249,10 +286,29 @@ export default async function LivroCaixaPage({
           title={`Movimentações — ${monthValue}`}
           description="Somente o que foi efetivamente pago e recebido, em ordem cronológica, com saldo corrente"
         />
+        <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+          <input type="hidden" name="mes" value={monthValue} />
+          {accountFilter ? <input type="hidden" name="conta" value={accountFilter} /> : null}
+          <div className="w-full max-w-sm">
+            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (descrição, quem, veículo, valor...)" />
+          </div>
+          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
+            Buscar
+          </button>
+          {q ? (
+            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${monthValue}${accountFilter ? `&conta=${accountFilter}` : ""}`}>
+              Limpar
+            </LinkButton>
+          ) : null}
+        </form>
         {rows.length === 0 ? (
           <EmptyState
-            title="Nenhuma movimentação neste mês"
-            description="Pagamentos e recebimentos baixados aparecem aqui, dia a dia."
+            title={q ? "Nada encontrado para a busca" : "Nenhuma movimentação neste mês"}
+            description={
+              q
+                ? "Tente outros termos ou limpe a busca."
+                : "Pagamentos e recebimentos baixados aparecem aqui, dia a dia."
+            }
           />
         ) : (
           <Table>
@@ -261,56 +317,76 @@ export default async function LivroCaixaPage({
                 <Th>Data</Th>
                 <Th>Descrição</Th>
                 <Th>Quem</Th>
+                <Th>Veículo</Th>
                 <Th className="text-right">Entrada</Th>
                 <Th className="text-right">Saída</Th>
-                <Th className="text-right">Saldo</Th>
+                {!q ? <Th className="text-right">Saldo</Th> : null}
               </Tr>
             </Thead>
             <tbody>
-              <Tr className="bg-slate-50">
-                <Td className="text-slate-500">—</Td>
-                <Td className="font-medium text-slate-700">Saldo inicial</Td>
-                <Td>{""}</Td>
-                <Td>{""}</Td>
-                <Td>{""}</Td>
-                <Td className="text-right font-semibold tabular-nums">{formatCurrency(openingBalance)}</Td>
-              </Tr>
+              {!q ? (
+                <Tr className="bg-slate-50">
+                  <Td className="text-slate-500">—</Td>
+                  <Td className="font-medium text-slate-700">Saldo inicial</Td>
+                  <Td>{""}</Td>
+                  <Td>{""}</Td>
+                  <Td>{""}</Td>
+                  <Td>{""}</Td>
+                  <Td className="text-right font-semibold tabular-nums">{formatCurrency(openingBalance)}</Td>
+                </Tr>
+              ) : null}
               {rows.map((m) => (
                 <Tr key={m.id}>
                   <Td className="whitespace-nowrap">{formatDate(m.date)}</Td>
                   <Td className="font-medium text-slate-900">
                     <span className="flex items-center gap-2">
-                      {m.description}
+                      {m.href ? (
+                        <Link href={m.href} className="text-blue-700 hover:underline" title="Abrir ordem de pagamento">
+                          {m.description}
+                        </Link>
+                      ) : (
+                        m.description
+                      )}
                       {m.deletable ? (
                         <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} />
                       ) : null}
                     </span>
                   </Td>
                   <Td>{m.who}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{m.vehicle || "-"}</Td>
                   <Td className="text-right tabular-nums text-emerald-600">
                     {m.kind === "entrada" ? formatCurrency(m.amount) : ""}
                   </Td>
                   <Td className="text-right tabular-nums text-rose-600">
                     {m.kind === "saida" ? formatCurrency(m.amount) : ""}
                   </Td>
-                  <Td
-                    className={`text-right font-medium tabular-nums ${
-                      m.balance >= 0 ? "text-slate-900" : "text-rose-600"
-                    }`}
-                  >
-                    {formatCurrency(m.balance)}
-                  </Td>
+                  {!q ? (
+                    <Td
+                      className={`text-right font-medium tabular-nums ${
+                        m.balance >= 0 ? "text-slate-900" : "text-rose-600"
+                      }`}
+                    >
+                      {formatCurrency(m.balance)}
+                    </Td>
+                  ) : null}
                 </Tr>
               ))}
               <Tr className="bg-slate-50 font-semibold">
-                <Td className="text-slate-700">Total</Td>
+                <Td className="text-slate-700">{q ? "Total da busca" : "Total"}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
-                <Td className="text-right tabular-nums text-emerald-600">{formatCurrency(totalIn)}</Td>
-                <Td className="text-right tabular-nums text-rose-600">{formatCurrency(totalOut)}</Td>
-                <Td className="text-right tabular-nums">
-                  {formatCurrency(openingBalance + totalIn - totalOut)}
+                <Td>{""}</Td>
+                <Td className="text-right tabular-nums text-emerald-600">
+                  {formatCurrency(rows.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0))}
                 </Td>
+                <Td className="text-right tabular-nums text-rose-600">
+                  {formatCurrency(rows.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0))}
+                </Td>
+                {!q ? (
+                  <Td className="text-right tabular-nums">
+                    {formatCurrency(openingBalance + totalIn - totalOut)}
+                  </Td>
+                ) : null}
               </Tr>
             </tbody>
           </Table>

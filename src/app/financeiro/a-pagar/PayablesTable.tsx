@@ -14,6 +14,7 @@ export type PayableRow = {
   description: string;
   categoryLabel: string;
   supplierName: string | null;
+  vehicleLabel: string | null;
   dueDate: string; // ISO
   amount: number;
   effective: "PENDENTE" | "PAGO" | "ATRASADO";
@@ -96,6 +97,7 @@ export default function PayablesTable({
             <Th>Descrição</Th>
             <Th>Categoria</Th>
             <Th>Fornecedor</Th>
+            <Th>Veículo</Th>
             <Th>Vencimento</Th>
             <Th>Valor</Th>
             <Th>Status</Th>
@@ -143,6 +145,7 @@ export default function PayablesTable({
                 </Td>
                 <Td>{p.categoryLabel}</Td>
                 <Td>{p.supplierName || "-"}</Td>
+                <Td className="whitespace-nowrap text-slate-600">{p.vehicleLabel || "-"}</Td>
                 <Td>{formatDate(p.dueDate)}</Td>
                 <Td>{formatCurrency(p.amount)}</Td>
                 <Td>

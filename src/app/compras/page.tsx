@@ -2,7 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewRequestForm from "./NewRequestForm";
 import RequestRowActions from "./RequestRowActions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
@@ -20,8 +21,13 @@ const statusMeta = {
   CANCELADA: { label: "Cancelada", tone: "default" },
 } as const;
 
-export default async function ComprasPage() {
-  const [user, requests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
+export default async function ComprasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const q = ((await searchParams).q || "").trim();
+  const [user, allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
     getSessionUser(),
     prisma.purchaseRequest.findMany({
       include: { supplier: true },
@@ -44,6 +50,27 @@ export default async function ComprasPage() {
     id: v.id,
     label: `${v.brand} ${v.model} · ${v.plate}`,
   }));
+
+  // Busca livre pelos campos exibidos.
+  const requests = q
+    ? allRequests.filter((r) =>
+        matchesSearch(
+          q,
+          formatRequestNumber(r.seq, r.year),
+          r.description,
+          r.requestedBy,
+          formatDate(r.createdAt),
+          flowName(r.structuralKey),
+          r.supplier?.name,
+          r.decisionNotes,
+          r.finalAmount,
+          r.finalAmount ? formatCurrency(r.finalAmount) : null,
+          r.estimatedAmount,
+          r.estimatedAmount ? formatCurrency(r.estimatedAmount) : null,
+          statusMeta[r.status].label,
+        ),
+      )
+    : allRequests;
 
   const pendentes = requests.filter((r) => r.status === "PENDENTE");
   const aprovadas = requests.filter((r) => r.status === "APROVADA");
@@ -74,10 +101,19 @@ export default async function ComprasPage() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Solicitações" description="Últimas 100" />
+          <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
+            <div className="w-full max-w-sm">
+              <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (descrição, fornecedor, valor...)" />
+            </div>
+            <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
+              Buscar
+            </button>
+            {q ? <LinkButton variant="secondary" href="/compras">Limpar</LinkButton> : null}
+          </form>
           {requests.length === 0 ? (
             <EmptyState
-              title="Nenhuma solicitação"
-              description="Registre a primeira solicitação de compra ao lado."
+              title={q ? "Nada encontrado para a busca" : "Nenhuma solicitação"}
+              description={q ? "Tente outros termos ou limpe a busca." : "Registre a primeira solicitação de compra ao lado."}
             />
           ) : (
             <Table>
