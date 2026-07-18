@@ -50,6 +50,7 @@ export type DreMonth = {
   lucroBruto: number;
   despesas: number;
   comissoes: number;
+  transferencias: number;
   retornos: number;
   outrasReceitas: number;
   lucroLiquido: number;
@@ -152,6 +153,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
       .reduce((sum, e) => sum + e.amount, 0);
+    // Transferência (DETRAN) cobrada por competência no mês.
+    const transferencias = monthSales.reduce(
+      (sum, s) => sum + (s.transferCharged ? s.transferAmount : 0),
+      0,
+    );
 
     const receitaTotal = receitaVeiculos + receitaPecas;
     const custoTotal = custoVeiculos + custoPecas;
@@ -168,9 +174,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       lucroBruto,
       despesas,
       comissoes,
+      transferencias,
       retornos,
       outrasReceitas,
-      lucroLiquido: lucroBruto - despesas - comissoes + retornos + outrasReceitas,
+      lucroLiquido:
+        lucroBruto - despesas - comissoes - transferencias + retornos + outrasReceitas,
       veiculosVendidos: monthSales.length,
     });
   }
@@ -206,6 +214,7 @@ export type PLStatement = {
   posVenda: number;
   retornos: number;
   outrasReceitas: number;
+  transferencias: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -291,7 +300,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
 
   const entries: PLEntry[] = [];
   let receitaVeiculos = 0, custoVeiculos = 0, receitaPecas = 0, custoPecas = 0;
-  let despesas = 0, comissoes = 0, posVenda = 0, retornos = 0, outrasReceitas = 0;
+  let despesas = 0, comissoes = 0, posVenda = 0, retornos = 0, outrasReceitas = 0, transferencias = 0;
 
   for (const s of sales) {
     // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
@@ -335,6 +344,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         description: `Comissão de indicação${ref.name ? ` — ${ref.name}` : ""}`,
         detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
         value: -ref.amount,
+      });
+    }
+
+    // Transferência (DETRAN) cobrada: custo da venda, reconhecido por competência
+    // (casa com a conta a pagar criada no registro da venda). Reduz o resultado.
+    if (s.transferCharged && s.transferAmount > 0) {
+      transferencias += s.transferAmount;
+      entries.push({
+        id: `transf-${s.id}`,
+        date: s.saleDate,
+        kind: "DESPESA",
+        description: "Transferência DETRAN",
+        detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        value: -s.transferAmount,
       });
     }
   }
@@ -421,7 +444,9 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     posVenda,
     retornos,
     outrasReceitas,
-    lucroLiquido: lucroBruto - despesas - comissoes - posVenda + retornos + outrasReceitas,
+    transferencias,
+    lucroLiquido:
+      lucroBruto - despesas - comissoes - posVenda - transferencias + retornos + outrasReceitas,
     veiculosVendidos: sales.length,
   };
 }

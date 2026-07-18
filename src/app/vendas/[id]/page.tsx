@@ -118,7 +118,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      {sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || sale.notes ? (
+      {sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || (sale.transferCharged && sale.transferAmount > 0) || sale.notes ? (
         <div className="mt-4">
           <Card className="p-5 text-sm text-slate-600">
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}
@@ -126,6 +126,12 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
               <p className="mt-1">
                 <span className="font-medium text-slate-800">Comissão do vendedor:</span> {formatCurrency(sale.commissionAmount)}{" "}
                 <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+              </p>
+            ) : null}
+            {sale.transferCharged && sale.transferAmount > 0 ? (
+              <p className="mt-1">
+                <span className="font-medium text-slate-800">Transferência (DETRAN):</span> {formatCurrency(sale.transferAmount)}{" "}
+                <span className="text-slate-400">— lançada em Contas a pagar</span>
               </p>
             ) : null}
             {referrals.map((r, i) => (

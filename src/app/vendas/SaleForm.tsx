@@ -30,6 +30,8 @@ export type SaleFormInitial = {
   sellerId?: string;
   commissionAmount?: number;
   referrals?: { name: string; amount: number }[];
+  transferCharged?: boolean;
+  transferAmount?: number;
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -152,6 +154,8 @@ export default function SaleForm({
   function removeReferral(index: number) {
     setReferrals((prev) => prev.filter((_, i) => i !== index));
   }
+  // Transferência (DETRAN) cobrada: quando marcada, vira conta a pagar (custo).
+  const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
   const referralsJson = JSON.stringify(
     referrals
       .filter((r) => r.name.trim() || Number(r.amount) > 0)
@@ -343,6 +347,35 @@ export default function SaleForm({
             defaultValue={initial?.commissionAmount ? String(initial.commissionAmount) : ""}
             placeholder="0,00 — opcional"
           />
+        </Field>
+        <Field label="Transferência (DETRAN)">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="transferCharged"
+              value="true"
+              checked={transferCharged}
+              onChange={(e) => setTransferCharged(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Transferência cobrada na venda
+          </label>
+          {transferCharged ? (
+            <>
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                name="transferAmount"
+                defaultValue={initial?.transferAmount ? String(initial.transferAmount) : ""}
+                placeholder="Valor da transferência (R$)"
+                className="mt-2"
+              />
+              <p className="mt-1 text-xs text-slate-400">
+                Vira uma conta a pagar (custo da venda) ao registrar, como a comissão.
+              </p>
+            </>
+          ) : null}
         </Field>
         {referralRows.map((row, i) => (
           // Sem `name` nos inputs: as indicações vão juntas no hidden "referrals".

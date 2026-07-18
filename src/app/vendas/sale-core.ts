@@ -41,6 +41,10 @@ export const saleSchema = z.object({
   sellerId: z.string().optional(),
   // Comissão do vendedor (R$) — vira conta a pagar (categoria Comissão).
   commissionAmount: z.coerce.number().min(0).default(0),
+  // Transferência (DETRAN) cobrada na venda: indicador + valor. Quando cobrada,
+  // vira conta a pagar (custo, igual à comissão).
+  transferCharged: z.coerce.boolean().optional(),
+  transferAmount: z.coerce.number().min(0).default(0),
   // Indicações de venda: JSON [{ name, amount }] serializado num input hidden.
   // Cada indicação vira conta a pagar (Comissão), como a do vendedor.
   referrals: z
@@ -221,6 +225,8 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       sellerId: d.sellerId || null,
       commissionAmount: Math.max(0, d.commissionAmount || 0),
       referrals: d.referrals ?? [],
+      transferCharged: Boolean(d.transferCharged),
+      transferAmount: Math.max(0, d.transferAmount || 0),
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,

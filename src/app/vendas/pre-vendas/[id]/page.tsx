@@ -154,6 +154,9 @@ export default async function PreVendaFichaPage({
             {pre.commissionAmount > 0 ? (
               <p><span className="text-slate-500">Comissão do vendedor:</span> {money(pre.commissionAmount)}</p>
             ) : null}
+            {pre.transferCharged && pre.transferAmount > 0 ? (
+              <p><span className="text-slate-500">Transferência (DETRAN):</span> {money(pre.transferAmount)}</p>
+            ) : null}
             {referrals.map((r, i) => (
               <p key={i}>
                 <span className="text-slate-500">Indicação de venda{referrals.length > 1 ? ` ${i + 1}` : ""}:</span>{" "}

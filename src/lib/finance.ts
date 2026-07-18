@@ -568,6 +568,10 @@ export async function registerVehicleSale(input: {
   // Indicações de venda ({ name, amount }): cada uma com valor > 0 também vira
   // conta a pagar (Comissão, Administrativo), como a comissão do vendedor.
   referrals?: { name: string; amount: number }[] | null;
+  // Transferência (DETRAN) cobrada na venda: quando cobrada, vira conta a pagar
+  // (custo, igual à comissão) e reduz o resultado daquela venda.
+  transferCharged?: boolean | null;
+  transferAmount?: number | null;
   notes?: string | null;
   // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
@@ -594,8 +598,12 @@ export async function registerVehicleSale(input: {
   const referrals = (input.referrals ?? [])
     .map((r) => ({ name: (r.name || "").trim(), amount: Math.max(0, Math.round((r.amount || 0) * 100) / 100) }))
     .filter((r) => r.name || r.amount > 0);
+  const transferCharged = Boolean(input.transferCharged);
+  const transferAmount = transferCharged
+    ? Math.max(0, Math.round((input.transferAmount ?? 0) * 100) / 100)
+    : 0;
   const adminCenterId =
-    commission > 0 || referrals.some((r) => r.amount > 0)
+    commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0
       ? await structuralCenterId("ADMINISTRATIVO")
       : null;
   return prisma.$transaction(async (tx) => {
@@ -637,6 +645,8 @@ export async function registerVehicleSale(input: {
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
         commissionAmount: commission,
         referrals,
+        transferCharged,
+        transferAmount,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },
@@ -675,6 +685,23 @@ export async function registerVehicleSale(input: {
           description: `Comissão de indicação${ref.name ? ` — ${ref.name}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
           category: "COMISSAO",
           amount: ref.amount,
+          dueDate: input.saleDate,
+          status: "PENDENTE",
+          costCenterId: adminCenterId,
+          saleId: sale.id,
+        },
+      });
+    }
+
+    // Transferência (DETRAN) cobrada: custo da venda, mesma mecânica da comissão
+    // (Comissão, Administrativo, vencendo na data da venda). NÃO é custo do
+    // veículo (vehicleId nulo) — não mexe na margem do carro.
+    if (transferAmount > 0 && adminCenterId) {
+      await tx.payable.create({
+        data: {
+          description: `Transferência DETRAN — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          category: "COMISSAO",
+          amount: transferAmount,
           dueDate: input.saleDate,
           status: "PENDENTE",
           costCenterId: adminCenterId,
