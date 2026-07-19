@@ -93,10 +93,14 @@ export async function createAccountAction(
   return {};
 }
 
-/** Atualiza o % de imposto retido pela financeira sobre o retorno. */
+/**
+ * Atualiza os percentuais do retorno da financeira: o imposto retido e o
+ * percentual do retorno líquido que vai para o vendedor como comissão.
+ */
 export async function updateFinancerTaxAction(
   id: string,
   percent: number,
+  sellerPercent = 0,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("financeiro", "contas");
@@ -104,10 +108,17 @@ export async function updateFinancerTaxAction(
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const p = Number(percent);
+  const sp = Number(sellerPercent);
   if (!Number.isFinite(p) || p < 0 || p > 100) {
-    return { ok: false, error: "Informe um percentual entre 0 e 100." };
+    return { ok: false, error: "Informe um percentual de imposto entre 0 e 100." };
   }
-  await prisma.financialAccount.update({ where: { id }, data: { returnTaxPercent: p } });
+  if (!Number.isFinite(sp) || sp < 0 || sp > 100) {
+    return { ok: false, error: "Informe um percentual do vendedor entre 0 e 100." };
+  }
+  await prisma.financialAccount.update({
+    where: { id },
+    data: { returnTaxPercent: p, sellerReturnPercent: sp },
+  });
   revalidatePath("/financeiro/contas");
   revalidatePath(`/financeiro/contas/${id}`);
   return { ok: true };

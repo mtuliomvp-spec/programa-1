@@ -148,7 +148,10 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     // Comissão de venda + indicações de venda por competência (na data da
     // venda) + comissões manuais pagas (sem venda vinculada) no mês.
     const comissoes =
-      monthSales.reduce((sum, s) => sum + (s.commissionAmount || 0) + sumReferrals(s.referrals), 0) +
+      monthSales.reduce(
+        (sum, s) => sum + (s.commissionAmount || 0) + sumReferrals(s.referrals) + (s.returnCommissionAmount || 0),
+        0,
+      ) +
       monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
@@ -358,6 +361,20 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         description: "Transferência DETRAN",
         detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
         value: -s.transferAmount,
+      });
+    }
+
+    // Comissão do vendedor sobre o retorno da financeira: custo por competência,
+    // casando com a conta a pagar (Comissão) criada no registro da venda.
+    if (s.returnCommissionAmount > 0) {
+      comissoes += s.returnCommissionAmount;
+      entries.push({
+        id: `retcom-${s.id}`,
+        date: s.saleDate,
+        kind: "COMISSAO",
+        description: `Comissão do retorno${s.sellerName ? ` — ${s.sellerName}` : ""}`,
+        detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        value: -s.returnCommissionAmount,
       });
     }
   }

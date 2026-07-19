@@ -12,7 +12,7 @@ import BankInput from "@/components/BankInput";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
-type Financer = { id: string; name: string; returnTaxPercent: number };
+type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
 
 export type SaleFormInitial = {
@@ -32,6 +32,7 @@ export type SaleFormInitial = {
   referrals?: { name: string; amount: number }[];
   transferCharged?: boolean;
   transferAmount?: number;
+  takeReturnCommission?: boolean;
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -189,7 +190,13 @@ export default function SaleForm({
   const [returnLevel, setReturnLevel] = useState<string>(
     initial?.returnLevel ? String(initial.returnLevel) : "0",
   );
-  const financerTaxPercent = financers.find((f) => f.id === financerAccountId)?.returnTaxPercent ?? 0;
+  const selectedFinancer = financers.find((f) => f.id === financerAccountId);
+  const financerTaxPercent = selectedFinancer?.returnTaxPercent ?? 0;
+  const sellerReturnPercent = selectedFinancer?.sellerReturnPercent ?? 0;
+  // Comissão do vendedor sobre o retorno (facultativa): % do líquido.
+  const [takeReturnCommission, setTakeReturnCommission] = useState(
+    initial?.takeReturnCommission ?? true,
+  );
   // Restante depois de troca e sinal — pode ficar negativo (troca + sinal já
   // passam do valor da venda), e aí o excedente já é devolução ao cliente.
   const rawRestante = Math.round((total - tiLiquido - sinal) * 100) / 100;
@@ -214,6 +221,8 @@ export default function SaleForm({
   const financedEffetivo = financedTyped > 0 ? financedTyped : restanteFin;
   const retornoNivel = Math.max(0, Math.floor(Number(returnLevel) || 0));
   const retorno = computeReturn(financedEffetivo, retornoNivel, financerTaxPercent);
+  // Comissão do retorno para o vendedor = % do líquido (config. na financeira).
+  const returnCommission = Math.round(retorno.net * (sellerReturnPercent / 100) * 100) / 100;
   const methodLabel =
     paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
@@ -538,6 +547,28 @@ export default function SaleForm({
                     O líquido entra na conta da financeira (que passa a dever à loja) e é recebido
                     separado do repasse, na tela Financiamentos.
                   </p>
+                  {sellerReturnPercent > 0 && retorno.net > 0 ? (
+                    <div className="mt-3 border-t border-slate-200 pt-3">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        <input
+                          type="checkbox"
+                          name="takeReturnCommission"
+                          value="true"
+                          checked={takeReturnCommission}
+                          onChange={(e) => setTakeReturnCommission(e.target.checked)}
+                          className="h-4 w-4 rounded border-slate-300"
+                        />
+                        Pagar comissão do retorno ao vendedor
+                        ({sellerReturnPercent.toLocaleString("pt-BR")}% do líquido)
+                      </label>
+                      {takeReturnCommission ? (
+                        <p className="mt-1 text-xs text-slate-500">
+                          Comissão do vendedor: <strong>{formatCurrency(returnCommission)}</strong> — vira
+                          uma conta a pagar (custo da venda), como a comissão comum.
+                        </p>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               )
             ) : null}

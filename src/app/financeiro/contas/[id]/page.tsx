@@ -98,7 +98,11 @@ export default async function AccountStatementPage({ params }: { params: Promise
       />
 
       {account.type === "FINANCEIRA" ? (
-        <AccountFinancerSettings id={account.id} initialPercent={account.returnTaxPercent} />
+        <AccountFinancerSettings
+          id={account.id}
+          initialPercent={account.returnTaxPercent}
+          initialSellerPercent={account.sellerReturnPercent}
+        />
       ) : null}
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-4">

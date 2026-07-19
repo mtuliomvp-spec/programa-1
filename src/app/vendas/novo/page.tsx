@@ -66,7 +66,7 @@ export default async function NovaVendaPage({
     prisma.financialAccount.findMany({
       where: { active: true, type: "FINANCEIRA" },
       orderBy: { name: "asc" },
-      select: { id: true, name: true, returnTaxPercent: true },
+      select: { id: true, name: true, returnTaxPercent: true, sellerReturnPercent: true },
     }),
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);

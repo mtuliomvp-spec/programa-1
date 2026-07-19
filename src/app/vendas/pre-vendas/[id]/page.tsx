@@ -63,7 +63,7 @@ export default async function PreVendaFichaPage({
     prisma.vehicle.findUnique({ where: { id: pre.vehicleId } }),
     prisma.customer.findUnique({ where: { id: pre.customerId } }),
     pre.financerAccountId
-      ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId }, select: { name: true, returnTaxPercent: true } })
+      ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId }, select: { name: true, returnTaxPercent: true, sellerReturnPercent: true } })
       : Promise.resolve(null),
     prisma.receivable.aggregate({
       _sum: { amount: true },
@@ -219,6 +219,13 @@ export default async function PreVendaFichaPage({
                 <Row label={`Retorno ${retornoLabel(pre.returnLevel)} (bruto)`} value={retorno.gross} />
                 <Row label="(−) Imposto retido" value={retorno.tax} tone="rose" />
                 <Row label="= Retorno líquido (recebe da financeira)" value={retorno.net} strong tone="green" />
+                {pre.takeReturnCommission && (financer?.sellerReturnPercent ?? 0) > 0 ? (
+                  <Row
+                    label={`(−) Comissão do retorno ao vendedor (${(financer?.sellerReturnPercent ?? 0).toLocaleString("pt-BR")}%)`}
+                    value={Math.round(retorno.net * ((financer?.sellerReturnPercent ?? 0) / 100) * 100) / 100}
+                    tone="rose"
+                  />
+                ) : null}
               </>
             ) : null}
           </section>

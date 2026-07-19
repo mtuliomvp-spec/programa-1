@@ -572,6 +572,9 @@ export async function registerVehicleSale(input: {
   // (custo, igual à comissão) e reduz o resultado daquela venda.
   transferCharged?: boolean | null;
   transferAmount?: number | null;
+  // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira
+  // (percentual do líquido, configurado na conta da financeira).
+  takeReturnCommission?: boolean | null;
   notes?: string | null;
   // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
@@ -603,7 +606,7 @@ export async function registerVehicleSale(input: {
     ? Math.max(0, Math.round((input.transferAmount ?? 0) * 100) / 100)
     : 0;
   const adminCenterId =
-    commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0
+    commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0 || input.takeReturnCommission
       ? await structuralCenterId("ADMINISTRATIVO")
       : null;
   return prisma.$transaction(async (tx) => {
@@ -849,7 +852,7 @@ export async function registerVehicleSale(input: {
         if (naFinanceira && level > 0) {
           const financerAcc = await tx.financialAccount.findUnique({
             where: { id: input.financerAccountId! },
-            select: { returnTaxPercent: true },
+            select: { returnTaxPercent: true, sellerReturnPercent: true },
           });
           const { gross, tax, net } = computeReturn(
             financed,
@@ -869,6 +872,32 @@ export async function registerVehicleSale(input: {
               accountId: input.financerAccountId,
             });
             await tx.sale.update({ where: { id: sale.id }, data: { returnNet: net } });
+
+            // Comissão do vendedor sobre o retorno (facultativa): % do LÍQUIDO,
+            // configurado na conta da financeira. Vira conta a pagar (Comissão,
+            // beneficiário = vendedor) — custo por competência, igual à comissão.
+            const sellerPct = Math.max(0, Math.min(100, financerAcc?.sellerReturnPercent ?? 0));
+            if (input.takeReturnCommission && sellerPct > 0 && adminCenterId) {
+              const returnCommission = Math.round(net * (sellerPct / 100) * 100) / 100;
+              if (returnCommission > 0) {
+                await tx.payable.create({
+                  data: {
+                    description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                    category: "COMISSAO",
+                    amount: returnCommission,
+                    dueDate: input.saleDate,
+                    status: "PENDENTE",
+                    costCenterId: adminCenterId,
+                    saleId: sale.id,
+                    beneficiaryUserId: input.sellerId || null,
+                  },
+                });
+                await tx.sale.update({
+                  where: { id: sale.id },
+                  data: { returnCommissionAmount: returnCommission },
+                });
+              }
+            }
           }
         }
       }

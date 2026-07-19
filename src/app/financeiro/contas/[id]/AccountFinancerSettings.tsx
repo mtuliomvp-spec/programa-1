@@ -7,23 +7,26 @@ import { updateFinancerTaxAction } from "../actions";
 export default function AccountFinancerSettings({
   id,
   initialPercent,
+  initialSellerPercent,
 }: {
   id: string;
   initialPercent: number;
+  initialSellerPercent: number;
 }) {
   const [percent, setPercent] = useState(String(initialPercent ?? 0));
+  const [sellerPercent, setSellerPercent] = useState(String(initialSellerPercent ?? 0));
   const [saving, startSave] = useTransition();
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   function save() {
     setMsg(null);
     startSave(async () => {
-      const r = await updateFinancerTaxAction(id, Number(percent));
+      const r = await updateFinancerTaxAction(id, Number(percent), Number(sellerPercent));
       if (!r.ok) {
         setMsg({ tone: "err", text: r.error || "Não foi possível salvar." });
         return;
       }
-      setMsg({ tone: "ok", text: "Desconto de impostos atualizado." });
+      setMsg({ tone: "ok", text: "Percentuais do retorno atualizados." });
     });
   }
 
@@ -31,7 +34,7 @@ export default function AccountFinancerSettings({
     <Card className="mb-4">
       <CardHeader
         title="Financeira — retorno"
-        description="Percentual de imposto que a financeira retém sobre o retorno (a loja recebe o líquido)."
+        description="Imposto retido pela financeira sobre o retorno (a loja recebe o líquido) e o percentual do líquido que vai para o vendedor como comissão."
       />
       <div className="flex flex-wrap items-end gap-3 p-5">
         <div className="w-40">
@@ -43,6 +46,18 @@ export default function AccountFinancerSettings({
               max={100}
               value={percent}
               onChange={(e) => setPercent(e.target.value)}
+            />
+          </Field>
+        </div>
+        <div className="w-44">
+          <Field label="% do retorno p/ o vendedor">
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              max={100}
+              value={sellerPercent}
+              onChange={(e) => setSellerPercent(e.target.value)}
             />
           </Field>
         </div>
