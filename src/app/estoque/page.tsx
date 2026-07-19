@@ -27,7 +27,13 @@ export default async function EstoquePage({
   searchParams: Promise<{ status?: string; q?: string }>;
 }) {
   const params = await searchParams;
-  const status = params.status && params.status !== "TODOS" ? (params.status as StatusVeiculo) : undefined;
+  // "PRE_VENDIDO" é um filtro derivado (veículo em estoque com pré-venda em
+  // aberto), não um status do banco. Os demais valores são status reais.
+  const preVendidoFilter = params.status === "PRE_VENDIDO";
+  const status =
+    params.status && params.status !== "TODOS" && params.status !== "PRE_VENDIDO"
+      ? (params.status as StatusVeiculo)
+      : undefined;
   const q = params.q?.trim();
   const now = new Date();
 
@@ -72,10 +78,15 @@ export default async function EstoquePage({
     daysInStock: daysBetween(v.entryDate, now),
   }));
 
+  // Filtro derivado "Pré-vendido": em estoque (não vendido) e com pré-venda aberta.
+  const statusFiltered = preVendidoFilter
+    ? allRows.filter((v) => v.status !== "VENDIDO" && v.preSaleNumber != null)
+    : allRows;
+
   // Busca livre pelos campos exibidos (marca, modelo, versão, placa, ano, cor,
   // km, valores, status, dias em estoque).
   const rows = q
-    ? allRows.filter((v) =>
+    ? statusFiltered.filter((v) =>
         matchesSearch(
           q,
           v.brand,
@@ -97,7 +108,7 @@ export default async function EstoquePage({
           v.daysInStock,
         ),
       )
-    : allRows;
+    : statusFiltered;
 
   const active = rows.filter((v) => v.status !== "VENDIDO");
   const totalValue = active.reduce((sum, v) => sum + v.salePrice, 0);
@@ -121,7 +132,7 @@ export default async function EstoquePage({
             <Select name="status" defaultValue={params.status || "TODOS"}>
               <option value="TODOS">Todos os status</option>
               <option value="ESTOQUE">Em estoque</option>
-              <option value="RESERVADO">Reservado</option>
+              <option value="PRE_VENDIDO">Pré-vendido</option>
               <option value="VENDIDO">Vendido</option>
             </Select>
           </div>
