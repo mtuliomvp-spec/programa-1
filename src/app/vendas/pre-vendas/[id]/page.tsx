@@ -1,7 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import QRCode from "qrcode";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
+import { getBaseUrl } from "@/lib/base-url";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
@@ -97,6 +99,11 @@ export default async function PreVendaFichaPage({
   const editHref = `/vendas/novo?preSale=${pre.id}`;
   const converted = pre.status === "CONVERTIDA";
   const referrals = parseReferrals(pre.referrals);
+
+  // QR Code de verificação: link para a página pública da ficha (usa o domínio
+  // oficial via NEXT_PUBLIC_APP_URL quando definido).
+  const verifyUrl = `${await getBaseUrl()}/verificar/ficha/${pre.publicToken}`;
+  const qrDataUrl = await QRCode.toDataURL(verifyUrl, { margin: 1, width: 320 });
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -247,9 +254,20 @@ export default async function PreVendaFichaPage({
           </section>
         ) : null}
 
-        <div className="mt-8 grid grid-cols-2 gap-8 text-center text-xs text-slate-500">
-          <div className="border-t border-slate-400 pt-1">Cliente</div>
-          <div className="border-t border-slate-400 pt-1">Loja / Vendedor</div>
+        <div className="mt-8 grid grid-cols-2 items-end gap-8">
+          {/* QR Code de verificação no lugar da assinatura do cliente. */}
+          <div className="flex items-center gap-3">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={qrDataUrl} alt="QR Code de verificação" className="h-24 w-24 shrink-0" />
+            <p className="text-xs text-slate-500">
+              <span className="font-semibold text-slate-700">Verificar informações</span>
+              <br />
+              Aponte a câmera do celular para conferir os dados desta negociação.
+            </p>
+          </div>
+          <div className="border-t border-slate-400 pt-1 text-center text-xs text-slate-500">
+            Loja / Vendedor
+          </div>
         </div>
       </div>
     </div>

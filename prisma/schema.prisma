@@ -482,6 +482,8 @@ model PreSale {
   // Transferência (DETRAN) cobrada: vira conta a pagar ao converter a venda.
   transferCharged   Boolean        @default(false)
   transferAmount    Float          @default(0)
+  // Token público para a verificação da ficha via QR Code (página /verificar).
+  publicToken       String         @unique @default(uuid())
   status            StatusPreVenda @default(ABERTA)
   convertedSaleId   String?
   createdAt         DateTime       @default(now())
