@@ -28,6 +28,7 @@ export default function ManualPayableForm({
 }) {
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
+  const [paymentMode, setPaymentMode] = useState<"A_VISTA" | "PARCELADO">("A_VISTA");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
@@ -117,10 +118,28 @@ export default function ManualPayableForm({
             />
           ) : null}
         </Field>
-        <Field label="Valor" required>
+        <Field label="Nº do documento">
+          <Input name="documentNumber" placeholder="Nota fiscal, fatura, boleto..." />
+        </Field>
+        <Field label="Forma">
+          <Select
+            name="paymentMode"
+            value={paymentMode}
+            onChange={(e) => setPaymentMode(e.target.value as "A_VISTA" | "PARCELADO")}
+          >
+            <option value="A_VISTA">À vista (título único)</option>
+            <option value="PARCELADO">Parcelado</option>
+          </Select>
+        </Field>
+        <Field label={paymentMode === "PARCELADO" ? "Valor total (soma das parcelas)" : "Valor"} required>
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
-        <Field label="Vencimento" required>
+        {paymentMode === "PARCELADO" ? (
+          <Field label="Número de parcelas" required>
+            <Input type="number" step="1" min={2} name="installmentsCount" required placeholder="Ex: 3" />
+          </Field>
+        ) : null}
+        <Field label={paymentMode === "PARCELADO" ? "1º vencimento (demais a cada mês)" : "Vencimento"} required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
         {!isCapital ? (
@@ -136,17 +155,23 @@ export default function ManualPayableForm({
           </Field>
         ) : null}
       </div>
-      <label className="flex items-center gap-2 text-sm text-slate-600">
-        <input
-          type="checkbox"
-          name="alreadyPaid"
-          value="true"
-          checked={alreadyPaid}
-          onChange={(e) => setAlreadyPaid(e.target.checked)}
-          className="h-4 w-4 rounded border-slate-300"
-        />
-        Já foi pago
-      </label>
+      {paymentMode === "A_VISTA" ? (
+        <label className="flex items-center gap-2 text-sm text-slate-600">
+          <input
+            type="checkbox"
+            name="alreadyPaid"
+            value="true"
+            checked={alreadyPaid}
+            onChange={(e) => setAlreadyPaid(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Já foi pago
+        </label>
+      ) : (
+        <p className="text-xs text-slate-400">
+          As parcelas nascem pendentes — a baixa é feita em Contas a pagar conforme forem pagas.
+        </p>
+      )}
       <Field label="Observações">
         <Textarea name="notes" rows={3} />
       </Field>

@@ -13,6 +13,7 @@ export type PayableRow = {
   orderNumber: number;
   description: string;
   categoryLabel: string;
+  documentNumber: string | null;
   supplierName: string | null;
   vehicleLabel: string | null;
   dueDate: string; // ISO
@@ -141,6 +142,9 @@ export default function PayablesTable({
                     <span className="ml-1.5 text-xs text-slate-400" title="Gerada por recorrência">
                       🔁
                     </span>
+                  ) : null}
+                  {p.documentNumber ? (
+                    <p className="mt-0.5 text-[11px] font-normal text-slate-400">Doc. {p.documentNumber}</p>
                   ) : null}
                 </Td>
                 <Td>{p.categoryLabel}</Td>

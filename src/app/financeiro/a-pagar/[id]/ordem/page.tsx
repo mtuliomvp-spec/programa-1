@@ -114,6 +114,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     ["Descrição", payable.description],
     ["Categoria", catLabel],
   ];
+  if (payable.documentNumber) tituloRows.push(["Nº do documento", payable.documentNumber]);
   if (payable.vehicle) tituloRows.push(["Veículo", `${payable.vehicle.brand} ${payable.vehicle.model} (${payable.vehicle.plate})`]);
   if (payable.costCenter?.name) tituloRows.push(["Centro de custo", payable.costCenter.name]);
   tituloRows.push(["Vencimento", formatDate(payable.dueDate)]);

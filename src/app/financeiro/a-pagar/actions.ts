@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName, splitInstallments, addMonths } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
@@ -95,8 +95,12 @@ export async function markPendingAction(id: string) {
 const manualSchema = z.object({
   description: z.string().min(1, "Informe a descrição"),
   categoryLabel: z.string().optional(),
+  documentNumber: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
+  // À vista (título único) ou parcelado em N vezes (vencimentos mensais).
+  paymentMode: z.enum(["A_VISTA", "PARCELADO"]).default("A_VISTA"),
+  installmentsCount: z.coerce.number().int().min(0).default(0),
   supplierName: z.string().optional(),
   costCenterId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
@@ -154,24 +158,35 @@ export async function createManualPayableAction(
     await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
   }
 
+  // Parcelamento: N títulos mensais a partir do 1º vencimento. "Já foi pago"
+  // só vale à vista (parcelas futuras nascem pendentes).
+  const parcelado = d.paymentMode === "PARCELADO";
+  const count = parcelado ? d.installmentsCount : 1;
+  if (parcelado && count < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
+
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
   // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
   const supplierId = await resolveSupplierByName(supplierName);
 
-  await createManualPayable({
-    description: d.description,
-    category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-    categoryLabel: label,
-    amount: d.amount,
-    dueDate: parseDateInput(d.dueDate),
-    supplierId,
-    costCenterId: isCapital ? null : d.costCenterId || null,
-    structuralKey: d.structuralKey,
-    vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
-    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
-    notes: d.notes || null,
-    alreadyPaid: Boolean(d.alreadyPaid),
-  });
+  const firstDue = parseDateInput(d.dueDate);
+  const amounts = count > 1 ? splitInstallments(d.amount, count) : [d.amount];
+  for (let i = 0; i < amounts.length; i++) {
+    await createManualPayable({
+      description: count > 1 ? `${d.description} - Parcela ${i + 1}/${count}` : d.description,
+      category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
+      categoryLabel: label,
+      documentNumber: d.documentNumber?.trim() || null,
+      amount: amounts[i],
+      dueDate: addMonths(firstDue, i),
+      supplierId,
+      costCenterId: isCapital ? null : d.costCenterId || null,
+      structuralKey: d.structuralKey,
+      vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+      capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
+      notes: d.notes || null,
+      alreadyPaid: !parcelado && Boolean(d.alreadyPaid),
+    });
+  }
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/estoque");

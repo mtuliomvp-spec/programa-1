@@ -23,14 +23,14 @@ function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }
 
-function addMonths(date: Date, months: number): Date {
+export function addMonths(date: Date, months: number): Date {
   const result = new Date(date);
   result.setUTCMonth(result.getUTCMonth() + months);
   return result;
 }
 
 /** Divide um valor em N parcelas, ajustando a última para não perder centavos. */
-function splitInstallments(total: number, count: number): number[] {
+export function splitInstallments(total: number, count: number): number[] {
   const cents = Math.round(total * 100);
   const base = Math.floor(cents / count);
   const remainder = cents - base * count;
@@ -1234,6 +1234,7 @@ export async function createManualPayable(input: {
   description: string;
   category: CategoriaPagar;
   categoryLabel?: string | null;
+  documentNumber?: string | null;
   amount: number;
   dueDate: Date;
   supplierId?: string | null;
@@ -1248,6 +1249,7 @@ export async function createManualPayable(input: {
     description: input.description,
     category: input.category,
     categoryLabel: input.categoryLabel || null,
+    documentNumber: input.documentNumber || null,
     amount: input.amount,
     dueDate: input.dueDate,
     paid: input.alreadyPaid,
@@ -1533,6 +1535,7 @@ export async function createExpensePayable(input: {
   description: string;
   category: CategoriaPagar;
   categoryLabel?: string | null;
+  documentNumber?: string | null;
   amount: number;
   dueDate: Date;
   paid: boolean;
@@ -1572,6 +1575,7 @@ export async function createExpensePayable(input: {
         description: input.description,
         category: input.category,
         categoryLabel: input.categoryLabel || null,
+        documentNumber: input.documentNumber || null,
         amount: input.amount,
         dueDate: input.dueDate,
         paymentDate,

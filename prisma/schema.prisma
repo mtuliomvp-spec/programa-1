@@ -599,6 +599,8 @@ model Payable {
   // Categoria livre/personalizada informada pelo usuário (ex.: "Revisão").
   // Quando presente, prevalece sobre o rótulo do enum na exibição.
   categoryLabel String?
+  // Nº do documento de origem (nota fiscal, fatura, boleto) informado no lançamento.
+  documentNumber String?
   amount       Float
   dueDate      DateTime
   paymentDate  DateTime?
