@@ -103,7 +103,6 @@ export async function createVehicleAction(
   try {
     await assertCan("estoque", "criar");
     await assertBooksBalanced();
-    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
@@ -113,6 +112,17 @@ export async function createVehicleAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+
+  // Cadastrar o veículo cria só a ordem de compra (conta a pagar PENDENTE) —
+  // não movimenta dinheiro, então não exige caixa aberto. O caixa só é exigido
+  // quando "já foi pago" (a baixa acontece junto).
+  if (data.alreadyPaid) {
+    try {
+      await assertCashboxOpen();
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+    }
+  }
 
   const existing = await prisma.vehicle.findUnique({ where: { plate: data.plate.toUpperCase() } });
   if (existing) {
@@ -401,6 +411,53 @@ export async function deleteVehicleAttachmentAction(id: string, vehicleId: strin
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
+}
+
+/**
+ * Fotos do veículo: aceita várias imagens de uma vez e grava cada uma como
+ * anexo FOTO_VEICULO no prontuário (mesma tabela — entram no backup e são
+ * servidas por /anexos/[id]).
+ */
+export async function uploadVehiclePhotosAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const vehicleId = String(formData.get("vehicleId") || "").trim();
+  if (!vehicleId) return { error: "Veículo inválido." };
+  const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!vehicle) return { error: "Veículo não encontrado." };
+
+  const files = formData.getAll("photos").filter((f): f is File => f instanceof File && f.size > 0);
+  if (files.length === 0) return { error: "Selecione ao menos uma foto." };
+  for (const file of files) {
+    if (!file.type.startsWith("image/")) return { error: `"${file.name}" não é uma imagem.` };
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return { error: `"${file.name}" é muito grande (máximo 15 MB por foto).` };
+    }
+  }
+
+  for (const file of files) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId,
+        kind: "FOTO_VEICULO",
+        description: "Foto do veículo",
+        filename: file.name || "foto.jpg",
+        mimeType: file.type || "image/jpeg",
+        size: file.size,
+        data: buffer,
+      },
+    });
+  }
+  revalidatePath(`/estoque/${vehicleId}`);
+  return { ok: true };
 }
 
 /** Coordenada válida ou null (aceita string vazia / fora de faixa → null). */

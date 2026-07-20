@@ -9,6 +9,7 @@ import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
+import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
@@ -250,10 +251,24 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
           <Card>
             <CardHeader
+              title="Fotos do veículo"
+              description="Galeria do veículo — envie várias fotos de uma vez"
+            />
+            <VehiclePhotos
+              vehicleId={vehicle.id}
+              photos={vehicle.attachments.filter((a) => a.kind === "FOTO_VEICULO")}
+            />
+          </Card>
+
+          <Card>
+            <CardHeader
               title="Documentos do veículo"
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
-            <VehicleAttachments vehicleId={vehicle.id} attachments={vehicle.attachments} />
+            <VehicleAttachments
+              vehicleId={vehicle.id}
+              attachments={vehicle.attachments.filter((a) => a.kind !== "FOTO_VEICULO")}
+            />
           </Card>
 
           <Card>

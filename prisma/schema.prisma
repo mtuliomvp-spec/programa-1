@@ -385,6 +385,7 @@ model Vehicle {
 enum AttachmentKind {
   DOCUMENTO
   FOTO_CLIENTE
+  FOTO_VEICULO
 }
 
 model VehicleAttachment {
