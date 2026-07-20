@@ -699,6 +699,8 @@ model CapitalBeneficiary {
   // Beneficiário que representa a própria empresa (criado pelos Parâmetros)
   isCompany    Boolean              @default(false)
   proLabore    Float                @default(0)
+  // Entra na rotina do fechamento mensal (crédito do pró-labore).
+  includeInMonthlyClosing Boolean   @default(false)
   active       Boolean              @default(true)
   notes        String?
   transactions CapitalTransaction[]
@@ -721,9 +723,31 @@ model CapitalTransaction {
   description   String?
   payableId     String?
   receivableId  String?
+  // Gerada pelo fechamento mensal (zeragem do L/P e pró-labore): permite o
+  // estorno completo ao reabrir o mês.
+  monthlyClosingId String?
+  monthlyClosing   MonthlyClosing? @relation(fields: [monthlyClosingId], references: [id], onDelete: SetNull)
   createdAt     DateTime           @default(now())
 
   @@map("capital_transactions")
+}
+
+// Fechamento mensal (estilo Agrasty, SEM cobertura de saldo devedor dos sócios):
+// zera o L/P do mês transferindo o resultado para o capital da empresa, credita
+// o pró-labore dos beneficiários marcados e trava lançamentos no mês fechado.
+model MonthlyClosing {
+  id        String   @id @default(cuid())
+  year      Int
+  month     Int // 1-12
+  result    Float // resultado (L/P) do mês transferido ao capital da empresa
+  closedBy  String?
+  closedAt  DateTime @default(now())
+  snapshot  Json     @default("{}")
+  transactions CapitalTransaction[]
+  createdAt DateTime @default(now())
+
+  @@unique([year, month])
+  @@map("monthly_closings")
 }
 
 // Funcionário da loja (folha de pagamento simplificada).

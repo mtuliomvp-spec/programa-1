@@ -7,6 +7,7 @@ import { markReceivableReceived, markReceivablePending, createManualReceivable, 
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
 export async function markReceivedAction(id: string, accountId?: string) {
@@ -71,6 +72,11 @@ export async function createManualReceivableAction(
   const parsed = manualSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  try {
+    await assertMonthOpen(parseDateInput(d.dueDate));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
 
   await createManualReceivable({
     description: d.description,

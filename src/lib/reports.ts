@@ -53,6 +53,7 @@ export type DreMonth = {
   transferencias: number;
   retornos: number;
   outrasReceitas: number;
+  fechamentos: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -119,6 +120,12 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     }),
   ]);
 
+  // Fechamentos mensais: o resultado do mês fechado migrou para o capital, então
+  // a DRE do mês fechado desconta o valor transferido (fica ~zero).
+  const allClosings = await prisma.monthlyClosing.findMany({
+    select: { year: true, month: true, result: true },
+  });
+
   const result: DreMonth[] = [];
   for (let i = months - 1; i >= 0; i--) {
     const { start, end } = monthRange(i);
@@ -161,6 +168,10 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, s) => sum + (s.transferCharged ? s.transferAmount : 0),
       0,
     );
+    const fechamentos =
+      allClosings.find(
+        (c) => c.year === start.getUTCFullYear() && c.month === start.getUTCMonth() + 1,
+      )?.result ?? 0;
 
     const receitaTotal = receitaVeiculos + receitaPecas;
     const custoTotal = custoVeiculos + custoPecas;
@@ -180,8 +191,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       transferencias,
       retornos,
       outrasReceitas,
+      fechamentos,
       lucroLiquido:
-        lucroBruto - despesas - comissoes - transferencias + retornos + outrasReceitas,
+        lucroBruto - despesas - comissoes - transferencias - fechamentos + retornos + outrasReceitas,
       veiculosVendidos: monthSales.length,
     });
   }
@@ -196,7 +208,15 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
 // (com sinal negativo). A soma das linhas é o lucro/prejuízo do período.
 // ---------------------------------------------------------------------------
 
-export type PLEntryKind = "VEICULO" | "PECA" | "DESPESA" | "COMISSAO" | "POS_VENDA" | "RETORNO" | "RECEITA";
+export type PLEntryKind =
+  | "VEICULO"
+  | "PECA"
+  | "DESPESA"
+  | "COMISSAO"
+  | "POS_VENDA"
+  | "RETORNO"
+  | "RECEITA"
+  | "FECHAMENTO";
 
 export type PLEntry = {
   id: string;
@@ -218,6 +238,7 @@ export type PLStatement = {
   retornos: number;
   outrasReceitas: number;
   transferencias: number;
+  fechamentos: number;
   lucroLiquido: number;
   veiculosVendidos: number;
 };
@@ -446,6 +467,28 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     });
   }
 
+  // Fechamentos mensais: o resultado do mês fechado foi transferido para o
+  // capital da empresa — entra aqui como −resultado (o mês fechado zera no
+  // extrato, casando com o aporte/retirada de capital na equação patrimonial).
+  let fechamentos = 0;
+  const closings = await prisma.monthlyClosing.findMany({
+    select: { id: true, year: true, month: true, result: true },
+  });
+  for (const c of closings) {
+    const closeDate = new Date(Date.UTC(c.year, c.month, 0, 12));
+    if (closeDate < rangeStart || closeDate >= rangeEnd) continue;
+    if (Math.abs(c.result) < 0.005) continue;
+    fechamentos += c.result;
+    entries.push({
+      id: `fech-${c.id}`,
+      date: closeDate,
+      kind: "FECHAMENTO",
+      description: `Fechamento mensal ${String(c.month).padStart(2, "0")}/${c.year} — ${c.result >= 0 ? "lucro" : "prejuízo"} transferido ao capital da empresa`,
+      detail: null,
+      value: -c.result,
+    });
+  }
+
   entries.sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const receitaTotal = receitaVeiculos + receitaPecas;
@@ -462,8 +505,9 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     retornos,
     outrasReceitas,
     transferencias,
+    fechamentos,
     lucroLiquido:
-      lucroBruto - despesas - comissoes - posVenda - transferencias + retornos + outrasReceitas,
+      lucroBruto - despesas - comissoes - posVenda - transferencias - fechamentos + retornos + outrasReceitas,
     veiculosVendidos: sales.length,
   };
 }

@@ -105,6 +105,13 @@ export default function CashboxCard({
             🕘 Histórico
           </button>
 
+          <a
+            href="/financeiro/fechamento"
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            📋 Fechamento Mensal
+          </a>
+
           {open ? (
             <button
               type="button"

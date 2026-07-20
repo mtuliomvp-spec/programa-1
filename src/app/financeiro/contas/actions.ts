@@ -7,6 +7,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
 import { assertCan } from "@/lib/guards";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
 export type ContaFormState = { error?: string };
@@ -165,6 +166,11 @@ export async function createTransferAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;
   if (data.fromId === data.toId) return { error: "Origem e destino precisam ser contas diferentes." };
+  try {
+    await assertMonthOpen(parseDateInput(data.date));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
 
   await prisma.accountTransfer.create({
     data: {

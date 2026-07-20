@@ -75,6 +75,8 @@ export const MODULES: ModuleConfig[] = [
       { acao: "receber", label: "Registrar recebimento (baixa)" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
       { acao: "conciliar", label: "Conciliação bancária" },
+      { acao: "fechar", label: "Fechamento mensal (fechar mês)" },
+      { acao: "reabrir", label: "Fechamento mensal (reabrir mês)" },
     ],
   },
   {

@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CapitalTransactionForm from "./CapitalTransactionForm";
 import DeleteTransactionButton from "./DeleteTransactionButton";
+import IncludeClosingToggle from "./IncludeClosingToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +46,16 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         />
         <StatCard label="Pró-labore pago" value={formatCurrency(proLabore)} />
       </div>
+
+      {!beneficiary.isCompany ? (
+        <div className="mb-4">
+          <IncludeClosingToggle
+            beneficiaryId={beneficiary.id}
+            initial={beneficiary.includeInMonthlyClosing}
+            hasProLabore={beneficiary.proLabore > 0}
+          />
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">

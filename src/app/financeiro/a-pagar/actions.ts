@@ -8,6 +8,7 @@ import { markPayablePaid, markPayablePending, createManualPayable, resolveSuppli
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
 export async function markPaidAction(id: string, accountId?: string) {
@@ -42,6 +43,11 @@ export async function payBatchAction(
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Bloqueado." };
   }
   const date = dateInput ? parseDateInput(dateInput) : new Date();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
   let paid = 0;
   for (const id of ids) {
     await markPayablePaid(id, date, accountId);
@@ -127,6 +133,11 @@ export async function createManualPayableAction(
   const parsed = manualSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  try {
+    await assertMonthOpen(parseDateInput(d.dueDate));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
 
   const label = (d.categoryLabel || "").trim();
   const isCapital = d.structuralKey === "CAPITAL";

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } from "@/lib/finance";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 
@@ -117,6 +118,9 @@ export async function assertNoConflictingPreSale(
  * pré-venda. Retorna o id da venda criada.
  */
 export async function registerSaleCore(d: SaleData): Promise<string> {
+  // Trava do fechamento mensal: não registrar venda com data em mês já fechado.
+  await assertMonthOpen(parseDateInput(d.saleDate));
+
   // Trava: não vender um veículo pré-vendido para outro cliente sem cancelar a
   // pré-venda antes (a conversão da própria pré-venda usa o mesmo cliente, então
   // não é bloqueada).

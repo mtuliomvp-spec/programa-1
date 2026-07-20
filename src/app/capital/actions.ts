@@ -132,6 +132,26 @@ export async function addCapitalTransactionAction(
   return {};
 }
 
+/** Liga/desliga a participação do beneficiário na rotina do fechamento mensal. */
+export async function toggleIncludeClosingAction(
+  beneficiaryId: string,
+  include: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  await prisma.capitalBeneficiary.update({
+    where: { id: beneficiaryId },
+    data: { includeInMonthlyClosing: include },
+  });
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath("/capital");
+  revalidatePath("/financeiro/fechamento");
+  return { ok: true };
+}
+
 export async function deleteCapitalTransactionAction(id: string, beneficiaryId: string) {
   await assertCan("administrativo", "capital");
   await prisma.$transaction(async (tx) => {

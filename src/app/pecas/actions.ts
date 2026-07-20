@@ -8,6 +8,7 @@ import { createPartWithPayable, addPartStockWithPayable, registerPartSale } from
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
 async function guard(action: string): Promise<FormState | null> {
@@ -165,6 +166,11 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
   const parsed = sellSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  try {
+    await assertMonthOpen(parseDateInput(d.saleDate));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
 
   let partId: string;
   try {
