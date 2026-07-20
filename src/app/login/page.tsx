@@ -78,6 +78,12 @@ export default async function LoginPage({
           >
             🔒 Entrar no sistema
           </a>
+          <a
+            href="/vitrine"
+            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-100"
+          >
+            🚗 Ver veículos à venda
+          </a>
           <p className="text-sm text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
         </div>
       </section>

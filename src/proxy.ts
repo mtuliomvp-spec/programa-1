@@ -47,8 +47,14 @@ export default function proxy(request: NextRequest) {
   // Verificação pública de autenticidade (QR Code da Ordem de Pagamento).
   if (pathname.startsWith("/verificar/")) return NextResponse.next();
 
+  // Vitrine pública dos veículos à venda (inclui as fotos públicas).
+  if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();
+
+  // Visitante sem sessão na raiz: vê a vitrine (o Entrar fica lá).
+  if (pathname === "/") return NextResponse.redirect(new URL("/vitrine", request.url));
+
   const loginUrl = new URL("/login", request.url);
-  if (pathname !== "/") loginUrl.searchParams.set("next", pathname);
+  loginUrl.searchParams.set("next", pathname);
   return NextResponse.redirect(loginUrl);
 }
 

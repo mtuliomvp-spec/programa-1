@@ -2,14 +2,31 @@
 
 import { useRef, useState, useTransition, useActionState } from "react";
 import { Button } from "@/components/ui";
-import { uploadVehiclePhotosAction, deleteVehicleAttachmentAction, type AttachmentState } from "../actions";
+import {
+  uploadVehiclePhotosAction,
+  deleteVehicleAttachmentAction,
+  toggleVehiclePublishedAction,
+  type AttachmentState,
+} from "../actions";
 
 type Photo = { id: string; filename: string; createdAt: Date | string };
 
-/** Galeria de fotos do veículo: envio múltiplo + miniatura + excluir. */
-export default function VehiclePhotos({ vehicleId, photos }: { vehicleId: string; photos: Photo[] }) {
+/** Galeria de fotos do veículo: envio múltiplo + miniatura + excluir + postar. */
+export default function VehiclePhotos({
+  vehicleId,
+  photos,
+  published,
+  inStock,
+}: {
+  vehicleId: string;
+  photos: Photo[];
+  published: boolean;
+  inStock: boolean;
+}) {
   const formRef = useRef<HTMLFormElement>(null);
   const [selectedCount, setSelectedCount] = useState(0);
+  const [publishing, startPublish] = useTransition();
+  const [publishError, setPublishError] = useState<string | null>(null);
   const [deleting, startDelete] = useTransition();
   const [state, formAction, pending] = useActionState(
     async (prev: AttachmentState, formData: FormData) => {
@@ -23,8 +40,56 @@ export default function VehiclePhotos({ vehicleId, photos }: { vehicleId: string
     {} as AttachmentState,
   );
 
+  function togglePublish(next: boolean) {
+    setPublishError(null);
+    startPublish(async () => {
+      const r = await toggleVehiclePublishedAction(vehicleId, next);
+      if (!r.ok) setPublishError(r.error || "Não foi possível atualizar a vitrine.");
+    });
+  }
+
   return (
     <div className="space-y-4 p-5">
+      {inStock ? (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          {published ? (
+            <>
+              <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                📢 No ar na vitrine
+              </span>
+              <a
+                href={`/vitrine/${vehicleId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-sm font-medium text-blue-700 hover:underline"
+              >
+                Ver anúncio →
+              </a>
+              <button
+                type="button"
+                onClick={() => togglePublish(false)}
+                disabled={publishing}
+                className="text-sm font-medium text-rose-600 hover:underline disabled:opacity-50"
+              >
+                {publishing ? "Removendo..." : "Remover da vitrine"}
+              </button>
+            </>
+          ) : (
+            <>
+              <Button type="button" onClick={() => togglePublish(true)} disabled={publishing}>
+                {publishing ? "Postando..." : "📢 Postar na vitrine"}
+              </Button>
+              <p className="text-xs text-slate-500">
+                Publica este veículo (fotos + dados do anúncio) na página pública da loja.
+              </p>
+            </>
+          )}
+          {publishError ? (
+            <p className="w-full text-sm font-medium text-rose-600">{publishError}</p>
+          ) : null}
+        </div>
+      ) : null}
+
       {photos.length === 0 ? (
         <p className="text-sm text-slate-500">Nenhuma foto ainda — adicione abaixo.</p>
       ) : (

@@ -359,6 +359,8 @@ model Vehicle {
   payoffTo         String?
   debtsAmount      Float         @default(0)
   status           StatusVeiculo @default(ESTOQUE)
+  // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
+  published        Boolean       @default(false)
   entryDate        DateTime      @default(now())
   photoUrl         String?
   notes            String?

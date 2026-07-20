@@ -257,6 +257,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <VehiclePhotos
               vehicleId={vehicle.id}
               photos={vehicle.attachments.filter((a) => a.kind === "FOTO_VEICULO")}
+              published={vehicle.published}
+              inStock={vehicle.status === "ESTOQUE"}
             />
           </Card>
 

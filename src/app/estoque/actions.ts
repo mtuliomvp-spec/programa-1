@@ -414,6 +414,41 @@ export async function deleteVehicleAttachmentAction(id: string, vehicleId: strin
 }
 
 /**
+ * Posta/remove o veículo da vitrine pública. Postar exige veículo em ESTOQUE e
+ * ao menos uma foto (é o anúncio que o cliente vê na internet).
+ */
+export async function toggleVehiclePublishedAction(
+  vehicleId: string,
+  publish: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { id: true, status: true },
+  });
+  if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
+  if (publish) {
+    if (vehicle.status !== "ESTOQUE") {
+      return { ok: false, error: "Só veículos em estoque podem ser postados na vitrine." };
+    }
+    const fotos = await prisma.vehicleAttachment.count({
+      where: { vehicleId, kind: "FOTO_VEICULO" },
+    });
+    if (fotos === 0) return { ok: false, error: "Anexe ao menos uma foto antes de postar." };
+  }
+  await prisma.vehicle.update({ where: { id: vehicleId }, data: { published: publish } });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/vitrine");
+  revalidatePath(`/vitrine/${vehicleId}`);
+  return { ok: true };
+}
+
+/**
  * Fotos do veículo: aceita várias imagens de uma vez e grava cada uma como
  * anexo FOTO_VEICULO no prontuário (mesma tabela — entram no backup e são
  * servidas por /anexos/[id]).
