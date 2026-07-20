@@ -55,6 +55,19 @@ export async function getClosedMonths() {
   return prisma.monthlyClosing.findMany({ orderBy: [{ year: "desc" }, { month: "desc" }] });
 }
 
+/**
+ * Primeiro mês COM movimento no resultado (início do exercício). O fechamento
+ * nunca começa antes dele — meses anteriores ao início do sistema não existem
+ * para o fechamento. Null quando ainda não há nenhum lançamento.
+ */
+export async function getFirstMovementMonth(): Promise<{ year: number; month: number } | null> {
+  const pl = await getProfitLossStatement(LIFETIME_MONTHS);
+  const entries = pl.entries.filter((e) => e.kind !== "FECHAMENTO");
+  if (entries.length === 0) return null;
+  const min = entries.reduce((a, b) => (a.date < b.date ? a : b));
+  return { year: min.date.getUTCFullYear(), month: min.date.getUTCMonth() + 1 };
+}
+
 export async function isMonthClosed(date: Date): Promise<boolean> {
   const found = await prisma.monthlyClosing.findUnique({
     where: {
@@ -101,6 +114,18 @@ export async function closeMonth(year: number, month: number, userName: string |
     throw new Error(
       `Feche os meses em ordem: o último fechado é ${monthLabelBR(latest.year, latest.month)}.`,
     );
+  }
+
+  // Primeiro fechamento: nunca antes do primeiro mês com movimento (o exercício
+  // começa quando o sistema começou a ser usado — não há o que fechar antes).
+  if (!latest) {
+    const first = await getFirstMovementMonth();
+    if (!first) throw new Error("Ainda não há movimento no sistema — nada a fechar.");
+    if (targetKey < first.year * 12 + first.month) {
+      throw new Error(
+        `O sistema começou em ${monthLabelBR(first.year, first.month)} — este é o primeiro mês a fechar.`,
+      );
+    }
   }
 
   await getCompany();

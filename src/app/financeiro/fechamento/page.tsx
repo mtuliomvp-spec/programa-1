@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { requireModule, userCan } from "@/lib/guards";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { getClosedMonths, getMonthResult, monthLabelBR } from "@/lib/monthly-closing";
+import { getClosedMonths, getFirstMovementMonth, getMonthResult, monthLabelBR } from "@/lib/monthly-closing";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { CloseMonthButton, ReopenMonthButton } from "./ClosingButtons";
 
@@ -20,24 +20,31 @@ export default async function FechamentoMensalPage() {
     }),
   ]);
 
-  // Próximo mês a fechar: o seguinte ao último fechado; sem fechamentos, o mês
-  // passado. Nada a fazer quando esse mês ainda não terminou.
+  // Próximo mês a fechar: o seguinte ao último fechado; sem fechamentos, o
+  // PRIMEIRO mês com movimento (início do exercício — meses vazios antes do
+  // sistema começar não contam). Nada a fazer enquanto o mês não terminar.
   const now = new Date();
   const latest = closings[0] ?? null;
-  let nextYear: number;
-  let nextMonth: number;
+  let nextYear: number | null = null;
+  let nextMonth: number | null = null;
   if (latest) {
     nextYear = latest.month === 12 ? latest.year + 1 : latest.year;
     nextMonth = latest.month === 12 ? 1 : latest.month + 1;
   } else {
-    const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
-    nextYear = prev.getUTCFullYear();
-    nextMonth = prev.getUTCMonth() + 1;
+    const first = await getFirstMovementMonth();
+    if (first) {
+      nextYear = first.year;
+      nextMonth = first.month;
+    }
   }
   const currentKey = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
-  const nextIsClosable = nextYear * 12 + nextMonth < currentKey;
-  const nextResult = nextIsClosable ? await getMonthResult(nextYear, nextMonth) : 0;
-  const nextLabel = monthLabelBR(nextYear, nextMonth);
+  const nextLabel = nextYear != null && nextMonth != null ? monthLabelBR(nextYear, nextMonth) : null;
+  const next =
+    nextYear != null && nextMonth != null && nextYear * 12 + nextMonth < currentKey
+      ? { year: nextYear, month: nextMonth, label: monthLabelBR(nextYear, nextMonth) }
+      : null;
+  const nextIsClosable = next != null;
+  const nextResult = next ? await getMonthResult(next.year, next.month) : 0;
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -53,10 +60,12 @@ export default async function FechamentoMensalPage() {
           description={
             nextIsClosable
               ? "Confira o resultado apurado antes de fechar."
-              : `O próximo fechamento (${nextLabel}) só fica disponível quando o mês terminar.`
+              : nextLabel
+                ? `O mês em exercício é ${nextLabel} — o fechamento fica disponível quando ele terminar.`
+                : "Ainda não há movimento no sistema — o primeiro fechamento aparece aqui quando houver."
           }
         />
-        {nextIsClosable ? (
+        {next ? (
           <div className="space-y-3 p-5">
             <div className="flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
               <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -89,9 +98,9 @@ export default async function FechamentoMensalPage() {
             )}
             {canClose ? (
               <CloseMonthButton
-                year={nextYear}
-                month={nextMonth}
-                label={nextLabel}
+                year={next.year}
+                month={next.month}
+                label={next.label}
                 resultLabel={formatCurrency(nextResult)}
               />
             ) : (
