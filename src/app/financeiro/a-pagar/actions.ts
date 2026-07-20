@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName, splitInstallments, addMonths } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
@@ -98,9 +98,12 @@ const manualSchema = z.object({
   documentNumber: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
-  // À vista (título único) ou parcelado em N vezes (vencimentos mensais).
+  // À vista (título único) ou parcelado em N vezes.
   paymentMode: z.enum(["A_VISTA", "PARCELADO"]).default("A_VISTA"),
   installmentsCount: z.coerce.number().int().min(0).default(0),
+  // Vencimentos do parcelado: MENSAL (todo mês, mesmo dia) ou a cada X DIAS.
+  installmentPeriod: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
+  installmentDays: z.coerce.number().int().min(1).default(30),
   supplierName: z.string().optional(),
   costCenterId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
@@ -130,7 +133,6 @@ export async function createManualPayableAction(
   try {
     await assertCan("financeiro", "criar");
     await assertBooksBalanced();
-    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
@@ -138,9 +140,12 @@ export async function createManualPayableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
   try {
+    // Título PENDENTE não movimenta dinheiro — pode ser criado com o caixa
+    // fechado. O caixa aberto só é exigido quando "já foi pago" (baixa junto).
+    if (d.paymentMode === "A_VISTA" && d.alreadyPaid) await assertCashboxOpen();
     await assertMonthOpen(parseDateInput(d.dueDate));
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Mês fechado." };
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
 
   const label = (d.categoryLabel || "").trim();
@@ -177,7 +182,10 @@ export async function createManualPayableAction(
       categoryLabel: label,
       documentNumber: d.documentNumber?.trim() || null,
       amount: amounts[i],
-      dueDate: addMonths(firstDue, i),
+      dueDate:
+        d.installmentPeriod === "DIAS"
+          ? addDays(firstDue, i * d.installmentDays)
+          : addMonths(firstDue, i),
       supplierId,
       costCenterId: isCapital ? null : d.costCenterId || null,
       structuralKey: d.structuralKey,

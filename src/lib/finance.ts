@@ -19,7 +19,7 @@ import type {
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-function addDays(date: Date, days: number): Date {
+export function addDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * DAY_MS);
 }
 

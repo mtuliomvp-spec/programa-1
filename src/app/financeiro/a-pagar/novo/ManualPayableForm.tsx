@@ -29,6 +29,7 @@ export default function ManualPayableForm({
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"A_VISTA" | "PARCELADO">("A_VISTA");
+  const [installmentPeriod, setInstallmentPeriod] = useState<"MENSAL" | "DIAS">("MENSAL");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
@@ -135,11 +136,37 @@ export default function ManualPayableForm({
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
         {paymentMode === "PARCELADO" ? (
-          <Field label="Número de parcelas" required>
-            <Input type="number" step="1" min={2} name="installmentsCount" required placeholder="Ex: 3" />
-          </Field>
+          <>
+            <Field label="Número de parcelas" required>
+              <Input type="number" step="1" min={2} name="installmentsCount" required placeholder="Ex: 3" />
+            </Field>
+            <Field label="Vencimentos">
+              <Select
+                name="installmentPeriod"
+                value={installmentPeriod}
+                onChange={(e) => setInstallmentPeriod(e.target.value as "MENSAL" | "DIAS")}
+              >
+                <option value="MENSAL">Todo mês (mesmo dia do 1º vencimento)</option>
+                <option value="DIAS">Periódico — a cada X dias</option>
+              </Select>
+            </Field>
+            {installmentPeriod === "DIAS" ? (
+              <Field label="A cada quantos dias?" required>
+                <Input type="number" step="1" min={1} name="installmentDays" defaultValue="30" required placeholder="Ex: 15, 20, 30..." />
+              </Field>
+            ) : null}
+          </>
         ) : null}
-        <Field label={paymentMode === "PARCELADO" ? "1º vencimento (demais a cada mês)" : "Vencimento"} required>
+        <Field
+          label={
+            paymentMode === "PARCELADO"
+              ? installmentPeriod === "DIAS"
+                ? "1º vencimento (demais a cada X dias)"
+                : "1º vencimento (demais a cada mês)"
+              : "Vencimento"
+          }
+          required
+        >
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
         {!isCapital ? (

@@ -65,7 +65,6 @@ export async function createManualReceivableAction(
   try {
     await assertCan("financeiro", "criar");
     await assertBooksBalanced();
-    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
@@ -73,9 +72,12 @@ export async function createManualReceivableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
   try {
+    // Título PENDENTE não movimenta dinheiro — pode ser criado com o caixa
+    // fechado. O caixa aberto só é exigido quando "já recebido" (baixa junto).
+    if (d.alreadyReceived) await assertCashboxOpen();
     await assertMonthOpen(parseDateInput(d.dueDate));
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Mês fechado." };
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
 
   await createManualReceivable({
