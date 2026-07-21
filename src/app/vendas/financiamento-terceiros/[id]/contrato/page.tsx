@@ -47,6 +47,11 @@ export default async function ContratoIntermediacaoPage({
       financingAmount={sale.financingAmount}
       refundAmount={sale.refundAmount}
       financerName={sale.financerAccount?.name ?? null}
+      installmentsInfo={
+        sale.installmentsInfoCount && sale.installmentsInfoAmount
+          ? { count: sale.installmentsInfoCount, amount: sale.installmentsInfoAmount }
+          : null
+      }
       backHref={`/vendas/financiamento-terceiros/${sale.id}`}
     />
   );

@@ -480,6 +480,9 @@ model PreSale {
   buyerBankAccount     String?
   buyerBankAccountType String?
   buyerPixKey          String?
+  // Parcelamento informado ao comprador (só informativo, consta no contrato).
+  installmentsInfoCount  Int?
+  installmentsInfoAmount Float?
   downPayment       Float          @default(0)
   installmentsCount Int            @default(0)
   financerAccountId String?
@@ -549,6 +552,9 @@ model Sale {
   buyerBankAccount     String?
   buyerBankAccountType String?
   buyerPixKey          String?
+  // Parcelamento informado ao comprador (só informativo, consta no contrato).
+  installmentsInfoCount  Int?
+  installmentsInfoAmount Float?
   vehicleId         String         @unique
   vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
   tradeInVehicleId  String?        @unique

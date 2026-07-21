@@ -46,6 +46,9 @@ export const intermediationSchema = z.object({
   refundAmount: z.coerce.number().min(0).default(0),
   financerAccountId: z.string().min(1, "Selecione a financeira"),
   returnLevel: z.coerce.number().int().min(0).default(0),
+  // Parcelamento informado ao comprador (obrigatório — sempre financiado).
+  installmentsInfoCount: z.coerce.number().int().min(1, "Informe o número de parcelas"),
+  installmentsInfoAmount: z.coerce.number().min(0.01, "Informe o valor da parcela"),
   takeReturnCommission: z.coerce.boolean().optional(),
   sellerId: z.string().optional(),
   sellerName: z.string().optional(),
@@ -138,6 +141,8 @@ export async function createIntermediationPreSale(d: IntermediationData): Promis
       buyerBankAccount: d.buyerBankAccount || null,
       buyerBankAccountType: d.buyerBankAccountType || null,
       buyerPixKey: d.buyerPixKey || null,
+      installmentsInfoCount: d.installmentsInfoCount,
+      installmentsInfoAmount: d.installmentsInfoAmount,
       notes: d.notes || null,
       status: "ABERTA",
     },
@@ -192,6 +197,8 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     buyerBankAccount: pre.buyerBankAccount,
     buyerBankAccountType: pre.buyerBankAccountType,
     buyerPixKey: pre.buyerPixKey,
+    installmentsInfoCount: pre.installmentsInfoCount,
+    installmentsInfoAmount: pre.installmentsInfoAmount,
     notes: pre.notes,
   });
 

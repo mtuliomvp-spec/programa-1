@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, numeroExtenso } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
@@ -62,6 +62,8 @@ export type SaleContractData = {
   installmentsCount: number;
   parcelaValor: number;
   tradeIn: TradeIn;
+  // Parcelamento informado ao comprador (só informativo, preenchido na venda).
+  installmentsInfo: { count: number; amount: number } | null;
   notes: string | null;
   backHref: string;
 };
@@ -199,6 +201,15 @@ export default function SaleContractDocument(d: SaleContractData) {
             <p className="mt-2">
               O saldo será pago em <strong>{d.installmentsCount}</strong> parcela(s) de{" "}
               <strong>{formatCurrency(d.parcelaValor)}</strong>.
+            </p>
+          ) : null}
+          {d.installmentsInfo && d.installmentsInfo.count > 0 ? (
+            <p className="mt-2 rounded-md bg-amber-50 p-2">
+              O(A) COMPRADOR(A) declara ciência de que pagará em{" "}
+              <strong>
+                {d.installmentsInfo.count} ({numeroExtenso(d.installmentsInfo.count)})
+              </strong>{" "}
+              parcela(s) de <strong>{formatCurrency(d.installmentsInfo.amount)}</strong> cada.
             </p>
           ) : null}
         </Clausula>

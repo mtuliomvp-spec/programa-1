@@ -27,6 +27,13 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
   const d = parsed.data;
   const preSaleId = String(formData.get("preSaleId") || "").trim();
 
+  // Parcelamento informado ao comprador: obrigatório quando há parcelas.
+  if (d.paymentMethod !== "A_VISTA") {
+    if (!d.installmentsInfoCount || d.installmentsInfoCount < 1 || !d.installmentsInfoAmount || d.installmentsInfoAmount <= 0) {
+      return { error: "Informe a quantidade e o valor das parcelas que o comprador vai pagar (para o contrato)." };
+    }
+  }
+
   // Vendedor = usuário: resolve o nome (foto) a partir do id escolhido.
   let sellerName: string | null = d.sellerName || null;
   if (d.sellerId) {
@@ -61,6 +68,8 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     transferAmount: Math.max(0, d.transferAmount || 0),
     takeReturnCommission: Boolean(d.takeReturnCommission),
     viaPaidTraffic: Boolean(d.viaPaidTraffic),
+    installmentsInfoCount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoCount ?? null : null,
+    installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
     notes: d.notes || null,
     tradeIn: !!d.tradeIn,
     tiPlate: d.tradeIn ? d.tiPlate?.toUpperCase() || null : null,
@@ -126,6 +135,8 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     transferAmount: pre.transferAmount ?? 0,
     takeReturnCommission: pre.takeReturnCommission,
     viaPaidTraffic: pre.viaPaidTraffic,
+    installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
+    installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
     notes: pre.notes ?? undefined,
     tradeIn: pre.tradeIn,
     tiPlate: pre.tiPlate ?? undefined,

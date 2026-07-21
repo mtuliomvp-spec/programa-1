@@ -50,6 +50,9 @@ export const saleSchema = z.object({
   takeReturnCommission: z.coerce.boolean().optional(),
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic: z.coerce.boolean().optional(),
+  // Parcelamento informado ao comprador (só informativo, consta no contrato).
+  installmentsInfoCount: z.coerce.number().int().min(0).optional(),
+  installmentsInfoAmount: z.coerce.number().min(0).optional(),
   // Indicações de venda: JSON [{ name, amount }] serializado num input hidden.
   // Cada indicação vira conta a pagar (Comissão), como a do vendedor.
   referrals: z
@@ -139,6 +142,14 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
 
   if (d.paymentMethod === "FINANCIADO" && d.financedAmount != null && d.financedAmount > d.totalAmount) {
     throw new Error("O valor financiado não pode ser maior que o valor total da venda.");
+  }
+
+  // Parcelamento informado ao comprador: obrigatório quando há parcelas (não à
+  // vista), para o contrato registrar quantas parcelas e de que valor.
+  if (d.paymentMethod !== "A_VISTA") {
+    if (!d.installmentsInfoCount || d.installmentsInfoCount < 1 || !d.installmentsInfoAmount || d.installmentsInfoAmount <= 0) {
+      throw new Error("Informe a quantidade e o valor das parcelas que o comprador vai pagar (para o contrato).");
+    }
   }
 
   // Retorno: só existe em venda financiada e exige a financeira (quem paga).
@@ -241,6 +252,8 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       transferAmount: Math.max(0, d.transferAmount || 0),
       takeReturnCommission: Boolean(d.takeReturnCommission),
       viaPaidTraffic: Boolean(d.viaPaidTraffic),
+      installmentsInfoCount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoCount ?? null : null,
+      installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,

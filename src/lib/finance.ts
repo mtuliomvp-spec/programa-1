@@ -622,6 +622,9 @@ export async function registerVehicleSale(input: {
   buyerBankAccount?: string | null;
   buyerBankAccountType?: string | null;
   buyerPixKey?: string | null;
+  // Parcelamento informado ao comprador (só informativo, consta no contrato).
+  installmentsInfoCount?: number | null;
+  installmentsInfoAmount?: number | null;
   sellerName?: string | null;
   // Vendedor = usuário (beneficiário da comissão, com dados bancários).
   sellerId?: string | null;
@@ -727,6 +730,8 @@ export async function registerVehicleSale(input: {
         buyerBankAccount: input.buyerBankAccount || null,
         buyerBankAccountType: input.buyerBankAccountType || null,
         buyerPixKey: input.buyerPixKey || null,
+        installmentsInfoCount: input.installmentsInfoCount ?? null,
+        installmentsInfoAmount: input.installmentsInfoAmount ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },

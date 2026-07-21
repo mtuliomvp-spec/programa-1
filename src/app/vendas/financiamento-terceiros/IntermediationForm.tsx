@@ -305,6 +305,19 @@ export default function IntermediationForm({
               placeholder="Quanto será devolvido ao cliente"
             />
           </Field>
+          <Field label="Nº de parcelas (informado ao comprador)" required>
+            <Input name="installmentsInfoCount" type="number" min={1} required placeholder="Ex.: 48" />
+          </Field>
+          <Field label="Valor da parcela (R$)" required>
+            <Input
+              name="installmentsInfoAmount"
+              type="number"
+              step="0.01"
+              min={0.01}
+              required
+              placeholder="Valor de cada parcela"
+            />
+          </Field>
           <Field label="Financeira (banco)" required>
             <Select
               name="financerAccountId"

@@ -54,6 +54,11 @@ export default async function ContratoPreVendaPage({ params }: { params: Promise
       saldo={saldo}
       installmentsCount={pre.installmentsCount}
       parcelaValor={parcelaValor}
+      installmentsInfo={
+        pre.installmentsInfoCount && pre.installmentsInfoAmount
+          ? { count: pre.installmentsInfoCount, amount: pre.installmentsInfoAmount }
+          : null
+      }
       tradeIn={
         pre.tradeIn
           ? {

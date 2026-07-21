@@ -34,6 +34,8 @@ export type SaleFormInitial = {
   transferAmount?: number;
   takeReturnCommission?: boolean;
   viaPaidTraffic?: boolean;
+  installmentsInfoCount?: number;
+  installmentsInfoAmount?: number;
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -450,6 +452,37 @@ export default function SaleForm({
           </Select>
         </Field>
       </div>
+
+      {paymentMethod !== "A_VISTA" ? (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+          <p className="mb-1 text-sm font-medium text-amber-900">Parcelamento informado ao comprador</p>
+          <p className="mb-3 text-xs text-amber-800">
+            Consta no contrato para evitar contestação futura. Informe exatamente como o comprador vai
+            pagar (na loja ou no banco).
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Nº de parcelas" required>
+              <Input
+                type="number"
+                min={1}
+                name="installmentsInfoCount"
+                defaultValue={initial?.installmentsInfoCount || ""}
+                required
+              />
+            </Field>
+            <Field label="Valor da parcela (R$)" required>
+              <Input
+                type="number"
+                step="0.01"
+                min={0.01}
+                name="installmentsInfoAmount"
+                defaultValue={initial?.installmentsInfoAmount || ""}
+                required
+              />
+            </Field>
+          </div>
+        </div>
+      ) : null}
 
       {sinal > 0 ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">

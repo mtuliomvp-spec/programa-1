@@ -1,4 +1,4 @@
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, numeroExtenso } from "@/lib/format";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
@@ -55,6 +55,8 @@ export type IntermediationContractData = {
   financingAmount: number;
   refundAmount: number;
   financerName: string | null;
+  // Parcelamento informado ao comprador (só informativo, preenchido na venda).
+  installmentsInfo: { count: number; amount: number } | null;
   backHref: string;
 };
 
@@ -210,6 +212,15 @@ export default function IntermediationContractDocument(d: IntermediationContract
           {!hasBank ? (
             <p className="mt-1 text-xs text-slate-400">
               (Preencha os dados bancários do comprador na operação para constarem aqui.)
+            </p>
+          ) : null}
+          {d.installmentsInfo && d.installmentsInfo.count > 0 ? (
+            <p className="mt-2 rounded-md bg-amber-50 p-2">
+              O(A) COMPRADOR(A) declara ciência de que o financiamento será pago em{" "}
+              <strong>
+                {d.installmentsInfo.count} ({numeroExtenso(d.installmentsInfo.count)})
+              </strong>{" "}
+              parcela(s) de <strong>{formatCurrency(d.installmentsInfo.amount)}</strong> cada.
             </p>
           ) : null}
         </Clausula>
