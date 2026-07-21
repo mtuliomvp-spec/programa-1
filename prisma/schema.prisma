@@ -59,6 +59,14 @@ enum StatusVenda {
   CANCELADA
 }
 
+// Tipo de operação: venda comum ou intermediação de financiamento de terceiros
+// (o carro é de terceiro; a loja só viabiliza o financiamento e devolve o valor
+// ao cliente, ficando com o lucro da intermediação).
+enum TipoOperacao {
+  VENDA
+  FINANCIAMENTO_TERCEIROS
+}
+
 enum TipoRecorrencia {
   PAGAR
   RECEBER
@@ -364,6 +372,9 @@ model Vehicle {
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)
+  // Veículo de terceiro numa operação de financiamento de terceiros: NÃO é
+  // patrimônio da loja — fica fora do estoque, da vitrine e dos relatórios.
+  intermediation   Boolean       @default(false)
   entryDate        DateTime      @default(now())
   photoUrl         String?
   notes            String?
@@ -448,11 +459,21 @@ enum StatusPreVenda {
 model PreSale {
   id                String         @id @default(cuid())
   number            Int            @unique @default(autoincrement())
+  saleType          TipoOperacao   @default(VENDA)
   vehicleId         String
   customerId        String
   saleDate          DateTime       @default(now())
   totalAmount       Float
   paymentMethod     FormaPagamento
+  // Financiamento de terceiros: valor liberado pelo banco (F) e valor devolvido
+  // ao cliente (D). O proprietário do documento (VENDEDOR do contrato) é um
+  // terceiro cujos dados ficam nos campos owner*.
+  financingAmount   Float          @default(0)
+  refundAmount      Float          @default(0)
+  ownerName         String?
+  ownerDocument     String?
+  ownerPhone        String?
+  ownerAddress      String?
   downPayment       Float          @default(0)
   installmentsCount Int            @default(0)
   financerAccountId String?
@@ -507,6 +528,15 @@ model PreSale {
 model Sale {
   id                String         @id @default(cuid())
   orderNumber       Int            @unique @default(autoincrement())
+  saleType          TipoOperacao   @default(VENDA)
+  // Financiamento de terceiros: valor liberado pelo banco (F), valor devolvido
+  // ao cliente (D) e dados do proprietário do documento (VENDEDOR do contrato).
+  financingAmount   Float          @default(0)
+  refundAmount      Float          @default(0)
+  ownerName         String?
+  ownerDocument     String?
+  ownerPhone        String?
+  ownerAddress      String?
   vehicleId         String         @unique
   vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
   tradeInVehicleId  String?        @unique

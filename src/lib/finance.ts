@@ -552,6 +552,51 @@ export async function receiveVehicleAdvance(input: {
   });
 }
 
+/**
+ * Cadastra o veículo de TERCEIRO de uma operação de financiamento de terceiros.
+ * Não é patrimônio da loja: entra com custo 0 e SEM conta a pagar de compra, e
+ * marcado como `intermediation` para ficar fora do estoque, da vitrine e dos
+ * relatórios. O motor de venda calcula o lucro da intermediação com custo 0.
+ */
+export async function createIntermediationVehicle(input: {
+  brand: string;
+  model: string;
+  version?: string | null;
+  manufactureYear: number;
+  modelYear: number;
+  plate: string;
+  chassi?: string | null;
+  color?: string | null;
+  km?: number | null;
+  fuel?: string | null;
+  transmission?: string | null;
+  salePrice?: number | null;
+  entryDate: Date;
+  notes?: string | null;
+}) {
+  return prisma.vehicle.create({
+    data: {
+      brand: input.brand,
+      model: input.model,
+      version: input.version || null,
+      manufactureYear: input.manufactureYear,
+      modelYear: input.modelYear,
+      plate: input.plate.toUpperCase(),
+      chassi: input.chassi || null,
+      color: input.color || null,
+      km: input.km ?? 0,
+      fuel: input.fuel || null,
+      transmission: input.transmission || null,
+      purchasePrice: 0,
+      salePrice: Math.max(0, input.salePrice ?? 0),
+      entryDate: input.entryDate,
+      status: "ESTOQUE",
+      intermediation: true,
+      notes: input.notes || null,
+    },
+  });
+}
+
 export async function registerVehicleSale(input: {
   vehicleId: string;
   customerId: string;
@@ -560,6 +605,17 @@ export async function registerVehicleSale(input: {
   downPayment: number;
   installmentsCount: number;
   paymentMethod: FormaPagamento;
+  // Financiamento de terceiros (intermediação): quando informado, grava o tipo
+  // de operação, o valor do financiamento (F) e o devolvido (D) e os dados do
+  // proprietário do documento. O motor de venda já trata o resto (o excedente
+  // do financiamento sobre o "billable" vira a devolução ao cliente).
+  saleType?: "VENDA" | "FINANCIAMENTO_TERCEIROS" | null;
+  financingAmount?: number | null;
+  refundAmount?: number | null;
+  ownerName?: string | null;
+  ownerDocument?: string | null;
+  ownerPhone?: string | null;
+  ownerAddress?: string | null;
   sellerName?: string | null;
   // Vendedor = usuário (beneficiário da comissão, com dados bancários).
   sellerId?: string | null;
@@ -653,6 +709,13 @@ export async function registerVehicleSale(input: {
         transferCharged,
         transferAmount,
         viaPaidTraffic: Boolean(input.viaPaidTraffic),
+        saleType: input.saleType === "FINANCIAMENTO_TERCEIROS" ? "FINANCIAMENTO_TERCEIROS" : "VENDA",
+        financingAmount: Math.max(0, input.financingAmount ?? 0),
+        refundAmount: Math.max(0, input.refundAmount ?? 0),
+        ownerName: input.ownerName || null,
+        ownerDocument: input.ownerDocument || null,
+        ownerPhone: input.ownerPhone || null,
+        ownerAddress: input.ownerAddress || null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },

@@ -342,12 +342,17 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     const margem = s.totalAmount - custo;
     receitaVeiculos += s.totalAmount;
     custoVeiculos += custo;
+    const isIntermediacao = s.saleType === "FINANCIAMENTO_TERCEIROS";
     entries.push({
       id: `v-${s.id}`,
       date: s.saleDate,
       kind: "VEICULO",
-      description: `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
-      detail: `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
+      description: isIntermediacao
+        ? `Financiamento de terceiros — ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`
+        : `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+      detail: isIntermediacao
+        ? `lucro bruto: financiamento ${fmt(s.financingAmount)} − devolução ${fmt(s.refundAmount)} (comissões e demais despesas saem em linhas próprias)`
+        : `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
       value: margem,
     });
     // Comissão do vendedor: custo direto da venda, reconhecido por competência
@@ -554,7 +559,9 @@ export type VehicleProfitRow = {
 
 export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
   const sales = await prisma.sale.findMany({
-    where: { status: "CONCLUIDA" },
+    // Financiamento de terceiros não é venda de veículo próprio (custo 0) —
+    // fica fora do "Lucro por veículo" para não distorcer margem/estoque.
+    where: { status: "CONCLUIDA", saleType: "VENDA" },
     include: { vehicle: { include: { costs: true } } },
     orderBy: { saleDate: "desc" },
   });
@@ -668,7 +675,7 @@ export async function getStockAging(): Promise<{
 }> {
   const now = new Date();
   const inStock = await prisma.vehicle.findMany({
-    where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
+    where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
     include: { costs: true },
     orderBy: { entryDate: "asc" },
   });
@@ -781,7 +788,7 @@ export async function getPerformanceStats() {
       include: { vehicle: { include: { costs: true } } },
     }),
     prisma.vehicle.findMany({
-      where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
+      where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
       include: { costs: true },
     }),
   ]);

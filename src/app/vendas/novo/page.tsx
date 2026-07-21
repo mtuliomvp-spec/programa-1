@@ -62,7 +62,7 @@ export default async function NovaVendaPage({
   }
   const [vehicles, customers, financers, users] = await Promise.all([
     prisma.vehicle.findMany({
-      where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
+      where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
       orderBy: { createdAt: "desc" },
       select: { id: true, brand: true, model: true, plate: true, salePrice: true },
     }),

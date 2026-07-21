@@ -39,7 +39,7 @@ export default async function EstoquePage({
 
   const [vehicles, openPreSales] = await Promise.all([
     prisma.vehicle.findMany({
-      where: { status },
+      where: { status, intermediation: false },
       include: {
         costs: { select: { amount: true } },
         payables: { select: { amount: true, status: true } },

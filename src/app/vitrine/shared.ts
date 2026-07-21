@@ -25,7 +25,7 @@ export type ShowroomVehicle = {
 export async function getShowroomVehicles(): Promise<ShowroomVehicle[]> {
   const [vehicles, openPreSales] = await Promise.all([
     prisma.vehicle.findMany({
-      where: { published: true, status: "ESTOQUE" },
+      where: { published: true, status: "ESTOQUE", intermediation: false },
       orderBy: { createdAt: "desc" },
       select: {
         id: true,

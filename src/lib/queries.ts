@@ -21,7 +21,7 @@ export async function getDashboardStats() {
     paidThisMonth,
   ] = await Promise.all([
     prisma.vehicle.findMany({
-      where: { status: { in: ["ESTOQUE", "RESERVADO"] } },
+      where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
       select: { salePrice: true, status: true },
     }),
     prisma.sale.findMany({

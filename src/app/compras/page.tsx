@@ -36,7 +36,7 @@ export default async function ComprasPage({
     }),
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
-      where: { status: "ESTOQUE" },
+      where: { status: "ESTOQUE", intermediation: false },
       orderBy: { createdAt: "desc" },
       select: { id: true, brand: true, model: true, plate: true },
     }),

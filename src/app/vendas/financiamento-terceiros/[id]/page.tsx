@@ -1,0 +1,119 @@
+import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
+import { requireModule, userCan } from "@/lib/guards";
+import { parseReferrals } from "@/lib/referrals";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
+import { cancelIntermediationAction } from "../actions";
+
+export const dynamic = "force-dynamic";
+
+function Row({ label, value, tone }: { label: string; value: string; tone?: "green" | "rose" }) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-0.5 text-sm">
+      <span className="text-slate-500">{label}</span>
+      <span
+        className={`tabular-nums ${tone === "green" ? "text-emerald-700 font-semibold" : tone === "rose" ? "text-rose-600" : "text-slate-800"}`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export default async function FinanciamentoTerceirosDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  await requireModule("vendas");
+  const { id } = await params;
+
+  const sale = await prisma.sale.findUnique({
+    where: { id },
+    include: { vehicle: true, customer: true, financerAccount: true },
+  });
+  if (!sale || sale.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
+
+  const referrals = parseReferrals(sale.referrals);
+  const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
+  const grossProfit = Math.max(0, sale.financingAmount - sale.refundAmount);
+  const netProfit =
+    grossProfit -
+    sale.commissionAmount -
+    (sale.transferCharged ? sale.transferAmount : 0) -
+    referralsTotal -
+    sale.returnCommissionAmount +
+    sale.returnNet;
+  const canCancel = await userCan("vendas", "cancelar");
+  const canceled = sale.status === "CANCELADA";
+
+  return (
+    <div className="mx-auto max-w-3xl">
+      <PageHeader
+        title="Financiamento de terceiros"
+        description={`${sale.vehicle.brand} ${sale.vehicle.model} · ${sale.vehicle.plate}`}
+        action={
+          <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/${sale.id}/contrato`}>
+            📄 Contrato de intermediação
+          </LinkButton>
+        }
+      />
+
+      {canceled ? (
+        <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          Esta operação foi cancelada — os lançamentos foram revertidos.
+        </div>
+      ) : null}
+
+      <Card className="mb-4">
+        <CardHeader title="Partes" />
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1 p-5 text-sm sm:grid-cols-2">
+          <p><span className="text-slate-500">Vendedor (proprietário):</span> <strong>{sale.ownerName || "—"}</strong></p>
+          <p><span className="text-slate-500">Documento:</span> {sale.ownerDocument || "—"}</p>
+          <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{sale.customer.name}</strong></p>
+          <p><span className="text-slate-500">Financeira:</span> {sale.financerAccount?.name || "—"}</p>
+          <p><span className="text-slate-500">Data:</span> {formatDate(sale.saleDate)}</p>
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title="Valores" />
+        <div className="p-5">
+          <Row label="Valor do financiamento (F)" value={formatCurrency(sale.financingAmount)} />
+          <Row label="(−) Devolução ao cliente (D)" value={formatCurrency(sale.refundAmount)} tone="rose" />
+          <Row label="= Lucro bruto" value={formatCurrency(grossProfit)} />
+          {sale.returnNet > 0 ? (
+            <Row label="(+) Retorno líquido da financeira" value={formatCurrency(sale.returnNet)} tone="green" />
+          ) : null}
+          {sale.commissionAmount > 0 ? (
+            <Row label="(−) Comissão do vendedor" value={formatCurrency(sale.commissionAmount)} tone="rose" />
+          ) : null}
+          {sale.transferCharged && sale.transferAmount > 0 ? (
+            <Row label="(−) Transferência (DETRAN)" value={formatCurrency(sale.transferAmount)} tone="rose" />
+          ) : null}
+          {referralsTotal > 0 ? (
+            <Row label="(−) Indicações" value={formatCurrency(referralsTotal)} tone="rose" />
+          ) : null}
+          {sale.returnCommissionAmount > 0 ? (
+            <Row label="(−) Comissão do retorno" value={formatCurrency(sale.returnCommissionAmount)} tone="rose" />
+          ) : null}
+          <div className="mt-2 border-t border-slate-300 pt-2">
+            <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
+          </div>
+        </div>
+      </Card>
+
+      {canCancel && !canceled ? (
+        <form action={cancelIntermediationAction.bind(null, sale.id)} className="mt-4">
+          <button
+            type="submit"
+            className="rounded-lg border border-rose-300 px-4 py-2 text-sm font-medium text-rose-700 hover:bg-rose-50"
+          >
+            Cancelar operação
+          </button>
+        </form>
+      ) : null}
+    </div>
+  );
+}

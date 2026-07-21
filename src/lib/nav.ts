@@ -19,6 +19,12 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/estoque", label: "Estoque de veículos", icon: "🚗", module: "estoque" },
       { href: "/vendas", label: "Vendas", icon: "🧾", module: "vendas" },
+      {
+        href: "/vendas/financiamento-terceiros",
+        label: "Financiamento de terceiros",
+        icon: "🤝",
+        module: "vendas",
+      },
       { href: "/pecas", label: "Peças", icon: "🔧", module: "pecas" },
       { href: "/compras", label: "Solicitações de compra", icon: "🛒", module: "compras" },
     ],

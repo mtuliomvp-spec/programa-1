@@ -20,10 +20,14 @@ export default async function VendasPage({
   const canPreSale = await userCan("vendas", "prevenda");
   const [allSales, allPreSales] = await Promise.all([
     prisma.sale.findMany({
+      where: { saleType: "VENDA" },
       orderBy: { saleDate: "desc" },
       include: { vehicle: true, customer: true },
     }),
-    prisma.preSale.findMany({ where: { status: "ABERTA" }, orderBy: { createdAt: "desc" } }),
+    prisma.preSale.findMany({
+      where: { status: "ABERTA", saleType: "VENDA" },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   // Dados dos veículos/clientes das pré-vendas abertas (para exibir na lista).
