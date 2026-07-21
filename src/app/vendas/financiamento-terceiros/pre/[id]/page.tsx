@@ -92,6 +92,27 @@ export default async function IntermediationPreSalePage({
         </div>
       )}
 
+      {!canceled ? (
+        <div className="mb-4 flex flex-wrap gap-3">
+          <form action={convertIntermediationAction.bind(null, pre.id)}>
+            <button
+              type="submit"
+              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
+            >
+              ✓ Registrar (concluir operação)
+            </button>
+          </form>
+          <form action={cancelIntermediationPreSaleAction.bind(null, pre.id)}>
+            <button
+              type="submit"
+              className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Cancelar pré-venda
+            </button>
+          </form>
+        </div>
+      ) : null}
+
       <Card className="mb-4">
         <CardHeader title="Partes" />
         <div className="grid grid-cols-1 gap-x-6 gap-y-1 p-5 text-sm sm:grid-cols-2">
@@ -145,27 +166,6 @@ export default async function IntermediationPreSalePage({
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
-
-      {!canceled ? (
-        <div className="flex flex-wrap gap-3">
-          <form action={convertIntermediationAction.bind(null, pre.id)}>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
-            >
-              ✓ Registrar (concluir operação)
-            </button>
-          </form>
-          <form action={cancelIntermediationPreSaleAction.bind(null, pre.id)}>
-            <button
-              type="submit"
-              className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancelar pré-venda
-            </button>
-          </form>
-        </div>
-      ) : null}
     </div>
   );
 }
