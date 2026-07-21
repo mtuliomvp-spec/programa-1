@@ -38,13 +38,13 @@ export default async function FinanciamentoTerceirosDetailPage({
   const referrals = parseReferrals(sale.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
   const grossProfit = Math.max(0, sale.financingAmount - sale.refundAmount);
-  const netProfit =
+  const sobraFinanciamento =
     grossProfit -
     sale.commissionAmount -
     (sale.transferCharged ? sale.transferAmount : 0) -
-    referralsTotal -
-    sale.returnCommissionAmount +
-    sale.returnNet;
+    referralsTotal;
+  const sobraRetorno = sale.returnNet - sale.returnCommissionAmount;
+  const netProfit = sobraFinanciamento + sobraRetorno;
   const canCancel = await userCan("vendas", "cancelar");
   const canceled = sale.status === "CANCELADA";
 
@@ -78,14 +78,11 @@ export default async function FinanciamentoTerceirosDetailPage({
       </Card>
 
       <Card>
-        <CardHeader title="Valores" />
+        <CardHeader title="Financiamento" />
         <div className="p-5">
           <Row label="Valor do financiamento (F)" value={formatCurrency(sale.financingAmount)} />
           <Row label="(−) Devolução ao cliente (D)" value={formatCurrency(sale.refundAmount)} tone="rose" />
           <Row label="= Lucro bruto" value={formatCurrency(grossProfit)} />
-          {sale.returnNet > 0 ? (
-            <Row label="(+) Retorno líquido da financeira" value={formatCurrency(sale.returnNet)} tone="green" />
-          ) : null}
           {sale.commissionAmount > 0 ? (
             <Row label="(−) Comissão do vendedor" value={formatCurrency(sale.commissionAmount)} tone="rose" />
           ) : null}
@@ -95,12 +92,30 @@ export default async function FinanciamentoTerceirosDetailPage({
           {referralsTotal > 0 ? (
             <Row label="(−) Indicações" value={formatCurrency(referralsTotal)} tone="rose" />
           ) : null}
-          {sale.returnCommissionAmount > 0 ? (
-            <Row label="(−) Comissão do retorno" value={formatCurrency(sale.returnCommissionAmount)} tone="rose" />
-          ) : null}
           <div className="mt-2 border-t border-slate-300 pt-2">
-            <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
+            <Row label="= Sobra do financiamento" value={formatCurrency(sobraFinanciamento)} tone="green" />
           </div>
+        </div>
+      </Card>
+
+      {sale.returnNet > 0 ? (
+        <Card className="mt-4">
+          <CardHeader title="Retorno da financeira" />
+          <div className="p-5">
+            <Row label="Retorno líquido da financeira" value={formatCurrency(sale.returnNet)} tone="green" />
+            {sale.returnCommissionAmount > 0 ? (
+              <Row label="(−) Comissão do retorno" value={formatCurrency(sale.returnCommissionAmount)} tone="rose" />
+            ) : null}
+            <div className="mt-2 border-t border-slate-300 pt-2">
+              <Row label="= Sobra do retorno" value={formatCurrency(sobraRetorno)} tone="green" />
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card className="mt-4">
+        <div className="p-5">
+          <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
 

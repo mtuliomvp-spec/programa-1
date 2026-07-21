@@ -58,13 +58,13 @@ export default function IntermediationForm({
 
   const referralsTotal = referrals.reduce((s, r) => s + (r.amount || 0), 0);
   const grossProfit = Math.max(0, financing - refund); // lucro bruto (F − D)
-  const netProfit =
-    grossProfit -
-    (commission || 0) -
-    (transferCharged ? transferAmount || 0 : 0) -
-    referralsTotal -
-    returnSellerCommission +
-    (retorno ? retorno.net : 0);
+  // Bloco do FINANCIAMENTO: lucro bruto menos as despesas da operação.
+  const sobraFinanciamento =
+    grossProfit - (commission || 0) - (transferCharged ? transferAmount || 0 : 0) - referralsTotal;
+  // Bloco do RETORNO: retorno líquido menos a comissão do retorno.
+  const retornoNet = retorno ? retorno.net : 0;
+  const sobraRetorno = retornoNet - returnSellerCommission;
+  const netProfit = sobraFinanciamento + sobraRetorno;
 
   function setField(name: string, value: string | undefined) {
     if (!value) return;
@@ -429,43 +429,68 @@ export default function IntermediationForm({
         </Field>
       </fieldset>
 
-      {/* Resumo do lucro */}
-      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-        <div className="flex items-center justify-between">
-          <span className="text-slate-600">Lucro bruto (financiamento − devolução)</span>
-          <span className="tabular-nums font-medium">{formatCurrency(grossProfit)}</span>
+      {/* Resumo do lucro — financiamento e retorno separados */}
+      <div className="space-y-4 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
+        {/* Bloco 1: Financiamento */}
+        <div>
+          <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Financiamento
+          </p>
+          <div className="flex items-center justify-between">
+            <span className="text-slate-600">Lucro bruto (financiamento − devolução)</span>
+            <span className="tabular-nums font-medium">{formatCurrency(grossProfit)}</span>
+          </div>
+          {commission > 0 ? (
+            <div className="mt-1 flex items-center justify-between text-rose-600">
+              <span>− Comissão do vendedor</span>
+              <span className="tabular-nums">{formatCurrency(commission)}</span>
+            </div>
+          ) : null}
+          {transferCharged && transferAmount > 0 ? (
+            <div className="mt-1 flex items-center justify-between text-rose-600">
+              <span>− Transferência (DETRAN)</span>
+              <span className="tabular-nums">{formatCurrency(transferAmount)}</span>
+            </div>
+          ) : null}
+          {referralsTotal > 0 ? (
+            <div className="mt-1 flex items-center justify-between text-rose-600">
+              <span>− Indicações</span>
+              <span className="tabular-nums">{formatCurrency(referralsTotal)}</span>
+            </div>
+          ) : null}
+          <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-1 font-medium">
+            <span>= Sobra do financiamento</span>
+            <span className={`tabular-nums ${sobraFinanciamento >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+              {formatCurrency(sobraFinanciamento)}
+            </span>
+          </div>
         </div>
+
+        {/* Bloco 2: Retorno (só quando há retorno da financeira) */}
         {retorno ? (
-          <div className="mt-1 flex items-center justify-between text-emerald-700">
-            <span>+ Retorno líquido da financeira</span>
-            <span className="tabular-nums">{formatCurrency(retorno.net)}</span>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Retorno</p>
+            <div className="flex items-center justify-between text-emerald-700">
+              <span>Retorno líquido da financeira</span>
+              <span className="tabular-nums">{formatCurrency(retornoNet)}</span>
+            </div>
+            {returnSellerCommission > 0 ? (
+              <div className="mt-1 flex items-center justify-between text-rose-600">
+                <span>− Comissão do retorno</span>
+                <span className="tabular-nums">{formatCurrency(returnSellerCommission)}</span>
+              </div>
+            ) : null}
+            <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-1 font-medium">
+              <span>= Sobra do retorno</span>
+              <span className={`tabular-nums ${sobraRetorno >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
+                {formatCurrency(sobraRetorno)}
+              </span>
+            </div>
           </div>
         ) : null}
-        {commission > 0 ? (
-          <div className="mt-1 flex items-center justify-between text-rose-600">
-            <span>− Comissão do vendedor</span>
-            <span className="tabular-nums">{formatCurrency(commission)}</span>
-          </div>
-        ) : null}
-        {transferCharged && transferAmount > 0 ? (
-          <div className="mt-1 flex items-center justify-between text-rose-600">
-            <span>− Transferência (DETRAN)</span>
-            <span className="tabular-nums">{formatCurrency(transferAmount)}</span>
-          </div>
-        ) : null}
-        {referralsTotal > 0 ? (
-          <div className="mt-1 flex items-center justify-between text-rose-600">
-            <span>− Indicações</span>
-            <span className="tabular-nums">{formatCurrency(referralsTotal)}</span>
-          </div>
-        ) : null}
-        {returnSellerCommission > 0 ? (
-          <div className="mt-1 flex items-center justify-between text-rose-600">
-            <span>− Comissão do retorno</span>
-            <span className="tabular-nums">{formatCurrency(returnSellerCommission)}</span>
-          </div>
-        ) : null}
-        <div className="mt-2 flex items-center justify-between border-t border-slate-300 pt-2 font-semibold">
+
+        {/* Total */}
+        <div className="flex items-center justify-between border-t border-slate-300 pt-2 font-semibold">
           <span>Lucro sobre financiamento de terceiros</span>
           <span className={`tabular-nums ${netProfit >= 0 ? "text-emerald-700" : "text-rose-600"}`}>
             {formatCurrency(netProfit)}
