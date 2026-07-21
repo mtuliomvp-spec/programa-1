@@ -4,20 +4,24 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, LinkButton } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { convertPreSaleAction, deletePreSaleAction } from "../actions";
 
 export default function PreSaleActions({ id, editHref, canRegister = true }: { id: string; editHref: string; canRegister?: boolean }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [runningLabel, setRunningLabel] = useState("Registrando a venda… aguarde. Não feche esta página.");
   const router = useRouter();
 
   function handleConvert() {
     if (!confirm("Registrar a venda agora? A partir daqui os lançamentos financeiros serão gerados.")) return;
+    setRunningLabel("Registrando a venda… aguarde. Não feche esta página.");
     start(() => convertPreSaleAction(id));
   }
   function handleDelete() {
     if (!confirm("Excluir esta pré-venda? Ela não gerou nada no financeiro; será apenas removida.")) return;
     setError(null);
+    setRunningLabel("Excluindo a pré-venda…");
     start(async () => {
       const res = await deletePreSaleAction(id);
       if (!res.ok) {
@@ -32,6 +36,7 @@ export default function PreSaleActions({ id, editHref, canRegister = true }: { i
 
   return (
     <div className="print:hidden">
+      <ProcessingOverlay show={pending} label={runningLabel} />
       <div className="flex flex-wrap items-center justify-end gap-2">
         <LinkButton variant="secondary" href="/vendas">
           ← Vendas

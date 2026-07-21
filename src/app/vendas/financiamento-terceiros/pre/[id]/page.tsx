@@ -5,7 +5,7 @@ import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { computeReturn } from "@/lib/retorno";
-import { convertIntermediationAction, cancelIntermediationPreSaleAction } from "../../actions";
+import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
 
 export const dynamic = "force-dynamic";
 
@@ -92,29 +92,7 @@ export default async function IntermediationPreSalePage({
         </div>
       )}
 
-      {!canceled ? (
-        <div className="mb-4 flex flex-wrap gap-3">
-          <form action={convertIntermediationAction.bind(null, pre.id)}>
-            <button
-              type="submit"
-              className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-blue-500"
-            >
-              ✓ Registrar (concluir operação)
-            </button>
-          </form>
-          <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/novo?preSale=${pre.id}`}>
-            ✏️ Editar
-          </LinkButton>
-          <form action={cancelIntermediationPreSaleAction.bind(null, pre.id)}>
-            <button
-              type="submit"
-              className="rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Cancelar pré-venda
-            </button>
-          </form>
-        </div>
-      ) : null}
+      {!canceled ? <IntermediationPreSaleActions id={pre.id} /> : null}
 
       <Card className="mb-4">
         <CardHeader title="Partes" />
