@@ -16,7 +16,15 @@ type SessionUser = {
 };
 type Brand = { name: string; logoDataUrl: string | null };
 
-export default function MobileNav({ user, brand }: { user: SessionUser; brand?: Brand }) {
+export default function MobileNav({
+  user,
+  brand,
+  systemLocked = false,
+}: {
+  user: SessionUser;
+  brand?: Brand;
+  systemLocked?: boolean;
+}) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const groups = navGroupsFor(user);
@@ -102,7 +110,7 @@ export default function MobileNav({ user, brand }: { user: SessionUser; brand?: 
               ))}
             </nav>
             <div className="border-t border-white/10 px-4 py-3">
-              <UserFooter user={user} roleLabel={user.roleLabel} dark />
+              <UserFooter user={user} roleLabel={user.roleLabel} dark systemLocked={systemLocked} />
             </div>
           </div>
         </div>

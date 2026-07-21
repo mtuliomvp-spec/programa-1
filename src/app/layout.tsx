@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
+import SystemLockWatcher from "@/components/SystemLockWatcher";
 import { getSessionUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
@@ -49,13 +50,29 @@ export default async function RootLayout({
     name: company?.nomeFantasia || "MVP Veículos",
     logoDataUrl: company?.logoDataUrl || null,
   };
+  const systemLocked = !!company?.systemLocked;
+  const isAdmin = user.role === "ADMIN";
+
+  // Bloqueio do sistema: não-admin com o sistema bloqueado não recebe o app —
+  // só a tela de manutenção (defesa no servidor; o watcher recarrega sozinho
+  // quando o administrador desbloquear).
+  if (systemLocked && !isAdmin) {
+    return (
+      <html lang="pt-BR" className="h-full antialiased">
+        <body className="min-h-screen bg-slate-950">
+          <SystemLockWatcher initialLocked isAdmin={false} />
+        </body>
+      </html>
+    );
+  }
 
   return (
     <html lang="pt-BR" className="h-full antialiased">
       <body className="flex h-full min-h-screen bg-[var(--background)] text-[var(--foreground)]">
-        <Sidebar user={sessionUser} brand={brand} />
+        <SystemLockWatcher initialLocked={systemLocked} isAdmin={isAdmin} />
+        <Sidebar user={sessionUser} brand={brand} systemLocked={systemLocked} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
-          <MobileNav user={sessionUser} brand={brand} />
+          <MobileNav user={sessionUser} brand={brand} systemLocked={systemLocked} />
           <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
         </div>
       </body>

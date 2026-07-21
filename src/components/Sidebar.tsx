@@ -15,7 +15,15 @@ type SessionUser = {
 };
 type Brand = { name: string; logoDataUrl: string | null };
 
-export default function Sidebar({ user, brand }: { user: SessionUser; brand?: Brand }) {
+export default function Sidebar({
+  user,
+  brand,
+  systemLocked = false,
+}: {
+  user: SessionUser;
+  brand?: Brand;
+  systemLocked?: boolean;
+}) {
   const pathname = usePathname();
   const groups = navGroupsFor(user);
 
@@ -54,7 +62,7 @@ export default function Sidebar({ user, brand }: { user: SessionUser; brand?: Br
         ))}
       </nav>
       <div className="border-t border-white/10 px-4 py-3">
-        <UserFooter user={user} roleLabel={user.roleLabel} dark />
+        <UserFooter user={user} roleLabel={user.roleLabel} dark systemLocked={systemLocked} />
       </div>
     </aside>
   );

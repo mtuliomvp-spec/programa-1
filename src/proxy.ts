@@ -50,6 +50,9 @@ export default function proxy(request: NextRequest) {
   // Vitrine pública dos veículos à venda (inclui as fotos públicas).
   if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();
 
+  // Estado do bloqueio do sistema (a própria rota trata sessão ausente).
+  if (pathname === "/api/system-lock") return NextResponse.next();
+
   // Visitante sem sessão na raiz: vê a vitrine (o Entrar fica lá).
   if (pathname === "/") return NextResponse.redirect(new URL("/vitrine", request.url));
 

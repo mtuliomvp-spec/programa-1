@@ -19,6 +19,11 @@ export async function requireModule(moduleKey: ModuleKey) {
 export async function assertCan(moduleKey: ModuleKey, action: string) {
   const user = await getSessionUser();
   if (!user) throw new Error("Sessão expirada. Faça login novamente.");
+  // Bloqueio do sistema (modo manutenção): recusa ações de não-admins.
+  if (user.role !== "ADMIN") {
+    const { getSystemLock, MAINTENANCE_MESSAGE } = await import("@/lib/system-lock");
+    if ((await getSystemLock()).locked) throw new Error(MAINTENANCE_MESSAGE);
+  }
   if (!can(user, moduleKey, action)) {
     throw new Error("Você não tem permissão para esta ação.");
   }

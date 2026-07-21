@@ -167,3 +167,32 @@ export async function restoreBackupAction(
       "Backup restaurado com sucesso. Se os usuários mudaram, pode ser necessário entrar novamente.",
   };
 }
+
+/**
+ * Bloqueio do sistema (modo manutenção): liga/desliga o interruptor global.
+ * Somente ADMIN. Registra quem e quando.
+ */
+export async function toggleSystemLockAction(
+  lock: boolean,
+): Promise<{ ok: boolean; locked?: boolean; error?: string }> {
+  const user = await getSessionUser();
+  if (!user || user.role !== "ADMIN") {
+    return { ok: false, error: "Apenas administradores podem bloquear o sistema." };
+  }
+  await prisma.companySettings.upsert({
+    where: { id: "company" },
+    update: {
+      systemLocked: lock,
+      systemLockedBy: lock ? user.name : null,
+      systemLockedAt: lock ? new Date() : null,
+    },
+    create: {
+      id: "company",
+      systemLocked: lock,
+      systemLockedBy: lock ? user.name : null,
+      systemLockedAt: lock ? new Date() : null,
+    },
+  });
+  revalidatePath("/", "layout");
+  return { ok: true, locked: lock };
+}

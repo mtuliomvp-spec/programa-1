@@ -834,6 +834,11 @@ model CompanySettings {
   city              String?
   uf                String?
   logoDataUrl       String?
+  // Bloqueio do sistema (modo manutenção): só admins navegam; os demais veem o
+  // aviso e as ações são recusadas até desbloquear.
+  systemLocked      Boolean  @default(false)
+  systemLockedBy    String?
+  systemLockedAt    DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
