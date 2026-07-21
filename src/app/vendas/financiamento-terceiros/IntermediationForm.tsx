@@ -136,11 +136,13 @@ export default function IntermediationForm({
       const d = r.data;
       setField("brand", d.brand);
       setField("model", d.model);
+      setField("version", d.version);
       setField("manufactureYear", d.manufactureYear ? String(d.manufactureYear) : undefined);
       setField("modelYear", d.modelYear ? String(d.modelYear) : undefined);
       setField("color", d.color);
       setField("chassi", d.chassi);
       setField("fuel", d.fuel);
+      setField("transmission", d.transmission);
       setLookupMsg(`Dados encontrados: ${d.brand ?? ""} ${d.model ?? ""}. Confira e complete.`);
     });
   }
