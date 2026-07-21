@@ -841,6 +841,9 @@ model CompanySettings {
   city              String?
   uf                String?
   logoDataUrl       String?
+  // Domínio oficial do site (ex.: https://mvpveiculos.com.br). Usado para montar
+  // os links públicos: QR Codes (ficha/ordem), vitrine e sitemap do Google.
+  publicUrl         String?
   // Bloqueio do sistema (modo manutenção): só admins navegam; os demais veem o
   // aviso e as ações são recusadas até desbloquear.
   systemLocked      Boolean  @default(false)

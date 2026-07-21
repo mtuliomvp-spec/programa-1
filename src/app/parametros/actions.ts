@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { normalizePublicUrl } from "@/lib/base-url";
 
 const schema = z.object({
   razaoSocial: z.string().min(1, "Informe a razão social"),
@@ -16,6 +17,7 @@ const schema = z.object({
   city: z.string().optional(),
   uf: z.string().max(2).optional(),
   logoDataUrl: z.string().optional(),
+  publicUrl: z.string().optional(),
 });
 
 export type CompanyFormState = { error?: string; success?: boolean };
@@ -42,6 +44,12 @@ export async function saveCompanyAction(
     return { error: "Arquivo de logo inválido — envie uma imagem (PNG ou JPG)." };
   }
 
+  // Domínio do site: valida e normaliza (aceita só o domínio; adiciona https://).
+  const publicUrl = normalizePublicUrl(d.publicUrl);
+  if (d.publicUrl && d.publicUrl.trim() && !publicUrl) {
+    return { error: "Domínio do site inválido. Ex.: mvpveiculos.com.br" };
+  }
+
   const data = {
     razaoSocial: d.razaoSocial,
     nomeFantasia: d.nomeFantasia,
@@ -52,6 +60,7 @@ export async function saveCompanyAction(
     address: d.address || null,
     city: d.city || null,
     uf: d.uf ? d.uf.toUpperCase() : null,
+    publicUrl,
     // string vazia = manter a logo atual; "remover" = apagar
     ...(d.logoDataUrl === "remover"
       ? { logoDataUrl: null }

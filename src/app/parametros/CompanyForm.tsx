@@ -16,6 +16,7 @@ type Company = {
   city: string | null;
   uf: string | null;
   logoDataUrl: string | null;
+  publicUrl: string | null;
 };
 
 export default function CompanyForm({ company }: { company: Company }) {
@@ -140,6 +141,22 @@ export default function CompanyForm({ company }: { company: Company }) {
         <Field label="UF">
           <Input name="uf" defaultValue={company.uf || ""} maxLength={2} className="max-w-[100px] uppercase" />
         </Field>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <Field label="Domínio do site (endereço público)">
+          <Input
+            name="publicUrl"
+            defaultValue={company.publicUrl || ""}
+            placeholder="mvpveiculos.com.br"
+          />
+        </Field>
+        <p className="mt-2 text-xs text-slate-500">
+          Usado para montar os links públicos: os QR Codes da Ficha de Negócio e da Ordem de
+          Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
+          (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
+          automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
+        </p>
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
