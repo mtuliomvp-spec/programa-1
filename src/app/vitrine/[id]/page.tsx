@@ -5,6 +5,7 @@ import { getCompany } from "@/lib/company";
 import { getBaseUrl } from "@/lib/base-url";
 import { formatCurrency } from "@/lib/format";
 import { getShowroomVehicle, whatsappLink, vehicleTitle } from "../shared";
+import VitrineGallery from "./VitrineGallery";
 
 export const dynamic = "force-dynamic";
 
@@ -73,31 +74,9 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           {[v.version, `${v.manufactureYear}/${v.modelYear}`].filter(Boolean).join(" · ")}
         </p>
 
-        {/* Galeria */}
+        {/* Galeria com lightbox navegável (setas/teclado no desktop, swipe no celular) */}
         {v.photoIds.length > 0 ? (
-          <div className="mt-4 space-y-2">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={`/vitrine/foto/${v.photoIds[0]}`}
-              alt={titulo}
-              className="w-full rounded-2xl border border-slate-200 object-cover"
-            />
-            {v.photoIds.length > 1 ? (
-              <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
-                {v.photoIds.slice(1).map((pid) => (
-                  <a key={pid} href={`/vitrine/foto/${pid}`} target="_blank" rel="noopener noreferrer">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`/vitrine/foto/${pid}`}
-                      alt={titulo}
-                      loading="lazy"
-                      className="aspect-square w-full rounded-lg border border-slate-200 object-cover"
-                    />
-                  </a>
-                ))}
-              </div>
-            ) : null}
-          </div>
+          <VitrineGallery photoIds={v.photoIds} title={titulo} />
         ) : (
           <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-2xl bg-slate-100 text-6xl">
             🚗
