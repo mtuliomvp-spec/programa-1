@@ -1033,12 +1033,22 @@ export async function cancelVehicleSale(saleId: string) {
     }
 
     // 5) Carro volta ao estoque — a menos que já exista outra venda ativa dele
-    //    (evita "roubar" um veículo revendido ao reverter uma venda antiga).
+    //    (evita "roubar" um veículo revendido ao reverter uma venda antiga) ou
+    //    outra ficha ATIVA da mesma placa (recompra já cadastrada: não pode
+    //    haver duas fichas ativas com a mesma placa).
     const outraVendaAtiva = await tx.sale.findFirst({
       where: { vehicleId: sale.vehicleId, id: { not: saleId }, status: "CONCLUIDA" },
       select: { id: true },
     });
-    if (!outraVendaAtiva) {
+    const recompraAtiva = await tx.vehicle.findFirst({
+      where: {
+        plate: sale.vehicle.plate,
+        id: { not: sale.vehicleId },
+        status: { not: "VENDIDO" },
+      },
+      select: { id: true },
+    });
+    if (!outraVendaAtiva && !recompraAtiva) {
       await tx.vehicle.update({ where: { id: sale.vehicleId }, data: { status: "ESTOQUE" } });
     }
     await tx.sale.update({

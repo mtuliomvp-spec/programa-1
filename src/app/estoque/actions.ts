@@ -124,9 +124,16 @@ export async function createVehicleAction(
     }
   }
 
-  const existing = await prisma.vehicle.findUnique({ where: { plate: data.plate.toUpperCase() } });
+  // Só barra placa repetida entre fichas ATIVAS: um veículo já vendido pode
+  // ser recomprado — vira uma nova ficha e o histórico antigo fica intacto.
+  const existing = await prisma.vehicle.findFirst({
+    where: { plate: data.plate.toUpperCase(), status: { not: "VENDIDO" } },
+  });
   if (existing) {
-    return { error: "Já existe um veículo cadastrado com essa placa." };
+    return {
+      error:
+        "Esta placa já está no estoque (veículo ativo). Veículos já vendidos podem ser recomprados normalmente.",
+    };
   }
 
   try {
@@ -186,9 +193,15 @@ export async function updateVehicleAction(
   }
   const data = parsed.data;
 
-  const existing = await prisma.vehicle.findUnique({ where: { plate: data.plate.toUpperCase() } });
-  if (existing && existing.id !== data.id) {
-    return { error: "Já existe outro veículo cadastrado com essa placa." };
+  const existing = await prisma.vehicle.findFirst({
+    where: {
+      plate: data.plate.toUpperCase(),
+      status: { not: "VENDIDO" },
+      id: { not: data.id },
+    },
+  });
+  if (existing) {
+    return { error: "Já existe outro veículo ativo no estoque com essa placa." };
   }
 
   try {

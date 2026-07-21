@@ -168,9 +168,13 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     if (liquido > d.totalAmount) {
       throw new Error("O líquido do veículo da troca é maior que o valor da venda. Ajuste os valores.");
     }
-    const existing = await prisma.vehicle.findUnique({ where: { plate: d.tiPlate.toUpperCase() } });
+    // Só barra ficha ATIVA da mesma placa — receber de volta na troca um carro
+    // que a loja já vendeu é permitido (vira uma nova ficha no estoque).
+    const existing = await prisma.vehicle.findFirst({
+      where: { plate: d.tiPlate.toUpperCase(), status: { not: "VENDIDO" } },
+    });
     if (existing) {
-      throw new Error("Já existe um veículo com a placa informada na troca.");
+      throw new Error("Já existe um veículo ativo no estoque com a placa informada na troca.");
     }
     const customer = await prisma.customer.findUnique({ where: { id: d.customerId } });
     const sellVehicle = await prisma.vehicle.findUnique({ where: { id: d.vehicleId } });

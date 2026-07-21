@@ -340,8 +340,11 @@ model Vehicle {
   version          String?
   manufactureYear  Int
   modelYear        Int
-  plate            String        @unique
-  chassi           String?       @unique
+  // A placa/chassi só é única entre fichas ATIVAS (não vendidas): recomprar um
+  // veículo já vendido cria uma nova ficha e o histórico antigo fica intacto.
+  // Garantido no banco por índices parciais (ver migration allow_rebuy_plate).
+  plate            String
+  chassi           String?
   color            String?
   km               Int           @default(0)
   fuel             String?
