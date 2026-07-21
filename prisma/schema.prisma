@@ -474,6 +474,12 @@ model PreSale {
   ownerDocument     String?
   ownerPhone        String?
   ownerAddress      String?
+  // Dados bancários do comprador (para a transferência da devolução no contrato).
+  buyerBankName        String?
+  buyerBankAgency      String?
+  buyerBankAccount     String?
+  buyerBankAccountType String?
+  buyerPixKey          String?
   downPayment       Float          @default(0)
   installmentsCount Int            @default(0)
   financerAccountId String?
@@ -537,6 +543,12 @@ model Sale {
   ownerDocument     String?
   ownerPhone        String?
   ownerAddress      String?
+  // Dados bancários do comprador (para a transferência da devolução no contrato).
+  buyerBankName        String?
+  buyerBankAgency      String?
+  buyerBankAccount     String?
+  buyerBankAccountType String?
+  buyerPixKey          String?
   vehicleId         String         @unique
   vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
   tradeInVehicleId  String?        @unique

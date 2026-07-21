@@ -36,10 +36,19 @@ type ContractVehicle = {
   transmission: string | null;
 };
 
+type BuyerBank = {
+  name: string | null;
+  agency: string | null;
+  account: string | null;
+  accountType: string | null;
+  pixKey: string | null;
+};
+
 export type IntermediationContractData = {
   company: Company;
   seller: Party; // proprietário do documento (VENDEDOR)
   buyer: Party; // cliente que financia (COMPRADOR)
+  buyerBank: BuyerBank;
   vehicle: ContractVehicle;
   number: number;
   date: Date;
@@ -67,7 +76,9 @@ function Clausula({ n, titulo, children }: { n: number; titulo: string; children
  * responsabilidade civil ou criminal e sem obrigação de transferir o veículo.
  */
 export default function IntermediationContractDocument(d: IntermediationContractData) {
-  const { company, seller, buyer, vehicle } = d;
+  const { company, seller, buyer, buyerBank, vehicle } = d;
+  const hasBank =
+    !!(buyerBank.name || buyerBank.agency || buyerBank.account || buyerBank.pixKey);
   const cidadeData = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}, ${formatDate(d.date)}`
     : formatDate(d.date);
@@ -181,9 +192,26 @@ export default function IntermediationContractDocument(d: IntermediationContract
             </tbody>
           </table>
           <p className="mt-2">
-            O(A) COMPRADOR(A) declara ter recebido o valor de{" "}
-            <strong>{formatCurrency(d.refundAmount)}</strong> a título de devolução do financiamento.
+            A INTERMEDIADORA efetuará a <strong>transferência bancária</strong> do valor de{" "}
+            <strong>{formatCurrency(d.refundAmount)}</strong> ao(à) COMPRADOR(A), a título de devolução
+            do financiamento, <strong>tão logo receba</strong> o valor do financiamento da instituição
+            financeira{d.financerName ? <> <strong>{d.financerName}</strong></> : null}, na conta
+            bancária abaixo indicada:
           </p>
+          <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-3">
+            <p><span className="text-slate-500">Titular:</span> <strong>{buyer.name}</strong></p>
+            <p><span className="text-slate-500">CPF/CNPJ:</span> {buyer.document || "—"}</p>
+            <p><span className="text-slate-500">Banco:</span> {buyerBank.name || "—"}</p>
+            <p><span className="text-slate-500">Agência:</span> {buyerBank.agency || "—"}</p>
+            <p><span className="text-slate-500">Conta:</span> {buyerBank.account || "—"}</p>
+            <p><span className="text-slate-500">Tipo:</span> {buyerBank.accountType || "—"}</p>
+            <p><span className="text-slate-500">PIX:</span> {buyerBank.pixKey || "—"}</p>
+          </div>
+          {!hasBank ? (
+            <p className="mt-1 text-xs text-slate-400">
+              (Preencha os dados bancários do comprador na operação para constarem aqui.)
+            </p>
+          ) : null}
         </Clausula>
 
         <Clausula n={++n} titulo="Do foro">

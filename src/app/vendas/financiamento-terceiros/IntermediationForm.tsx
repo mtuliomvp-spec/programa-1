@@ -2,12 +2,13 @@
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import BankInput from "@/components/BankInput";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
-import { createIntermediationAction } from "./actions";
+import { createIntermediationPreSaleAction } from "./actions";
 import type { IntermediationFormState } from "./core";
 
 type Customer = { id: string; name: string };
@@ -25,7 +26,7 @@ export default function IntermediationForm({
   financers: Financer[];
   users: UserOption[];
 }) {
-  const [state, formAction, pending] = useActionState(createIntermediationAction, initialState);
+  const [state, formAction, pending] = useActionState(createIntermediationPreSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
@@ -350,6 +351,38 @@ export default function IntermediationForm({
         ) : null}
       </fieldset>
 
+      {/* Dados bancários do comprador (para a transferência da devolução) */}
+      <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-700">
+          Dados bancários do comprador (para a devolução)
+        </legend>
+        <p className="text-xs text-slate-500">
+          Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a
+          financeira pagar.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Banco">
+            <BankInput name="buyerBankName" placeholder="Banco do comprador" />
+          </Field>
+          <Field label="Tipo de conta">
+            <Select name="buyerBankAccountType" defaultValue="">
+              <option value="">—</option>
+              <option value="Conta corrente">Conta corrente</option>
+              <option value="Conta poupança">Conta poupança</option>
+            </Select>
+          </Field>
+          <Field label="Agência">
+            <Input name="buyerBankAgency" />
+          </Field>
+          <Field label="Conta">
+            <Input name="buyerBankAccount" />
+          </Field>
+          <Field label="Chave PIX">
+            <Input name="buyerPixKey" placeholder="CPF, e-mail, telefone ou chave aleatória" />
+          </Field>
+        </div>
+      </fieldset>
+
       {/* Vendedor / comissões */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">Vendedor e despesas</legend>
@@ -500,7 +533,7 @@ export default function IntermediationForm({
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
-          {pending ? "Registrando..." : "Registrar financiamento de terceiros"}
+          {pending ? "Gerando..." : "Gerar pré-venda (ficha)"}
         </Button>
       </div>
     </form>

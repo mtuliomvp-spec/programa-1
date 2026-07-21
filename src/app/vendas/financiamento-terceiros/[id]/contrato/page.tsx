@@ -34,6 +34,13 @@ export default async function ContratoIntermediacaoPage({
         phone: sale.customer.phone,
         address: sale.customer.address,
       }}
+      buyerBank={{
+        name: sale.buyerBankName,
+        agency: sale.buyerBankAgency,
+        account: sale.buyerBankAccount,
+        accountType: sale.buyerBankAccountType,
+        pixKey: sale.buyerPixKey,
+      }}
       vehicle={sale.vehicle}
       number={sale.orderNumber}
       date={sale.saleDate}

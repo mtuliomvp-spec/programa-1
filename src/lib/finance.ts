@@ -616,6 +616,12 @@ export async function registerVehicleSale(input: {
   ownerDocument?: string | null;
   ownerPhone?: string | null;
   ownerAddress?: string | null;
+  // Dados bancários do comprador (financiamento de terceiros): para o contrato.
+  buyerBankName?: string | null;
+  buyerBankAgency?: string | null;
+  buyerBankAccount?: string | null;
+  buyerBankAccountType?: string | null;
+  buyerPixKey?: string | null;
   sellerName?: string | null;
   // Vendedor = usuário (beneficiário da comissão, com dados bancários).
   sellerId?: string | null;
@@ -716,6 +722,11 @@ export async function registerVehicleSale(input: {
         ownerDocument: input.ownerDocument || null,
         ownerPhone: input.ownerPhone || null,
         ownerAddress: input.ownerAddress || null,
+        buyerBankName: input.buyerBankName || null,
+        buyerBankAgency: input.buyerBankAgency || null,
+        buyerBankAccount: input.buyerBankAccount || null,
+        buyerBankAccountType: input.buyerBankAccountType || null,
+        buyerPixKey: input.buyerPixKey || null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },

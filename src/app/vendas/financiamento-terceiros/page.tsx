@@ -20,11 +20,37 @@ export const dynamic = "force-dynamic";
 export default async function FinanciamentoTerceirosListPage() {
   await requireModule("vendas");
 
-  const ops = await prisma.sale.findMany({
-    where: { saleType: "FINANCIAMENTO_TERCEIROS" },
-    orderBy: { saleDate: "desc" },
-    include: { vehicle: true, customer: true },
-  });
+  const [openPreRaw, ops] = await Promise.all([
+    prisma.preSale.findMany({
+      where: { saleType: "FINANCIAMENTO_TERCEIROS", status: "ABERTA" },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.sale.findMany({
+      where: { saleType: "FINANCIAMENTO_TERCEIROS" },
+      orderBy: { saleDate: "desc" },
+      include: { vehicle: true, customer: true },
+    }),
+  ]);
+  // PreSale não tem relação com veículo/cliente — busca em lote pelos ids.
+  const preVehicleIds = openPreRaw.map((p) => p.vehicleId);
+  const preCustomerIds = openPreRaw.map((p) => p.customerId);
+  const [preVehicles, preCustomers] = await Promise.all([
+    prisma.vehicle.findMany({
+      where: { id: { in: preVehicleIds } },
+      select: { id: true, brand: true, model: true, plate: true },
+    }),
+    prisma.customer.findMany({
+      where: { id: { in: preCustomerIds } },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const vehById = new Map(preVehicles.map((v) => [v.id, v]));
+  const custById = new Map(preCustomers.map((c) => [c.id, c]));
+  const openPre = openPreRaw.map((p) => ({
+    ...p,
+    vehicle: vehById.get(p.vehicleId),
+    customer: custById.get(p.customerId),
+  }));
 
   return (
     <div>
@@ -35,12 +61,46 @@ export default async function FinanciamentoTerceirosListPage() {
           <LinkButton href="/vendas/financiamento-terceiros/novo">+ Nova operação</LinkButton>
         }
       />
+
+      {openPre.length > 0 ? (
+        <Card className="mb-4">
+          <CardHeader title="Pré-vendas em aberto" description="Fichas geradas, aguardando conclusão" />
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>Veículo</Th>
+                <Th>Cliente</Th>
+                <Th>Data</Th>
+                <Th className="text-right">Financiamento</Th>
+                <Th className="text-right">Devolução</Th>
+              </Tr>
+            </Thead>
+            <tbody>
+              {openPre.map((p) => (
+                <Tr key={p.id}>
+                  <Td className="font-medium text-slate-900">
+                    <Link href={`/vendas/financiamento-terceiros/pre/${p.id}`} className="hover:underline">
+                      {p.vehicle?.brand} {p.vehicle?.model}
+                    </Link>
+                    <span className="ml-1.5 text-xs text-slate-400">{p.vehicle?.plate}</span>
+                  </Td>
+                  <Td>{p.customer?.name ?? "—"}</Td>
+                  <Td>{formatDate(p.saleDate)}</Td>
+                  <Td className="text-right tabular-nums">{formatCurrency(p.financingAmount)}</Td>
+                  <Td className="text-right tabular-nums">{formatCurrency(p.refundAmount)}</Td>
+                </Tr>
+              ))}
+            </tbody>
+          </Table>
+        </Card>
+      ) : null}
+
       <Card>
-        <CardHeader title="Operações" />
+        <CardHeader title="Operações concluídas" />
         {ops.length === 0 ? (
           <EmptyState
-            title="Nenhuma operação registrada"
-            description="Clique em “Nova operação” para registrar um financiamento de terceiros."
+            title="Nenhuma operação concluída"
+            description="Clique em “Nova operação”, gere a pré-venda e conclua para registrar."
           />
         ) : (
           <Table>

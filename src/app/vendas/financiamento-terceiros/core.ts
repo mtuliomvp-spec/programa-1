@@ -7,12 +7,13 @@ import { parseReferrals } from "@/lib/referrals";
 
 /**
  * Núcleo do "Financiamento de terceiros" (intermediação). SEM "use server" —
- * guarda o schema/tipos e a função de registro, reutilizados pela action.
+ * guarda o schema/tipos e as funções de pré-venda/conversão.
  *
- * A operação mapeia no motor de venda: cadastra o veículo do terceiro com
- * custo 0 (fora do estoque) e chama registerVehicleSale com
- * totalAmount = F − D e financedAmount = F. O motor gera a devolução ao
- * cliente (F − billable = D) e o lucro (F − D − comissão − ...).
+ * Fluxo (igual às vendas de veículo): primeiro gera uma PRÉ-VENDA (ficha, sem
+ * lançamento financeiro) e só ao concluir vira uma venda de fato. A operação
+ * mapeia no motor de venda: veículo de terceiro com custo 0 (fora do estoque) e
+ * registerVehicleSale com totalAmount = F − D e financedAmount = F (o motor
+ * gera a devolução ao cliente = D e o lucro = F − D − comissão − ...).
  */
 export const intermediationSchema = z.object({
   customerId: z.string().min(1, "Selecione o cliente (comprador)"),
@@ -22,6 +23,12 @@ export const intermediationSchema = z.object({
   ownerDocument: z.string().optional(),
   ownerPhone: z.string().optional(),
   ownerAddress: z.string().optional(),
+  // Dados bancários do comprador (para a transferência da devolução)
+  buyerBankName: z.string().optional(),
+  buyerBankAgency: z.string().optional(),
+  buyerBankAccount: z.string().optional(),
+  buyerBankAccountType: z.string().optional(),
+  buyerPixKey: z.string().optional(),
   // Veículo do terceiro (cadastro inline)
   brand: z.string().min(1, "Informe a marca"),
   model: z.string().min(1, "Informe o modelo"),
@@ -55,16 +62,14 @@ export const intermediationSchema = z.object({
 export type IntermediationFormState = { error?: string };
 export type IntermediationData = z.infer<typeof intermediationSchema>;
 
-export async function registerIntermediationCore(d: IntermediationData): Promise<string> {
+/** Valida F/D e a placa; devolve os valores normalizados. */
+async function validateAndPrepare(d: IntermediationData) {
   await assertMonthOpen(parseDateInput(d.saleDate));
-
   const F = Math.round(d.financingAmount * 100) / 100;
   const D = Math.round(Math.max(0, d.refundAmount) * 100) / 100;
   if (D > F) {
     throw new Error("A devolução ao cliente não pode ser maior que o valor do financiamento.");
   }
-
-  // Placa não pode colidir com um veículo ATIVO do estoque próprio.
   const existing = await prisma.vehicle.findFirst({
     where: { plate: d.plate.toUpperCase(), status: { not: "VENDIDO" }, intermediation: false },
     select: { id: true },
@@ -72,13 +77,20 @@ export async function registerIntermediationCore(d: IntermediationData): Promise
   if (existing) {
     throw new Error("Já existe um veículo ativo no estoque com essa placa.");
   }
-
-  // Vendedor = usuário do sistema (para dados bancários da comissão).
   let sellerName: string | null = d.sellerName || null;
   if (d.sellerId) {
     const u = await prisma.user.findUnique({ where: { id: d.sellerId }, select: { name: true } });
     sellerName = u?.name ?? sellerName;
   }
+  return { F, D, sellerName };
+}
+
+/**
+ * Cria a PRÉ-VENDA (ficha) do financiamento de terceiros: cadastra o veículo de
+ * terceiro e uma PreSale ABERTA. NÃO gera lançamento financeiro. Retorna o id.
+ */
+export async function createIntermediationPreSale(d: IntermediationData): Promise<string> {
+  const { F, D, sellerName } = await validateAndPrepare(d);
 
   const vehicle = await createIntermediationVehicle({
     brand: d.brand,
@@ -97,18 +109,16 @@ export async function registerIntermediationCore(d: IntermediationData): Promise
     notes: `Veículo de terceiro — financiamento de terceiros (proprietário: ${d.ownerName}).`,
   });
 
-  try {
-    const sale = await registerVehicleSale({
+  const pre = await prisma.preSale.create({
+    data: {
+      saleType: "FINANCIAMENTO_TERCEIROS",
       vehicleId: vehicle.id,
       customerId: d.customerId,
       saleDate: parseDateInput(d.saleDate),
-      // Margem bruta da intermediação = F − D (custo do veículo é 0).
       totalAmount: Math.round((F - D) * 100) / 100,
-      downPayment: 0,
-      installmentsCount: 0,
       paymentMethod: "FINANCIADO",
-      // F financiado pelo banco: o excedente sobre o billable (F−D) vira a
-      // devolução ao cliente (= D) automaticamente no motor.
+      financingAmount: F,
+      refundAmount: D,
       financedAmount: F,
       financerAccountId: d.financerAccountId,
       returnLevel: Math.max(0, d.returnLevel || 0),
@@ -119,19 +129,75 @@ export async function registerIntermediationCore(d: IntermediationData): Promise
       referrals: d.referrals ?? [],
       transferCharged: Boolean(d.transferCharged),
       transferAmount: Math.max(0, d.transferAmount || 0),
-      saleType: "FINANCIAMENTO_TERCEIROS",
-      financingAmount: F,
-      refundAmount: D,
       ownerName: d.ownerName,
       ownerDocument: d.ownerDocument || null,
       ownerPhone: d.ownerPhone || null,
       ownerAddress: d.ownerAddress || null,
+      buyerBankName: d.buyerBankName || null,
+      buyerBankAgency: d.buyerBankAgency || null,
+      buyerBankAccount: d.buyerBankAccount || null,
+      buyerBankAccountType: d.buyerBankAccountType || null,
+      buyerPixKey: d.buyerPixKey || null,
       notes: d.notes || null,
-    });
-    return sale.id;
-  } catch (err) {
-    // Registro falhou depois de criar o veículo do terceiro: remove o órfão.
-    await prisma.vehicle.deleteMany({ where: { id: vehicle.id } }).catch(() => {});
-    throw err;
+      status: "ABERTA",
+    },
+  });
+  return pre.id;
+}
+
+/**
+ * Converte a pré-venda de financiamento de terceiros numa venda de fato
+ * (gera os lançamentos via registerVehicleSale). Retorna o id da venda.
+ */
+export async function convertIntermediationPreSale(preSaleId: string): Promise<string> {
+  const pre = await prisma.preSale.findUniqueOrThrow({ where: { id: preSaleId } });
+  if (pre.saleType !== "FINANCIAMENTO_TERCEIROS") {
+    throw new Error("Esta pré-venda não é um financiamento de terceiros.");
   }
+  if (pre.status === "CONVERTIDA" && pre.convertedSaleId) {
+    return pre.convertedSaleId;
+  }
+  await assertMonthOpen(pre.saleDate);
+
+  const F = pre.financingAmount;
+  const D = pre.refundAmount;
+
+  const sale = await registerVehicleSale({
+    vehicleId: pre.vehicleId,
+    customerId: pre.customerId,
+    saleDate: pre.saleDate,
+    totalAmount: Math.round((F - D) * 100) / 100,
+    downPayment: 0,
+    installmentsCount: 0,
+    paymentMethod: "FINANCIADO",
+    financedAmount: F,
+    financerAccountId: pre.financerAccountId,
+    returnLevel: Math.max(0, pre.returnLevel || 0),
+    takeReturnCommission: pre.takeReturnCommission,
+    sellerName: pre.sellerName,
+    sellerId: pre.sellerId,
+    commissionAmount: pre.commissionAmount,
+    referrals: parseReferrals(pre.referrals),
+    transferCharged: pre.transferCharged,
+    transferAmount: pre.transferAmount,
+    saleType: "FINANCIAMENTO_TERCEIROS",
+    financingAmount: F,
+    refundAmount: D,
+    ownerName: pre.ownerName,
+    ownerDocument: pre.ownerDocument,
+    ownerPhone: pre.ownerPhone,
+    ownerAddress: pre.ownerAddress,
+    buyerBankName: pre.buyerBankName,
+    buyerBankAgency: pre.buyerBankAgency,
+    buyerBankAccount: pre.buyerBankAccount,
+    buyerBankAccountType: pre.buyerBankAccountType,
+    buyerPixKey: pre.buyerPixKey,
+    notes: pre.notes,
+  });
+
+  await prisma.preSale.update({
+    where: { id: pre.id },
+    data: { status: "CONVERTIDA", convertedSaleId: sale.id },
+  });
+  return sale.id;
 }
