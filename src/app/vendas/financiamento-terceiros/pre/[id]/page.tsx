@@ -102,6 +102,9 @@ export default async function IntermediationPreSalePage({
               ✓ Registrar (concluir operação)
             </button>
           </form>
+          <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/novo?preSale=${pre.id}`}>
+            ✏️ Editar
+          </LinkButton>
           <form action={cancelIntermediationPreSaleAction.bind(null, pre.id)}>
             <button
               type="submit"

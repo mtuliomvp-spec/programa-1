@@ -15,16 +15,58 @@ type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
 
+export type IntermediationInitial = {
+  customerId?: string;
+  saleDate?: string;
+  ownerName?: string;
+  ownerDocument?: string;
+  ownerPhone?: string;
+  ownerAddress?: string;
+  buyerBankName?: string;
+  buyerBankAgency?: string;
+  buyerBankAccount?: string;
+  buyerBankAccountType?: string;
+  buyerPixKey?: string;
+  brand?: string;
+  model?: string;
+  version?: string;
+  manufactureYear?: number;
+  modelYear?: number;
+  plate?: string;
+  chassi?: string;
+  color?: string;
+  km?: number;
+  fuel?: string;
+  transmission?: string;
+  financingAmount?: number;
+  refundAmount?: number;
+  financerAccountId?: string;
+  returnLevel?: number;
+  takeReturnCommission?: boolean;
+  sellerId?: string;
+  commissionAmount?: number;
+  transferCharged?: boolean;
+  transferAmount?: number;
+  referrals?: { name: string; amount: number }[];
+  installmentsInfoCount?: number;
+  installmentsInfoAmount?: number;
+  notes?: string;
+};
+
 const initialState: IntermediationFormState = {};
 
 export default function IntermediationForm({
   customers,
   financers,
   users,
+  initial,
+  preSaleId,
 }: {
   customers: Customer[];
   financers: Financer[];
   users: UserOption[];
+  initial?: IntermediationInitial;
+  preSaleId?: string;
 }) {
   const [state, formAction, pending] = useActionState(createIntermediationPreSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -35,15 +77,15 @@ export default function IntermediationForm({
   const [cepLookup, startCepLookup] = useTransition();
   const [cepMsg, setCepMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
-  const [financing, setFinancing] = useState(0);
-  const [refund, setRefund] = useState(0);
-  const [commission, setCommission] = useState(0);
-  const [transferCharged, setTransferCharged] = useState(false);
-  const [transferAmount, setTransferAmount] = useState(0);
-  const [financerId, setFinancerId] = useState("");
-  const [returnLevel, setReturnLevel] = useState(0);
-  const [takeReturnCommission, setTakeReturnCommission] = useState(false);
-  const [referrals, setReferrals] = useState<{ name: string; amount: number }[]>([]);
+  const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
+  const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
+  const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
+  const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
+  const [transferAmount, setTransferAmount] = useState(initial?.transferAmount ?? 0);
+  const [financerId, setFinancerId] = useState(initial?.financerAccountId ?? "");
+  const [returnLevel, setReturnLevel] = useState(initial?.returnLevel ?? 0);
+  const [takeReturnCommission, setTakeReturnCommission] = useState(Boolean(initial?.takeReturnCommission));
+  const [referrals, setReferrals] = useState<{ name: string; amount: number }[]>(initial?.referrals ?? []);
 
   const financer = financers.find((f) => f.id === financerId) || null;
 
@@ -164,6 +206,7 @@ export default function IntermediationForm({
       ) : null}
 
       <input type="hidden" name="referrals" value={JSON.stringify(referrals.filter((r) => r.name || r.amount > 0))} />
+      {preSaleId ? <input type="hidden" name="preSaleId" value={preSaleId} /> : null}
 
       {/* Proprietário do documento (VENDEDOR) */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
@@ -172,11 +215,11 @@ export default function IntermediationForm({
         </legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Nome do proprietário" required>
-            <Input name="ownerName" required placeholder="Quem é o dono do veículo/documento" />
+            <Input name="ownerName" required defaultValue={initial?.ownerName ?? ""} placeholder="Quem é o dono do veículo/documento" />
           </Field>
           <Field label="CPF/CNPJ">
             <div className="flex flex-wrap gap-2">
-              <Input name="ownerDocument" placeholder="CPF ou CNPJ" className="max-w-[200px]" />
+              <Input name="ownerDocument" defaultValue={initial?.ownerDocument ?? ""} placeholder="CPF ou CNPJ" className="max-w-[200px]" />
               <Button
                 type="button"
                 variant="secondary"
@@ -196,7 +239,7 @@ export default function IntermediationForm({
             ) : null}
           </Field>
           <Field label="Telefone">
-            <Input name="ownerPhone" />
+            <Input name="ownerPhone" defaultValue={initial?.ownerPhone ?? ""} />
           </Field>
           <Field label="CEP">
             <div className="flex flex-wrap gap-2">
@@ -212,7 +255,7 @@ export default function IntermediationForm({
             ) : null}
           </Field>
           <Field label="Endereço">
-            <Input name="ownerAddress" placeholder="Rua, número, bairro, cidade/UF" />
+            <Input name="ownerAddress" defaultValue={initial?.ownerAddress ?? ""} placeholder="Rua, número, bairro, cidade/UF" />
           </Field>
         </div>
       </fieldset>
@@ -222,7 +265,7 @@ export default function IntermediationForm({
         <legend className="px-1 text-sm font-semibold text-slate-700">Veículo (de terceiro)</legend>
         <Field label="Placa" required>
           <div className="flex flex-wrap gap-2">
-            <Input name="plate" required placeholder="ABC1D23" className="max-w-[180px] uppercase" />
+            <Input name="plate" required defaultValue={initial?.plate ?? ""} placeholder="ABC1D23" className="max-w-[180px] uppercase" />
             <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking}>
               {looking ? "Buscando..." : "🔍 Buscar dados pela placa"}
             </Button>
@@ -231,34 +274,34 @@ export default function IntermediationForm({
         </Field>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Marca" required>
-            <Input name="brand" required />
+            <Input name="brand" required defaultValue={initial?.brand ?? ""} />
           </Field>
           <Field label="Modelo" required>
-            <Input name="model" required />
+            <Input name="model" required defaultValue={initial?.model ?? ""} />
           </Field>
           <Field label="Versão">
-            <Input name="version" />
+            <Input name="version" defaultValue={initial?.version ?? ""} />
           </Field>
           <Field label="Cor">
-            <Input name="color" />
+            <Input name="color" defaultValue={initial?.color ?? ""} />
           </Field>
           <Field label="Ano fab." required>
-            <Input name="manufactureYear" type="number" required defaultValue={new Date().getFullYear()} />
+            <Input name="manufactureYear" type="number" required defaultValue={initial?.manufactureYear ?? new Date().getFullYear()} />
           </Field>
           <Field label="Ano modelo" required>
-            <Input name="modelYear" type="number" required defaultValue={new Date().getFullYear()} />
+            <Input name="modelYear" type="number" required defaultValue={initial?.modelYear ?? new Date().getFullYear()} />
           </Field>
           <Field label="KM">
-            <Input name="km" type="number" min={0} defaultValue={0} />
+            <Input name="km" type="number" min={0} defaultValue={initial?.km ?? 0} />
           </Field>
           <Field label="Combustível">
-            <Input name="fuel" />
+            <Input name="fuel" defaultValue={initial?.fuel ?? ""} />
           </Field>
           <Field label="Câmbio">
-            <Input name="transmission" />
+            <Input name="transmission" defaultValue={initial?.transmission ?? ""} />
           </Field>
           <Field label="Chassi">
-            <Input name="chassi" />
+            <Input name="chassi" defaultValue={initial?.chassi ?? ""} />
           </Field>
         </div>
       </fieldset>
@@ -268,7 +311,7 @@ export default function IntermediationForm({
         <legend className="px-1 text-sm font-semibold text-slate-700">Operação</legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Cliente (comprador/financiado)" required>
-            <Select name="customerId" required defaultValue="">
+            <Select name="customerId" required defaultValue={initial?.customerId ?? ""}>
               <option value="" disabled>
                 Selecione o cliente
               </option>
@@ -280,7 +323,7 @@ export default function IntermediationForm({
             </Select>
           </Field>
           <Field label="Data" required>
-            <Input name="saleDate" type="date" required defaultValue={toDateInputValue(new Date())} />
+            <Input name="saleDate" type="date" required defaultValue={initial?.saleDate ?? toDateInputValue(new Date())} />
           </Field>
           <Field label="Valor do financiamento (F)" required>
             <Input
@@ -306,7 +349,7 @@ export default function IntermediationForm({
             />
           </Field>
           <Field label="Nº de parcelas (informado ao comprador)" required>
-            <Input name="installmentsInfoCount" type="number" min={1} required placeholder="Ex.: 48" />
+            <Input name="installmentsInfoCount" type="number" min={1} required defaultValue={initial?.installmentsInfoCount ?? ""} placeholder="Ex.: 48" />
           </Field>
           <Field label="Valor da parcela (R$)" required>
             <Input
@@ -315,6 +358,7 @@ export default function IntermediationForm({
               step="0.01"
               min={0.01}
               required
+              defaultValue={initial?.installmentsInfoAmount ?? ""}
               placeholder="Valor de cada parcela"
             />
           </Field>
@@ -377,23 +421,23 @@ export default function IntermediationForm({
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Banco">
-            <BankInput name="buyerBankName" placeholder="Banco do comprador" />
+            <BankInput name="buyerBankName" defaultValue={initial?.buyerBankName ?? ""} placeholder="Banco do comprador" />
           </Field>
           <Field label="Tipo de conta">
-            <Select name="buyerBankAccountType" defaultValue="">
+            <Select name="buyerBankAccountType" defaultValue={initial?.buyerBankAccountType ?? ""}>
               <option value="">—</option>
               <option value="Conta corrente">Conta corrente</option>
               <option value="Conta poupança">Conta poupança</option>
             </Select>
           </Field>
           <Field label="Agência">
-            <Input name="buyerBankAgency" />
+            <Input name="buyerBankAgency" defaultValue={initial?.buyerBankAgency ?? ""} />
           </Field>
           <Field label="Conta">
-            <Input name="buyerBankAccount" />
+            <Input name="buyerBankAccount" defaultValue={initial?.buyerBankAccount ?? ""} />
           </Field>
           <Field label="Chave PIX">
-            <Input name="buyerPixKey" placeholder="CPF, e-mail, telefone ou chave aleatória" />
+            <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
           </Field>
         </div>
       </fieldset>
@@ -403,7 +447,7 @@ export default function IntermediationForm({
         <legend className="px-1 text-sm font-semibold text-slate-700">Vendedor e despesas</legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Vendedor">
-            <Select name="sellerId" defaultValue="">
+            <Select name="sellerId" defaultValue={initial?.sellerId ?? ""}>
               <option value="">— Nenhum —</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>
@@ -473,7 +517,7 @@ export default function IntermediationForm({
           + Adicionar indicação
         </button>
         <Field label="Observações">
-          <Textarea name="notes" rows={2} />
+          <Textarea name="notes" rows={2} defaultValue={initial?.notes ?? ""} />
         </Field>
       </fieldset>
 
@@ -548,7 +592,11 @@ export default function IntermediationForm({
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
-          {pending ? "Gerando..." : "Gerar pré-venda (ficha)"}
+          {pending
+            ? "Salvando..."
+            : preSaleId
+              ? "Salvar alterações"
+              : "Gerar pré-venda (ficha)"}
         </Button>
       </div>
     </form>

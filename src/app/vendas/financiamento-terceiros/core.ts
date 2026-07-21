@@ -65,8 +65,9 @@ export const intermediationSchema = z.object({
 export type IntermediationFormState = { error?: string };
 export type IntermediationData = z.infer<typeof intermediationSchema>;
 
-/** Valida F/D e a placa; devolve os valores normalizados. */
-async function validateAndPrepare(d: IntermediationData) {
+/** Valida F/D e a placa; devolve os valores normalizados. `excludeVehicleId`
+ *  ignora o próprio veículo de terceiro ao editar a pré-venda. */
+async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: string) {
   await assertMonthOpen(parseDateInput(d.saleDate));
   const F = Math.round(d.financingAmount * 100) / 100;
   const D = Math.round(Math.max(0, d.refundAmount) * 100) / 100;
@@ -74,7 +75,12 @@ async function validateAndPrepare(d: IntermediationData) {
     throw new Error("A devolução ao cliente não pode ser maior que o valor do financiamento.");
   }
   const existing = await prisma.vehicle.findFirst({
-    where: { plate: d.plate.toUpperCase(), status: { not: "VENDIDO" }, intermediation: false },
+    where: {
+      plate: d.plate.toUpperCase(),
+      status: { not: "VENDIDO" },
+      intermediation: false,
+      ...(excludeVehicleId ? { id: { not: excludeVehicleId } } : {}),
+    },
     select: { id: true },
   });
   if (existing) {
@@ -89,13 +95,44 @@ async function validateAndPrepare(d: IntermediationData) {
 }
 
 /**
- * Cria a PRÉ-VENDA (ficha) do financiamento de terceiros: cadastra o veículo de
- * terceiro e uma PreSale ABERTA. NÃO gera lançamento financeiro. Retorna o id.
- */
-export async function createIntermediationPreSale(d: IntermediationData): Promise<string> {
-  const { F, D, sellerName } = await validateAndPrepare(d);
+/** Monta os campos da PreSale/venda a partir dos dados do formulário. */
+function buildPreSaleData(d: IntermediationData, F: number, D: number, sellerName: string | null) {
+  return {
+    saleType: "FINANCIAMENTO_TERCEIROS" as const,
+    customerId: d.customerId,
+    saleDate: parseDateInput(d.saleDate),
+    totalAmount: Math.round((F - D) * 100) / 100,
+    paymentMethod: "FINANCIADO" as const,
+    financingAmount: F,
+    refundAmount: D,
+    financedAmount: F,
+    financerAccountId: d.financerAccountId,
+    returnLevel: Math.max(0, d.returnLevel || 0),
+    takeReturnCommission: Boolean(d.takeReturnCommission),
+    sellerName,
+    sellerId: d.sellerId || null,
+    commissionAmount: Math.max(0, d.commissionAmount || 0),
+    referrals: d.referrals ?? [],
+    transferCharged: Boolean(d.transferCharged),
+    transferAmount: Math.max(0, d.transferAmount || 0),
+    ownerName: d.ownerName,
+    ownerDocument: d.ownerDocument || null,
+    ownerPhone: d.ownerPhone || null,
+    ownerAddress: d.ownerAddress || null,
+    buyerBankName: d.buyerBankName || null,
+    buyerBankAgency: d.buyerBankAgency || null,
+    buyerBankAccount: d.buyerBankAccount || null,
+    buyerBankAccountType: d.buyerBankAccountType || null,
+    buyerPixKey: d.buyerPixKey || null,
+    installmentsInfoCount: d.installmentsInfoCount,
+    installmentsInfoAmount: d.installmentsInfoAmount,
+    notes: d.notes || null,
+  };
+}
 
-  const vehicle = await createIntermediationVehicle({
+/** Campos do veículo de terceiro (para criar/atualizar). */
+function buildVehicleData(d: IntermediationData, F: number) {
+  return {
     brand: d.brand,
     model: d.model,
     version: d.version || null,
@@ -108,44 +145,49 @@ export async function createIntermediationPreSale(d: IntermediationData): Promis
     fuel: d.fuel || null,
     transmission: d.transmission || null,
     salePrice: F,
+  };
+}
+
+/**
+ * Cria a PRÉ-VENDA (ficha) do financiamento de terceiros: cadastra o veículo de
+ * terceiro e uma PreSale ABERTA. NÃO gera lançamento financeiro. Retorna o id.
+ */
+export async function createIntermediationPreSale(d: IntermediationData): Promise<string> {
+  const { F, D, sellerName } = await validateAndPrepare(d);
+
+  const vehicle = await createIntermediationVehicle({
+    ...buildVehicleData(d, F),
     entryDate: parseDateInput(d.saleDate),
     notes: `Veículo de terceiro — financiamento de terceiros (proprietário: ${d.ownerName}).`,
   });
 
   const pre = await prisma.preSale.create({
-    data: {
-      saleType: "FINANCIAMENTO_TERCEIROS",
-      vehicleId: vehicle.id,
-      customerId: d.customerId,
-      saleDate: parseDateInput(d.saleDate),
-      totalAmount: Math.round((F - D) * 100) / 100,
-      paymentMethod: "FINANCIADO",
-      financingAmount: F,
-      refundAmount: D,
-      financedAmount: F,
-      financerAccountId: d.financerAccountId,
-      returnLevel: Math.max(0, d.returnLevel || 0),
-      takeReturnCommission: Boolean(d.takeReturnCommission),
-      sellerName,
-      sellerId: d.sellerId || null,
-      commissionAmount: Math.max(0, d.commissionAmount || 0),
-      referrals: d.referrals ?? [],
-      transferCharged: Boolean(d.transferCharged),
-      transferAmount: Math.max(0, d.transferAmount || 0),
-      ownerName: d.ownerName,
-      ownerDocument: d.ownerDocument || null,
-      ownerPhone: d.ownerPhone || null,
-      ownerAddress: d.ownerAddress || null,
-      buyerBankName: d.buyerBankName || null,
-      buyerBankAgency: d.buyerBankAgency || null,
-      buyerBankAccount: d.buyerBankAccount || null,
-      buyerBankAccountType: d.buyerBankAccountType || null,
-      buyerPixKey: d.buyerPixKey || null,
-      installmentsInfoCount: d.installmentsInfoCount,
-      installmentsInfoAmount: d.installmentsInfoAmount,
-      notes: d.notes || null,
-      status: "ABERTA",
-    },
+    data: { ...buildPreSaleData(d, F, D, sellerName), vehicleId: vehicle.id, status: "ABERTA" },
+  });
+  return pre.id;
+}
+
+/**
+ * Atualiza uma pré-venda de financiamento de terceiros (só enquanto ABERTA).
+ * Atualiza também o veículo de terceiro já cadastrado (não recria).
+ */
+export async function updateIntermediationPreSale(
+  preSaleId: string,
+  d: IntermediationData,
+): Promise<string> {
+  const pre = await prisma.preSale.findUniqueOrThrow({ where: { id: preSaleId } });
+  if (pre.saleType !== "FINANCIAMENTO_TERCEIROS") {
+    throw new Error("Esta pré-venda não é um financiamento de terceiros.");
+  }
+  if (pre.status !== "ABERTA") {
+    throw new Error("Só é possível editar enquanto a pré-venda está em aberto.");
+  }
+  const { F, D, sellerName } = await validateAndPrepare(d, pre.vehicleId);
+
+  await prisma.vehicle.update({ where: { id: pre.vehicleId }, data: buildVehicleData(d, F) });
+  await prisma.preSale.update({
+    where: { id: pre.id },
+    data: buildPreSaleData(d, F, D, sellerName),
   });
   return pre.id;
 }

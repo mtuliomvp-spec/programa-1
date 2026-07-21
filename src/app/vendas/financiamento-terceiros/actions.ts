@@ -10,11 +10,15 @@ import { cancelVehicleSale } from "@/lib/finance";
 import {
   intermediationSchema,
   createIntermediationPreSale,
+  updateIntermediationPreSale,
   convertIntermediationPreSale,
   type IntermediationFormState,
 } from "./core";
 
-/** Gera a pré-venda (ficha) — não movimenta dinheiro, então não exige caixa. */
+/**
+ * Gera a pré-venda (ficha) ou salva alterações quando há `preSaleId`. Não
+ * movimenta dinheiro (é rascunho), então não exige caixa aberto.
+ */
 export async function createIntermediationPreSaleAction(
   _prev: IntermediationFormState,
   formData: FormData,
@@ -29,16 +33,20 @@ export async function createIntermediationPreSaleAction(
   if (!parsed.success) {
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
+  const preSaleId = String(formData.get("preSaleId") || "").trim();
 
-  let preSaleId: string;
+  let id: string;
   try {
-    preSaleId = await createIntermediationPreSale(parsed.data);
+    id = preSaleId
+      ? await updateIntermediationPreSale(preSaleId, parsed.data)
+      : await createIntermediationPreSale(parsed.data);
   } catch (err) {
-    return { error: err instanceof Error ? err.message : "Não foi possível gerar a pré-venda." };
+    return { error: err instanceof Error ? err.message : "Não foi possível salvar a pré-venda." };
   }
 
   revalidatePath("/vendas/financiamento-terceiros");
-  redirect(`/vendas/financiamento-terceiros/pre/${preSaleId}`);
+  revalidatePath(`/vendas/financiamento-terceiros/pre/${id}`);
+  redirect(`/vendas/financiamento-terceiros/pre/${id}`);
 }
 
 /** Conclui a pré-venda → gera a venda (movimenta dinheiro, exige caixa aberto). */
