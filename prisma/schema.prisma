@@ -897,6 +897,11 @@ model CompanySettings {
   systemLocked      Boolean  @default(false)
   systemLockedBy    String?
   systemLockedAt    DateTime?
+  // Parecer IA: configuração da inteligência artificial (provedor, chave, modelo).
+  // A chave nunca é devolvida ao cliente; sem chave, o parecer fica indisponível.
+  aiProvider        String?
+  aiApiKey          String?
+  aiModel           String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

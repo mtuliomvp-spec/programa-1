@@ -1,7 +1,7 @@
 "use client";
 
 import { useActionState, useRef, useState, useTransition } from "react";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Select } from "@/components/ui";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { saveCompanyAction, type CompanyFormState } from "./actions";
 
@@ -17,6 +17,11 @@ type Company = {
   uf: string | null;
   logoDataUrl: string | null;
   publicUrl: string | null;
+  // Parecer IA: provedor/modelo aparecem; a chave NUNCA vem ao cliente (só o
+  // indicador de que existe).
+  aiProvider: string | null;
+  aiModel: string | null;
+  hasAiKey: boolean;
 };
 
 export default function CompanyForm({ company }: { company: Company }) {
@@ -156,6 +161,54 @@ export default function CompanyForm({ company }: { company: Company }) {
           Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
           (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
           automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">
+        <p className="mb-1 text-sm font-semibold text-slate-800">🛡️ Parecer IA (Inteligência Artificial)</p>
+        <p className="mb-3 text-xs text-slate-500">
+          A IA gera um parecer técnico da loja (e de cada veículo) em PDF. Para funcionar, cadastre a
+          chave de API do provedor escolhido. Há custo por geração, cobrado direto pelo provedor.
+          {company.hasAiKey ? (
+            <span className="ml-1 font-medium text-emerald-700">Chave configurada ✓</span>
+          ) : (
+            <span className="ml-1 font-medium text-amber-700">Sem chave — o parecer fica indisponível.</span>
+          )}
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Provedor de IA">
+            <Select name="aiProvider" defaultValue={company.aiProvider || "ANTHROPIC"}>
+              <option value="ANTHROPIC">Anthropic (Claude)</option>
+              <option value="OPENAI">OpenAI (ChatGPT)</option>
+            </Select>
+          </Field>
+          <Field label="Modelo (opcional)">
+            <Input
+              name="aiModel"
+              defaultValue={company.aiModel || ""}
+              placeholder="padrão do provedor"
+            />
+          </Field>
+          <div className="sm:col-span-2">
+            <Field label={company.hasAiKey ? "Chave de API (deixe em branco para manter)" : "Chave de API"}>
+              <Input
+                type="password"
+                name="aiApiKey"
+                autoComplete="off"
+                placeholder={company.hasAiKey ? "•••••••••• (chave já salva)" : "Cole aqui a chave da IA"}
+              />
+            </Field>
+            {company.hasAiKey ? (
+              <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+                <input type="checkbox" name="aiApiKeyClear" value="true" className="h-4 w-4 rounded border-slate-300" />
+                Remover a chave salva
+              </label>
+            ) : null}
+          </div>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">
+          A chave é guardada com segurança e nunca é mostrada de volta nesta tela. Anthropic:
+          console.anthropic.com · OpenAI: platform.openai.com.
         </p>
       </div>
 

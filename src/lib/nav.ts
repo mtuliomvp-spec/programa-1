@@ -57,6 +57,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Relatórios",
     items: [
       { href: "/relatorios", label: "Central de relatórios", icon: "📈", module: "relatorios" },
+      { href: "/relatorios/parecer-ia", label: "Parecer IA", icon: "🛡️", module: "relatorios" },
     ],
   },
   {

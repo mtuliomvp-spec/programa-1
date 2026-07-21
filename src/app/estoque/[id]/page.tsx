@@ -11,6 +11,7 @@ import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
+import ParecerIAButton from "@/components/ParecerIAButton";
 import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
@@ -91,6 +92,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <LinkButton href={`/estoque/${vehicle.id}/contrato`} variant="secondary">
               📜 Contrato de compra
             </LinkButton>
+            <ParecerIAButton mode="vehicle" vehicleId={vehicle.id} variant="secondary" />
             {vehicle.status !== "VENDIDO" ? (
               <LinkButton href={`/vendas/novo?vehicleId=${vehicle.id}`} variant="primary">
                 Vender veículo

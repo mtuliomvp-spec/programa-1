@@ -11,6 +11,9 @@ export default async function ParametrosPage() {
   if (!user || user.role !== "ADMIN") redirect("/");
 
   const company = await getCompany();
+  // A chave da IA NUNCA vai ao cliente — envia só o indicador de que existe.
+  const { aiApiKey, ...rest } = company;
+  const companyForClient = { ...rest, hasAiKey: !!aiApiKey?.trim() };
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -21,7 +24,7 @@ export default async function ParametrosPage() {
       <Card>
         <CardHeader title="Dados da empresa" />
         <div className="p-5">
-          <CompanyForm company={company} />
+          <CompanyForm company={companyForClient} />
         </div>
       </Card>
     </div>
