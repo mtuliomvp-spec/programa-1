@@ -48,6 +48,8 @@ export const saleSchema = z.object({
   transferAmount: z.coerce.number().min(0).default(0),
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira.
   takeReturnCommission: z.coerce.boolean().optional(),
+  // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
+  viaPaidTraffic: z.coerce.boolean().optional(),
   // Indicações de venda: JSON [{ name, amount }] serializado num input hidden.
   // Cada indicação vira conta a pagar (Comissão), como a do vendedor.
   referrals: z
@@ -238,6 +240,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       transferCharged: Boolean(d.transferCharged),
       transferAmount: Math.max(0, d.transferAmount || 0),
       takeReturnCommission: Boolean(d.takeReturnCommission),
+      viaPaidTraffic: Boolean(d.viaPaidTraffic),
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,

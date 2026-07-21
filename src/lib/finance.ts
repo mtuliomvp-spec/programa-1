@@ -575,6 +575,8 @@ export async function registerVehicleSale(input: {
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira
   // (percentual do líquido, configurado na conta da financeira).
   takeReturnCommission?: boolean | null;
+  // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
+  viaPaidTraffic?: boolean | null;
   notes?: string | null;
   // Financiamento: banco/financeira e valor financiado (repasse). O que sobrar
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
@@ -650,6 +652,7 @@ export async function registerVehicleSale(input: {
         referrals,
         transferCharged,
         transferAmount,
+        viaPaidTraffic: Boolean(input.viaPaidTraffic),
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
       },

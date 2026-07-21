@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
 import { getStructuralSummary } from "@/lib/structural";
 import { getPatrimonialStats } from "@/lib/patrimonial";
+import { getPaidTrafficStats } from "@/lib/reports";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
@@ -45,12 +46,13 @@ export default async function DashboardPage() {
     );
   }
 
-  const [stats, upcoming, monthly, structural, pat] = await Promise.all([
+  const [stats, upcoming, monthly, structural, pat, traffic] = await Promise.all([
     getDashboardStats(),
     getUpcomingDue(7),
     getCashFlowLastMonths(6),
     getStructuralSummary(),
     getPatrimonialStats(),
+    getPaidTrafficStats(),
   ]);
 
   type UpcomingItem = {
@@ -173,6 +175,16 @@ export default async function DashboardPage() {
               ? `${pat.titulosVencidosCount} vencido(s) · ${formatCurrency(pat.titulosVencidosValor)}`
               : "títulos pendentes a pagar"
           }
+        />
+        {/* Informativo: investimento em anúncios vs. lucro líquido das vendas
+            marcadas como "via tráfego pago" (não entra na contabilidade). */}
+        <StatCard
+          label="Tráfego pago"
+          value={formatCurrency(traffic.balance)}
+          tone={traffic.balance >= 0 ? "positive" : "negative"}
+          hint={`investido ${formatCurrency(traffic.spend)} · recuperado ${formatCurrency(
+            traffic.recovered,
+          )} (lucro líquido de ${traffic.salesCount} venda${traffic.salesCount === 1 ? "" : "s"})`}
         />
         <StatCard
           label="Veículos em estoque"

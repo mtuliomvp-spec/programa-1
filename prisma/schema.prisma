@@ -492,6 +492,8 @@ model PreSale {
   transferAmount    Float          @default(0)
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira.
   takeReturnCommission Boolean     @default(false)
+  // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
+  viaPaidTraffic    Boolean        @default(false)
   // Token público para a verificação da ficha via QR Code (página /verificar).
   publicToken       String         @unique @default(uuid())
   status            StatusPreVenda @default(ABERTA)
@@ -548,6 +550,8 @@ model Sale {
   // Comissão do vendedor sobre o retorno da financeira (calculada no registro):
   // vira conta a pagar (Comissão) e reduz o resultado por competência.
   returnCommissionAmount Float     @default(0)
+  // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
+  viaPaidTraffic    Boolean        @default(false)
   notes             String?
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]

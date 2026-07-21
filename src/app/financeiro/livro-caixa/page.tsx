@@ -90,7 +90,7 @@ export default async function LivroCaixaPage({
       getBooksHealth(),
     ]);
 
-  const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível"];
+  const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
   const categoryOptions = Array.from(
     new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
   );

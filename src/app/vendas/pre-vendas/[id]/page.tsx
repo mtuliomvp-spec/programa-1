@@ -164,6 +164,9 @@ export default async function PreVendaFichaPage({
             {pre.transferCharged && pre.transferAmount > 0 ? (
               <p><span className="text-slate-500">Transferência (DETRAN):</span> {money(pre.transferAmount)}</p>
             ) : null}
+            {pre.viaPaidTraffic ? (
+              <p><span className="text-slate-500">Origem:</span> Tráfego pago (anúncio)</p>
+            ) : null}
             {referrals.map((r, i) => (
               <p key={i}>
                 <span className="text-slate-500">Indicação de venda{referrals.length > 1 ? ` ${i + 1}` : ""}:</span>{" "}

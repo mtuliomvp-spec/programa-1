@@ -33,6 +33,7 @@ export type SaleFormInitial = {
   transferCharged?: boolean;
   transferAmount?: number;
   takeReturnCommission?: boolean;
+  viaPaidTraffic?: boolean;
   notes?: string;
   tradeIn?: boolean;
   tiPlate?: string;
@@ -385,6 +386,22 @@ export default function SaleForm({
               </p>
             </>
           ) : null}
+        </Field>
+        <Field label="Tráfego pago">
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="viaPaidTraffic"
+              value="true"
+              defaultChecked={Boolean(initial?.viaPaidTraffic)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Vendido através do tráfego pago
+          </label>
+          <p className="mt-1 text-xs text-slate-400">
+            Só informativo: o lucro líquido desta venda abate o investimento no card
+            &quot;Tráfego pago&quot; do dashboard.
+          </p>
         </Field>
         {referralRows.map((row, i) => (
           // Sem `name` nos inputs: as indicações vão juntas no hidden "referrals".

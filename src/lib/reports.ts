@@ -546,6 +546,8 @@ export type VehicleProfitRow = {
   saleExpenses: number;
   /** Lucro líquido da venda: bruto − despesas da venda. */
   netProfit: number;
+  /** Venda originada de anúncio de tráfego pago (informativo). */
+  viaPaidTraffic: boolean;
   marginPct: number;
   daysInStock: number;
 };
@@ -580,10 +582,61 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       profit,
       saleExpenses,
       netProfit,
+      viaPaidTraffic: s.viaPaidTraffic,
       marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
       daysInStock: daysBetween(s.vehicle.entryDate, s.saleDate),
     };
   });
+}
+
+// ---------------------------------------------------------------------------
+// Tráfego pago (card informativo do dashboard)
+// ---------------------------------------------------------------------------
+
+export type PaidTrafficStats = {
+  /** Total pago em títulos de tráfego pago (categoria "Tráfego pago"). */
+  spend: number;
+  /** Lucro líquido somado das vendas marcadas como "via tráfego pago". */
+  recovered: number;
+  /** recovered − spend: negativo enquanto o investimento não se pagou. */
+  balance: number;
+  salesCount: number;
+};
+
+/** "Tráfego Pago", "trafego pago", "Tráfego (Meta)"... contam do mesmo jeito. */
+function isPaidTrafficLabel(label: string | null | undefined): boolean {
+  if (!label) return false;
+  const norm = label
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "");
+  return norm.includes("trafego");
+}
+
+/**
+ * Card "Tráfego pago": investimento em anúncios (títulos PAGOS com categoria
+ * de tráfego) contra o lucro líquido das vendas marcadas como originadas do
+ * tráfego. Puramente informativo — não altera DRE nem equação patrimonial.
+ */
+export async function getPaidTrafficStats(): Promise<PaidTrafficStats> {
+  const [paid, rows] = await Promise.all([
+    prisma.payable.findMany({
+      where: { status: "PAGO" },
+      select: { amount: true, categoryLabel: true },
+    }),
+    getVehicleProfitReport(),
+  ]);
+  const spend = paid
+    .filter((p) => isPaidTrafficLabel(p.categoryLabel))
+    .reduce((sum, p) => sum + p.amount, 0);
+  const trafficSales = rows.filter((r) => r.viaPaidTraffic);
+  const recovered = trafficSales.reduce((sum, r) => sum + r.netProfit, 0);
+  return {
+    spend,
+    recovered,
+    balance: Math.round((recovered - spend) * 100) / 100,
+    salesCount: trafficSales.length,
+  };
 }
 
 // ---------------------------------------------------------------------------

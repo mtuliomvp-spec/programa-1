@@ -4,7 +4,7 @@ import ManualPayableForm from "./ManualPayableForm";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível"];
+const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
 
 export default async function NovaContaPagarPage() {
   const [suppliers, costCenters, stockVehicles, beneficiaries, customCategories] = await Promise.all([
