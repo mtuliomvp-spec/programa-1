@@ -3,6 +3,8 @@
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { lookupPlateAction } from "@/app/estoque/actions";
+import { lookupCnpjAction } from "@/app/cnpj-actions";
+import { lookupCepAction } from "@/app/cep-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { createIntermediationAction } from "./actions";
@@ -27,6 +29,10 @@ export default function IntermediationForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<string | null>(null);
+  const [ownerLookup, startOwnerLookup] = useTransition();
+  const [ownerMsg, setOwnerMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [cepLookup, startCepLookup] = useTransition();
+  const [cepMsg, setCepMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   const [financing, setFinancing] = useState(0);
   const [refund, setRefund] = useState(0);
@@ -64,6 +70,52 @@ export default function IntermediationForm({
     if (!value) return;
     const el = formRef.current?.elements.namedItem(name);
     if (el instanceof HTMLInputElement) el.value = value;
+  }
+
+  function readField(name: string): string {
+    const el = formRef.current?.elements.namedItem(name);
+    return el instanceof HTMLInputElement ? el.value.trim() : "";
+  }
+
+  // Proprietário pessoa jurídica: busca nome/telefone/endereço pelo CNPJ.
+  function handleOwnerCnpjLookup() {
+    const doc = readField("ownerDocument");
+    const digits = doc.replace(/\D/g, "");
+    if (digits.length !== 14) {
+      setOwnerMsg({ tone: "err", text: "Para buscar pelo CNPJ, digite os 14 números (pessoa jurídica)." });
+      return;
+    }
+    setOwnerMsg(null);
+    startOwnerLookup(async () => {
+      const r = await lookupCnpjAction(doc);
+      if (!r.ok) {
+        setOwnerMsg({ tone: "err", text: r.error });
+        return;
+      }
+      setField("ownerName", r.data.name || r.data.fantasia);
+      setField("ownerPhone", r.data.phone);
+      setField("ownerAddress", r.data.address);
+      setOwnerMsg({ tone: "ok", text: `Dados encontrados: ${r.data.name ?? ""}. Confira e complete.` });
+    });
+  }
+
+  // Busca o endereço do proprietário pelo CEP (preenche o campo Endereço).
+  function handleOwnerCepLookup() {
+    const cep = readField("ownerCep");
+    if (!cep.replace(/\D/g, "")) {
+      setCepMsg({ tone: "err", text: "Digite o CEP antes de buscar." });
+      return;
+    }
+    setCepMsg(null);
+    startCepLookup(async () => {
+      const r = await lookupCepAction(cep);
+      if (!r.ok) {
+        setCepMsg({ tone: "err", text: r.error });
+        return;
+      }
+      setField("ownerAddress", r.data.address);
+      setCepMsg({ tone: "ok", text: "Endereço preenchido. Complete o número." });
+    });
   }
 
   function handlePlateLookup() {
@@ -120,13 +172,44 @@ export default function IntermediationForm({
             <Input name="ownerName" required placeholder="Quem é o dono do veículo/documento" />
           </Field>
           <Field label="CPF/CNPJ">
-            <Input name="ownerDocument" placeholder="Documento do proprietário" />
+            <div className="flex flex-wrap gap-2">
+              <Input name="ownerDocument" placeholder="CPF ou CNPJ" className="max-w-[200px]" />
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleOwnerCnpjLookup}
+                disabled={ownerLookup}
+              >
+                {ownerLookup ? "Buscando..." : "🔍 Buscar pelo CNPJ"}
+              </Button>
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              Pessoa jurídica: digite o CNPJ e busque nome, telefone e endereço.
+            </p>
+            {ownerMsg ? (
+              <p className={`mt-1 text-xs font-medium ${ownerMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                {ownerMsg.text}
+              </p>
+            ) : null}
           </Field>
           <Field label="Telefone">
             <Input name="ownerPhone" />
           </Field>
+          <Field label="CEP">
+            <div className="flex flex-wrap gap-2">
+              <Input name="ownerCep" placeholder="00000-000" className="max-w-[160px]" />
+              <Button type="button" variant="secondary" onClick={handleOwnerCepLookup} disabled={cepLookup}>
+                {cepLookup ? "Buscando..." : "🔍 Buscar endereço"}
+              </Button>
+            </div>
+            {cepMsg ? (
+              <p className={`mt-1 text-xs font-medium ${cepMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                {cepMsg.text}
+              </p>
+            ) : null}
+          </Field>
           <Field label="Endereço">
-            <Input name="ownerAddress" />
+            <Input name="ownerAddress" placeholder="Rua, número, bairro, cidade/UF" />
           </Field>
         </div>
       </fieldset>
