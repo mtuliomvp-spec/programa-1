@@ -347,7 +347,7 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
       date: s.saleDate,
       kind: "VEICULO",
       description: `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
-      detail: `venda ${fmt(s.totalAmount)} − custo ${fmt(custo)}`,
+      detail: `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
       value: margem,
     });
     // Comissão do vendedor: custo direto da venda, reconhecido por competência
@@ -540,7 +540,12 @@ export type VehicleProfitRow = {
   extraCosts: number;
   totalCost: number;
   saleAmount: number;
+  /** Lucro bruto: venda − (compra + custos do veículo). */
   profit: number;
+  /** Despesas da venda: comissões, indicações, transferência DETRAN e comissão do retorno. */
+  saleExpenses: number;
+  /** Lucro líquido da venda: bruto − despesas da venda. */
+  netProfit: number;
   marginPct: number;
   daysInStock: number;
 };
@@ -556,6 +561,12 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
     const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
     const totalCost = s.vehicle.purchasePrice + extraCosts;
     const profit = s.totalAmount - totalCost;
+    const saleExpenses =
+      s.commissionAmount +
+      parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
+      (s.transferCharged ? s.transferAmount : 0) +
+      s.returnCommissionAmount;
+    const netProfit = profit - saleExpenses;
     return {
       saleId: s.id,
       vehicleId: s.vehicleId,
@@ -567,7 +578,9 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       totalCost,
       saleAmount: s.totalAmount,
       profit,
-      marginPct: s.totalAmount > 0 ? (profit / s.totalAmount) * 100 : 0,
+      saleExpenses,
+      netProfit,
+      marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
       daysInStock: daysBetween(s.vehicle.entryDate, s.saleDate),
     };
   });
