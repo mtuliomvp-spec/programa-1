@@ -282,7 +282,15 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
         saleId: null,
         id: { notIn: retiradaPayableIds },
       },
-      select: { id: true, amount: true, paymentDate: true, category: true, description: true, categoryLabel: true },
+      select: {
+        id: true,
+        amount: true,
+        paymentDate: true,
+        category: true,
+        description: true,
+        categoryLabel: true,
+        supplier: { select: { name: true } },
+      },
     }),
     // Custos pós-venda: também só quando o pagamento é efetuado.
     prisma.vehicleCost.findMany({
@@ -419,12 +427,18 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
     const isComissao = e.category === "COMISSAO";
     if (isComissao) comissoes += e.amount;
     else despesas += e.amount;
+    // O texto digitado pelo usuário é o principal; a categoria (e o
+    // fornecedor, se houver) vai no detalhe — "Outros" sozinho não diz nada.
+    const detailParts = [
+      e.categoryLabel && e.categoryLabel !== e.description ? e.categoryLabel : null,
+      e.supplier?.name ?? null,
+    ].filter(Boolean);
     entries.push({
       id: `e-${e.id}`,
       date: e.paymentDate!,
       kind: isComissao ? "COMISSAO" : "DESPESA",
-      description: e.categoryLabel || e.description,
-      detail: null,
+      description: e.description || e.categoryLabel || "Despesa",
+      detail: detailParts.length ? detailParts.join(" · ") : null,
       value: -e.amount,
     });
   }
