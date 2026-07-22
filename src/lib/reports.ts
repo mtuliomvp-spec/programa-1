@@ -549,19 +549,24 @@ export type VehicleProfitRow = {
   profit: number;
   /** Despesas da venda: comissões, indicações, transferência DETRAN e comissão do retorno. */
   saleExpenses: number;
-  /** Lucro líquido da venda: bruto − despesas da venda. */
+  /** Retorno da financeira (líquido) que entra como receita da operação. */
+  returnAmount: number;
+  /** Lucro líquido da venda: bruto − despesas da venda + retorno da financeira. */
   netProfit: number;
   /** Venda originada de anúncio de tráfego pago (informativo). */
   viaPaidTraffic: boolean;
+  /** Operação de financiamento de terceiros (intermediação), não venda de estoque. */
+  isIntermediation: boolean;
   marginPct: number;
   daysInStock: number;
 };
 
 export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
+  // Inclui vendas próprias e financiamento de terceiros (intermediação). Na
+  // intermediação o veículo tem custo 0 e a "venda" é a sobra do financiamento
+  // (F − devolução); as linhas ficam sinalizadas para não confundir com estoque.
   const sales = await prisma.sale.findMany({
-    // Financiamento de terceiros não é venda de veículo próprio (custo 0) —
-    // fica fora do "Lucro por veículo" para não distorcer margem/estoque.
-    where: { status: "CONCLUIDA", saleType: "VENDA" },
+    where: { status: "CONCLUIDA" },
     include: { vehicle: { include: { costs: true } } },
     orderBy: { saleDate: "desc" },
   });
@@ -575,7 +580,10 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
       (s.transferCharged ? s.transferAmount : 0) +
       s.returnCommissionAmount;
-    const netProfit = profit - saleExpenses;
+    // Retorno da financeira (líquido): o valor já pago, se liquidado, senão o
+    // programado. Entra como receita da operação (faltava no lucro líquido).
+    const returnAmount = s.returnPaidAmount ?? s.returnNet;
+    const netProfit = profit - saleExpenses + returnAmount;
     return {
       saleId: s.id,
       vehicleId: s.vehicleId,
@@ -588,8 +596,10 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       saleAmount: s.totalAmount,
       profit,
       saleExpenses,
+      returnAmount,
       netProfit,
       viaPaidTraffic: s.viaPaidTraffic,
+      isIntermediation: s.saleType === "FINANCIAMENTO_TERCEIROS",
       marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
       daysInStock: daysBetween(s.vehicle.entryDate, s.saleDate),
     };
