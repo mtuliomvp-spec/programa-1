@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { formatCurrency } from "@/lib/format";
+import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import RecurringRowActions from "./RecurringRowActions";
 
 export const dynamic = "force-dynamic";
@@ -18,13 +20,33 @@ const categoryLabel: Record<string, string> = {
   OUTROS: "Outros",
 };
 
-export default async function RecorrentesPage() {
+export default async function RecorrentesPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; min?: string; max?: string }>;
+}) {
   await ensureRecurringGenerated();
+  const { q: qParam, min, max } = await searchParams;
+  const q = (qParam || "").trim();
 
-  const entries = await prisma.recurringEntry.findMany({
+  const allEntries = await prisma.recurringEntry.findMany({
     include: { supplier: true, customer: true },
     orderBy: [{ active: "desc" }, { dayOfMonth: "asc" }],
   });
+  const entries = allEntries.filter(
+    (e) =>
+      matchesSearch(
+        q,
+        e.description,
+        categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"],
+        e.supplier?.name,
+        e.customer?.name,
+        e.kind === "PAGAR" ? "A pagar" : "A receber",
+        e.dayOfMonth,
+        e.amount,
+        formatCurrency(e.amount),
+      ) && inValueRange(e.amount, min, max),
+  );
 
   const monthlyPagar = entries
     .filter((e) => e.active && e.kind === "PAGAR")
@@ -41,12 +63,22 @@ export default async function RecorrentesPage() {
         action={<LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>}
       />
 
-      <Card className="mb-4 border-blue-200 bg-blue-50/60 px-4 py-3">
+      <Card className="mb-4 border-blue-200 bg-blue-50/60 px-4 py-3 print:hidden">
         <p className="text-sm text-slate-600">
           As contas do mês são geradas automaticamente ao abrir o financeiro — sem duplicar. Ao
           desativar uma recorrência, as contas já geradas permanecem; apenas os próximos meses param.
         </p>
       </Card>
+
+      <ReportToolbar
+        basePath="/financeiro/recorrentes"
+        printTitle="Lançamentos recorrentes"
+        q={q}
+        placeholder="Buscar (descrição, categoria, quem, valor...)"
+        value
+        min={min}
+        max={max}
+      />
 
       <Card>
         {entries.length === 0 ? (

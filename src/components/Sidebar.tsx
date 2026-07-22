@@ -28,7 +28,7 @@ export default function Sidebar({
   const groups = navGroupsFor(user);
 
   return (
-    <aside className="hidden w-64 shrink-0 flex-col bg-slate-950 md:flex">
+    <aside className="hidden w-64 shrink-0 flex-col bg-slate-950 md:flex print:!hidden">
       <div className="flex h-16 items-center border-b border-white/10 px-5">
         <BrandMark dark name={brand?.name} logoDataUrl={brand?.logoDataUrl} />
       </div>

@@ -1,16 +1,24 @@
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import FuelForm from "./FuelForm";
 import DeleteFuelButton from "./DeleteFuelButton";
 
 export const dynamic = "force-dynamic";
 
-export default async function CombustiveisPage() {
+export default async function CombustiveisPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+}) {
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-  const [entries, vehicles] = await Promise.all([
+  const [allEntries, vehicles] = await Promise.all([
     prisma.fuelEntry.findMany({ orderBy: { date: "desc" }, take: 100 }),
     prisma.vehicle.findMany({
       orderBy: { createdAt: "desc" },
@@ -18,6 +26,20 @@ export default async function CombustiveisPage() {
     }),
   ]);
 
+  const entries = allEntries.filter(
+    (e) =>
+      matchesSearch(
+        q,
+        formatDate(e.date),
+        e.plate,
+        e.driver,
+        e.station,
+        e.total,
+        formatCurrency(e.total),
+      ) &&
+      inDateRange(e.date, de, ate) &&
+      inValueRange(e.total, min, max),
+  );
   const monthEntries = entries.filter((e) => e.date >= monthStart);
   const monthTotal = monthEntries.reduce((s, e) => s + e.total, 0);
   const monthLiters = monthEntries.reduce((s, e) => s + e.liters, 0);
@@ -37,6 +59,19 @@ export default async function CombustiveisPage() {
       <PageHeader
         title="Controle de combustíveis"
         description="Abastecimentos da frota, integrados às contas a pagar"
+      />
+
+      <ReportToolbar
+        basePath="/combustiveis"
+        printTitle="Controle de combustíveis"
+        q={q}
+        placeholder="Buscar (placa, motorista, posto, valor...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -91,7 +126,7 @@ export default async function CombustiveisPage() {
           )}
         </Card>
 
-        <Card className="h-fit">
+        <Card className="h-fit print:hidden">
           <CardHeader title="Novo abastecimento" />
           <div className="p-5">
             <FuelForm vehicles={vehicles} />

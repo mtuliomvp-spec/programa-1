@@ -4,7 +4,9 @@ import { getAccountsWithBalances } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
 import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { matchesSearch } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
 import CashboxCard from "./CashboxCard";
 import AccountForm from "./AccountForm";
@@ -16,7 +18,12 @@ export const dynamic = "force-dynamic";
 
 const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
 
-export default async function ContasPage() {
+export default async function ContasPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string }>;
+}) {
+  const q = ((await searchParams).q || "").trim();
   const [accounts, transfers, health, cashbox, cashboxHistory] = await Promise.all([
     getAccountsWithBalances(),
     prisma.accountTransfer.findMany({
@@ -33,6 +40,11 @@ export default async function ContasPage() {
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
+  // Busca livre filtra só os cards de conta exibidos (os totais acima seguem
+  // considerando todas as contas).
+  const accountRows = accounts.filter((a) =>
+    matchesSearch(q, a.name, typeLabel[a.type], a.bankName, a.accountNumber, a.balance, formatCurrency(a.balance)),
+  );
 
   const renderAccountCard = (a: (typeof accounts)[number]) => (
     <Card key={a.id} className={`px-5 py-4 ${!a.active ? "opacity-60" : ""}`}>
@@ -76,7 +88,7 @@ export default async function ContasPage() {
 
       <BooksHealthChecks health={health} />
 
-      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
         <LinkButton href="/financeiro/livro-caixa" variant="secondary" className="justify-center">
           📒 Movimento de caixa diário
         </LinkButton>
@@ -87,6 +99,8 @@ export default async function ContasPage() {
           📥 Contas a receber
         </LinkButton>
       </div>
+
+      <ReportToolbar basePath="/financeiro/contas" printTitle="Contas e caixas" q={q} placeholder="Buscar conta (nome, banco, saldo...)" />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
@@ -104,15 +118,19 @@ export default async function ContasPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
-          {accounts.length === 0 ? (
+          {accountRows.length === 0 ? (
             <Card>
               <EmptyState
-                title="Nenhuma conta cadastrada"
-                description="Cadastre ao lado o caixa da loja e as contas bancárias. A primeira vira a conta padrão."
+                title={q ? "Nenhuma conta encontrada" : "Nenhuma conta cadastrada"}
+                description={
+                  q
+                    ? "Tente outros termos ou limpe a busca."
+                    : "Cadastre ao lado o caixa da loja e as contas bancárias. A primeira vira a conta padrão."
+                }
               />
             </Card>
           ) : (
-            accounts.map((a) => renderAccountCard(a))
+            accountRows.map((a) => renderAccountCard(a))
           )}
 
           <Card>
@@ -150,7 +168,7 @@ export default async function ContasPage() {
           </Card>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 print:hidden">
           <Card>
             <CardHeader title="Nova conta" />
             <div className="p-5">

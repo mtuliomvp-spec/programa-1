@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
-import { matchesSearch } from "@/lib/search";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { daysBetween } from "@/lib/reports";
-import { Badge, Button, Card, EmptyState, Input, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
+import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -24,9 +25,10 @@ function agingTone(days: number): "success" | "info" | "warning" | "danger" {
 export default async function EstoquePage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
   const params = await searchParams;
+  const { de, ate, min, max } = params;
   // "PRE_VENDIDO" é um filtro derivado (veículo em estoque com pré-venda em
   // aberto), não um status do banco. Os demais valores são status reais.
   const preVendidoFilter = params.status === "PRE_VENDIDO";
@@ -83,32 +85,32 @@ export default async function EstoquePage({
     ? allRows.filter((v) => v.status !== "VENDIDO" && v.preSaleNumber != null)
     : allRows;
 
-  // Busca livre pelos campos exibidos (marca, modelo, versão, placa, ano, cor,
-  // km, valores, status, dias em estoque).
-  const rows = q
-    ? statusFiltered.filter((v) =>
-        matchesSearch(
-          q,
-          v.brand,
-          v.model,
-          v.version,
-          v.plate,
-          v.color,
-          `${v.manufactureYear}/${v.modelYear}`,
-          v.manufactureYear,
-          v.modelYear,
-          v.km,
-          v.paidCost,
-          formatCurrency(v.paidCost),
-          v.invested,
-          formatCurrency(v.invested),
-          v.salePrice,
-          formatCurrency(v.salePrice),
-          statusLabel[v.status].label,
-          v.daysInStock,
-        ),
-      )
-    : statusFiltered;
+  // Busca livre pelos campos exibidos + intervalo de entrada + faixa de preço.
+  const rows = statusFiltered.filter(
+    (v) =>
+      matchesSearch(
+        q,
+        v.brand,
+        v.model,
+        v.version,
+        v.plate,
+        v.color,
+        `${v.manufactureYear}/${v.modelYear}`,
+        v.manufactureYear,
+        v.modelYear,
+        v.km,
+        v.paidCost,
+        formatCurrency(v.paidCost),
+        v.invested,
+        formatCurrency(v.invested),
+        v.salePrice,
+        formatCurrency(v.salePrice),
+        statusLabel[v.status].label,
+        v.daysInStock,
+      ) &&
+      inDateRange(v.entryDate, de, ate) &&
+      inValueRange(v.salePrice, min, max),
+  );
 
   const active = rows.filter((v) => v.status !== "VENDIDO");
   const totalValue = active.reduce((sum, v) => sum + v.salePrice, 0);
@@ -123,22 +125,29 @@ export default async function EstoquePage({
         action={<LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>}
       />
 
-      <Card className="mb-4 px-4 py-3">
-        <form className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Input name="q" placeholder="Buscar em todos os campos (marca, placa, cor, ano, valor...)" defaultValue={q} />
-          </div>
-          <div className="w-44">
-            <Select name="status" defaultValue={params.status || "TODOS"}>
+      <ReportToolbar
+        basePath="/estoque"
+        printTitle="Estoque de veículos"
+        q={q}
+        placeholder="Buscar (marca, placa, cor, ano, valor...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
+        extra={
+          <label className="text-xs text-slate-500">
+            Status
+            <Select name="status" defaultValue={params.status || "TODOS"} className="mt-0.5 w-44">
               <option value="TODOS">Todos os status</option>
               <option value="ESTOQUE">Em estoque</option>
               <option value="PRE_VENDIDO">Pré-vendido</option>
               <option value="VENDIDO">Vendido</option>
             </Select>
-          </div>
-          <Button type="submit">Filtrar</Button>
-        </form>
-      </Card>
+          </label>
+        }
+      />
 
       {rows.length === 0 ? (
         <Card>

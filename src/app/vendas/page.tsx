@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { matchesSearch } from "@/lib/search";
-import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,10 @@ const statusLabel = { CONCLUIDA: "Concluída", CANCELADA: "Cancelada" } as const
 export default async function VendasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
-  const q = ((await searchParams).q || "").trim();
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   const canPreSale = await userCan("vendas", "prevenda");
   const [allSales, allPreSales] = await Promise.all([
     prisma.sale.findMany({
@@ -44,38 +46,41 @@ export default async function VendasPage({
   const vehicleById = new Map(preVehicles.map((v) => [v.id, v]));
   const customerById = new Map(preCustomers.map((c) => [c.id, c]));
 
-  // Busca livre pelos campos exibidos (vendas e pré-vendas).
-  const sales = q
-    ? allSales.filter((s) =>
-        matchesSearch(
-          q,
-          s.vehicle.brand,
-          s.vehicle.model,
-          s.vehicle.plate,
-          s.customer.name,
-          formatDate(s.saleDate),
-          s.totalAmount,
-          formatCurrency(s.totalAmount),
-          paymentLabel[s.paymentMethod],
-          statusLabel[s.status],
-          s.sellerName,
-        ),
-      )
-    : allSales;
-  const preSales = q
-    ? allPreSales.filter((p) => {
-        const v = vehicleById.get(p.vehicleId);
-        return matchesSearch(
-          q,
-          String(p.number).padStart(4, "0"),
-          v ? `${v.brand} ${v.model} ${v.plate}` : null,
-          customerById.get(p.customerId)?.name,
-          formatDate(p.saleDate),
-          p.totalAmount,
-          formatCurrency(p.totalAmount),
-        );
-      })
-    : allPreSales;
+  // Busca livre + intervalo de data da venda + faixa de valor (vendas e pré-vendas).
+  const sales = allSales.filter(
+    (s) =>
+      matchesSearch(
+        q,
+        s.vehicle.brand,
+        s.vehicle.model,
+        s.vehicle.plate,
+        s.customer.name,
+        formatDate(s.saleDate),
+        s.totalAmount,
+        formatCurrency(s.totalAmount),
+        paymentLabel[s.paymentMethod],
+        statusLabel[s.status],
+        s.sellerName,
+      ) &&
+      inDateRange(s.saleDate, de, ate) &&
+      inValueRange(s.totalAmount, min, max),
+  );
+  const preSales = allPreSales.filter((p) => {
+    const v = vehicleById.get(p.vehicleId);
+    return (
+      matchesSearch(
+        q,
+        String(p.number).padStart(4, "0"),
+        v ? `${v.brand} ${v.model} ${v.plate}` : null,
+        customerById.get(p.customerId)?.name,
+        formatDate(p.saleDate),
+        p.totalAmount,
+        formatCurrency(p.totalAmount),
+      ) &&
+      inDateRange(p.saleDate, de, ate) &&
+      inValueRange(p.totalAmount, min, max)
+    );
+  });
 
   const totalConcluidas = sales
     .filter((s) => s.status === "CONCLUIDA")
@@ -89,17 +94,18 @@ export default async function VendasPage({
         action={canPreSale ? <LinkButton href="/vendas/novo">+ Nova venda</LinkButton> : undefined}
       />
 
-      <Card className="mb-4 px-4 py-3">
-        <form className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (veículo, cliente, valor, data...)" />
-          </div>
-          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            Buscar
-          </button>
-          {q ? <LinkButton variant="secondary" href="/vendas">Limpar</LinkButton> : null}
-        </form>
-      </Card>
+      <ReportToolbar
+        basePath="/vendas"
+        printTitle="Vendas de veículos"
+        q={q}
+        placeholder="Buscar (veículo, cliente, valor, data...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
+      />
 
       {preSales.length > 0 ? (
         <Card className="mb-4">

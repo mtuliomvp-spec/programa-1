@@ -1,13 +1,35 @@
 import Link from "next/link";
 import { getVehicleProfitReport } from "@/lib/reports";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
-import PrintButton from "@/components/PrintButton";
+import ReportToolbar from "@/components/ReportToolbar";
 
 export const dynamic = "force-dynamic";
 
-export default async function LucroVeiculosPage() {
-  const rows = await getVehicleProfitReport();
+export default async function LucroVeiculosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+}) {
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
+  const allRows = await getVehicleProfitReport();
+  const rows = allRows.filter(
+    (r) =>
+      matchesSearch(
+        q,
+        r.vehicleLabel,
+        r.plate,
+        formatDate(r.saleDate),
+        r.saleAmount,
+        formatCurrency(r.saleAmount),
+        r.netProfit,
+        formatCurrency(r.netProfit),
+      ) &&
+      inDateRange(r.saleDate, de, ate) &&
+      inValueRange(r.saleAmount, min, max),
+  );
 
   // Totais de lucro somam TODAS as operações (venda + financiamento de terceiros
   // + retorno). Contagem e margem consideram só as vendas próprias, para a margem
@@ -28,7 +50,19 @@ export default async function LucroVeiculosPage() {
       <PageHeader
         title="Lucro por veículo"
         description="Lucro da venda (bruto − comissões, indicações e transferência) e lucro do retorno (retorno recebido líquido do imposto − comissão do retorno). O lucro líquido é a soma dos dois. Inclui financiamento de terceiros."
-        action={<PrintButton />}
+      />
+
+      <ReportToolbar
+        basePath="/relatorios/lucro-veiculos"
+        printTitle="Lucro por veículo"
+        q={q}
+        placeholder="Buscar (veículo, placa, valor...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">

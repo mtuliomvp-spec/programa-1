@@ -2,8 +2,9 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
-import { matchesSearch } from "@/lib/search";
-import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import NewRequestForm from "./NewRequestForm";
 import RequestRowActions from "./RequestRowActions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
@@ -24,9 +25,10 @@ const statusMeta = {
 export default async function ComprasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
-  const q = ((await searchParams).q || "").trim();
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   const [user, allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
     getSessionUser(),
     prisma.purchaseRequest.findMany({
@@ -51,26 +53,27 @@ export default async function ComprasPage({
     label: `${v.brand} ${v.model} · ${v.plate}`,
   }));
 
-  // Busca livre pelos campos exibidos.
-  const requests = q
-    ? allRequests.filter((r) =>
-        matchesSearch(
-          q,
-          formatRequestNumber(r.seq, r.year),
-          r.description,
-          r.requestedBy,
-          formatDate(r.createdAt),
-          flowName(r.structuralKey),
-          r.supplier?.name,
-          r.decisionNotes,
-          r.finalAmount,
-          r.finalAmount ? formatCurrency(r.finalAmount) : null,
-          r.estimatedAmount,
-          r.estimatedAmount ? formatCurrency(r.estimatedAmount) : null,
-          statusMeta[r.status].label,
-        ),
-      )
-    : allRequests;
+  // Busca livre + intervalo de data + faixa de valor (final ou estimado).
+  const requests = allRequests.filter(
+    (r) =>
+      matchesSearch(
+        q,
+        formatRequestNumber(r.seq, r.year),
+        r.description,
+        r.requestedBy,
+        formatDate(r.createdAt),
+        flowName(r.structuralKey),
+        r.supplier?.name,
+        r.decisionNotes,
+        r.finalAmount,
+        r.finalAmount ? formatCurrency(r.finalAmount) : null,
+        r.estimatedAmount,
+        r.estimatedAmount ? formatCurrency(r.estimatedAmount) : null,
+        statusMeta[r.status].label,
+      ) &&
+      inDateRange(r.createdAt, de, ate) &&
+      inValueRange(r.finalAmount ?? r.estimatedAmount ?? 0, min, max),
+  );
 
   const pendentes = requests.filter((r) => r.status === "PENDENTE");
   const aprovadas = requests.filter((r) => r.status === "APROVADA");
@@ -81,6 +84,19 @@ export default async function ComprasPage({
       <PageHeader
         title="Solicitações de compra"
         description="Peça, o administrador aprova, e a conclusão lança direto no financeiro"
+      />
+
+      <ReportToolbar
+        basePath="/compras"
+        printTitle="Solicitações de compra"
+        q={q}
+        placeholder="Buscar (descrição, fornecedor, valor...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -101,15 +117,6 @@ export default async function ComprasPage({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader title="Solicitações" description="Últimas 100" />
-          <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
-            <div className="w-full max-w-sm">
-              <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (descrição, fornecedor, valor...)" />
-            </div>
-            <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
-              Buscar
-            </button>
-            {q ? <LinkButton variant="secondary" href="/compras">Limpar</LinkButton> : null}
-          </form>
           {requests.length === 0 ? (
             <EmptyState
               title={q ? "Nada encontrado para a busca" : "Nenhuma solicitação"}
@@ -172,7 +179,7 @@ export default async function ComprasPage({
           )}
         </Card>
 
-        <Card className="h-fit">
+        <Card className="h-fit print:hidden">
           <CardHeader title="Nova solicitação" />
           <div className="p-5">
             <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />

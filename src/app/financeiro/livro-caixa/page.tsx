@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
-import { matchesSearch } from "@/lib/search";
+import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
@@ -21,12 +21,15 @@ function parseMonth(value: string | undefined): { year: number; month: number } 
 export default async function LivroCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; conta?: string; q?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string }>;
 }) {
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
   const accountFilter = params.conta || "";
   const q = (params.q || "").trim();
+  const { min, max } = params;
+  // Com qualquer filtro ativo (texto ou valor) o saldo corrente não faz sentido.
+  const filtering = Boolean(q) || Boolean(min?.trim()) || Boolean(max?.trim());
   const monthStart = new Date(Date.UTC(year, month, 1));
   const monthEnd = new Date(Date.UTC(year, month + 1, 1));
   const monthValue = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -178,20 +181,21 @@ export default async function LivroCaixaPage({
     running += m.kind === "entrada" ? m.amount : -m.amount;
     return { ...m, balance: running };
   });
-  // Busca: filtra pelas colunas exibidas. O saldo corrente só faz sentido com
-  // o mês completo, então a coluna Saldo fica oculta enquanto há busca ativa.
-  const rows = q
-    ? allRows.filter((m) =>
-        matchesSearch(
-          q,
-          formatDate(m.date),
-          m.description,
-          m.who,
-          m.vehicle,
-          m.amount,
-          formatCurrency(m.amount),
-          m.kind,
-        ),
+  // Busca + faixa de valor: filtra pelas colunas exibidas. O saldo corrente só
+  // faz sentido com o mês completo, então a coluna Saldo fica oculta com filtro.
+  const rows = filtering
+    ? allRows.filter(
+        (m) =>
+          matchesSearch(
+            q,
+            formatDate(m.date),
+            m.description,
+            m.who,
+            m.vehicle,
+            m.amount,
+            formatCurrency(m.amount),
+            m.kind,
+          ) && inValueRange(m.amount, min, max),
       )
     : allRows;
 
@@ -286,16 +290,27 @@ export default async function LivroCaixaPage({
           title={`Movimentações — ${monthValue}`}
           description="Somente o que foi efetivamente pago e recebido, em ordem cronológica, com saldo corrente"
         />
-        <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+        <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
           <input type="hidden" name="mes" value={monthValue} />
           {accountFilter ? <input type="hidden" name="conta" value={accountFilter} /> : null}
-          <div className="w-full max-w-sm">
-            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (descrição, quem, veículo, valor...)" />
+          <div className="min-w-[200px] flex-1">
+            <label className="text-xs text-slate-500">
+              Buscar
+              <Input name="q" defaultValue={q} placeholder="Descrição, quem, veículo, valor..." className="mt-0.5" />
+            </label>
           </div>
+          <label className="text-xs text-slate-500">
+            Valor mín.
+            <Input name="min" inputMode="decimal" defaultValue={min} placeholder="0,00" className="mt-0.5 w-28" />
+          </label>
+          <label className="text-xs text-slate-500">
+            Valor máx.
+            <Input name="max" inputMode="decimal" defaultValue={max} placeholder="—" className="mt-0.5 w-28" />
+          </label>
           <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            Buscar
+            Filtrar
           </button>
-          {q ? (
+          {filtering ? (
             <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${monthValue}${accountFilter ? `&conta=${accountFilter}` : ""}`}>
               Limpar
             </LinkButton>
@@ -320,11 +335,11 @@ export default async function LivroCaixaPage({
                 <Th>Veículo</Th>
                 <Th className="text-right">Entrada</Th>
                 <Th className="text-right">Saída</Th>
-                {!q ? <Th className="text-right">Saldo</Th> : null}
+                {!filtering ? <Th className="text-right">Saldo</Th> : null}
               </Tr>
             </Thead>
             <tbody>
-              {!q ? (
+              {!filtering ? (
                 <Tr className="bg-slate-50">
                   <Td className="text-slate-500">—</Td>
                   <Td className="font-medium text-slate-700">Saldo inicial</Td>
@@ -360,7 +375,7 @@ export default async function LivroCaixaPage({
                   <Td className="text-right tabular-nums text-rose-600">
                     {m.kind === "saida" ? formatCurrency(m.amount) : ""}
                   </Td>
-                  {!q ? (
+                  {!filtering ? (
                     <Td
                       className={`text-right font-medium tabular-nums ${
                         m.balance >= 0 ? "text-slate-900" : "text-rose-600"
@@ -372,7 +387,7 @@ export default async function LivroCaixaPage({
                 </Tr>
               ))}
               <Tr className="bg-slate-50 font-semibold">
-                <Td className="text-slate-700">{q ? "Total da busca" : "Total"}</Td>
+                <Td className="text-slate-700">{filtering ? "Total da busca" : "Total"}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
@@ -382,7 +397,7 @@ export default async function LivroCaixaPage({
                 <Td className="text-right tabular-nums text-rose-600">
                   {formatCurrency(rows.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0))}
                 </Td>
-                {!q ? (
+                {!filtering ? (
                   <Td className="text-right tabular-nums">
                     {formatCurrency(openingBalance + totalIn - totalOut)}
                   </Td>

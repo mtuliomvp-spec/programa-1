@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { matchesSearch } from "@/lib/search";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { retornoLabel } from "@/lib/retorno";
-import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import FinancingSettleButton from "./FinancingSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
 
@@ -12,9 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function FinanciamentosPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
-  const q = ((await searchParams).q || "").trim();
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   const [allSales, accounts] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", paymentMethod: "FINANCIADO" },
@@ -28,24 +30,25 @@ export default async function FinanciamentosPage({
     getAccountsWithBalances(),
   ]);
 
-  // Busca livre pelos campos exibidos.
-  const sales = q
-    ? allSales.filter((s) =>
-        matchesSearch(
-          q,
-          formatDate(s.saleDate),
-          s.customer.name,
-          `${s.vehicle.brand} ${s.vehicle.model} ${s.vehicle.plate}`,
-          s.financerAccount?.name,
-          s.financerName,
-          s.financedAmount,
-          s.financedAmount ? formatCurrency(s.financedAmount) : null,
-          s.financerSettledAt ? "Recebido" : "Receber",
-          s.returnLevel > 0 ? retornoLabel(s.returnLevel) : null,
-          s.returnNet > 0 ? formatCurrency(s.returnNet) : null,
-        ),
-      )
-    : allSales;
+  // Busca livre + intervalo de data + faixa de valor financiado.
+  const sales = allSales.filter(
+    (s) =>
+      matchesSearch(
+        q,
+        formatDate(s.saleDate),
+        s.customer.name,
+        `${s.vehicle.brand} ${s.vehicle.model} ${s.vehicle.plate}`,
+        s.financerAccount?.name,
+        s.financerName,
+        s.financedAmount,
+        s.financedAmount ? formatCurrency(s.financedAmount) : null,
+        s.financerSettledAt ? "Recebido" : "Receber",
+        s.returnLevel > 0 ? retornoLabel(s.returnLevel) : null,
+        s.returnNet > 0 ? formatCurrency(s.returnNet) : null,
+      ) &&
+      inDateRange(s.saleDate, de, ate) &&
+      inValueRange(s.financedAmount ?? 0, min, max),
+  );
 
   const financers = accounts.filter((a) => a.type === "FINANCEIRA" && a.active);
   const totalAReceber = financers.reduce((s, a) => s + a.balance, 0);
@@ -61,6 +64,19 @@ export default async function FinanciamentosPage({
         title="Financiamentos"
         description="Vendas financiadas: quem financiou, o veículo e o valor a receber da financeira"
         action={<LinkButton href="/financeiro/contas" variant="secondary">Contas das financeiras</LinkButton>}
+      />
+
+      <ReportToolbar
+        basePath="/financeiro/financiamentos"
+        printTitle="Financiamentos"
+        q={q}
+        placeholder="Buscar (cliente, veículo, financeira, valor...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -81,15 +97,6 @@ export default async function FinanciamentosPage({
 
       <Card>
         <CardHeader title="Vendas financiadas" />
-        <form className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3">
-          <div className="w-full max-w-sm">
-            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (cliente, veículo, financeira, valor...)" />
-          </div>
-          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            Buscar
-          </button>
-          {q ? <LinkButton variant="secondary" href="/financeiro/financiamentos">Limpar</LinkButton> : null}
-        </form>
         {sales.length === 0 ? (
           <EmptyState
             title={q ? "Nada encontrado para a busca" : "Nenhuma venda financiada"}

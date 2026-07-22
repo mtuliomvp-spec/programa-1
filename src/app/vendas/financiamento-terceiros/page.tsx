@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/guards";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import {
   Card,
   CardHeader,
@@ -14,13 +15,20 @@ import {
   Thead,
   Tr,
 } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 
 export const dynamic = "force-dynamic";
 
-export default async function FinanciamentoTerceirosListPage() {
+export default async function FinanciamentoTerceirosListPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+}) {
   await requireModule("vendas");
+  const { q: qParam, de, ate, min, max } = await searchParams;
+  const q = (qParam || "").trim();
 
-  const [openPreRaw, ops] = await Promise.all([
+  const [openPreRaw, opsRaw] = await Promise.all([
     prisma.preSale.findMany({
       where: { saleType: "FINANCIAMENTO_TERCEIROS", status: "ABERTA" },
       orderBy: { createdAt: "desc" },
@@ -46,11 +54,43 @@ export default async function FinanciamentoTerceirosListPage() {
   ]);
   const vehById = new Map(preVehicles.map((v) => [v.id, v]));
   const custById = new Map(preCustomers.map((c) => [c.id, c]));
-  const openPre = openPreRaw.map((p) => ({
-    ...p,
-    vehicle: vehById.get(p.vehicleId),
-    customer: custById.get(p.customerId),
-  }));
+  const openPre = openPreRaw
+    .map((p) => ({
+      ...p,
+      vehicle: vehById.get(p.vehicleId),
+      customer: custById.get(p.customerId),
+    }))
+    .filter(
+      (p) =>
+        matchesSearch(
+          q,
+          p.vehicle?.brand,
+          p.vehicle?.model,
+          p.vehicle?.plate,
+          p.customer?.name,
+          formatDate(p.saleDate),
+          p.financingAmount,
+          formatCurrency(p.financingAmount),
+        ) &&
+        inDateRange(p.saleDate, de, ate) &&
+        inValueRange(p.financingAmount, min, max),
+    );
+
+  const ops = opsRaw.filter(
+    (o) =>
+      matchesSearch(
+        q,
+        o.vehicle.brand,
+        o.vehicle.model,
+        o.vehicle.plate,
+        o.customer.name,
+        formatDate(o.saleDate),
+        o.financingAmount,
+        formatCurrency(o.financingAmount),
+      ) &&
+      inDateRange(o.saleDate, de, ate) &&
+      inValueRange(o.financingAmount, min, max),
+  );
 
   return (
     <div>
@@ -60,6 +100,19 @@ export default async function FinanciamentoTerceirosListPage() {
         action={
           <LinkButton href="/vendas/financiamento-terceiros/novo">+ Nova operação</LinkButton>
         }
+      />
+
+      <ReportToolbar
+        basePath="/vendas/financiamento-terceiros"
+        printTitle="Financiamento de terceiros"
+        q={q}
+        placeholder="Buscar (veículo, cliente, valor, data...)"
+        date
+        value
+        de={de}
+        ate={ate}
+        min={min}
+        max={max}
       />
 
       {openPre.length > 0 ? (

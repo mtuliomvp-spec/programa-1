@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { matchesSearch } from "@/lib/search";
-import { Card, EmptyState, Input, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import DeleteRowButton from "@/components/DeleteRowButton";
 import { deleteCustomerAction } from "./actions";
 
@@ -28,17 +29,12 @@ export default async function ClientesPage({
         description={`${customers.length} cliente(s) cadastrado(s)`}
         action={<LinkButton href="/clientes/novo">+ Novo cliente</LinkButton>}
       />
-      <Card className="mb-4 px-4 py-3">
-        <form className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
-            <Input name="q" defaultValue={q} placeholder="Buscar em todos os campos (nome, documento, telefone, e-mail)" />
-          </div>
-          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
-            Buscar
-          </button>
-          {q ? <LinkButton variant="secondary" href="/clientes">Limpar</LinkButton> : null}
-        </form>
-      </Card>
+      <ReportToolbar
+        basePath="/clientes"
+        printTitle="Clientes"
+        q={q}
+        placeholder="Buscar (nome, documento, telefone, e-mail)"
+      />
       <Card>
         {customers.length === 0 ? (
           <EmptyState

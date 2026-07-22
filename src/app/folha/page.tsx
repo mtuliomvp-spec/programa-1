@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
+import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import EmployeeForm from "./EmployeeForm";
 import EmployeeRowActions from "./EmployeeRowActions";
 import GeneratePayrollButton from "./GeneratePayrollButton";
@@ -11,11 +13,17 @@ export const dynamic = "force-dynamic";
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
 const statusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atrasado" } as const;
 
-export default async function FolhaPage() {
+export default async function FolhaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; min?: string; max?: string }>;
+}) {
+  const { q: qParam, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   const now = new Date();
   const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
 
-  const [employees, payrollItems] = await Promise.all([
+  const [allEmployees, payrollItems] = await Promise.all([
     prisma.employee.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }),
     prisma.payable.findMany({
       where: { category: "SALARIO", employeeId: { not: null }, description: { contains: competencia } },
@@ -23,6 +31,11 @@ export default async function FolhaPage() {
     }),
   ]);
 
+  const employees = allEmployees.filter(
+    (e) =>
+      matchesSearch(q, e.name, e.cpf, e.role, e.pixKey, e.salary, formatCurrency(e.salary)) &&
+      inValueRange(e.salary, min, max),
+  );
   const active = employees.filter((e) => e.active);
   const monthlyTotal = active.reduce((s, e) => s + e.salary, 0);
   const payrollTotal = payrollItems.reduce((s, p) => s + p.amount, 0);
@@ -33,6 +46,16 @@ export default async function FolhaPage() {
         title="Folha de pagamento"
         description={`${active.length} funcionário(s) ativo(s) · folha mensal estimada: ${formatCurrency(monthlyTotal)}`}
         action={<GeneratePayrollButton />}
+      />
+
+      <ReportToolbar
+        basePath="/folha"
+        printTitle="Folha de pagamento"
+        q={q}
+        placeholder="Buscar (nome, CPF, cargo, PIX, salário...)"
+        value
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -131,7 +154,7 @@ export default async function FolhaPage() {
           </Card>
         </div>
 
-        <Card className="h-fit">
+        <Card className="h-fit print:hidden">
           <CardHeader title="Novo funcionário" />
           <div className="p-5">
             <EmployeeForm />

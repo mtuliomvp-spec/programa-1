@@ -16,3 +16,18 @@ body {
   color: var(--foreground);
   font-family: var(--font-sans);
 }
+
+/* Impressão / "Salvar como PDF": tira a moldura do sistema (menu lateral e
+   barra do celular já têm print:hidden) e imprime só o conteúdo da página. */
+@media print {
+  main {
+    padding: 0 !important;
+  }
+  body {
+    background: #fff !important;
+  }
+}
+
+@page {
+  margin: 12mm;
+}

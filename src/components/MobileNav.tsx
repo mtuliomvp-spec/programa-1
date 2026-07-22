@@ -43,7 +43,7 @@ export default function MobileNav({
 
   return (
     <>
-      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:hidden">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-slate-200 bg-white/95 px-4 backdrop-blur md:hidden print:!hidden">
         <BrandMark name={brand?.name} logoDataUrl={brand?.logoDataUrl} />
         <button
           type="button"

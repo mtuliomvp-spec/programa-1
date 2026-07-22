@@ -1,7 +1,9 @@
 import { prisma } from "@/lib/prisma";
 import { ensureConsortiumInstallments } from "@/lib/recurring";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import ConsortiumForm from "./ConsortiumForm";
 import ConsortiumActions from "./ConsortiumActions";
 
@@ -13,22 +15,42 @@ const statusMeta = {
   ENCERRADO: { label: "Encerrado", tone: "default" },
 } as const;
 
-export default async function ConsorciosPage() {
+export default async function ConsorciosPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; min?: string; max?: string }>;
+}) {
   await ensureConsortiumInstallments();
+  const { q: qParam, min, max } = await searchParams;
+  const q = (qParam || "").trim();
 
   const consortiums = await prisma.consortium.findMany({
     include: { payables: { select: { amount: true, status: true } } },
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
   });
 
-  const withTotals = consortiums.map((c) => {
-    const paid = c.payables.filter((p) => p.status === "PAGO");
-    return {
-      ...c,
-      paidCount: paid.length,
-      paidTotal: paid.reduce((s, p) => s + p.amount, 0),
-    };
-  });
+  const withTotals = consortiums
+    .map((c) => {
+      const paid = c.payables.filter((p) => p.status === "PAGO");
+      return {
+        ...c,
+        paidCount: paid.length,
+        paidTotal: paid.reduce((s, p) => s + p.amount, 0),
+      };
+    })
+    .filter(
+      (c) =>
+        matchesSearch(
+          q,
+          c.name,
+          c.administrator,
+          c.creditValue,
+          formatCurrency(c.creditValue),
+          c.installmentValue,
+          formatCurrency(c.installmentValue),
+          statusMeta[c.status].label,
+        ) && inValueRange(c.creditValue, min, max),
+    );
 
   const active = withTotals.filter((c) => c.status !== "ENCERRADO");
   const monthlyCommitment = withTotals
@@ -40,6 +62,16 @@ export default async function ConsorciosPage() {
       <PageHeader
         title="Consórcios"
         description="Cartas de crédito com parcelas lançadas automaticamente no financeiro"
+      />
+
+      <ReportToolbar
+        basePath="/consorcios"
+        printTitle="Consórcios"
+        q={q}
+        placeholder="Buscar (nome, administradora, valor...)"
+        value
+        min={min}
+        max={max}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -100,7 +132,7 @@ export default async function ConsorciosPage() {
           )}
         </div>
 
-        <Card className="h-fit">
+        <Card className="h-fit print:hidden">
           <CardHeader title="Novo consórcio" />
           <div className="p-5">
             <ConsortiumForm />

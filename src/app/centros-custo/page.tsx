@@ -2,7 +2,9 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ensureStructuralCostCenters } from "@/lib/structural";
 import { formatCurrency } from "@/lib/format";
+import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
+import ReportToolbar from "@/components/ReportToolbar";
 import CostCenterForm from "./CostCenterForm";
 import ToggleCostCenterButton from "./ToggleCostCenterButton";
 
@@ -10,7 +12,13 @@ export const dynamic = "force-dynamic";
 
 const typeLabel = { ESTRUTURAL: "Estrutural", OBRA: "Obra", IMOVEL: "Imóvel", OUTRO: "Outro" } as const;
 
-export default async function CentrosCustoPage() {
+export default async function CentrosCustoPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ q?: string; min?: string; max?: string }>;
+}) {
+  const { q: qParam, min, max } = await searchParams;
+  const q = (qParam || "").trim();
   // Garante os centros estruturais (Capital, Veículos, Administrativo) e
   // classifica lançamentos antigos que ainda estavam sem centro.
   await ensureStructuralCostCenters();
@@ -49,13 +57,27 @@ export default async function CentrosCustoPage() {
       else aReceber += r.amount;
     }
     return { ...c, despesas, receitas, imobilizado, pendente, aReceber, resultado: receitas - despesas };
-  });
+  }).filter(
+    (c) =>
+      matchesSearch(q, c.name, typeLabel[c.type], c.resultado, formatCurrency(c.resultado)) &&
+      inValueRange(c.resultado, min, max),
+  );
 
   return (
     <div>
       <PageHeader
         title="Centros de custo"
         description="Todo lançamento passa por um centro: os estruturais (Capital, Veículos, Administrativo) são automáticos; obras e imóveis você cria e escolhe nos lançamentos"
+      />
+
+      <ReportToolbar
+        basePath="/centros-custo"
+        printTitle="Centros de custo"
+        q={q}
+        placeholder="Buscar (nome, tipo, resultado...)"
+        value
+        min={min}
+        max={max}
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -118,7 +140,7 @@ export default async function CentrosCustoPage() {
               </Card>
             ))
           )}
-          <Card className="border-blue-200 bg-blue-50/60 px-5 py-3">
+          <Card className="border-blue-200 bg-blue-50/60 px-5 py-3 print:hidden">
             <p className="text-sm text-slate-600">
               💡 Para lançar uma despesa ou receita num centro de custo, use{" "}
               <Link href="/financeiro/a-pagar/novo" className="font-medium text-blue-700 hover:underline">
@@ -133,7 +155,7 @@ export default async function CentrosCustoPage() {
           </Card>
         </div>
 
-        <Card className="h-fit">
+        <Card className="h-fit print:hidden">
           <CardHeader title="Novo centro de custo" />
           <div className="p-5">
             <CostCenterForm />
