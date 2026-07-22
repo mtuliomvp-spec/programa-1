@@ -27,7 +27,7 @@ export default async function LucroVeiculosPage() {
     <div>
       <PageHeader
         title="Lucro por veículo"
-        description="Lucro bruto (venda − compra − custos) e lucro líquido (bruto − comissões, indicações, transferência e comissão do retorno + retorno da financeira). Inclui financiamento de terceiros."
+        description="Lucro da venda (bruto − comissões, indicações e transferência) e lucro do retorno (retorno recebido líquido do imposto − comissão do retorno). O lucro líquido é a soma dos dois. Inclui financiamento de terceiros."
         action={<PrintButton />}
       />
 
@@ -70,6 +70,7 @@ export default async function LucroVeiculosPage() {
                 <Th className="text-right">Lucro bruto</Th>
                 <Th className="text-right">Despesas da venda</Th>
                 <Th className="text-right">Retorno</Th>
+                <Th className="text-right">Lucro do retorno</Th>
                 <Th className="text-right">Lucro líquido</Th>
                 <Th className="text-right">Margem</Th>
                 <Th className="text-right">Dias</Th>
@@ -105,6 +106,25 @@ export default async function LucroVeiculosPage() {
                   </Td>
                   <Td className="text-right tabular-nums text-emerald-600">
                     {r.returnAmount > 0 ? `+${formatCurrency(r.returnAmount)}` : "—"}
+                  </Td>
+                  <Td className="text-right tabular-nums">
+                    {r.returnAmount > 0 || r.returnCommission > 0 ? (
+                      <>
+                        <span
+                          className={r.returnNetProfit >= 0 ? "text-emerald-600" : "text-rose-600"}
+                        >
+                          {r.returnNetProfit >= 0 ? "+" : "−"}
+                          {formatCurrency(Math.abs(r.returnNetProfit))}
+                        </span>
+                        {r.returnCommission > 0 ? (
+                          <span className="block text-[10px] text-slate-400">
+                            − comissão {formatCurrency(r.returnCommission)}
+                          </span>
+                        ) : null}
+                      </>
+                    ) : (
+                      "—"
+                    )}
                   </Td>
                   <Td
                     className={`text-right font-semibold tabular-nums ${

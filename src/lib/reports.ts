@@ -547,11 +547,15 @@ export type VehicleProfitRow = {
   saleAmount: number;
   /** Lucro bruto: venda − (compra + custos do veículo). */
   profit: number;
-  /** Despesas da venda: comissões, indicações, transferência DETRAN e comissão do retorno. */
+  /** Despesas da venda: comissão do vendedor, indicações e transferência DETRAN (NÃO inclui a comissão do retorno). */
   saleExpenses: number;
-  /** Retorno da financeira (líquido) que entra como receita da operação. */
+  /** Retorno da financeira recebido, líquido do imposto. */
   returnAmount: number;
-  /** Lucro líquido da venda: bruto − despesas da venda + retorno da financeira. */
+  /** Comissão do vendedor sobre o retorno (despesa do retorno). */
+  returnCommission: number;
+  /** Lucro do retorno: retorno recebido − comissão do retorno. */
+  returnNetProfit: number;
+  /** Lucro líquido total: (bruto − despesas da venda) + lucro do retorno. */
   netProfit: number;
   /** Venda originada de anúncio de tráfego pago (informativo). */
   viaPaidTraffic: boolean;
@@ -575,15 +579,22 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
     const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
     const totalCost = s.vehicle.purchasePrice + extraCosts;
     const profit = s.totalAmount - totalCost;
+    // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
+    // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
+    // ela é despesa do RETORNO e sai do lucro do retorno (abaixo).
     const saleExpenses =
       s.commissionAmount +
       parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
-      (s.transferCharged ? s.transferAmount : 0) +
-      s.returnCommissionAmount;
-    // Retorno da financeira (líquido): o valor já pago, se liquidado, senão o
-    // programado. Entra como receita da operação (faltava no lucro líquido).
+      (s.transferCharged ? s.transferAmount : 0);
+    // Retorno da financeira recebido, líquido do imposto (o já pago, se
+    // liquidado, senão o programado).
     const returnAmount = s.returnPaidAmount ?? s.returnNet;
-    const netProfit = profit - saleExpenses + returnAmount;
+    // Lucro do retorno = retorno recebido − comissão do vendedor sobre o retorno.
+    const returnCommission = s.returnCommissionAmount;
+    const returnNetProfit = returnAmount - returnCommission;
+    // Lucro líquido total: lucro da venda + lucro do retorno (mesmo total de
+    // antes — só muda a atribuição entre venda e retorno).
+    const netProfit = profit - saleExpenses + returnNetProfit;
     return {
       saleId: s.id,
       vehicleId: s.vehicleId,
@@ -597,6 +608,8 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       profit,
       saleExpenses,
       returnAmount,
+      returnCommission,
+      returnNetProfit,
       netProfit,
       viaPaidTraffic: s.viaPaidTraffic,
       isIntermediation: s.saleType === "FINANCIAMENTO_TERCEIROS",
