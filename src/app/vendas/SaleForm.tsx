@@ -9,6 +9,7 @@ import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
+import ProcessingOverlay from "@/components/ProcessingOverlay";
 
 type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
 type Customer = { id: string; name: string };
@@ -281,6 +282,7 @@ export default function SaleForm({
 
   return (
     <form ref={formRef} action={formAction} className="space-y-6">
+      <ProcessingOverlay show={pending} label="Gerando a pré-venda… aguarde. Não feche esta página." />
       {conflictMsg ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
           {conflictMsg}

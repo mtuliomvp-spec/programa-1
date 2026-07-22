@@ -10,6 +10,7 @@ import {
 } from "./actions";
 import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
 import { findPersonByDocument } from "@/app/person-lookup";
+import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
@@ -216,6 +217,10 @@ export default function VehicleForm({
 
   return (
     <form ref={formRef} action={formAction} className="space-y-6">
+      <ProcessingOverlay
+        show={pending}
+        label={isEdit ? "Salvando as alterações… aguarde. Não feche esta página." : "Cadastrando o veículo… aguarde. Não feche esta página."}
+      />
       {isEdit ? <input type="hidden" name="id" defaultValue={vehicle!.id} /> : null}
 
       {state.error ? (

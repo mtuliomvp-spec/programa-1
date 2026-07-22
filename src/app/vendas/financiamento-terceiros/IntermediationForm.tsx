@@ -9,6 +9,7 @@ import { lookupCepAction } from "@/app/cep-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { createIntermediationPreSaleAction } from "./actions";
+import ProcessingOverlay from "@/components/ProcessingOverlay";
 import type { IntermediationFormState } from "./core";
 
 type Customer = { id: string; name: string };
@@ -199,6 +200,7 @@ export default function IntermediationForm({
 
   return (
     <form ref={formRef} action={formAction} className="space-y-6">
+      <ProcessingOverlay show={pending} label="Gerando a pré-venda… aguarde. Não feche esta página." />
       {state.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}
