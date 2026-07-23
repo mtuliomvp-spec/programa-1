@@ -47,6 +47,14 @@ export default async function EstoquePage({
         payables: { select: { amount: true, status: true } },
         // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
         attachments: { select: { kind: true, description: true } },
+        // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
+        // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
+        tradeInForSale: {
+          select: {
+            orderNumber: true,
+            vehicle: { select: { brand: true, model: true, plate: true } },
+          },
+        },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -78,6 +86,14 @@ export default async function EstoquePage({
       .filter((p) => p.status === "PENDENTE" || p.status === "ATRASADO")
       .reduce((s, p) => s + p.amount, 0),
     daysInStock: daysBetween(v.entryDate, now),
+    // Veículo recebido em troca (é o carro que entrou numa venda como troca).
+    receivedInTrade: v.tradeInForSale != null,
+    tradeOrigin: v.tradeInForSale
+      ? `Recebido em troca na venda #${String(v.tradeInForSale.orderNumber).padStart(4, "0")}` +
+        (v.tradeInForSale.vehicle
+          ? ` (${v.tradeInForSale.vehicle.brand} ${v.tradeInForSale.vehicle.model} - ${v.tradeInForSale.vehicle.plate})`
+          : "")
+      : null,
   }));
 
   // Filtro derivado "Pré-vendido": em estoque (não vendido) e com pré-venda aberta.
@@ -107,6 +123,7 @@ export default async function EstoquePage({
         formatCurrency(v.salePrice),
         statusLabel[v.status].label,
         v.daysInStock,
+        v.receivedInTrade ? "recebido em troca" : "",
       ) &&
       inDateRange(v.entryDate, de, ate) &&
       inValueRange(v.salePrice, min, max),
@@ -177,6 +194,11 @@ export default async function EstoquePage({
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
                       {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
                         <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+                      ) : null}
+                      {v.receivedInTrade ? (
+                        <span title={v.tradeOrigin ?? undefined}>
+                          <Badge tone="default">🔄 Recebido em troca</Badge>
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -268,6 +290,11 @@ export default async function EstoquePage({
                       {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
                         <span className="mt-1 block">
                           <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+                        </span>
+                      ) : null}
+                      {v.receivedInTrade ? (
+                        <span className="mt-1 block" title={v.tradeOrigin ?? undefined}>
+                          <Badge tone="default">🔄 Recebido em troca</Badge>
                         </span>
                       ) : null}
                       {v.status === "VENDIDO" ? (
