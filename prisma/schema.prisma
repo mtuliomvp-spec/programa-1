@@ -455,8 +455,11 @@ model VehicleCost {
   notes       String?
   payableId   String?               @unique
   payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  // Lote da rotina de remuneração de capital sobre estoque (para estorno).
+  stockInterestRunId String?
   createdAt   DateTime              @default(now())
 
+  @@index([stockInterestRunId])
   @@map("vehicle_costs")
 }
 
@@ -834,9 +837,28 @@ model CapitalTransaction {
   // estorno completo ao reabrir o mês.
   monthlyClosingId String?
   monthlyClosing   MonthlyClosing? @relation(fields: [monthlyClosingId], references: [id], onDelete: SetNull)
+  // Lote da rotina de remuneração de capital sobre estoque (para estorno).
+  stockInterestRunId String?
   createdAt     DateTime           @default(now())
 
+  @@index([stockInterestRunId])
   @@map("capital_transactions")
+}
+
+// Lote de execução da rotina de remuneração de capital sobre o estoque: aplica
+// uma taxa X% sobre o custo total de veículos em estoque, incorporando o juro ao
+// custo de cada veículo e creditando o total como aporte de capital aos sócios
+// (rateio por percentuais independentes). Cada execução é reversível (estorno).
+model StockInterestRun {
+  id            String   @id @default(cuid())
+  date          DateTime @default(now())
+  ratePercent   Float
+  description   String?
+  createdBy     String?
+  totalInterest Float
+  createdAt     DateTime @default(now())
+
+  @@map("stock_interest_runs")
 }
 
 // Fechamento mensal (estilo Agrasty, SEM cobertura de saldo devedor dos sócios):
