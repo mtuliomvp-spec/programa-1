@@ -97,8 +97,10 @@ export async function closeMonth(year: number, month: number, userName: string |
   const currentKey = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
   const targetKey = year * 12 + month;
   if (!(month >= 1 && month <= 12)) throw new Error("Mês inválido.");
-  if (targetKey >= currentKey) {
-    throw new Error("Só é possível fechar meses já encerrados (anteriores ao mês atual).");
+  // O mês em exercício (atual) pode ser fechado a qualquer momento — o admin
+  // decide quando encerrar contabilmente. Só o mês FUTURO é barrado.
+  if (targetKey > currentKey) {
+    throw new Error("Não é possível fechar um mês futuro.");
   }
 
   const existing = await prisma.monthlyClosing.findUnique({

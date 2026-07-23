@@ -39,11 +39,15 @@ export default async function FechamentoMensalPage() {
   }
   const currentKey = now.getUTCFullYear() * 12 + now.getUTCMonth() + 1;
   const nextLabel = nextYear != null && nextMonth != null ? monthLabelBR(nextYear, nextMonth) : null;
+  // O mês em exercício (atual) já pode ser fechado — inclui `<= currentKey`.
+  // Só um mês futuro (nextKey > currentKey, ex.: logo após fechar o mês atual)
+  // não é oferecido.
   const next =
-    nextYear != null && nextMonth != null && nextYear * 12 + nextMonth < currentKey
+    nextYear != null && nextMonth != null && nextYear * 12 + nextMonth <= currentKey
       ? { year: nextYear, month: nextMonth, label: monthLabelBR(nextYear, nextMonth) }
       : null;
   const nextIsClosable = next != null;
+  const isCurrentMonth = next != null && next.year * 12 + next.month === currentKey;
   const nextResult = next ? await getMonthResult(next.year, next.month) : 0;
 
   return (
@@ -56,12 +60,14 @@ export default async function FechamentoMensalPage() {
 
       <Card className="mb-4">
         <CardHeader
-          title={nextIsClosable ? `Próximo mês a fechar: ${nextLabel}` : "Tudo em dia"}
+          title={nextIsClosable ? `Mês a fechar: ${nextLabel}` : "Tudo em dia"}
           description={
             nextIsClosable
-              ? "Confira o resultado apurado antes de fechar."
+              ? isCurrentMonth
+                ? "Você pode fechar o mês em andamento agora — o resultado considera tudo o que já foi lançado, como se fosse o último dia do mês."
+                : "Confira o resultado apurado antes de fechar."
               : nextLabel
-                ? `O mês em exercício é ${nextLabel} — o fechamento fica disponível quando ele terminar.`
+                ? "Todos os meses com movimento já foram fechados."
                 : "Ainda não há movimento no sistema — o primeiro fechamento aparece aqui quando houver."
           }
         />
@@ -78,8 +84,12 @@ export default async function FechamentoMensalPage() {
             <p className="text-sm text-slate-600">
               Ao fechar: {nextResult >= 0 ? "o lucro vira APORTE" : "o prejuízo vira RETIRADA"} no capital
               da empresa; o Lucro/Prejuízo do mês passa a mostrar R$ 0,00 (foi para o capital); e
-              lançamentos com data em {nextLabel} ficam bloqueados.
+              lançamentos com data em {nextLabel}
+              {isCurrentMonth ? " (inclusive nos dias restantes do mês)" : ""} ficam bloqueados.
               {" "}O saldo devedor dos sócios <strong>não</strong> é coberto.
+              {isCurrentMonth
+                ? " Precisou lançar algo depois? É só reabrir o mês, lançar e fechar de novo."
+                : ""}
             </p>
             {proLaboreList.length > 0 ? (
               <div className="rounded-lg border border-slate-200 p-3 text-sm">
