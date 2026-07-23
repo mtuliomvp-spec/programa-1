@@ -22,13 +22,16 @@ function parseMonth(value: string | undefined): { year: number; month: number } 
 export default async function LivroCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string; ver?: string }>;
 }) {
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
   const accountFilter = params.conta || "";
   const q = (params.q || "").trim();
   const { min, max } = params;
+  // ?ver=1 revela o extrato completo de um mês fechado (lançamentos + saldo
+  // transportado + saldo corrente) — é o que o botão do mês fechado faz.
+  const reveal = params.ver === "1";
   // Com qualquer filtro ativo (texto ou valor) o saldo corrente não faz sentido.
   const filtering = Boolean(q) || Boolean(min?.trim()) || Boolean(max?.trim());
   const monthStart = new Date(Date.UTC(year, month, 1));
@@ -98,7 +101,8 @@ export default async function LivroCaixaPage({
   // meses fechados vira atalhos para consultar cada um.
   const closings = await getClosedMonths();
   const monthClosed = closings.some((c) => c.year === year && c.month === month + 1);
-  const hideEntries = monthClosed && !filtering;
+  // Oculta só por padrão; a busca ou o botão "Ver lançamentos" (ver=1) revela.
+  const hideEntries = monthClosed && !filtering && !reveal;
 
   const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
   const categoryOptions = Array.from(
@@ -242,7 +246,7 @@ export default async function LivroCaixaPage({
         <div className="mb-4 flex flex-wrap gap-2 print:hidden">
           <LinkButton
             variant={!accountFilter ? "primary" : "secondary"}
-            href={`/financeiro/livro-caixa?mes=${monthValue}`}
+            href={`/financeiro/livro-caixa?mes=${monthValue}${reveal ? "&ver=1" : ""}`}
           >
             Todas as contas
           </LinkButton>
@@ -252,7 +256,7 @@ export default async function LivroCaixaPage({
               <LinkButton
                 key={a.id}
                 variant={accountFilter === a.id ? "primary" : "secondary"}
-                href={`/financeiro/livro-caixa?mes=${monthValue}&conta=${a.id}`}
+                href={`/financeiro/livro-caixa?mes=${monthValue}&conta=${a.id}${reveal ? "&ver=1" : ""}`}
               >
                 {a.name}
               </LinkButton>
@@ -269,7 +273,7 @@ export default async function LivroCaixaPage({
               <LinkButton
                 key={c.id}
                 variant={monthValue === key ? "primary" : "secondary"}
-                href={`/financeiro/livro-caixa?mes=${key}${accountFilter ? `&conta=${accountFilter}` : ""}`}
+                href={`/financeiro/livro-caixa?mes=${key}&ver=1${accountFilter ? `&conta=${accountFilter}` : ""}`}
               >
                 {monthLabelBR(c.year, c.month)}
               </LinkButton>
@@ -318,6 +322,7 @@ export default async function LivroCaixaPage({
         <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
           <input type="hidden" name="mes" value={monthValue} />
           {accountFilter ? <input type="hidden" name="conta" value={accountFilter} /> : null}
+          {reveal ? <input type="hidden" name="ver" value="1" /> : null}
           <div className="min-w-[200px] flex-1">
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Buscar
@@ -336,15 +341,23 @@ export default async function LivroCaixaPage({
             Filtrar
           </button>
           {filtering ? (
-            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${monthValue}${accountFilter ? `&conta=${accountFilter}` : ""}`}>
+            <LinkButton variant="secondary" href={`/financeiro/livro-caixa?mes=${monthValue}${reveal ? "&ver=1" : ""}${accountFilter ? `&conta=${accountFilter}` : ""}`}>
               Limpar
             </LinkButton>
           ) : null}
         </form>
         {hideEntries ? (
           <div className="px-5 py-8 text-center text-sm text-slate-600">
-            🔒 <strong>Mês encerrado.</strong> Os lançamentos ficam ocultos — use a busca acima para
-            consultar. Os saldos (inicial, entradas, saídas e final) estão nos cartões acima.
+            🔒 <strong>Mês encerrado.</strong> Os lançamentos ficam ocultos por padrão. Clique abaixo
+            para ver o extrato completo (com saldo transportado e saldo corrente) ou use a busca acima.
+            <div className="mt-3">
+              <LinkButton
+                variant="primary"
+                href={`/financeiro/livro-caixa?mes=${monthValue}&ver=1${accountFilter ? `&conta=${accountFilter}` : ""}`}
+              >
+                Ver lançamentos deste mês
+              </LinkButton>
+            </div>
           </div>
         ) : rows.length === 0 ? (
           <EmptyState
