@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { formatCurrency } from "@/lib/format";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
@@ -11,7 +13,7 @@ import { createCashEntryAction, type CashEntryState } from "./actions";
 
 type Account = { id: string; name: string };
 type Vehicle = { id: string; label: string };
-type Beneficiary = { id: string; name: string };
+type Beneficiary = { id: string; name: string; applied?: number; free?: number };
 type Customer = { id: string; name: string };
 
 const initial: CashEntryState = {};
@@ -42,6 +44,8 @@ export default function CashEntryForm({
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
+  const [amount, setAmount] = useState("");
+  const [capitalBeneficiaryId, setCapitalBeneficiaryId] = useState("");
   const [description, setDescription] = useState("");
   const [customerList, setCustomerList] = useState(customers);
   const [customerId, setCustomerId] = useState("");
@@ -72,6 +76,8 @@ export default function CashEntryForm({
       setSupplierName("");
       setNewSupplier(false);
       setVehicleId("");
+      setAmount("");
+      setCapitalBeneficiaryId("");
       setDescription("");
       setCustomerId("");
       setNewCustomer(false);
@@ -169,7 +175,15 @@ export default function CashEntryForm({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Valor (R$)" required>
-            <Input name="amount" type="number" step="0.01" min={0.01} required />
+            <Input
+              name="amount"
+              type="number"
+              step="0.01"
+              min={0.01}
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+            />
           </Field>
           <Field label="Data" required>
             <Input name="date" type="date" defaultValue={defaultDate} required />
@@ -263,7 +277,12 @@ export default function CashEntryForm({
 
         {flow === "CAPITAL" ? (
           <Field label="Beneficiário do capital" required>
-            <Select name="capitalBeneficiaryId" defaultValue="" required>
+            <Select
+              name="capitalBeneficiaryId"
+              value={capitalBeneficiaryId}
+              onChange={(e) => setCapitalBeneficiaryId(e.target.value)}
+              required
+            >
               <option value="">Selecione o beneficiário</option>
               {beneficiaries.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -279,6 +298,27 @@ export default function CashEntryForm({
                 Nenhum beneficiário cadastrado. Cadastre em Capital.
               </p>
             ) : null}
+            {(() => {
+              // Aviso (não bloqueia): saque de capital acima do capital livre do
+              // sócio — parte está aplicada numa conta de Aplicação.
+              if (kind !== "saida") return null;
+              const b = beneficiaries.find((x) => x.id === capitalBeneficiaryId);
+              const applied = b?.applied ?? 0;
+              const free = b?.free ?? 0;
+              const val = Number(amount) || 0;
+              if (!b || applied <= 0 || val <= free) return null;
+              return (
+                <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  ⚠️ <strong>{b.name}</strong> tem <strong>{formatCurrency(applied)}</strong> aplicado.
+                  O capital livre dele é <strong>{formatCurrency(free)}</strong>. Se este saque é do
+                  dinheiro aplicado, considere usar{" "}
+                  <Link href={`/capital/${b.id}`} className="font-semibold underline">
+                    Sacar com substituição
+                  </Link>{" "}
+                  (Capital → {b.name}). Você pode seguir mesmo assim.
+                </div>
+              );
+            })()}
           </Field>
         ) : null}
 

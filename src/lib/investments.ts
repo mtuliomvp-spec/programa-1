@@ -95,6 +95,40 @@ export async function freeCapitalOf(beneficiaryId: string): Promise<number> {
   return round2(capital - applied);
 }
 
+export type CapitalStatus = { capital: number; applied: number; free: number };
+
+/**
+ * Status do capital de TODOS os beneficiários de uma vez (sem N+1): capital
+ * total (aportes − retiradas), aplicado (Σ alocações) e livre (capital −
+ * aplicado). Usado para avisar, no movimento de caixa, quando um saque de um
+ * sócio passa do capital livre dele (parte está aplicada).
+ */
+export async function capitalStatusByBeneficiary(): Promise<Map<string, CapitalStatus>> {
+  const [tx, alloc] = await Promise.all([
+    prisma.capitalTransaction.groupBy({
+      by: ["beneficiaryId", "kind"],
+      where: { kind: { in: ["APORTE", "RETIRADA"] } },
+      _sum: { amount: true },
+    }),
+    prisma.investmentAllocation.groupBy({ by: ["beneficiaryId"], _sum: { amount: true } }),
+  ]);
+  const capitalById = new Map<string, number>();
+  for (const t of tx) {
+    const cur = capitalById.get(t.beneficiaryId) ?? 0;
+    const v = t._sum.amount ?? 0;
+    capitalById.set(t.beneficiaryId, cur + (t.kind === "APORTE" ? v : -v));
+  }
+  const appliedById = new Map(alloc.map((a) => [a.beneficiaryId, a._sum.amount ?? 0]));
+  const ids = new Set([...capitalById.keys(), ...appliedById.keys()]);
+  const out = new Map<string, CapitalStatus>();
+  for (const id of ids) {
+    const capital = round2(capitalById.get(id) ?? 0);
+    const applied = round2(appliedById.get(id) ?? 0);
+    out.set(id, { capital, applied, free: round2(capital - applied) });
+  }
+  return out;
+}
+
 export type Reconciliation = { balance: number; allocated: number; diff: number; ok: boolean };
 
 /** Confere o invariante: saldo da conta == soma das alocações. */

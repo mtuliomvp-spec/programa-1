@@ -4,6 +4,7 @@ import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
+import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
@@ -96,6 +97,14 @@ export default async function LivroCaixaPage({
       prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       getBooksHealth(),
     ]);
+
+  // Status de capital (aplicado/livre) por sócio, para avisar quando um saque
+  // de capital passar do capital livre (parte está aplicada).
+  const capitalStatus = await capitalStatusByBeneficiary();
+  const beneficiariesWithStatus = beneficiaries.map((b) => {
+    const s = capitalStatus.get(b.id);
+    return { id: b.id, name: b.name, applied: s?.applied ?? 0, free: s?.free ?? 0 };
+  });
 
   // Mês encerrado: seus lançamentos ficam ocultos (só via busca); a lista de
   // meses fechados vira atalhos para consultar cada um.
@@ -301,7 +310,7 @@ export default async function LivroCaixaPage({
             accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
             supplierNames={suppliers.map((s) => s.name)}
             vehicles={vehicleOptions}
-            beneficiaries={beneficiaries}
+            beneficiaries={beneficiariesWithStatus}
             customers={customers}
             categories={categoryOptions}
             defaultDate={toDateInputValue(new Date())}
