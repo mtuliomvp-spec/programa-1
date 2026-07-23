@@ -13,7 +13,11 @@ const kindMeta: Record<string, { label: string; tone: "info" | "success" | "warn
   POS_VENDA: { label: "Pós-venda", tone: "danger" },
   RETORNO: { label: "Retorno financ.", tone: "success" },
   RECEITA: { label: "Outra receita", tone: "success" },
+  FECHAMENTO: { label: "Fechamento", tone: "default" },
 };
+
+// Fallback defensivo: qualquer tipo não mapeado não pode derrubar a página.
+const metaFor = (kind: string) => kindMeta[kind] ?? { label: kind, tone: "default" as const };
 
 export default async function LucroPrejuizoPage({
   searchParams,
@@ -131,7 +135,7 @@ export default async function LucroPrejuizoPage({
                 <Tr key={e.id}>
                   <Td className="whitespace-nowrap">{formatDate(e.date)}</Td>
                   <Td>
-                    <Badge tone={kindMeta[e.kind].tone}>{kindMeta[e.kind].label}</Badge>
+                    <Badge tone={metaFor(e.kind).tone}>{metaFor(e.kind).label}</Badge>
                   </Td>
                   <Td className="font-medium text-slate-900">
                     {e.description}
