@@ -5,6 +5,7 @@ import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import RecurringRowActions from "./RecurringRowActions";
+import GenerateNowButton from "./GenerateNowButton";
 
 export const dynamic = "force-dynamic";
 
@@ -66,13 +67,19 @@ export default async function RecorrentesPage({
       <PageHeader
         title="Lançamentos recorrentes"
         description={`Todo mês: ${formatCurrency(monthlyPagar)} a pagar · ${formatCurrency(monthlyReceber)} a receber`}
-        action={<LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>}
+        action={
+          <div className="flex flex-wrap items-center gap-2 print:hidden">
+            <GenerateNowButton />
+            <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
+          </div>
+        }
       />
 
       <Card className="mb-4 border-blue-200 bg-blue-50/60 px-4 py-3 print:hidden">
         <p className="text-sm text-slate-600">
-          As contas do mês são geradas automaticamente ao abrir o financeiro — sem duplicar. Ao
-          desativar uma recorrência, as contas já geradas permanecem; apenas os próximos meses param.
+          Os títulos são gerados automaticamente <strong>15 dias antes do vencimento</strong> (ao abrir
+          o financeiro) — sem duplicar. Use <strong>Gerar agora</strong> para antecipar. Ao desativar
+          uma recorrência, os títulos já gerados permanecem; apenas os próximos param.
         </p>
       </Card>
 

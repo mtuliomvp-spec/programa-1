@@ -10,27 +10,37 @@ import { structuralCenterId } from "@/lib/structural";
  * necessidade de job agendado e nada é gerado em duplicidade.
  */
 
-function currentMonthDue(dayOfMonth: number): Date {
-  const now = new Date();
-  const year = now.getUTCFullYear();
-  const month = now.getUTCMonth();
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Vencimento de um dia do mês num (ano, mês) dado — meio-dia UTC. */
+function monthDue(year: number, month: number, dayOfMonth: number): Date {
   const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
   const day = Math.min(Math.max(1, dayOfMonth), lastDay);
   return new Date(Date.UTC(year, month, day, 12));
 }
 
-const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+/**
+ * Vencimentos mensais a garantir: o do mês corrente e o do próximo mês. O do mês
+ * corrente entra sempre (recupera vencidos); o do próximo só quando já está
+ * dentro do horizonte (gerar N dias antes). O chamador ainda filtra por
+ * startDate/endDate e horizonte.
+ */
+function monthlyDueDates(dayOfMonth: number): Date[] {
+  const now = new Date();
+  return [
+    monthDue(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth),
+    monthDue(now.getUTCFullYear(), now.getUTCMonth() + 1, dayOfMonth),
+  ];
+}
 
-/** Vencimentos "a cada N dias" desde startDate até hoje (com teto de segurança). */
-function intervalDueDates(startDate: Date, everyDays: number, endDate: Date | null): Date[] {
+/** Vencimentos "a cada N dias" desde startDate até o horizonte (com teto). */
+function intervalDueDates(startDate: Date, everyDays: number, endDate: Date | null, horizon: Date): Date[] {
   const CAP = 120; // nunca gera em massa, mesmo com startDate muito antigo
   const step = Math.max(1, Math.round(everyDays));
-  const now = new Date();
-  const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59));
   const out: Date[] = [];
   // Âncora no meio-dia UTC do dia de início.
   let due = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate(), 12));
-  while (due <= todayEnd && (!endDate || due <= endDate) && out.length < CAP) {
+  while (due <= horizon && (!endDate || due <= endDate) && out.length < CAP) {
     out.push(new Date(due));
     due = new Date(due.getTime() + step * 24 * 60 * 60 * 1000);
   }
@@ -81,17 +91,23 @@ export async function ensureConsortiumInstallments(): Promise<number> {
 const isStructuralKey = (v: string | null): v is "VEICULOS" | "ADMINISTRATIVO" | "CAPITAL" =>
   v === "VEICULOS" || v === "ADMINISTRATIVO" || v === "CAPITAL";
 
-export async function ensureRecurringGenerated(): Promise<number> {
+/**
+ * Gera os títulos recorrentes que vencem até `leadDays` dias à frente (padrão 15
+ * — "gera 15 dias antes do vencimento"), sem duplicar. O botão "Gerar agora" usa
+ * uma antecedência maior para puxar a próxima ocorrência na hora.
+ */
+export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  // Horizonte: fim do dia (hoje + leadDays). Gera tudo que vence até aqui.
+  const horizon = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + leadDays, 23, 59));
 
   // Traz todos os vencimentos já gerados de cada recorrência (para não duplicar
   // tanto no modo mensal quanto no "a cada N dias").
   const entries = await prisma.recurringEntry.findMany({
     where: {
       active: true,
-      startDate: { lt: monthEnd },
+      startDate: { lte: horizon },
       OR: [{ endDate: null }, { endDate: { gte: monthStart } }],
     },
     include: {
@@ -109,11 +125,18 @@ export async function ensureRecurringGenerated(): Promise<number> {
       [...entry.payables, ...entry.receivables].map((t) => dayKey(t.dueDate)),
     );
 
-    // Datas de vencimento a garantir: mensal (só o mês corrente) ou por intervalo.
-    const dueDates =
+    // Datas de vencimento candidatas: mensal (mês corrente + próximo) ou por
+    // intervalo. Só entram as que vencem até o horizonte e a partir do início.
+    const candidates =
       entry.intervalDays && entry.intervalDays > 0
-        ? intervalDueDates(entry.startDate, entry.intervalDays, entry.endDate)
-        : [currentMonthDue(entry.dayOfMonth)];
+        ? intervalDueDates(entry.startDate, entry.intervalDays, entry.endDate, horizon)
+        : monthlyDueDates(entry.dayOfMonth);
+    const startAnchor = new Date(
+      Date.UTC(entry.startDate.getUTCFullYear(), entry.startDate.getUTCMonth(), entry.startDate.getUTCDate(), 0, 0),
+    );
+    const dueDates = candidates.filter(
+      (d) => d <= horizon && d >= startAnchor && (!entry.endDate || d <= entry.endDate),
+    );
 
     // Fluxo Capital: o título carrega o sócio e, quando for baixado, lança o
     // aporte/retirada dele (sync na baixa). Categoria = OUTROS (capital não é

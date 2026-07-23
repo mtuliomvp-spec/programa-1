@@ -5,8 +5,6 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
-import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
@@ -98,13 +96,20 @@ export async function deleteRecurringAction(id: string) {
   revalidatePath("/financeiro/recorrentes");
 }
 
-export async function generateNowAction() {
-  await assertCan("financeiro", "criar");
-  await assertBooksBalanced();
-  await assertCashboxOpen();
-  const created = await ensureRecurringGenerated();
+/**
+ * Gera na hora os títulos recorrentes. Não exige caixa aberto/farol verde: só
+ * cria títulos PENDENTE (sem baixa/dinheiro). Usa antecedência maior (45 dias)
+ * para já puxar a próxima ocorrência, mesmo faltando mais de 15 dias.
+ */
+export async function generateNowAction(): Promise<{ ok: boolean; created?: number; error?: string }> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const created = await ensureRecurringGenerated(45);
   revalidatePath("/financeiro/recorrentes");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");
-  return created;
+  return { ok: true, created };
 }
