@@ -243,9 +243,14 @@ export type PLStatement = {
   veiculosVendidos: number;
 };
 
-export async function getProfitLossStatement(months = 12): Promise<PLStatement> {
-  const { start: rangeStart } = monthRange(months - 1);
-  const { end: rangeEnd } = monthRange(0);
+export async function getProfitLossStatement(
+  months = 12,
+  opts?: { start?: Date; end?: Date; excludeFechamento?: boolean },
+): Promise<PLStatement> {
+  // Janela opcional (start/end) para telas que mostram um período específico
+  // (período aberto ou um mês fechado). Sem opts = comportamento padrão de antes.
+  const rangeStart = opts?.start ?? monthRange(months - 1).start;
+  const rangeEnd = opts?.end ?? monthRange(0).end;
 
   // Movimentações de capital não entram no resultado: o APORTE (recebível) não é
   // receita e a RETIRADA (a pagar) não é despesa — elas mexem no capital, não no
@@ -489,10 +494,14 @@ export async function getProfitLossStatement(months = 12): Promise<PLStatement> 
   // Fechamentos mensais: o resultado do mês fechado foi transferido para o
   // capital da empresa — entra aqui como −resultado (o mês fechado zera no
   // extrato, casando com o aporte/retirada de capital na equação patrimonial).
+  // Na visão de um mês fechado, mostramos o resultado REAL do mês (sem a linha
+  // de fechamento que zeraria o período).
   let fechamentos = 0;
-  const closings = await prisma.monthlyClosing.findMany({
-    select: { id: true, year: true, month: true, result: true },
-  });
+  const closings = opts?.excludeFechamento
+    ? []
+    : await prisma.monthlyClosing.findMany({
+        select: { id: true, year: true, month: true, result: true },
+      });
   for (const c of closings) {
     const closeDate = new Date(Date.UTC(c.year, c.month, 0, 12));
     if (closeDate < rangeStart || closeDate >= rangeEnd) continue;

@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
+import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
@@ -92,6 +93,12 @@ export default async function LivroCaixaPage({
       prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       getBooksHealth(),
     ]);
+
+  // Mês encerrado: seus lançamentos ficam ocultos (só via busca); a lista de
+  // meses fechados vira atalhos para consultar cada um.
+  const closings = await getClosedMonths();
+  const monthClosed = closings.some((c) => c.year === year && c.month === month + 1);
+  const hideEntries = monthClosed && !filtering;
 
   const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
   const categoryOptions = Array.from(
@@ -253,6 +260,24 @@ export default async function LivroCaixaPage({
         </div>
       ) : null}
 
+      {closings.length > 0 ? (
+        <div className="mb-4 flex flex-wrap items-center gap-2 print:hidden">
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Meses fechados:</span>
+          {closings.map((c) => {
+            const key = `${c.year}-${String(c.month).padStart(2, "0")}`;
+            return (
+              <LinkButton
+                key={c.id}
+                variant={monthValue === key ? "primary" : "secondary"}
+                href={`/financeiro/livro-caixa?mes=${key}${accountFilter ? `&conta=${accountFilter}` : ""}`}
+              >
+                {monthLabelBR(c.year, c.month)}
+              </LinkButton>
+            );
+          })}
+        </div>
+      ) : null}
+
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard label="Saldo inicial" value={formatCurrency(openingBalance)} hint={`antes de ${monthLabel}`} />
         <StatCard label="Entradas no mês" value={formatCurrency(totalIn)} tone="positive" />
@@ -316,7 +341,12 @@ export default async function LivroCaixaPage({
             </LinkButton>
           ) : null}
         </form>
-        {rows.length === 0 ? (
+        {hideEntries ? (
+          <div className="px-5 py-8 text-center text-sm text-slate-600">
+            🔒 <strong>Mês encerrado.</strong> Os lançamentos ficam ocultos — use a busca acima para
+            consultar. Os saldos (inicial, entradas, saídas e final) estão nos cartões acima.
+          </div>
+        ) : rows.length === 0 ? (
           <EmptyState
             title={q ? "Nada encontrado para a busca" : "Nenhuma movimentação neste mês"}
             description={

@@ -1,4 +1,5 @@
 import { getProfitLossStatement } from "@/lib/reports";
+import { getClosedMonths, monthBounds, monthLabelBR } from "@/lib/monthly-closing";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
@@ -22,14 +23,38 @@ const metaFor = (kind: string) => kindMeta[kind] ?? { label: kind, tone: "defaul
 export default async function LucroPrejuizoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ meses?: string }>;
+  searchParams: Promise<{ mes?: string }>;
 }) {
-  const params = await searchParams;
-  const months = params.meses === "1" ? 1 : params.meses === "6" ? 6 : 12;
-  const s = await getProfitLossStatement(months);
+  const { mes } = await searchParams;
+  const closings = await getClosedMonths(); // ordem: mais recente primeiro
+
+  // ?mes=AAAA-MM abre um mês FECHADO específico; sem isso, mostra o período aberto.
+  const m = mes?.match(/^(\d{4})-(\d{2})$/);
+  const selected = m ? closings.find((c) => c.year === Number(m[1]) && c.month === Number(m[2])) : null;
+
+  const now = new Date();
+  let scopeStart: Date;
+  let scopeEnd: Date;
+  let excludeFechamento = false;
+  let periodLabel: string;
+  if (selected) {
+    const b = monthBounds(selected.year, selected.month);
+    scopeStart = b.start;
+    scopeEnd = b.end;
+    excludeFechamento = true; // mostra o resultado real do mês (o que foi ao capital)
+    periodLabel = `${monthLabelBR(selected.year, selected.month)} — mês encerrado`;
+  } else {
+    // Período aberto: do 1º dia após o último mês fechado até o fim do mês atual.
+    scopeEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+    scopeStart = closings.length
+      ? monthBounds(closings[0].year, closings[0].month).end
+      : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+    periodLabel = "período aberto";
+  }
+
+  const s = await getProfitLossStatement(12, { start: scopeStart, end: scopeEnd, excludeFechamento });
 
   const lucro = s.lucroLiquido >= 0;
-  const periodLabel = months === 1 ? "mês atual" : `últimos ${months} meses`;
   const margem = s.receitaTotal > 0 ? (s.lucroLiquido / s.receitaTotal) * 100 : 0;
 
   const Row = ({ label, value, kind = "sub" }: { label: string; value: number; kind?: "sub" | "total" | "final" }) => (
@@ -56,15 +81,22 @@ export default async function LucroPrejuizoPage({
         description={`Resultado da loja no ${periodLabel}`}
         action={
           <div className="flex flex-wrap gap-2 print:hidden">
-            <LinkButton href="/financeiro/lucro-prejuizo?meses=1" variant={months === 1 ? "primary" : "secondary"}>
-              Mês atual
+            <LinkButton href="/financeiro/lucro-prejuizo" variant={!selected ? "primary" : "secondary"}>
+              Aberto
             </LinkButton>
-            <LinkButton href="/financeiro/lucro-prejuizo?meses=6" variant={months === 6 ? "primary" : "secondary"}>
-              6 meses
-            </LinkButton>
-            <LinkButton href="/financeiro/lucro-prejuizo?meses=12" variant={months === 12 ? "primary" : "secondary"}>
-              12 meses
-            </LinkButton>
+            {closings.map((c) => {
+              const key = `${c.year}-${String(c.month).padStart(2, "0")}`;
+              const active = selected?.id === c.id;
+              return (
+                <LinkButton
+                  key={c.id}
+                  href={`/financeiro/lucro-prejuizo?mes=${key}`}
+                  variant={active ? "primary" : "secondary"}
+                >
+                  {monthLabelBR(c.year, c.month)}
+                </LinkButton>
+              );
+            })}
             <PrintButton />
           </div>
         }
