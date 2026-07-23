@@ -97,7 +97,10 @@ export default async function CapitalPage({
                       </p>
                       {b.aplicado > 0 ? (
                         <p className="mt-0.5 text-xs font-medium text-emerald-700">
-                          📈 Aplicado {formatCurrency(b.aplicado)} · Livre {formatCurrency(b.livre)}
+                          📈 Aplicado {formatCurrency(b.aplicado)} ·{" "}
+                          <span className={b.livre < 0 ? "text-rose-600" : ""}>
+                            Livre {formatCurrency(b.livre)}
+                          </span>
                         </p>
                       ) : null}
                     </div>
