@@ -55,7 +55,9 @@ export default async function ContasPage({
             <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
             {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
-            <span className="text-xs font-normal text-blue-600 group-hover:underline">ver extrato →</span>
+            <span className="text-xs font-normal text-blue-600 group-hover:underline">
+              {a.isInvestment ? "abrir / creditar →" : "ver extrato →"}
+            </span>
           </p>
           <p className="mt-0.5 text-xs text-slate-500">
             {[a.bankName, a.agency && `ag. ${a.agency}`, a.accountNumber && `conta ${a.accountNumber}`]
@@ -63,6 +65,11 @@ export default async function ContasPage({
               .join(" · ") || "—"}
             {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
           </p>
+          {a.isInvestment ? (
+            <p className="mt-0.5 text-xs font-medium text-emerald-700">
+              Para creditar, abra a conta e use <strong>Aplicar</strong> — o dinheiro é dividido entre os sócios.
+            </p>
+          ) : null}
         </Link>
         <div className="flex items-center gap-4">
           <div className="text-right">
@@ -71,6 +78,11 @@ export default async function ContasPage({
               {formatCurrency(a.balance)}
             </p>
           </div>
+          {a.isInvestment && a.active ? (
+            <LinkButton href={`/financeiro/contas/${a.id}`} className="whitespace-nowrap">
+              📈 Aplicar
+            </LinkButton>
+          ) : null}
           <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} />
         </div>
       </div>

@@ -42,6 +42,13 @@ export default function InvestmentPanel({
 
   return (
     <div className="space-y-4">
+      {/* Como creditar */}
+      <div className="rounded-xl border border-blue-200 bg-blue-50/70 p-4 text-sm text-slate-700">
+        💡 Para <strong>colocar dinheiro aqui</strong>, use <strong>Aplicar</strong> abaixo. Esta conta
+        não aparece nas entradas comuns do caixa de propósito — o valor é sempre creditado a um sócio
+        (por isso o saldo fica sempre dividido entre eles).
+      </div>
+
       {/* Reconciliação */}
       <Card className={`border-2 ${reconciled ? "border-emerald-200" : "border-rose-300"}`}>
         <div className="flex flex-wrap items-center justify-between gap-3 p-4">
@@ -95,10 +102,16 @@ export default function InvestmentPanel({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Aplicar */}
         <Card>
-          <CardHeader title="Aplicar" description="Um sócio passa a ter capital aplicado nesta conta" />
+          <CardHeader title="Aplicar (creditar dinheiro na conta)" description="Um sócio passa a ter capital aplicado nesta conta" />
           <form action={aplicarSubmit} className="space-y-3 p-5">
             {aplicarState.error ? <p className="text-sm text-rose-600">{aplicarState.error}</p> : null}
             {aplicarState.ok ? <p className="text-sm text-emerald-600">Aplicado com sucesso.</p> : null}
+            {beneficiaries.length === 0 ? (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                Nenhum sócio cadastrado. <a href="/capital" className="font-semibold underline">Cadastre o sócio no Capital</a> primeiro
+                para creditar o dinheiro a ele.
+              </p>
+            ) : null}
             <Field label="Sócio" required>
               <Select name="beneficiaryId" required>
                 <option value="">Selecione…</option>
@@ -110,7 +123,7 @@ export default function InvestmentPanel({
             <Field label="De onde vem o dinheiro?" required>
               <Select name="source" value={source} onChange={(e) => setSource(e.target.value as "CAIXA" | "EXTERNO")}>
                 <option value="CAIXA">Do caixa/banco da loja (capital que o sócio já tem)</option>
-                <option value="EXTERNO">Dinheiro novo do sócio (aporte de fora)</option>
+                <option value="EXTERNO">Crédito / dinheiro novo do sócio (de fora)</option>
               </Select>
             </Field>
             {source === "CAIXA" ? (
