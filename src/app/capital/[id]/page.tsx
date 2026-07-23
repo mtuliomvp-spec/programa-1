@@ -5,6 +5,7 @@ import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, T
 import CapitalTransactionForm from "./CapitalTransactionForm";
 import DeleteTransactionButton from "./DeleteTransactionButton";
 import IncludeClosingToggle from "./IncludeClosingToggle";
+import ProLaboreForm from "./ProLaboreForm";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,8 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
       </div>
 
       {!beneficiary.isCompany ? (
-        <div className="mb-4">
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <ProLaboreForm beneficiaryId={beneficiary.id} initial={beneficiary.proLabore} />
           <IncludeClosingToggle
             beneficiaryId={beneficiary.id}
             initial={beneficiary.includeInMonthlyClosing}

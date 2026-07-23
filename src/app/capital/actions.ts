@@ -132,6 +132,29 @@ export async function addCapitalTransactionAction(
   return {};
 }
 
+/** Edita o valor do pró-labore combinado do beneficiário (R$/mês). */
+export async function setProLaboreAction(
+  beneficiaryId: string,
+  proLabore: number,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!Number.isFinite(proLabore) || proLabore < 0) {
+    return { ok: false, error: "Informe um valor válido (0 ou maior)." };
+  }
+  await prisma.capitalBeneficiary.update({
+    where: { id: beneficiaryId },
+    data: { proLabore: Math.round(proLabore * 100) / 100 },
+  });
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath("/capital");
+  revalidatePath("/financeiro/fechamento");
+  return { ok: true };
+}
+
 /** Liga/desliga a participação do beneficiário na rotina do fechamento mensal. */
 export async function toggleIncludeClosingAction(
   beneficiaryId: string,
