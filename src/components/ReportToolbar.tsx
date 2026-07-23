@@ -51,7 +51,7 @@ export default function ReportToolbar({
       <Card className="mb-4 px-4 py-3 print:hidden">
         <form className="flex flex-wrap items-end gap-3">
           <div className="min-w-[200px] flex-1">
-            <label className="text-xs text-slate-500">
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Buscar
               <Input name="q" placeholder={placeholder} defaultValue={q} className="mt-0.5" />
             </label>
@@ -59,11 +59,11 @@ export default function ReportToolbar({
 
           {date ? (
             <div className="flex items-end gap-2">
-              <label className="text-xs text-slate-500">
+              <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 De
                 <Input type="date" name="de" defaultValue={de} className="mt-0.5 w-40" />
               </label>
-              <label className="text-xs text-slate-500">
+              <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Até
                 <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 w-40" />
               </label>
@@ -72,7 +72,7 @@ export default function ReportToolbar({
 
           {value ? (
             <div className="flex items-end gap-2">
-              <label className="text-xs text-slate-500">
+              <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Valor mín.
                 <Input
                   name="min"
@@ -82,7 +82,7 @@ export default function ReportToolbar({
                   className="mt-0.5 w-28"
                 />
               </label>
-              <label className="text-xs text-slate-500">
+              <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Valor máx.
                 <Input
                   name="max"

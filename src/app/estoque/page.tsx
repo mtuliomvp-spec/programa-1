@@ -137,7 +137,7 @@ export default async function EstoquePage({
         min={min}
         max={max}
         extra={
-          <label className="text-xs text-slate-500">
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status
             <Select name="status" defaultValue={params.status || "TODOS"} className="mt-0.5 w-44">
               <option value="TODOS">Todos os status</option>

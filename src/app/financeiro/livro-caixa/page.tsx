@@ -294,16 +294,16 @@ export default async function LivroCaixaPage({
           <input type="hidden" name="mes" value={monthValue} />
           {accountFilter ? <input type="hidden" name="conta" value={accountFilter} /> : null}
           <div className="min-w-[200px] flex-1">
-            <label className="text-xs text-slate-500">
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Buscar
               <Input name="q" defaultValue={q} placeholder="Descrição, quem, veículo, valor..." className="mt-0.5" />
             </label>
           </div>
-          <label className="text-xs text-slate-500">
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Valor mín.
             <Input name="min" inputMode="decimal" defaultValue={min} placeholder="0,00" className="mt-0.5 w-28" />
           </label>
-          <label className="text-xs text-slate-500">
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Valor máx.
             <Input name="max" inputMode="decimal" defaultValue={max} placeholder="—" className="mt-0.5 w-28" />
           </label>

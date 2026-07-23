@@ -104,7 +104,7 @@ export default async function ContasAPagarPage({
         min={min}
         max={max}
         extra={
-          <label className="text-xs text-slate-500">
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status
             <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 w-48">
               <option value="TODOS">Todos os status</option>
