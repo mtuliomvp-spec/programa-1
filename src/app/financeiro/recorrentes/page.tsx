@@ -8,6 +8,12 @@ import RecurringRowActions from "./RecurringRowActions";
 
 export const dynamic = "force-dynamic";
 
+const flowLabel: Record<string, string> = {
+  VEICULOS: "Veículos",
+  ADMINISTRATIVO: "Administrativo",
+  CAPITAL: "Capital",
+};
+
 const categoryLabel: Record<string, string> = {
   COMPRA_VEICULO: "Compra de veículo",
   COMPRA_PECA: "Compra de peças",
@@ -93,9 +99,10 @@ export default async function RecorrentesPage({
               <Tr>
                 <Th>Descrição</Th>
                 <Th>Tipo</Th>
+                <Th>Fluxo</Th>
                 <Th>Categoria</Th>
                 <Th>Quem</Th>
-                <Th className="text-right">Dia</Th>
+                <Th className="text-right">Período</Th>
                 <Th className="text-right">Valor</Th>
                 <Th>Situação</Th>
                 <Th />
@@ -110,9 +117,12 @@ export default async function RecorrentesPage({
                       {e.kind === "PAGAR" ? "A pagar" : "A receber"}
                     </Badge>
                   </Td>
+                  <Td>{flowLabel[e.structuralKey ?? "ADMINISTRATIVO"]}</Td>
                   <Td>{categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"]}</Td>
                   <Td>{e.supplier?.name || e.customer?.name || "-"}</Td>
-                  <Td className="text-right tabular-nums">dia {e.dayOfMonth}</Td>
+                  <Td className="text-right tabular-nums">
+                    {e.intervalDays && e.intervalDays > 0 ? `a cada ${e.intervalDays} dias` : `dia ${e.dayOfMonth}`}
+                  </Td>
                   <Td className="text-right tabular-nums">{formatCurrency(e.amount)}</Td>
                   <Td>
                     <Badge tone={e.active ? "success" : "default"}>

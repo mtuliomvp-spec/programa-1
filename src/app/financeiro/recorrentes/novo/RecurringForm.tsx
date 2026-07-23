@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { createRecurringAction, type RecurringFormState } from "../actions";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
 
 type Option = { id: string; name: string };
@@ -16,6 +17,7 @@ export default function RecurringForm({
 }) {
   const [state, formAction, pending] = useActionState(createRecurringAction, {} as RecurringFormState);
   const [kind, setKind] = useState<"PAGAR" | "RECEBER">("PAGAR");
+  const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">("MENSAL");
 
   return (
     <form action={formAction} className="space-y-4">
@@ -44,9 +46,36 @@ export default function RecurringForm({
         <Field label="Valor (R$)" required>
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
-        <Field label="Dia do vencimento (1 a 31)" required>
-          <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={5} required />
+        <Field label="Fluxo (obra estrutural)" required>
+          <Select name="structuralKey" defaultValue="ADMINISTRATIVO">
+            {STRUCTURAL_FLOWS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
         </Field>
+
+        <Field label="Periodicidade" required>
+          <Select
+            name="periodicidade"
+            value={periodicidade}
+            onChange={(e) => setPeriodicidade(e.target.value as "MENSAL" | "DIAS")}
+          >
+            <option value="MENSAL">Mensal (dia do mês)</option>
+            <option value="DIAS">A cada N dias</option>
+          </Select>
+        </Field>
+        {periodicidade === "MENSAL" ? (
+          <Field label="Dia do vencimento (1 a 31)" required>
+            <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={5} required />
+          </Field>
+        ) : (
+          <Field label="A cada quantos dias" required>
+            <Input type="number" name="intervalDays" min={1} max={365} defaultValue={15} required />
+            <p className="mt-1 text-xs text-slate-400">Conta a partir da data em &quot;Começa em&quot;.</p>
+          </Field>
+        )}
 
         {kind === "PAGAR" ? (
           <>

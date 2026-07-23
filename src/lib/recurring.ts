@@ -19,6 +19,24 @@ function currentMonthDue(dayOfMonth: number): Date {
   return new Date(Date.UTC(year, month, day, 12));
 }
 
+const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+/** Vencimentos "a cada N dias" desde startDate até hoje (com teto de segurança). */
+function intervalDueDates(startDate: Date, everyDays: number, endDate: Date | null): Date[] {
+  const CAP = 120; // nunca gera em massa, mesmo com startDate muito antigo
+  const step = Math.max(1, Math.round(everyDays));
+  const now = new Date();
+  const todayEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), 23, 59));
+  const out: Date[] = [];
+  // Âncora no meio-dia UTC do dia de início.
+  let due = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate(), 12));
+  while (due <= todayEnd && (!endDate || due <= endDate) && out.length < CAP) {
+    out.push(new Date(due));
+    due = new Date(due.getTime() + step * 24 * 60 * 60 * 1000);
+  }
+  return out;
+}
+
 /** Gera as parcelas mensais dos consórcios ativos até o mês corrente
  * (com recuperação de meses passados), numeradas e sem duplicidade. */
 export async function ensureConsortiumInstallments(): Promise<number> {
@@ -60,11 +78,16 @@ export async function ensureConsortiumInstallments(): Promise<number> {
   return created;
 }
 
+const isStructuralKey = (v: string | null): v is "VEICULOS" | "ADMINISTRATIVO" | "CAPITAL" =>
+  v === "VEICULOS" || v === "ADMINISTRATIVO" || v === "CAPITAL";
+
 export async function ensureRecurringGenerated(): Promise<number> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
 
+  // Traz todos os vencimentos já gerados de cada recorrência (para não duplicar
+  // tanto no modo mensal quanto no "a cada N dias").
   const entries = await prisma.recurringEntry.findMany({
     where: {
       active: true,
@@ -72,43 +95,58 @@ export async function ensureRecurringGenerated(): Promise<number> {
       OR: [{ endDate: null }, { endDate: { gte: monthStart } }],
     },
     include: {
-      payables: { where: { dueDate: { gte: monthStart, lt: monthEnd } }, select: { id: true } },
-      receivables: { where: { dueDate: { gte: monthStart, lt: monthEnd } }, select: { id: true } },
+      payables: { select: { dueDate: true } },
+      receivables: { select: { dueDate: true } },
     },
   });
 
   let created = 0;
   for (const entry of entries) {
-    const dueDate = currentMonthDue(entry.dayOfMonth);
-    if (entry.kind === "PAGAR" && entry.payables.length === 0) {
-      await prisma.payable.create({
-        data: {
-          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
-          description: entry.description,
-          category: entry.categoryPagar ?? "DESPESA_OPERACIONAL",
-          amount: entry.amount,
-          dueDate,
-          status: "PENDENTE",
-          supplierId: entry.supplierId,
-          recurringId: entry.id,
-          notes: entry.notes,
-        },
-      });
-      created++;
-    } else if (entry.kind === "RECEBER" && entry.receivables.length === 0) {
-      await prisma.receivable.create({
-        data: {
-          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
-          description: entry.description,
-          category: entry.categoryReceber ?? "OUTROS",
-          amount: entry.amount,
-          dueDate,
-          status: "PENDENTE",
-          customerId: entry.customerId,
-          recurringId: entry.id,
-          notes: entry.notes,
-        },
-      });
+    const center = await structuralCenterId(
+      isStructuralKey(entry.structuralKey) ? entry.structuralKey : "ADMINISTRATIVO",
+    );
+    const existingDays = new Set(
+      [...entry.payables, ...entry.receivables].map((t) => dayKey(t.dueDate)),
+    );
+
+    // Datas de vencimento a garantir: mensal (só o mês corrente) ou por intervalo.
+    const dueDates =
+      entry.intervalDays && entry.intervalDays > 0
+        ? intervalDueDates(entry.startDate, entry.intervalDays, entry.endDate)
+        : [currentMonthDue(entry.dayOfMonth)];
+
+    for (const dueDate of dueDates) {
+      if (existingDays.has(dayKey(dueDate))) continue;
+      if (entry.kind === "PAGAR") {
+        await prisma.payable.create({
+          data: {
+            costCenterId: center,
+            description: entry.description,
+            category: entry.categoryPagar ?? "DESPESA_OPERACIONAL",
+            amount: entry.amount,
+            dueDate,
+            status: "PENDENTE",
+            supplierId: entry.supplierId,
+            recurringId: entry.id,
+            notes: entry.notes,
+          },
+        });
+      } else {
+        await prisma.receivable.create({
+          data: {
+            costCenterId: center,
+            description: entry.description,
+            category: entry.categoryReceber ?? "OUTROS",
+            amount: entry.amount,
+            dueDate,
+            status: "PENDENTE",
+            customerId: entry.customerId,
+            recurringId: entry.id,
+            notes: entry.notes,
+          },
+        });
+      }
+      existingDays.add(dayKey(dueDate));
       created++;
     }
   }

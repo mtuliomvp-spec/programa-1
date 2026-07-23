@@ -895,6 +895,12 @@ model RecurringEntry {
   description     String
   amount          Float
   dayOfMonth      Int
+  // Fluxo estrutural (VEICULOS/ADMINISTRATIVO/CAPITAL) do título gerado; null =
+  // ADMINISTRATIVO (comportamento antigo).
+  structuralKey   String?
+  // Quando > 0, a recorrência é "a cada N dias" (a partir de startDate). Quando
+  // null, é mensal por dayOfMonth.
+  intervalDays    Int?
   categoryPagar   CategoriaPagar?
   categoryReceber CategoriaReceber?
   supplierId      String?

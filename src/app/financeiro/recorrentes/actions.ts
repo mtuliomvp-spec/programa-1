@@ -14,7 +14,10 @@ const recurringSchema = z.object({
   kind: z.enum(["PAGAR", "RECEBER"]),
   description: z.string().min(1, "Informe a descrição"),
   amount: z.coerce.number().positive("Informe um valor maior que zero"),
-  dayOfMonth: z.coerce.number().int().min(1, "Dia entre 1 e 31").max(31, "Dia entre 1 e 31"),
+  structuralKey: z.enum(["VEICULOS", "ADMINISTRATIVO", "CAPITAL"]).default("ADMINISTRATIVO"),
+  periodicidade: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
+  dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
+  intervalDays: z.coerce.number().int().min(1).max(365).optional(),
   categoryPagar: z
     .enum(["COMPRA_VEICULO", "COMPRA_PECA", "DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"])
     .optional(),
@@ -42,6 +45,10 @@ export async function createRecurringAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  const porDias = data.periodicidade === "DIAS";
+  if (porDias && !data.intervalDays) {
+    return { error: "Informe de quantos em quantos dias (1 a 365)." };
+  }
 
   try {
     await prisma.recurringEntry.create({
@@ -49,7 +56,9 @@ export async function createRecurringAction(
         kind: data.kind,
         description: data.description,
         amount: data.amount,
+        structuralKey: data.structuralKey,
         dayOfMonth: data.dayOfMonth,
+        intervalDays: porDias ? data.intervalDays : null,
         categoryPagar: data.kind === "PAGAR" ? data.categoryPagar ?? "DESPESA_OPERACIONAL" : null,
         categoryReceber: data.kind === "RECEBER" ? data.categoryReceber ?? "OUTROS" : null,
         supplierId: data.kind === "PAGAR" ? data.supplierId || null : null,
