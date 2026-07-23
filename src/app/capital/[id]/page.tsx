@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { getSelectableAccounts } from "@/lib/accounts";
+import { appliedTotalOf, freeCapitalOf } from "@/lib/investments";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CapitalTransactionForm from "./CapitalTransactionForm";
 import DeleteTransactionButton from "./DeleteTransactionButton";
 import IncludeClosingToggle from "./IncludeClosingToggle";
 import ProLaboreForm from "./ProLaboreForm";
+import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
 
 export const dynamic = "force-dynamic";
 
@@ -25,6 +28,41 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   const aportes = sum("APORTE");
   const retiradas = sum("RETIRADA");
   const proLabore = sum("PRO_LABORE");
+
+  // Capital aplicado x livre + fatias por conta de Aplicação.
+  const [appliedTotal, freeCapital, appliedRows, substitutesRaw, payAccounts] = await Promise.all([
+    appliedTotalOf(beneficiary.id),
+    freeCapitalOf(beneficiary.id),
+    prisma.investmentAllocation.groupBy({
+      by: ["accountId"],
+      where: { beneficiaryId: beneficiary.id },
+      _sum: { amount: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true, id: { not: beneficiary.id } },
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    }),
+    getSelectableAccounts(),
+  ]);
+  const appliedAccountIds = appliedRows.filter((r) => (r._sum.amount ?? 0) > 0.005).map((r) => r.accountId);
+  const appliedAccountNames = appliedAccountIds.length
+    ? await prisma.financialAccount.findMany({
+        where: { id: { in: appliedAccountIds } },
+        select: { id: true, name: true },
+      })
+    : [];
+  const nameById = new Map(appliedAccountNames.map((a) => [a.id, a.name]));
+  const appliedAccounts = appliedRows
+    .filter((r) => (r._sum.amount ?? 0) > 0.005)
+    .map((r) => ({
+      accountId: r.accountId,
+      accountName: nameById.get(r.accountId) ?? "—",
+      applied: Math.round((r._sum.amount ?? 0) * 100) / 100,
+    }));
+  const substitutes = await Promise.all(
+    substitutesRaw.map(async (s) => ({ id: s.id, name: s.name, free: await freeCapitalOf(s.id) })),
+  );
 
   return (
     <div>
@@ -47,6 +85,32 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         />
         <StatCard label="Pró-labore pago" value={formatCurrency(proLabore)} />
       </div>
+
+      {appliedTotal > 0 ? (
+        <div className="mb-4">
+          <div className="grid grid-cols-2 gap-4">
+            <StatCard label="Capital livre" value={formatCurrency(freeCapital)} hint="disponível para sacar/aplicar" tone={freeCapital >= 0 ? "positive" : "negative"} />
+            <StatCard label="Capital aplicado" value={formatCurrency(appliedTotal)} hint="investido em contas de aplicação" />
+          </div>
+          {appliedAccounts.length > 0 ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Aplicado em: {appliedAccounts.map((a) => `${a.accountName} (${formatCurrency(a.applied)})`).join(" · ")}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!beneficiary.isCompany && appliedTotal > 0 ? (
+        <div className="mb-4">
+          <SubstitutionWithdrawForm
+            beneficiaryId={beneficiary.id}
+            appliedAccounts={appliedAccounts}
+            substitutes={substitutes}
+            payAccounts={payAccounts}
+            today={toDateInputValue(new Date())}
+          />
+        </div>
+      ) : null}
 
       {!beneficiary.isCompany ? (
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">

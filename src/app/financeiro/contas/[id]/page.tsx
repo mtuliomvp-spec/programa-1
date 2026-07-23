@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { getAccountsWithBalances, getSelectableAccounts } from "@/lib/accounts";
+import { appliedByBeneficiary, reconcileInvestmentAccount, totalApplied } from "@/lib/investments";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import AccountFinancerSettings from "./AccountFinancerSettings";
+import InvestmentPanel from "./InvestmentPanel";
 
 export const dynamic = "force-dynamic";
 
@@ -33,6 +35,48 @@ export default async function AccountStatementPage({ params }: { params: Promise
   if (!account) notFound();
 
   const bal = balances.find((b) => b.id === id);
+
+  // Conta de Aplicação: mostra a razão do capital por sócio + operações.
+  if (account.isInvestment) {
+    const [applied, recon, beneficiaries, sourceAccounts] = await Promise.all([
+      appliedByBeneficiary(id),
+      reconcileInvestmentAccount(id),
+      prisma.capitalBeneficiary.findMany({
+        where: { active: true },
+        orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+        select: { id: true, name: true },
+      }),
+      getSelectableAccounts(),
+    ]);
+    const allocated = await totalApplied(id);
+    return (
+      <div>
+        <PageHeader
+          title={account.name}
+          description="Conta de Aplicação — investimento dos sócios"
+          action={
+            <LinkButton href="/financeiro/contas" variant="secondary">
+              ← Contas
+            </LinkButton>
+          }
+        />
+        <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <StatCard label="Saldo aplicado" value={formatCurrency(recon.balance)} tone="positive" />
+          <StatCard label="Sócios com dinheiro aqui" value={String(applied.length)} />
+        </div>
+        <InvestmentPanel
+          accountId={id}
+          balance={recon.balance}
+          allocated={allocated}
+          reconciled={recon.ok}
+          applied={applied}
+          beneficiaries={beneficiaries}
+          sourceAccounts={sourceAccounts}
+          today={toDateInputValue(new Date())}
+        />
+      </div>
+    );
+  }
 
   type Mov = { id: string; date: Date; description: string; who: string; kind: "entrada" | "saida"; amount: number };
   const movements: Mov[] = [

@@ -73,7 +73,7 @@ export default async function LivroCaixaPage({
       }),
       prisma.financialAccount.findMany({
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-        select: { id: true, name: true, initialBalance: true, active: true },
+        select: { id: true, name: true, initialBalance: true, active: true, isInvestment: true },
       }),
       prisma.accountTransfer.findMany({
         where: accountFilter
@@ -298,7 +298,7 @@ export default async function LivroCaixaPage({
       <div className="mb-4">
         {health.allOk ? (
           <CashEntryForm
-            accounts={accounts.filter((a) => a.active).map((a) => ({ id: a.id, name: a.name }))}
+            accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
             supplierNames={suppliers.map((s) => s.name)}
             vehicles={vehicleOptions}
             beneficiaries={beneficiaries}

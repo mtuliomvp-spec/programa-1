@@ -91,6 +91,14 @@ enum TipoCapital {
   PRO_LABORE
 }
 
+// Movimento de capital APLICADO numa conta Aplicação (investimento dos sócios).
+enum TipoAplicacao {
+  APLICAR       // sócio passa a ter capital aplicado na conta
+  RESGATAR      // sócio tira capital aplicado (direto da própria Aplicação)
+  RENDIMENTO    // juros creditados na conta, viram capital aplicado do sócio
+  SUBSTITUICAO  // troca de dono da fatia aplicada (saque por outra conta)
+}
+
 enum UserRole {
   ADMIN
   OPERADOR
@@ -148,12 +156,16 @@ model FinancialAccount {
   returnTaxPercent Float           @default(0)
   // % do retorno LÍQUIDO que vai para o vendedor como comissão (facultativo).
   sellerReturnPercent Float        @default(0)
+  // Conta de Aplicação (investimento dos sócios): o saldo é sempre distribuído
+  // entre os beneficiários do capital via InvestmentAllocation.
+  isInvestment   Boolean           @default(false)
   notes          String?
   payables       Payable[]
   receivables    Receivable[]
   transfersOut   AccountTransfer[] @relation("TransferFrom")
   transfersIn    AccountTransfer[] @relation("TransferTo")
   financedSales  Sale[]            @relation("SaleFinancer")
+  allocations    InvestmentAllocation[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -764,11 +776,37 @@ model CapitalBeneficiary {
   active       Boolean              @default(true)
   notes        String?
   transactions CapitalTransaction[]
+  allocations  InvestmentAllocation[]
   purchaseRequests PurchaseRequest[]
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 
   @@map("capital_beneficiaries")
+}
+
+// Razão do capital APLICADO: quanto de cada conta Aplicação pertence a cada
+// beneficiário. O saldo aplicado do sócio na conta é a soma de `amount`
+// (positivo credita, negativo debita). Para cada conta Aplicação, a soma de
+// todas as alocações tem de bater com o saldo da conta (invariante).
+model InvestmentAllocation {
+  id            String             @id @default(cuid())
+  accountId     String
+  account       FinancialAccount   @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  beneficiaryId String
+  beneficiary   CapitalBeneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  kind          TipoAplicacao
+  amount        Float
+  date          DateTime           @default(now())
+  description   String?
+  // Rastros dos lançamentos financeiros gerados (p/ estorno completo).
+  transferId    String?
+  receivableId  String?
+  payableId     String?
+  createdAt     DateTime           @default(now())
+
+  @@index([accountId])
+  @@index([beneficiaryId])
+  @@map("investment_allocations")
 }
 
 // Movimentação de capital: aportes entram no caixa (conta a receber

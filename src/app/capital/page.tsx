@@ -18,10 +18,16 @@ export default async function CapitalPage({
   const q = (qParam || "").trim();
   // A empresa dos Parâmetros sempre aparece como beneficiária própria
   await ensureCompanyBeneficiary();
-  const beneficiaries = await prisma.capitalBeneficiary.findMany({
-    include: { transactions: true },
-    orderBy: [{ isCompany: "desc" }, { name: "asc" }],
-  });
+  const [beneficiaries, allocationsByBenef] = await Promise.all([
+    prisma.capitalBeneficiary.findMany({
+      include: { transactions: true },
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+    }),
+    prisma.investmentAllocation.groupBy({ by: ["beneficiaryId"], _sum: { amount: true } }),
+  ]);
+  const appliedByBenef = new Map(
+    allocationsByBenef.map((a) => [a.beneficiaryId, Math.round((a._sum.amount ?? 0) * 100) / 100]),
+  );
 
   const withTotals = beneficiaries
     .map((b) => {
@@ -30,7 +36,9 @@ export default async function CapitalPage({
       const aportes = sum("APORTE");
       const retiradas = sum("RETIRADA");
       const proLabore = sum("PRO_LABORE");
-      return { ...b, aportes, retiradas, proLabore, saldo: aportes - retiradas };
+      const saldo = aportes - retiradas;
+      const aplicado = appliedByBenef.get(b.id) ?? 0;
+      return { ...b, aportes, retiradas, proLabore, saldo, aplicado, livre: saldo - aplicado };
     })
     .filter(
       (b) =>
@@ -87,6 +95,11 @@ export default async function CapitalPage({
                         Aportes {formatCurrency(b.aportes)} · Retiradas {formatCurrency(b.retiradas)}
                         {b.proLabore > 0 ? ` · Pró-labore pago ${formatCurrency(b.proLabore)}` : ""}
                       </p>
+                      {b.aplicado > 0 ? (
+                        <p className="mt-0.5 text-xs font-medium text-emerald-700">
+                          📈 Aplicado {formatCurrency(b.aplicado)} · Livre {formatCurrency(b.livre)}
+                        </p>
+                      ) : null}
                     </div>
                     <div className="text-right">
                       <p className="text-xs uppercase tracking-wide text-slate-400">Saldo investido</p>

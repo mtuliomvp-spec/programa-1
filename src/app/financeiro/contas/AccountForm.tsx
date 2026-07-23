@@ -8,6 +8,7 @@ import { createAccountAction, type ContaFormState } from "./actions";
 export default function AccountForm() {
   const [state, formAction, pending] = useActionState(createAccountAction, {} as ContaFormState);
   const [type, setType] = useState("CAIXA");
+  const [isInvestment, setIsInvestment] = useState(false);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -24,7 +25,24 @@ export default function AccountForm() {
           <option value="OUTRO">Outro</option>
         </Select>
       </Field>
-      {type === "FINANCEIRA" ? (
+      <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          name="isInvestment"
+          value="true"
+          checked={isInvestment}
+          onChange={(e) => setIsInvestment(e.target.checked)}
+          className="mt-0.5 h-4 w-4 rounded border-slate-300"
+        />
+        <span>
+          <strong>Conta de Aplicação</strong> (investimento dos sócios)
+          <span className="mt-0.5 block text-xs font-normal text-slate-400">
+            O saldo é dividido entre os sócios do Capital. Começa em zero — o dinheiro entra
+            pela tela da conta (Aplicar / Rendimento).
+          </span>
+        </span>
+      </label>
+      {type === "FINANCEIRA" && !isInvestment ? (
         <Field label="Desconto de impostos sobre o retorno (%)">
           <Input
             name="returnTaxPercent"
@@ -51,13 +69,17 @@ export default function AccountForm() {
       <Field label="Número da conta">
         <Input name="accountNumber" placeholder="00000-0" />
       </Field>
-      <Field label="Saldo inicial (R$)">
-        <Input name="initialBalance" type="number" step="0.01" defaultValue={0} />
-      </Field>
-      <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="isDefault" value="true" className="h-4 w-4 rounded border-slate-300" />
-        Usar como conta padrão das baixas
-      </label>
+      {!isInvestment ? (
+        <>
+          <Field label="Saldo inicial (R$)">
+            <Input name="initialBalance" type="number" step="0.01" defaultValue={0} />
+          </Field>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="isDefault" value="true" className="h-4 w-4 rounded border-slate-300" />
+            Usar como conta padrão das baixas
+          </label>
+        </>
+      ) : null}
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Salvando..." : "Cadastrar conta"}
       </Button>

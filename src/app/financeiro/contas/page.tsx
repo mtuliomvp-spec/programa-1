@@ -51,8 +51,8 @@ export default async function ContasPage({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Link href={`/financeiro/contas/${a.id}`} className="group min-w-0">
           <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900 group-hover:text-blue-700">
-            {a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
-            <Badge tone="default">{typeLabel[a.type]}</Badge>
+            {a.isInvestment ? "📈" : a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
+            <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
             {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
             <span className="text-xs font-normal text-blue-600 group-hover:underline">ver extrato →</span>
@@ -175,11 +175,13 @@ export default async function ContasPage({
               <AccountForm />
             </div>
           </Card>
-          {active.length >= 2 ? (
+          {active.filter((a) => !a.isInvestment).length >= 2 ? (
             <Card>
               <CardHeader title="Transferir entre contas" />
               <div className="p-5">
-                <TransferForm accounts={active.map((a) => ({ id: a.id, name: a.name }))} />
+                <TransferForm
+                  accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                />
               </div>
             </Card>
           ) : null}

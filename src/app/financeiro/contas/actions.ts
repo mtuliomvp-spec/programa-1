@@ -65,6 +65,7 @@ const accountSchema = z.object({
   accountNumber: z.string().optional(),
   initialBalance: z.coerce.number().default(0),
   isDefault: z.coerce.boolean().optional(),
+  isInvestment: z.coerce.boolean().optional(),
   returnTaxPercent: z.coerce.number().min(0).max(100).default(0),
 });
 
@@ -82,7 +83,10 @@ export async function createAccountAction(
   const data = parsed.data;
 
   const count = await prisma.financialAccount.count();
-  const isDefault = Boolean(data.isDefault) || count === 0;
+  // Conta de Aplicação nunca é a conta padrão das baixas nem começa com saldo:
+  // o saldo dela é construído pelas operações de aplicação (razão por sócio).
+  const isInvestment = Boolean(data.isInvestment);
+  const isDefault = !isInvestment && (Boolean(data.isDefault) || count === 0);
 
   await prisma.$transaction(async (tx) => {
     if (isDefault) {
@@ -95,9 +99,10 @@ export async function createAccountAction(
         bankName: data.bankName || null,
         agency: data.agency || null,
         accountNumber: data.accountNumber || null,
-        initialBalance: data.initialBalance,
+        initialBalance: isInvestment ? 0 : data.initialBalance,
         isDefault,
-        returnTaxPercent: data.type === "FINANCEIRA" ? data.returnTaxPercent : 0,
+        isInvestment,
+        returnTaxPercent: data.type === "FINANCEIRA" && !isInvestment ? data.returnTaxPercent : 0,
       },
     });
   });
@@ -177,6 +182,16 @@ export async function createTransferAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;
   if (data.fromId === data.toId) return { error: "Origem e destino precisam ser contas diferentes." };
+  const invest = await prisma.financialAccount.findMany({
+    where: { id: { in: [data.fromId, data.toId] }, isInvestment: true },
+    select: { id: true },
+  });
+  if (invest.length > 0) {
+    return {
+      error:
+        "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).",
+    };
+  }
   try {
     await assertMonthOpen(parseDateInput(data.date));
   } catch (e) {

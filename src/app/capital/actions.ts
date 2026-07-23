@@ -175,6 +175,41 @@ export async function toggleIncludeClosingAction(
   return { ok: true };
 }
 
+/**
+ * Retirada com substituição: o sócio saca por outra conta, mas o dinheiro dele
+ * está aplicado numa conta Aplicação; um substituto assume a fatia aplicada.
+ */
+export async function withdrawWithSubstituteAction(
+  _prev: CapitalFormState,
+  formData: FormData,
+): Promise<CapitalFormState> {
+  const date = parseDateInput(String(formData.get("date") || ""));
+  try {
+    await assertCan("administrativo", "capital");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    const { assertMonthOpen } = await import("@/lib/monthly-closing");
+    await assertMonthOpen(date);
+    const { retirarComSubstituicao } = await import("@/lib/investments");
+    await retirarComSubstituicao({
+      accountId: String(formData.get("accountId") || ""),
+      beneficiaryId: String(formData.get("beneficiaryId") || ""),
+      substituteId: String(formData.get("substituteId") || ""),
+      amount: Number(formData.get("amount") || 0),
+      date,
+      payFromAccountId: String(formData.get("payFromAccountId") || ""),
+      description: String(formData.get("description") || "") || null,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível registrar a retirada." };
+  }
+  revalidatePath(`/capital/${String(formData.get("beneficiaryId") || "")}`);
+  revalidatePath("/capital");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  return {};
+}
+
 export async function deleteCapitalTransactionAction(id: string, beneficiaryId: string) {
   await assertCan("administrativo", "capital");
   await prisma.$transaction(async (tx) => {

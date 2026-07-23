@@ -43,11 +43,34 @@ export async function getNeutralAccountId(): Promise<string> {
   return created.id;
 }
 
+// Usada nos seletores de baixa (a-pagar/a-receber/estoque/conciliação): exclui
+// contas de Aplicação — o dinheiro delas só entra/sai pelo fluxo de aplicação.
 export async function getActiveAccounts() {
   return prisma.financialAccount.findMany({
-    where: { active: true },
+    where: { active: true, isInvestment: false },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     select: { id: true, name: true, type: true, isDefault: true },
+  });
+}
+
+/**
+ * Contas comuns para os seletores de baixa/transferência: exclui as contas de
+ * Aplicação (o dinheiro delas só entra/sai pelas operações de aplicação, que
+ * mantêm a razão do capital por sócio batendo com o saldo).
+ */
+export async function getSelectableAccounts() {
+  return prisma.financialAccount.findMany({
+    where: { active: true, isInvestment: false },
+    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, type: true, isDefault: true },
+  });
+}
+
+export async function getInvestmentAccounts() {
+  return prisma.financialAccount.findMany({
+    where: { active: true, isInvestment: true },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true },
   });
 }
 
@@ -59,6 +82,7 @@ export type AccountWithBalance = {
   agency: string | null;
   accountNumber: string | null;
   isDefault: boolean;
+  isInvestment: boolean;
   active: boolean;
   initialBalance: number;
   received: number;
@@ -106,6 +130,7 @@ export async function getAccountsWithBalances(): Promise<AccountWithBalance[]> {
       agency: account.agency,
       accountNumber: account.accountNumber,
       isDefault: account.isDefault,
+      isInvestment: account.isInvestment,
       active: account.active,
       initialBalance: account.initialBalance,
       received: receivedTotal,
