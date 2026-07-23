@@ -17,7 +17,9 @@ type Vehicle = {
 
 type Beneficiary = { id: string; name: string };
 
-type SplitRow = { beneficiaryId: string; percent: string };
+type SplitMode = "PERCENT" | "VALOR";
+// `value` é o número digitado no modo atual (percentual ou R$).
+type SplitRow = { beneficiaryId: string; value: string };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -35,14 +37,16 @@ export default function RemuneracaoForm({
 
   const [rate, setRate] = useState("");
   const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [splits, setSplits] = useState<SplitRow[]>([{ beneficiaryId: "", percent: "100" }]);
+  const [splitMode, setSplitMode] = useState<SplitMode>("PERCENT");
+  const [splits, setSplits] = useState<SplitRow[]>([{ beneficiaryId: "", value: "100" }]);
 
   // Reseta o formulário após uma execução bem-sucedida.
   useEffect(() => {
     if (state.ok) {
       setRate("");
       setSelected({});
-      setSplits([{ beneficiaryId: "", percent: "100" }]);
+      setSplitMode("PERCENT");
+      setSplits([{ beneficiaryId: "", value: "100" }]);
     }
   }, [state.ok]);
 
@@ -61,8 +65,31 @@ export default function RemuneracaoForm({
     [vehicles, selected, rateNum],
   );
 
-  const somaPercent = round2(splits.reduce((s, r) => s + (Number(r.percent.replace(",", ".")) || 0), 0));
-  const percentOk = Math.abs(somaPercent - 100) < 0.01;
+  const num = (s: string) => Number(s.replace(",", ".")) || 0;
+  const somaRateio = round2(splits.reduce((s, r) => s + num(r.value), 0));
+  const percentOk = splitMode === "PERCENT" && Math.abs(somaRateio - 100) < 0.01;
+  const valorOk = splitMode === "VALOR" && totalJuros > 0 && Math.abs(somaRateio - totalJuros) < 0.01;
+  const rateioOk = splitMode === "PERCENT" ? percentOk : valorOk;
+  const faltaValor = round2(totalJuros - somaRateio);
+
+  // Troca o modo do rateio, convertendo os números quando há total de juros.
+  const changeMode = (mode: SplitMode) => {
+    if (mode === splitMode) return;
+    setSplits((prev) =>
+      prev.map((r) => {
+        const v = num(r.value);
+        let converted = "";
+        if (totalJuros > 0) {
+          converted =
+            mode === "VALOR"
+              ? String(round2((totalJuros * v) / 100))
+              : String(round2((v / totalJuros) * 100));
+        }
+        return { ...r, value: converted };
+      }),
+    );
+    setSplitMode(mode);
+  };
 
   const toggleAll = () => {
     if (allChecked) setSelected({});
@@ -71,12 +98,15 @@ export default function RemuneracaoForm({
 
   const splitsPayload = JSON.stringify(
     splits
-      .map((r) => ({ beneficiaryId: r.beneficiaryId, percent: Number(r.percent.replace(",", ".")) || 0 }))
-      .filter((r) => r.beneficiaryId && r.percent > 0),
+      .map((r) =>
+        splitMode === "VALOR"
+          ? { beneficiaryId: r.beneficiaryId, amount: num(r.value) }
+          : { beneficiaryId: r.beneficiaryId, percent: num(r.value) },
+      )
+      .filter((r) => r.beneficiaryId),
   );
 
-  const canSubmit =
-    rateNum > 0 && selectedIds.length > 0 && percentOk && !pending;
+  const canSubmit = rateNum > 0 && selectedIds.length > 0 && rateioOk && !pending;
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -169,11 +199,36 @@ export default function RemuneracaoForm({
       {/* Coluna direita: rateio + data + total + submit */}
       <div className="space-y-4">
         <Card className="px-5 py-4">
-          <h2 className="text-base font-semibold text-slate-900">Rateio do capital</h2>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-base font-semibold text-slate-900">Rateio do capital</h2>
+            <div className="inline-flex rounded-lg border border-slate-200 p-0.5 text-sm">
+              <button
+                type="button"
+                onClick={() => changeMode("PERCENT")}
+                className={`rounded-md px-3 py-1 font-medium ${
+                  splitMode === "PERCENT" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Por %
+              </button>
+              <button
+                type="button"
+                onClick={() => changeMode("VALOR")}
+                className={`rounded-md px-3 py-1 font-medium ${
+                  splitMode === "VALOR" ? "bg-blue-600 text-white" : "text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                Por R$
+              </button>
+            </div>
+          </div>
           <p className="mt-0.5 text-xs text-slate-500">
-            Distribua o total de juros entre os sócios. A soma deve dar 100%.
+            {splitMode === "PERCENT"
+              ? "Distribua o total de juros entre os sócios. A soma deve dar 100%."
+              : "Informe quanto cada sócio recebe. A soma deve dar o total de juros."}
           </p>
           <input type="hidden" name="splits" value={splitsPayload} />
+          <input type="hidden" name="splitMode" value={splitMode} />
           <div className="mt-3 space-y-2">
             {splits.map((row, i) => (
               <div key={i} className="flex items-center gap-2">
@@ -193,22 +248,26 @@ export default function RemuneracaoForm({
                     </option>
                   ))}
                 </Select>
-                <div className="relative w-24">
+                <div className={`relative ${splitMode === "VALOR" ? "w-32" : "w-24"}`}>
                   <Input
                     type="number"
                     step="0.01"
                     min="0"
                     inputMode="decimal"
-                    value={row.percent}
+                    value={row.value}
                     onChange={(e) =>
                       setSplits((prev) =>
-                        prev.map((r, idx) => (idx === i ? { ...r, percent: e.target.value } : r)),
+                        prev.map((r, idx) => (idx === i ? { ...r, value: e.target.value } : r)),
                       )
                     }
-                    className="pr-6"
+                    className={splitMode === "VALOR" ? "pl-9" : "pr-6"}
                   />
-                  <span className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sm text-slate-400">
-                    %
+                  <span
+                    className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-sm text-slate-400 ${
+                      splitMode === "VALOR" ? "left-2.5" : "right-2"
+                    }`}
+                  >
+                    {splitMode === "VALOR" ? "R$" : "%"}
                   </span>
                 </div>
                 {splits.length > 1 ? (
@@ -226,15 +285,28 @@ export default function RemuneracaoForm({
           </div>
           <button
             type="button"
-            onClick={() => setSplits((prev) => [...prev, { beneficiaryId: "", percent: "" }])}
+            onClick={() => setSplits((prev) => [...prev, { beneficiaryId: "", value: "" }])}
             className="mt-2 text-sm font-medium text-blue-600 hover:text-blue-700"
           >
             + Adicionar sócio
           </button>
-          <p className={`mt-2 text-sm font-medium ${percentOk ? "text-emerald-600" : "text-rose-600"}`}>
-            Soma: {somaPercent.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
-            {percentOk ? " ✓" : " (precisa somar 100%)"}
-          </p>
+          {splitMode === "PERCENT" ? (
+            <p className={`mt-2 text-sm font-medium ${percentOk ? "text-emerald-600" : "text-rose-600"}`}>
+              Soma: {somaRateio.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}%
+              {percentOk ? " ✓" : " (precisa somar 100%)"}
+            </p>
+          ) : (
+            <p className={`mt-2 text-sm font-medium ${valorOk ? "text-emerald-600" : "text-rose-600"}`}>
+              Soma: {formatCurrency(somaRateio)} de {formatCurrency(totalJuros)}
+              {valorOk
+                ? " ✓"
+                : totalJuros <= 0
+                  ? " (selecione veículos e a taxa)"
+                  : faltaValor > 0
+                    ? ` (faltam ${formatCurrency(faltaValor)})`
+                    : ` (excede ${formatCurrency(-faltaValor)})`}
+            </p>
+          )}
         </Card>
 
         <Card className="px-5 py-4 space-y-3">

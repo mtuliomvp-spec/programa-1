@@ -9,7 +9,7 @@ import { runStockInterest, reverseStockInterest } from "@/lib/stock-interest";
 
 export type StockInterestFormState = { error?: string; ok?: boolean };
 
-type SplitInput = { beneficiaryId: string; percent: number };
+type SplitInput = { beneficiaryId: string; percent?: number; amount?: number };
 
 /**
  * Roda a rotina de remuneração de capital sobre o estoque. Recebe do form:
@@ -30,14 +30,19 @@ export async function runStockInterestAction(
   const vehicleIds = formData.getAll("vehicleIds").map((v) => String(v)).filter(Boolean);
   const date = parseDateInput(String(formData.get("date") || ""));
   const description = String(formData.get("description") || "").trim() || null;
+  const splitMode = String(formData.get("splitMode") || "PERCENT") === "VALOR" ? "VALOR" : "PERCENT";
 
   let splits: SplitInput[] = [];
   try {
     const raw = JSON.parse(String(formData.get("splits") || "[]"));
     if (Array.isArray(raw)) {
       splits = raw
-        .map((s) => ({ beneficiaryId: String(s.beneficiaryId || ""), percent: Number(s.percent) }))
-        .filter((s) => s.beneficiaryId && Number.isFinite(s.percent));
+        .map((s) => ({
+          beneficiaryId: String(s.beneficiaryId || ""),
+          percent: Number(s.percent),
+          amount: Number(s.amount),
+        }))
+        .filter((s) => s.beneficiaryId);
     }
   } catch {
     return { error: "Rateio inválido." };
@@ -50,6 +55,7 @@ export async function runStockInterestAction(
       ratePercent,
       vehicleIds,
       splits,
+      splitMode,
       date,
       description,
       createdBy: user?.name || null,

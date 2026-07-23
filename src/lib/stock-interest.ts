@@ -75,12 +75,16 @@ export async function stockVehiclesForInterest(): Promise<StockVehicleForInteres
   });
 }
 
-export type StockInterestSplit = { beneficiaryId: string; percent: number };
+// O rateio pode ser informado por percentual (`percent`, soma 100%) ou por
+// valor em R$ (`amount`, soma = total de juros). O modo é escolhido por
+// `splitMode` — o campo não usado no modo escolhido é ignorado.
+export type StockInterestSplit = { beneficiaryId: string; percent?: number; amount?: number };
 
 export type RunStockInterestInput = {
   ratePercent: number;
   vehicleIds: string[];
   splits: StockInterestSplit[];
+  splitMode?: "PERCENT" | "VALOR";
   date: Date;
   description?: string | null;
   createdBy?: string | null;
@@ -100,14 +104,14 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
   if (!input.vehicleIds.length) {
     throw new Error("Escolha ao menos um veículo.");
   }
-  const splits = input.splits.filter((s) => s.beneficiaryId && Number.isFinite(s.percent) && s.percent > 0);
+  const splitMode = input.splitMode ?? "PERCENT";
+  const value = (s: StockInterestSplit) => (splitMode === "VALOR" ? s.amount : s.percent) ?? 0;
+  const splits = input.splits.filter((s) => s.beneficiaryId && Number.isFinite(value(s)) && value(s) > 0);
   if (!splits.length) {
     throw new Error("Informe ao menos um beneficiário no rateio.");
   }
-  const somaPercent = splits.reduce((s, x) => s + x.percent, 0);
-  if (Math.abs(somaPercent - 100) > 0.01) {
-    throw new Error("A soma dos percentuais do rateio deve ser 100%.");
-  }
+  // A validação da soma (100% ou = total de juros) acontece após calcular o
+  // total, mais abaixo, junto da montagem das fatias.
 
   const vehicles = await prisma.vehicle.findMany({
     where: { id: { in: input.vehicleIds } },
@@ -149,11 +153,37 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
   }
   const nameById = new Map(beneficiaries.map((b) => [b.id, b.name]));
 
-  // Rateio do total pelos percentuais; a última parte fecha o arredondamento.
-  const shares = splits.map((s, i) =>
-    i === splits.length - 1 ? 0 : round2((totalInterest * s.percent) / 100),
+  // Monta as fatias do total conforme o modo. Em ambos, a última fatia > 0
+  // absorve a diferença de centavos para somar exatamente `totalInterest`
+  // (protege o invariante Banco Neutro = 0).
+  let shares: number[];
+  if (splitMode === "VALOR") {
+    const somaValor = round2(splits.reduce((s, x) => s + (x.amount ?? 0), 0));
+    if (Math.abs(somaValor - totalInterest) > 0.01) {
+      throw new Error(
+        `A soma dos valores do rateio (${somaValor.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        })}) deve ser igual ao total de juros (${totalInterest.toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        })}).`,
+      );
+    }
+    shares = splits.map((s) => round2(s.amount ?? 0));
+  } else {
+    const somaPercent = splits.reduce((s, x) => s + (x.percent ?? 0), 0);
+    if (Math.abs(somaPercent - 100) > 0.01) {
+      throw new Error("A soma dos percentuais do rateio deve ser 100%.");
+    }
+    shares = splits.map((s, i) =>
+      i === splits.length - 1 ? 0 : round2((totalInterest * (s.percent ?? 0)) / 100),
+    );
+  }
+  // Fecha o arredondamento na última fatia para somar exatamente o total.
+  shares[shares.length - 1] = round2(
+    totalInterest - shares.slice(0, -1).reduce((s, x) => s + x, 0),
   );
-  shares[shares.length - 1] = round2(totalInterest - shares.slice(0, -1).reduce((s, x) => s + x, 0));
 
   const [veiculosCenter, capitalCenter, neutralAccountId] = await Promise.all([
     structuralCenterId("VEICULOS"),
