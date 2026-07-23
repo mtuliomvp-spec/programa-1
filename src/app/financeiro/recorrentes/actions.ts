@@ -24,6 +24,7 @@ const recurringSchema = z.object({
   categoryReceber: z.enum(["VENDA_VEICULO", "VENDA_PECA", "OUTROS"]).optional(),
   supplierId: z.string().optional(),
   customerId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
   startDate: z.string().min(1),
   endDate: z.string().optional(),
   notes: z.string().optional(),
@@ -49,6 +50,10 @@ export async function createRecurringAction(
   if (porDias && !data.intervalDays) {
     return { error: "Informe de quantos em quantos dias (1 a 365)." };
   }
+  const isCapital = data.structuralKey === "CAPITAL";
+  if (isCapital && !data.capitalBeneficiaryId) {
+    return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
+  }
 
   try {
     await prisma.recurringEntry.create({
@@ -59,10 +64,12 @@ export async function createRecurringAction(
         structuralKey: data.structuralKey,
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
-        categoryPagar: data.kind === "PAGAR" ? data.categoryPagar ?? "DESPESA_OPERACIONAL" : null,
-        categoryReceber: data.kind === "RECEBER" ? data.categoryReceber ?? "OUTROS" : null,
-        supplierId: data.kind === "PAGAR" ? data.supplierId || null : null,
-        customerId: data.kind === "RECEBER" ? data.customerId || null : null,
+        // No fluxo Capital a categoria não é despesa/receita — usa OUTROS.
+        categoryPagar: data.kind === "PAGAR" ? (isCapital ? "OUTROS" : data.categoryPagar ?? "DESPESA_OPERACIONAL") : null,
+        categoryReceber: data.kind === "RECEBER" ? (isCapital ? "OUTROS" : data.categoryReceber ?? "OUTROS") : null,
+        supplierId: data.kind === "PAGAR" && !isCapital ? data.supplierId || null : null,
+        customerId: data.kind === "RECEBER" && !isCapital ? data.customerId || null : null,
+        capitalBeneficiaryId: isCapital ? data.capitalBeneficiaryId || null : null,
         startDate: parseDateInput(data.startDate),
         endDate: data.endDate ? parseDateInput(data.endDate) : null,
         notes: data.notes || null,

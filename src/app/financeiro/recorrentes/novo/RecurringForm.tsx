@@ -11,13 +11,17 @@ type Option = { id: string; name: string };
 export default function RecurringForm({
   suppliers,
   customers,
+  beneficiaries,
 }: {
   suppliers: Option[];
   customers: Option[];
+  beneficiaries: Option[];
 }) {
   const [state, formAction, pending] = useActionState(createRecurringAction, {} as RecurringFormState);
   const [kind, setKind] = useState<"PAGAR" | "RECEBER">("PAGAR");
   const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">("MENSAL");
+  const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
+  const isCapital = flow === "CAPITAL";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -47,7 +51,7 @@ export default function RecurringForm({
           <Input type="number" step="0.01" min={0.01} name="amount" required />
         </Field>
         <Field label="Fluxo (obra estrutural)" required>
-          <Select name="structuralKey" defaultValue="ADMINISTRATIVO">
+          <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
             {STRUCTURAL_FLOWS.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.name}
@@ -77,7 +81,23 @@ export default function RecurringForm({
           </Field>
         )}
 
-        {kind === "PAGAR" ? (
+        {isCapital ? (
+          <Field label="Sócio (beneficiário)" required>
+            <Select name="capitalBeneficiaryId" defaultValue="" required>
+              <option value="">Selecione o sócio</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              {kind === "PAGAR"
+                ? "Cada título vira uma RETIRADA do sócio quando você paga."
+                : "Cada título vira um APORTE do sócio quando você recebe."}
+            </p>
+          </Field>
+        ) : kind === "PAGAR" ? (
           <>
             <Field label="Categoria" required>
               <Select name="categoryPagar" defaultValue="DESPESA_OPERACIONAL">

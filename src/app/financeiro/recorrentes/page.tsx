@@ -36,7 +36,7 @@ export default async function RecorrentesPage({
   const q = (qParam || "").trim();
 
   const allEntries = await prisma.recurringEntry.findMany({
-    include: { supplier: true, customer: true },
+    include: { supplier: true, customer: true, capitalBeneficiary: true },
     orderBy: [{ active: "desc" }, { dayOfMonth: "asc" }],
   });
   const entries = allEntries.filter(
@@ -118,8 +118,14 @@ export default async function RecorrentesPage({
                     </Badge>
                   </Td>
                   <Td>{flowLabel[e.structuralKey ?? "ADMINISTRATIVO"]}</Td>
-                  <Td>{categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"]}</Td>
-                  <Td>{e.supplier?.name || e.customer?.name || "-"}</Td>
+                  <Td>
+                    {e.structuralKey === "CAPITAL"
+                      ? e.kind === "PAGAR"
+                        ? "Retirada"
+                        : "Aporte"
+                      : categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"]}
+                  </Td>
+                  <Td>{e.capitalBeneficiary?.name || e.supplier?.name || e.customer?.name || "-"}</Td>
                   <Td className="text-right tabular-nums">
                     {e.intervalDays && e.intervalDays > 0 ? `a cada ${e.intervalDays} dias` : `dia ${e.dayOfMonth}`}
                   </Td>

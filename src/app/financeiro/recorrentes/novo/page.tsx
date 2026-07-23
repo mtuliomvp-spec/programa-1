@@ -5,9 +5,14 @@ import RecurringForm from "./RecurringForm";
 export const dynamic = "force-dynamic";
 
 export default async function NovaRecorrenciaPage() {
-  const [suppliers, customers] = await Promise.all([
+  const [suppliers, customers, beneficiaries] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    }),
   ]);
 
   return (
@@ -19,7 +24,7 @@ export default async function NovaRecorrenciaPage() {
       <Card>
         <CardHeader title="Dados da recorrência" />
         <div className="p-5">
-          <RecurringForm suppliers={suppliers} customers={customers} />
+          <RecurringForm suppliers={suppliers} customers={customers} beneficiaries={beneficiaries} />
         </div>
       </Card>
     </div>

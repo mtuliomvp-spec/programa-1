@@ -115,6 +115,12 @@ export async function ensureRecurringGenerated(): Promise<number> {
         ? intervalDueDates(entry.startDate, entry.intervalDays, entry.endDate)
         : [currentMonthDue(entry.dayOfMonth)];
 
+    // Fluxo Capital: o título carrega o sócio e, quando for baixado, lança o
+    // aporte/retirada dele (sync na baixa). Categoria = OUTROS (capital não é
+    // despesa/receita). Sem sócio definido, cai para o comportamento comum.
+    const isCapital = entry.structuralKey === "CAPITAL" && !!entry.capitalBeneficiaryId;
+    const capitalBeneficiaryId = isCapital ? entry.capitalBeneficiaryId : null;
+
     for (const dueDate of dueDates) {
       if (existingDays.has(dayKey(dueDate))) continue;
       if (entry.kind === "PAGAR") {
@@ -122,11 +128,12 @@ export async function ensureRecurringGenerated(): Promise<number> {
           data: {
             costCenterId: center,
             description: entry.description,
-            category: entry.categoryPagar ?? "DESPESA_OPERACIONAL",
+            category: isCapital ? "OUTROS" : entry.categoryPagar ?? "DESPESA_OPERACIONAL",
             amount: entry.amount,
             dueDate,
             status: "PENDENTE",
             supplierId: entry.supplierId,
+            capitalBeneficiaryId,
             recurringId: entry.id,
             notes: entry.notes,
           },
@@ -136,11 +143,12 @@ export async function ensureRecurringGenerated(): Promise<number> {
           data: {
             costCenterId: center,
             description: entry.description,
-            category: entry.categoryReceber ?? "OUTROS",
+            category: isCapital ? "OUTROS" : entry.categoryReceber ?? "OUTROS",
             amount: entry.amount,
             dueDate,
             status: "PENDENTE",
             customerId: entry.customerId,
+            capitalBeneficiaryId,
             recurringId: entry.id,
             notes: entry.notes,
           },

@@ -1240,34 +1240,115 @@ export async function registerPartSale(input: {
 // Baixas manuais
 // ---------------------------------------------------------------------------
 
+/**
+ * Sincroniza o lançamento de capital (RETIRADA) de um título A PAGAR do fluxo
+ * Capital com o status dele: cria a retirada quando PAGO (dinheiro saiu), remove
+ * quando volta a PENDENTE. Idempotente — o capital só se move junto do dinheiro,
+ * mantendo o farol consistente. No-op para títulos sem beneficiário de capital.
+ */
+export async function syncPayableCapital(payableId: string) {
+  const p = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: {
+      id: true,
+      capitalBeneficiaryId: true,
+      status: true,
+      amount: true,
+      paymentDate: true,
+      dueDate: true,
+      description: true,
+    },
+  });
+  if (!p || !p.capitalBeneficiaryId) return;
+  const existing = await prisma.capitalTransaction.findFirst({ where: { payableId: p.id } });
+  if (p.status === "PAGO") {
+    if (!existing) {
+      await prisma.capitalTransaction.create({
+        data: {
+          beneficiaryId: p.capitalBeneficiaryId,
+          kind: "RETIRADA",
+          amount: p.amount,
+          date: p.paymentDate ?? p.dueDate,
+          description: p.description,
+          payableId: p.id,
+        },
+      });
+    }
+  } else if (existing) {
+    await prisma.capitalTransaction.delete({ where: { id: existing.id } });
+  }
+}
+
+/** Igual ao anterior, para títulos A RECEBER do fluxo Capital (APORTE ao receber). */
+export async function syncReceivableCapital(receivableId: string) {
+  const r = await prisma.receivable.findUnique({
+    where: { id: receivableId },
+    select: {
+      id: true,
+      capitalBeneficiaryId: true,
+      status: true,
+      amount: true,
+      receivedDate: true,
+      dueDate: true,
+      description: true,
+    },
+  });
+  if (!r || !r.capitalBeneficiaryId) return;
+  const existing = await prisma.capitalTransaction.findFirst({ where: { receivableId: r.id } });
+  if (r.status === "RECEBIDO") {
+    if (!existing) {
+      await prisma.capitalTransaction.create({
+        data: {
+          beneficiaryId: r.capitalBeneficiaryId,
+          kind: "APORTE",
+          amount: r.amount,
+          date: r.receivedDate ?? r.dueDate,
+          description: r.description,
+          receivableId: r.id,
+        },
+      });
+    }
+  } else if (existing) {
+    await prisma.capitalTransaction.delete({ where: { id: existing.id } });
+  }
+}
+
 export async function markPayablePaid(id: string, paymentDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
-  return prisma.payable.update({
+  const updated = await prisma.payable.update({
     where: { id },
     data: { status: "PAGO", paymentDate, accountId: account },
   });
+  await syncPayableCapital(id);
+  return updated;
 }
 
 export async function markPayablePending(id: string) {
-  return prisma.payable.update({
+  const updated = await prisma.payable.update({
     where: { id },
     data: { status: "PENDENTE", paymentDate: null, accountId: null },
   });
+  await syncPayableCapital(id);
+  return updated;
 }
 
 export async function markReceivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
-  return prisma.receivable.update({
+  const updated = await prisma.receivable.update({
     where: { id },
     data: { status: "RECEBIDO", receivedDate, accountId: account },
   });
+  await syncReceivableCapital(id);
+  return updated;
 }
 
 export async function markReceivablePending(id: string) {
-  return prisma.receivable.update({
+  const updated = await prisma.receivable.update({
     where: { id },
     data: { status: "PENDENTE", receivedDate: null, accountId: null },
   });
+  await syncReceivableCapital(id);
+  return updated;
 }
 
 /**
@@ -1290,15 +1371,19 @@ export async function receiveReceivable(
 
   // Pagamento integral (ou do valor cheio): baixa o próprio título.
   if (pay >= r.amount) {
-    return prisma.receivable.update({
+    const updated = await prisma.receivable.update({
       where: { id },
       data: { status: "RECEBIDO", receivedDate, accountId: account },
     });
+    await syncReceivableCapital(id);
+    return updated;
   }
 
-  // Parcial: cria a parcela recebida e reduz o pendente do original.
-  return prisma.$transaction(async (tx) => {
-    await tx.receivable.create({
+  // Parcial: cria a parcela recebida e reduz o pendente do original. A parcela
+  // recebida carrega o beneficiário do capital (gera o APORTE só da parte paga);
+  // o pendente restante continua sem lançamento de capital.
+  const partial = await prisma.$transaction(async (tx) => {
+    const created = await tx.receivable.create({
       data: {
         description: `${r.description} - Pagamento parcial`,
         category: r.category,
@@ -1312,14 +1397,18 @@ export async function receiveReceivable(
         installmentNumber: r.installmentNumber,
         totalInstallments: r.totalInstallments,
         costCenterId: r.costCenterId,
+        capitalBeneficiaryId: r.capitalBeneficiaryId,
         accountId: account,
       },
     });
-    return tx.receivable.update({
+    const orig = await tx.receivable.update({
       where: { id },
       data: { amount: Math.round((r.amount - pay) * 100) / 100 },
     });
+    return { createdId: created.id, orig };
   });
+  await syncReceivableCapital(partial.createdId);
+  return partial.orig;
 }
 
 export async function createManualPayable(input: {
@@ -1676,6 +1765,7 @@ export async function createExpensePayable(input: {
         costCenterId: centerId,
         supplierId: input.supplierId || null,
         vehicleId: input.vehicleId || null,
+        capitalBeneficiaryId: input.capitalBeneficiaryId || null,
         notes: input.notes || null,
       },
     });
@@ -1695,13 +1785,16 @@ export async function createExpensePayable(input: {
         },
       });
     }
-    if (input.capitalBeneficiaryId) {
+    // Capital (retirada) só se move junto com o dinheiro: cria aqui quando o
+    // título já nasce PAGO; se nascer pendente, a retirada é lançada na baixa
+    // (markPayablePaid → syncPayableCapital), mantendo o farol consistente.
+    if (input.capitalBeneficiaryId && input.paid) {
       await tx.capitalTransaction.create({
         data: {
           beneficiaryId: input.capitalBeneficiaryId,
           kind: "RETIRADA",
           amount: input.amount,
-          date: input.dueDate,
+          date: input.paymentDate || input.dueDate,
           description: input.description,
           payableId: payable.id,
         },
@@ -1745,6 +1838,7 @@ export async function createCashEntry(input: {
           costCenterId: centerId,
           vehicleId: input.vehicleId || null,
           customerId: input.customerId || null,
+          capitalBeneficiaryId: input.capitalBeneficiaryId || null,
           notes: input.notes || null,
         },
       });
