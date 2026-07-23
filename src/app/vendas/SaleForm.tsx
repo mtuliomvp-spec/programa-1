@@ -51,6 +51,7 @@ export type SaleFormInitial = {
   tiTransmission?: string;
   tiChassi?: string;
   tiNegotiated?: number;
+  tiSalePrice?: number;
   tiPayoff?: number;
   tiPayoffTo?: string;
   tiDebts?: number;
@@ -170,6 +171,7 @@ export default function SaleForm({
   // Troca (veículo recebido do cliente, cadastrado aqui mesmo)
   const [tradeIn, setTradeIn] = useState(!!initial?.tradeIn);
   const [tiNegotiated, setTiNegotiated] = useState(initial?.tiNegotiated ?? 0);
+  const [tiSalePrice, setTiSalePrice] = useState(initial?.tiSalePrice ?? 0);
   const [tiPayoff, setTiPayoff] = useState(initial?.tiPayoff ?? 0);
   const [tiDebts, setTiDebts] = useState(initial?.tiDebts ?? 0);
   // Fornecedor do veículo recebido em troca: por padrão é o próprio cliente que
@@ -262,7 +264,13 @@ export default function SaleForm({
       setTiField("tiFuel", dt.fuel);
       setTiField("tiTransmission", dt.transmission);
       setTiField("tiChassi", dt.chassi);
-      setTiMsg(`Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}.`);
+      // Preço de venda (anúncio) do carro recebido = valor FIPE (editável).
+      if (dt.fipePrice && dt.fipePrice > 0) setTiSalePrice(dt.fipePrice);
+      setTiMsg(
+        `Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}` +
+          (dt.fipePrice ? ` · FIPE ${formatCurrency(dt.fipePrice)}` : "") +
+          ".",
+      );
     });
   }
 
@@ -755,6 +763,17 @@ export default function SaleForm({
                   name="tiNegotiated"
                   value={tiNegotiated || ""}
                   onChange={(e) => setTiNegotiated(Number(e.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Preço de venda (anúncio / FIPE)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="tiSalePrice"
+                  value={tiSalePrice || ""}
+                  onChange={(e) => setTiSalePrice(Number(e.target.value) || 0)}
+                  placeholder="Vem da FIPE ao buscar a placa"
                 />
               </Field>
               <Field label="Saldo devedor / quitação">

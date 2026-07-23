@@ -26,6 +26,7 @@ type VehicleData = {
   modelYear: number;
   plate: string;
   chassi: string | null;
+  renavam: string | null;
   color: string | null;
   km: number;
   fuel: string | null;
@@ -310,6 +311,16 @@ export default function VehicleForm({
           </div>
         ) : null}
       </div>
+
+      <Field label="RENAVAM">
+        <Input
+          name="renavam"
+          defaultValue={vehicle?.renavam || ""}
+          inputMode="numeric"
+          placeholder="Nº do RENAVAM (11 dígitos)"
+          className="max-w-xs"
+        />
+      </Field>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Field label="Marca" required>

@@ -365,6 +365,7 @@ model Vehicle {
   // Garantido no banco por índices parciais (ver migration allow_rebuy_plate).
   plate            String
   chassi           String?
+  renavam          String?
   color            String?
   km               Int           @default(0)
   fuel             String?

@@ -121,6 +121,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <InfoItem label="Combustível" value={vehicle.fuel || "-"} />
               <InfoItem label="Câmbio" value={vehicle.transmission || "-"} />
               <InfoItem label="Chassi" value={vehicle.chassi || "-"} />
+              <InfoItem label="RENAVAM" value={vehicle.renavam || "-"} />
               <InfoItem label="Data de entrada" value={formatDate(vehicle.entryDate)} />
               <InfoItem label="Fornecedor" value={vehicle.supplier?.name || "-"} />
               <InfoItem

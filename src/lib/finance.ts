@@ -53,6 +53,7 @@ export async function createVehicleWithPayable(input: {
   modelYear: number;
   plate: string;
   chassi?: string | null;
+  renavam?: string | null;
   color?: string | null;
   km: number;
   fuel?: string | null;
@@ -97,6 +98,7 @@ export async function createVehicleWithPayable(input: {
         modelYear: input.modelYear,
         plate: input.plate,
         chassi: input.chassi || null,
+        renavam: input.renavam || null,
         color: input.color || null,
         km: input.km,
         fuel: input.fuel || null,

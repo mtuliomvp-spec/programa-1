@@ -74,6 +74,9 @@ export const saleSchema = z.object({
   tiTransmission: z.string().optional(),
   tiChassi: z.string().optional(),
   tiNegotiated: z.coerce.number().min(0).optional(),
+  // Preço de venda (anúncio) do veículo recebido — vem da FIPE na busca por
+  // placa. Se não informado, cai no valor negociado.
+  tiSalePrice: z.coerce.number().min(0).optional(),
   tiPayoff: z.coerce.number().min(0).optional(),
   tiPayoffTo: z.string().optional(),
   tiDebts: z.coerce.number().min(0).optional(),
@@ -208,7 +211,8 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       fuel: d.tiFuel || null,
       transmission: d.tiTransmission || null,
       purchasePrice: negociado,
-      salePrice: negociado,
+      // Preço de anúncio: usa a FIPE informada na troca; sem ela, cai no negociado.
+      salePrice: d.tiSalePrice && d.tiSalePrice > 0 ? d.tiSalePrice : negociado,
       entryDate: parseDateInput(d.saleDate),
       supplierId: tradeSupplierId,
       alreadyPaid: false,
