@@ -34,7 +34,9 @@ export default function SubstitutionWithdrawForm({
           <p className="font-semibold text-slate-900">Sacar capital que está aplicado</p>
           <p className="mt-0.5 text-xs text-slate-500">
             Parte do capital deste sócio está numa conta de Aplicação. Para sacar por outra conta,
-            outro sócio assume a fatia aplicada (o capital livre dele vira aplicado).
+            outro sócio assume a fatia aplicada (o capital livre dele vira aplicado). Se o valor passar
+            do que está aplicado, o restante deixa o capital do sócio negativo (o substituto assume só
+            a parte aplicada).
           </p>
         </div>
         <button

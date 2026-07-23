@@ -413,16 +413,15 @@ export async function retirarComSubstituicao(input: {
     }),
   ]);
 
+  // O substituto assume só a fatia REALMENTE aplicada (não mais que o aplicado).
+  // Se o saque passa do aplicado, o excedente deixa o capital do sócio negativo
+  // (overdraw permitido) — o aplicado dele fica em 0, não negativo.
   const appliedFulano = await appliedOf(input.accountId, input.beneficiaryId);
-  if (amount > appliedFulano + 0.01) {
-    throw new Error(
-      `${beneficiary.name} tem apenas ${appliedFulano.toFixed(2)} aplicado nesta conta.`,
-    );
-  }
+  const swapAmount = round2(Math.min(amount, appliedFulano));
   const freeSubstitute = await freeCapitalOf(input.substituteId);
-  if (amount > freeSubstitute + 0.01) {
+  if (swapAmount > freeSubstitute + 0.01) {
     throw new Error(
-      `${substitute.name} tem apenas ${freeSubstitute.toFixed(2)} de capital livre para assumir.`,
+      `${substitute.name} tem apenas ${freeSubstitute.toFixed(2)} de capital livre para assumir a fatia de ${swapAmount.toFixed(2)}.`,
     );
   }
   const capitalCenterId = await structuralCenterId("CAPITAL");
@@ -452,28 +451,31 @@ export async function retirarComSubstituicao(input: {
         payableId: payable.id,
       },
     });
-    // Troca de dono da fatia aplicada (líquido zero na conta).
-    await tx.investmentAllocation.create({
-      data: {
-        accountId: input.accountId,
-        beneficiaryId: input.beneficiaryId,
-        kind: "SUBSTITUICAO",
-        amount: -amount,
-        date: input.date,
-        description: `Fatia assumida por ${substitute.name}`,
-        payableId: payable.id,
-      },
-    });
-    await tx.investmentAllocation.create({
-      data: {
-        accountId: input.accountId,
-        beneficiaryId: input.substituteId,
-        kind: "SUBSTITUICAO",
-        amount,
-        date: input.date,
-        description: `Assumiu a fatia de ${beneficiary.name}`,
-        payableId: payable.id,
-      },
-    });
+    // Troca de dono da fatia aplicada (líquido zero na conta). Só a parte que
+    // estava de fato aplicada muda de dono; o restante do saque é overdraw.
+    if (swapAmount > 0) {
+      await tx.investmentAllocation.create({
+        data: {
+          accountId: input.accountId,
+          beneficiaryId: input.beneficiaryId,
+          kind: "SUBSTITUICAO",
+          amount: -swapAmount,
+          date: input.date,
+          description: `Fatia assumida por ${substitute.name}`,
+          payableId: payable.id,
+        },
+      });
+      await tx.investmentAllocation.create({
+        data: {
+          accountId: input.accountId,
+          beneficiaryId: input.substituteId,
+          kind: "SUBSTITUICAO",
+          amount: swapAmount,
+          date: input.date,
+          description: `Assumiu a fatia de ${beneficiary.name}`,
+          payableId: payable.id,
+        },
+      });
+    }
   });
 }
