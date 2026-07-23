@@ -7,7 +7,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
 import { assertCan } from "@/lib/guards";
-import { assertMonthOpen } from "@/lib/monthly-closing";
+import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
 export type ContaFormState = { error?: string };
@@ -25,6 +25,17 @@ export async function openCashboxAction(workDate?: string): Promise<{ ok: boolea
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const date = workDate ? parseDateInput(workDate) : new Date();
+  // Não abrir caixa em um mês já encerrado (fechamento mensal): depois de
+  // fechar o mês, nada mais pode ser lançado nele.
+  try {
+    await assertMonthOpen(date);
+  } catch {
+    const label = monthLabelBR(date.getUTCFullYear(), date.getUTCMonth() + 1);
+    return {
+      ok: false,
+      error: `O mês ${label} já foi encerrado — não é possível abrir o caixa nele. Abra o caixa em um mês em aberto ou reabra o mês em Financeiro → Fechamento Mensal.`,
+    };
+  }
   await openCashbox(user.name, date);
   revalidatePath("/financeiro/contas");
   revalidatePath("/", "layout");
