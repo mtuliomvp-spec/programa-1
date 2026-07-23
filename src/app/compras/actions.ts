@@ -99,7 +99,6 @@ const concludeSchema = z.object({
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   supplierId: z.string().optional(),
-  alreadyPaid: z.coerce.boolean().optional(),
 });
 
 /** Marca a compra como concluída e lança a conta a pagar correspondente. */
@@ -149,7 +148,7 @@ export async function concludeRequestAction(
       vehicleId,
       capitalBeneficiaryId,
       notes: request.details,
-      alreadyPaid: Boolean(data.alreadyPaid),
+      alreadyPaid: false,
     });
 
     await prisma.purchaseRequest.update({

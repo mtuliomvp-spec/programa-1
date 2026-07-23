@@ -56,7 +56,6 @@ export default function VehicleForm({
   const isEdit = Boolean(vehicle);
   const action = isEdit ? updateVehicleAction : createVehicleAction;
   const [state, formAction, pending] = useActionState(action, initialState);
-  const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [acquisition, setAcquisition] = useState<
     "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO"
   >(vehicle?.acquisitionType ?? "A_VISTA");
@@ -588,30 +587,10 @@ export default function VehicleForm({
         </div>
 
         {acquisition === "A_VISTA" ? (
-          isEdit ? (
-            <p className="mt-3 text-xs text-slate-500">
-              A compra fica em Contas a pagar. O pagamento é dado depois, por uma conta financeira.
-            </p>
-          ) : (
-            <>
-              <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  name="alreadyPaid"
-                  value="true"
-                  checked={alreadyPaid}
-                  onChange={(e) => setAlreadyPaid(e.target.checked)}
-                  className="h-4 w-4 rounded border-slate-300"
-                />
-                Já paguei no ato (dar a baixa agora pela conta padrão)
-              </label>
-              <p className="mt-2 text-xs text-slate-500">
-                {alreadyPaid
-                  ? "Atenção: registra o pagamento na hora, saindo da conta financeira padrão."
-                  : "A compra entra como conta a pagar. O pagamento é dado depois em Contas a pagar, por uma conta financeira."}
-              </p>
-            </>
-          )
+          <p className="mt-3 text-xs text-slate-500">
+            A compra entra como conta a pagar. O pagamento é dado depois em Contas a pagar, por uma
+            conta financeira.
+          </p>
         ) : (
           <p className="mt-3 text-xs text-slate-500">
             Serão geradas automaticamente as contas a pagar: a <strong>entrada</strong> (se houver) e{" "}

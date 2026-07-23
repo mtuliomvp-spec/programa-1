@@ -178,10 +178,6 @@ export default function RequestDetailActions({
           </Field>
         ) : null}
 
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4" />
-          Já foi pago (lança como pago)
-        </label>
         <Button type="submit" disabled={concludePending} className="w-full">
           {concludePending ? "Lançando..." : "Concluir e lançar em Contas a pagar"}
         </Button>

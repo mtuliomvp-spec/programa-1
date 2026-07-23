@@ -83,7 +83,6 @@ const vehicleSchema = z.object({
   entryDate: z.string().min(1),
   notes: z.string().optional(),
   supplierId: z.string().optional(),
-  alreadyPaid: z.coerce.boolean().optional(),
   dueDate: z.string().optional(),
   acquisitionType: z.enum(["A_VISTA", "PARCELADO", "FINANCIADO", "CONSORCIO"]).optional(),
   downPayment: z.coerce.number().min(0).optional(),
@@ -114,15 +113,8 @@ export async function createVehicleAction(
   const data = parsed.data;
 
   // Cadastrar o veículo cria só a ordem de compra (conta a pagar PENDENTE) —
-  // não movimenta dinheiro, então não exige caixa aberto. O caixa só é exigido
-  // quando "já foi pago" (a baixa acontece junto).
-  if (data.alreadyPaid) {
-    try {
-      await assertCashboxOpen();
-    } catch (e) {
-      return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
-    }
-  }
+  // não movimenta dinheiro, então não exige caixa aberto. O pagamento é dado
+  // depois, em Contas a pagar, por uma conta financeira.
 
   // Só barra placa repetida entre fichas ATIVAS: um veículo já vendido pode
   // ser recomprado — vira uma nova ficha e o histórico antigo fica intacto.
@@ -154,7 +146,7 @@ export async function createVehicleAction(
       entryDate: parseDateInput(data.entryDate),
       notes: data.notes || null,
       supplierId: data.supplierId || null,
-      alreadyPaid: Boolean(data.alreadyPaid),
+      alreadyPaid: false,
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
       acquisitionType: data.acquisitionType ?? "A_VISTA",
       downPayment: data.downPayment ?? 0,
