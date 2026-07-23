@@ -390,7 +390,13 @@ export default async function LivroCaixaPage({
                   <Td>{""}</Td>
                   <Td>{""}</Td>
                   <Td>{""}</Td>
-                  <Td className="text-right font-semibold tabular-nums">{formatCurrency(openingBalance)}</Td>
+                  <Td className="text-right font-semibold tabular-nums">
+                    {openingBalance < 0 ? (
+                      <span className="text-rose-600">{formatCurrency(openingBalance)}</span>
+                    ) : (
+                      formatCurrency(openingBalance)
+                    )}
+                  </Td>
                 </Tr>
               ) : null}
               {rows.map((m) => (
@@ -415,16 +421,20 @@ export default async function LivroCaixaPage({
                   <Td className="text-right tabular-nums text-emerald-600">
                     {m.kind === "entrada" ? formatCurrency(m.amount) : ""}
                   </Td>
-                  <Td className="text-right tabular-nums text-rose-600">
-                    {m.kind === "saida" ? formatCurrency(m.amount) : ""}
+                  <Td className="text-right tabular-nums">
+                    {m.kind === "saida" ? (
+                      <span className="text-rose-600">{formatCurrency(m.amount)}</span>
+                    ) : (
+                      ""
+                    )}
                   </Td>
                   {!filtering ? (
-                    <Td
-                      className={`text-right font-medium tabular-nums ${
-                        m.balance >= 0 ? "text-slate-900" : "text-rose-600"
-                      }`}
-                    >
-                      {formatCurrency(m.balance)}
+                    <Td className="text-right font-medium tabular-nums">
+                      {m.balance < 0 ? (
+                        <span className="text-rose-600">{formatCurrency(m.balance)}</span>
+                      ) : (
+                        formatCurrency(m.balance)
+                      )}
                     </Td>
                   ) : null}
                 </Tr>
@@ -437,12 +447,18 @@ export default async function LivroCaixaPage({
                 <Td className="text-right tabular-nums text-emerald-600">
                   {formatCurrency(rows.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0))}
                 </Td>
-                <Td className="text-right tabular-nums text-rose-600">
-                  {formatCurrency(rows.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0))}
+                <Td className="text-right tabular-nums">
+                  <span className="text-rose-600">
+                    {formatCurrency(rows.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0))}
+                  </span>
                 </Td>
                 {!filtering ? (
                   <Td className="text-right tabular-nums">
-                    {formatCurrency(openingBalance + totalIn - totalOut)}
+                    {openingBalance + totalIn - totalOut < 0 ? (
+                      <span className="text-rose-600">{formatCurrency(openingBalance + totalIn - totalOut)}</span>
+                    ) : (
+                      formatCurrency(openingBalance + totalIn - totalOut)
+                    )}
                   </Td>
                 ) : null}
               </Tr>

@@ -73,7 +73,7 @@ export default async function LucroPrejuizoPage({
       <span>{label}</span>
       <span
         className={`tabular-nums ${
-          kind === "final" ? (value >= 0 ? "text-emerald-600" : "text-rose-600") : "text-slate-900"
+          value < 0 ? "text-rose-600" : kind === "final" ? "text-emerald-600" : "text-slate-900"
         }`}
       >
         {formatCurrency(value)}
@@ -181,19 +181,19 @@ export default async function LucroPrejuizoPage({
                     {e.description}
                     {e.detail ? <span className="block text-xs font-normal text-slate-400">{e.detail}</span> : null}
                   </Td>
-                  <Td
-                    className={`text-right font-semibold tabular-nums ${
-                      e.value >= 0 ? "text-emerald-600" : "text-rose-600"
-                    }`}
-                  >
-                    {formatCurrency(e.value)}
+                  <Td className="text-right font-semibold tabular-nums">
+                    {e.value < 0 ? (
+                      <span className="text-rose-600">{formatCurrency(e.value)}</span>
+                    ) : (
+                      formatCurrency(e.value)
+                    )}
                   </Td>
-                  <Td
-                    className={`text-right font-semibold tabular-nums ${
-                      e.saldo >= 0 ? "text-emerald-600" : "text-rose-600"
-                    }`}
-                  >
-                    {formatCurrency(e.saldo)}
+                  <Td className="text-right font-semibold tabular-nums">
+                    {e.saldo < 0 ? (
+                      <span className="text-rose-600">{formatCurrency(e.saldo)}</span>
+                    ) : (
+                      formatCurrency(e.saldo)
+                    )}
                   </Td>
                 </Tr>
               ))}
@@ -201,11 +201,19 @@ export default async function LucroPrejuizoPage({
                 <Td>Resultado do período</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
-                <Td className={`text-right tabular-nums ${lucro ? "text-emerald-600" : "text-rose-600"}`}>
-                  {formatCurrency(s.lucroLiquido)}
+                <Td className="text-right tabular-nums">
+                  {s.lucroLiquido < 0 ? (
+                    <span className="text-rose-600">{formatCurrency(s.lucroLiquido)}</span>
+                  ) : (
+                    formatCurrency(s.lucroLiquido)
+                  )}
                 </Td>
-                <Td className={`text-right tabular-nums ${lucro ? "text-emerald-600" : "text-rose-600"}`}>
-                  {formatCurrency(s.lucroLiquido)}
+                <Td className="text-right tabular-nums">
+                  {s.lucroLiquido < 0 ? (
+                    <span className="text-rose-600">{formatCurrency(s.lucroLiquido)}</span>
+                  ) : (
+                    formatCurrency(s.lucroLiquido)
+                  )}
                 </Td>
               </Tr>
             </tbody>
