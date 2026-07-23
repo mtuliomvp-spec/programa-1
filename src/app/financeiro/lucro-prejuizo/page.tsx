@@ -57,6 +57,13 @@ export default async function LucroPrejuizoPage({
   const lucro = s.lucroLiquido >= 0;
   const margem = s.receitaTotal > 0 ? (s.lucroLiquido / s.receitaTotal) * 100 : 0;
 
+  // Extrato do mais antigo ao mais recente, com o saldo acumulado após cada
+  // lançamento (como no Livro Caixa). A última linha bate com o resultado do
+  // período (a soma das contribuições == lucroLiquido).
+  const extrato = [...s.entries].sort((a, b) => a.date.getTime() - b.date.getTime());
+  let acc = 0;
+  const linhas = extrato.map((e) => ({ ...e, saldo: (acc += e.value) }));
+
   const Row = ({ label, value, kind = "sub" }: { label: string; value: number; kind?: "sub" | "total" | "final" }) => (
     <div
       className={`flex items-center justify-between px-5 py-2.5 ${kind === "sub" ? "pl-9 text-sm text-slate-500" : ""} ${
@@ -160,10 +167,11 @@ export default async function LucroPrejuizoPage({
                 <Th>Origem</Th>
                 <Th>Descrição</Th>
                 <Th className="text-right">Valor no resultado</Th>
+                <Th className="text-right">Saldo acumulado</Th>
               </Tr>
             </Thead>
             <tbody>
-              {s.entries.map((e) => (
+              {linhas.map((e) => (
                 <Tr key={e.id}>
                   <Td className="whitespace-nowrap">{formatDate(e.date)}</Td>
                   <Td>
@@ -180,12 +188,22 @@ export default async function LucroPrejuizoPage({
                   >
                     {formatCurrency(e.value)}
                   </Td>
+                  <Td
+                    className={`text-right font-semibold tabular-nums ${
+                      e.saldo >= 0 ? "text-emerald-600" : "text-rose-600"
+                    }`}
+                  >
+                    {formatCurrency(e.saldo)}
+                  </Td>
                 </Tr>
               ))}
               <Tr className="bg-slate-50 font-bold">
                 <Td>Resultado do período</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
+                <Td className={`text-right tabular-nums ${lucro ? "text-emerald-600" : "text-rose-600"}`}>
+                  {formatCurrency(s.lucroLiquido)}
+                </Td>
                 <Td className={`text-right tabular-nums ${lucro ? "text-emerald-600" : "text-rose-600"}`}>
                   {formatCurrency(s.lucroLiquido)}
                 </Td>
