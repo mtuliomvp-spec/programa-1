@@ -11,7 +11,15 @@ import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retor
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 
-type Vehicle = { id: string; brand: string; model: string; plate: string; salePrice: number };
+type Vehicle = {
+  id: string;
+  brand: string;
+  model: string;
+  plate: string;
+  salePrice: number;
+  // Marca opcional exibida no seletor quando o veículo já tem pré-venda aberta.
+  preSaleTag?: string;
+};
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
@@ -317,6 +325,7 @@ export default function SaleForm({
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.brand} {v.model} - {v.plate} ({formatCurrency(v.salePrice)})
+                {v.preSaleTag ? ` — ${v.preSaleTag}` : ""}
               </option>
             ))}
           </Select>

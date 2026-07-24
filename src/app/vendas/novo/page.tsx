@@ -91,6 +91,19 @@ export default async function NovaVendaPage({
   const advances: Record<string, number> = {};
   for (const r of advanceRows) if (r.vehicleId) advances[r.vehicleId] = r._sum.amount ?? 0;
 
+  // Pré-vendas em aberto por veículo: marca o item no seletor ("pré-vendido nº").
+  const openPreSales = await prisma.preSale.findMany({
+    where: { status: "ABERTA", vehicleId: { in: vehicles.map((v) => v.id) } },
+    select: { vehicleId: true, number: true },
+    orderBy: { number: "asc" },
+  });
+  const preSaleByVehicle = new Map<string, number>();
+  for (const ps of openPreSales) if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
+  const vehiclesWithTag = vehicles.map((v) => {
+    const n = preSaleByVehicle.get(v.id);
+    return { ...v, preSaleTag: n ? `pré-vendido nº ${String(n).padStart(4, "0")}` : undefined };
+  });
+
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
@@ -105,7 +118,7 @@ export default async function NovaVendaPage({
         <CardHeader title="Dados da negociação" />
         <div className="p-5">
           <SaleForm
-            vehicles={vehicles}
+            vehicles={vehiclesWithTag}
             customers={customers}
             financers={financers}
             users={users}

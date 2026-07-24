@@ -56,6 +56,26 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
+
+  // Pré-venda em aberto: enquanto existir, não oferecer "Vender veículo" (levaria
+  // a um beco sem saída para outro cliente). Direciona para a pré-venda existente.
+  const openPreSaleRow = inStock
+    ? await prisma.preSale.findFirst({
+        where: { vehicleId: id, status: "ABERTA" },
+        select: { id: true, number: true, customerId: true },
+        orderBy: { number: "asc" },
+      })
+    : null;
+  const openPreSale = openPreSaleRow
+    ? {
+        ...openPreSaleRow,
+        customerName:
+          (await prisma.customer.findUnique({
+            where: { id: openPreSaleRow.customerId },
+            select: { name: true },
+          }))?.name ?? null,
+      }
+    : null;
   const [advanceAccounts, advanceCustomers, advances] = inStock
     ? await Promise.all([
         getActiveAccounts(),
@@ -94,9 +114,15 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             </LinkButton>
             <ParecerIAButton mode="vehicle" vehicleId={vehicle.id} variant="secondary" />
             {vehicle.status !== "VENDIDO" ? (
-              <LinkButton href={`/vendas/novo?vehicleId=${vehicle.id}`} variant="primary">
-                Vender veículo
-              </LinkButton>
+              openPreSale ? (
+                <LinkButton href={`/vendas/pre-vendas/${openPreSale.id}`} variant="primary">
+                  Abrir pré-venda nº {String(openPreSale.number).padStart(4, "0")}
+                </LinkButton>
+              ) : (
+                <LinkButton href={`/vendas/novo?vehicleId=${vehicle.id}`} variant="primary">
+                  Vender veículo
+                </LinkButton>
+              )
             ) : null}
             {vehicle.status !== "VENDIDO" ? (
               <LinkButton href={`/estoque/${vehicle.id}/editar`} variant="secondary">
@@ -106,6 +132,17 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           </div>
         }
       />
+
+      {openPreSale ? (
+        <Card className="mb-4 border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm text-amber-800">
+            🤝 Este veículo tem uma <strong>pré-venda em aberto</strong> (nº{" "}
+            {String(openPreSale.number).padStart(4, "0")}
+            {openPreSale.customerName ? ` — ${openPreSale.customerName}` : ""}). Para vender a
+            outro cliente, <strong>cancele a pré-venda</strong> primeiro.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
