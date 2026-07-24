@@ -60,6 +60,13 @@ export const saleSchema = z.object({
     .optional()
     .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
+  // Dados bancários do comprador — usados quando há devolução ao cliente (as
+  // entradas superam o preço); constam no contrato para o pagamento.
+  buyerBankName: z.string().optional(),
+  buyerBankAgency: z.string().optional(),
+  buyerBankAccount: z.string().optional(),
+  buyerBankAccountType: z.string().optional(),
+  buyerPixKey: z.string().optional(),
   // Troca: veículo recebido do cliente cadastrado aqui mesmo.
   tradeIn: z.coerce.boolean().optional(),
   tiPlate: z.string().optional(),
@@ -263,6 +270,11 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
       returnLevel,
       notes: d.notes || null,
+      buyerBankName: d.buyerBankName || null,
+      buyerBankAgency: d.buyerBankAgency || null,
+      buyerBankAccount: d.buyerBankAccount || null,
+      buyerBankAccountType: d.buyerBankAccountType || null,
+      buyerPixKey: d.buyerPixKey || null,
       tradeInAmount,
       tradeInLabel,
       tradeInVehicleId,

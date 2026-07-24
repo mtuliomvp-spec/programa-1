@@ -38,6 +38,11 @@ export type SaleFormInitial = {
   installmentsInfoCount?: number;
   installmentsInfoAmount?: number;
   notes?: string;
+  buyerBankName?: string;
+  buyerBankAgency?: string;
+  buyerBankAccount?: string;
+  buyerBankAccountType?: string;
+  buyerPixKey?: string;
   tradeIn?: boolean;
   tiPlate?: string;
   tiBrand?: string;
@@ -508,6 +513,42 @@ export default function SaleForm({
           <strong>{formatCurrency(devolucaoCliente)}</strong> será <strong>devolvida ao cliente</strong>{" "}
           (lançada em Contas a Pagar) e aparece no card de estoque do veículo.
         </div>
+      ) : null}
+
+      {/* Dados bancários do comprador para a DEVOLUÇÃO — só aparecem quando as
+          entradas superam o preço (troca/sinal ou financiamento). Constam no
+          contrato para deixar claro onde a loja fará o pagamento. */}
+      {devolucaoCliente > 0 ? (
+        <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-700">
+            Dados bancários do comprador (para a devolução)
+          </legend>
+          <p className="text-xs text-slate-500">
+            Constam no contrato: como as entradas superam o preço, a loja devolverá{" "}
+            <strong>{formatCurrency(devolucaoCliente)}</strong> ao comprador nesta conta.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Banco">
+              <BankInput name="buyerBankName" defaultValue={initial?.buyerBankName ?? ""} placeholder="Banco do comprador" />
+            </Field>
+            <Field label="Tipo de conta">
+              <Select name="buyerBankAccountType" defaultValue={initial?.buyerBankAccountType ?? ""}>
+                <option value="">—</option>
+                <option value="Conta corrente">Conta corrente</option>
+                <option value="Conta poupança">Conta poupança</option>
+              </Select>
+            </Field>
+            <Field label="Agência">
+              <Input name="buyerBankAgency" defaultValue={initial?.buyerBankAgency ?? ""} />
+            </Field>
+            <Field label="Conta">
+              <Input name="buyerBankAccount" defaultValue={initial?.buyerBankAccount ?? ""} />
+            </Field>
+            <Field label="Chave PIX">
+              <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
+            </Field>
+          </div>
+        </fieldset>
       ) : null}
 
       {paymentMethod === "PARCELADO" ? (

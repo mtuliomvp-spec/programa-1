@@ -34,6 +34,9 @@ export default async function ContratoPreVendaPage({ params }: { params: Promise
   const financiado = pre.paymentMethod === "FINANCIADO" ? pre.financedAmount ?? 0 : 0;
   const entrada = pre.paymentMethod === "PARCELADO" ? pre.downPayment : 0;
   const saldo = Math.max(0, round2(total - tiLiquido - sinal - financiado - entrada));
+  // Devolução ao comprador: a pré-venda ainda não gerou o lançamento, então
+  // calcula-se pelo excedente das entradas sobre o preço.
+  const devolucao = Math.max(0, round2(tiLiquido + sinal + financiado + entrada - total));
   const parcelaValor =
     pre.paymentMethod === "PARCELADO" && pre.installmentsCount > 0 ? round2(saldo / pre.installmentsCount) : 0;
 
@@ -52,6 +55,14 @@ export default async function ContratoPreVendaPage({ params }: { params: Promise
       financiado={financiado}
       financerName={financer?.name ?? null}
       saldo={saldo}
+      devolucao={devolucao}
+      buyerBank={{
+        name: pre.buyerBankName,
+        agency: pre.buyerBankAgency,
+        account: pre.buyerBankAccount,
+        accountType: pre.buyerBankAccountType,
+        pixKey: pre.buyerPixKey,
+      }}
       installmentsCount={pre.installmentsCount}
       parcelaValor={parcelaValor}
       installmentsInfo={

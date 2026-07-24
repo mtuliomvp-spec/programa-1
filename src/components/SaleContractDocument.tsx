@@ -59,6 +59,16 @@ export type SaleContractData = {
   financiado: number;
   financerName: string | null;
   saldo: number;
+  // Devolução ao COMPRADOR: quando troca + sinal + financiamento superam o preço,
+  // a loja deve a diferença ao cliente (aparece no lugar do "Saldo a pagar").
+  devolucao?: number;
+  buyerBank?: {
+    name: string | null;
+    agency: string | null;
+    account: string | null;
+    accountType: string | null;
+    pixKey: string | null;
+  } | null;
   installmentsCount: number;
   parcelaValor: number;
   tradeIn: TradeIn;
@@ -88,6 +98,12 @@ function Clausula({ n, titulo, children }: { n: number; titulo: string; children
  */
 export default function SaleContractDocument(d: SaleContractData) {
   const { company, buyer, vehicle, tradeIn } = d;
+  const devolucao = d.devolucao ?? 0;
+  const buyerBank = d.buyerBank ?? null;
+  const hasBank = !!(
+    buyerBank &&
+    (buyerBank.name || buyerBank.agency || buyerBank.account || buyerBank.pixKey)
+  );
   const cidadeData = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}, ${formatDate(d.date)}`
     : formatDate(d.date);
@@ -191,10 +207,19 @@ export default function SaleContractDocument(d: SaleContractData) {
                   <td className="py-1 text-right tabular-nums">{formatCurrency(d.financiado)}</td>
                 </tr>
               ) : null}
-              <tr className="border-t border-slate-300">
-                <td className="py-1 font-bold">= Saldo a pagar</td>
-                <td className="py-1 text-right tabular-nums font-bold">{formatCurrency(d.saldo)}</td>
-              </tr>
+              {devolucao > 0 ? (
+                <tr className="border-t border-slate-300">
+                  <td className="py-1 font-bold text-rose-700">= Devolução ao COMPRADOR</td>
+                  <td className="py-1 text-right tabular-nums font-bold text-rose-700">
+                    {formatCurrency(devolucao)}
+                  </td>
+                </tr>
+              ) : (
+                <tr className="border-t border-slate-300">
+                  <td className="py-1 font-bold">= Saldo a pagar</td>
+                  <td className="py-1 text-right tabular-nums font-bold">{formatCurrency(d.saldo)}</td>
+                </tr>
+              )}
             </tbody>
           </table>
           {d.paymentMethod === "PARCELADO" && d.installmentsCount > 0 ? (
@@ -225,6 +250,31 @@ export default function SaleContractDocument(d: SaleContractData) {
               O(A) COMPRADOR(A) declara que o veículo dado em troca é de sua legítima propriedade e está livre
               de quaisquer ônus além dos aqui declarados.
             </p>
+          </Clausula>
+        ) : null}
+
+        {devolucao > 0 ? (
+          <Clausula n={++n} titulo="Da devolução ao COMPRADOR">
+            <p>
+              Tendo em vista que a soma da entrada
+              {tradeIn ? " (veículo em troca)" : ""}, do sinal e/ou do financiamento
+              <strong> supera o preço total da venda</strong>, a VENDEDORA reconhece e declara que
+              deve ao(à) COMPRADOR(A) a importância de{" "}
+              <strong>{formatCurrency(devolucao)}</strong>, a ser
+              <strong> devolvida/paga</strong> ao(à) COMPRADOR(A)
+              {hasBank ? " por transferência bancária para a conta abaixo" : ""}.
+            </p>
+            {hasBank ? (
+              <div className="mt-2 rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
+                <p className="mb-1 font-semibold text-slate-700">Dados para o pagamento da devolução</p>
+                <p><span className="text-slate-500">Favorecido:</span> {buyer.name}</p>
+                <p><span className="text-slate-500">Banco:</span> {buyerBank?.name || "—"}</p>
+                <p><span className="text-slate-500">Agência:</span> {buyerBank?.agency || "—"}</p>
+                <p><span className="text-slate-500">Conta:</span> {buyerBank?.account || "—"}</p>
+                <p><span className="text-slate-500">Tipo:</span> {buyerBank?.accountType || "—"}</p>
+                <p><span className="text-slate-500">PIX:</span> {buyerBank?.pixKey || "—"}</p>
+              </div>
+            ) : null}
           </Clausula>
         ) : null}
 

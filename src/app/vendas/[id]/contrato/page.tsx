@@ -31,6 +31,14 @@ export default async function ContratoVendaPage({ params }: { params: Promise<{ 
   const parcelaValor =
     sale.paymentMethod === "PARCELADO" && sale.installmentsCount > 0 ? round2(saldo / sale.installmentsCount) : 0;
 
+  // Devolução ao comprador (mesmo critério do documento da venda): agregado do
+  // que foi lançado em Contas a Pagar como DEVOLUCAO_CLIENTE deste veículo.
+  const devolucaoRow = await prisma.payable.aggregate({
+    _sum: { amount: true },
+    where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_CLIENTE" },
+  });
+  const devolucao = round2(devolucaoRow._sum.amount ?? 0);
+
   return (
     <SaleContractDocument
       company={company}
@@ -51,6 +59,14 @@ export default async function ContratoVendaPage({ params }: { params: Promise<{ 
       financiado={financiado}
       financerName={sale.financerName ?? sale.financerAccount?.name ?? null}
       saldo={saldo}
+      devolucao={devolucao}
+      buyerBank={{
+        name: sale.buyerBankName,
+        agency: sale.buyerBankAgency,
+        account: sale.buyerBankAccount,
+        accountType: sale.buyerBankAccountType,
+        pixKey: sale.buyerPixKey,
+      }}
       installmentsCount={sale.installmentsCount}
       parcelaValor={parcelaValor}
       installmentsInfo={
