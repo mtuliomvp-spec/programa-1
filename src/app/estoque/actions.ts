@@ -12,7 +12,7 @@ import {
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { assertCan, userCan } from "@/lib/guards";
+import { assertCan, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 const advanceSchema = z.object({
@@ -255,15 +255,9 @@ export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RE
 
 export async function lookupPlateAction(plate: string) {
   // Consulta externa (paga) por placa — usada no cadastro de veículo e nos
-  // formulários de venda. Liberada a quem cadastra/edita veículo, consulta
-  // débitos ou registra/pré-venda; senão recusa sem chamar o provedor.
-  const allowed =
-    (await userCan("estoque", "criar")) ||
-    (await userCan("estoque", "editar")) ||
-    (await userCan("estoque", "debitos")) ||
-    (await userCan("vendas", "registrar")) ||
-    (await userCan("vendas", "prevenda"));
-  if (!allowed) {
+  // formulários de venda. Liberada a quem cadastra/edita veículo ou registra/
+  // pré-venda; senão recusa sem chamar o provedor.
+  if (!(await canUseFormLookup())) {
     return { ok: false as const, error: "Você não tem permissão para consultar a placa." };
   }
   const { lookupPlate } = await import("@/lib/plate-lookup");

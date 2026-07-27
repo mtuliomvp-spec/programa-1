@@ -44,6 +44,8 @@ export async function replicateAsCustomer(d: {
   address?: string | null;
   notes?: string | null;
 }) {
+  // Também exposta como endpoint (arquivo "use server"): protege por conta própria.
+  await assertCan("cadastros", "criar");
   const name = d.name?.trim();
   if (!name) return;
   const document = d.document?.trim() || null;

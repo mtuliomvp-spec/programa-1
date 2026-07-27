@@ -1,6 +1,7 @@
 "use server";
 
 import { prisma } from "@/lib/prisma";
+import { canUseFormLookup } from "@/lib/guards";
 
 export type PersonLookup =
   | { found: false }
@@ -18,6 +19,9 @@ export type PersonLookup =
 export async function findPersonByDocument(documentRaw: string): Promise<PersonLookup> {
   const document = (documentRaw || "").trim();
   if (!document) return { found: false };
+  // Consulta de dados cadastrais: exige permissão de criar/editar em algum
+  // dos formulários que a usam; senão degrada como "não encontrado".
+  if (!(await canUseFormLookup())) return { found: false };
 
   const [customer, supplier] = await Promise.all([
     prisma.customer.findFirst({ where: { document } }),
