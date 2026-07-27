@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
@@ -26,6 +26,7 @@ export default function CashEntryForm({
   customers,
   categories,
   defaultDate,
+  lockedDate = false,
   preselectedAccountId,
 }: {
   accounts: Account[];
@@ -35,6 +36,7 @@ export default function CashEntryForm({
   customers: Customer[];
   categories: string[];
   defaultDate: string;
+  lockedDate?: boolean;
   preselectedAccountId?: string;
 }) {
   const [state, formAction, pending] = useActionState(createCashEntryAction, initial);
@@ -185,9 +187,20 @@ export default function CashEntryForm({
               onChange={(e) => setAmount(e.target.value)}
             />
           </Field>
-          <Field label="Data" required>
-            <Input name="date" type="date" defaultValue={defaultDate} required />
-          </Field>
+          {lockedDate ? (
+            <Field label="Data">
+              {/* Travada na data do caixa aberto: o valor enviado é fixo. */}
+              <input type="hidden" name="date" value={defaultDate} />
+              <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+                {formatDate(defaultDate)}
+                <span className="ml-2 text-xs text-slate-400">(caixa aberto)</span>
+              </div>
+            </Field>
+          ) : (
+            <Field label="Data" required>
+              <Input name="date" type="date" defaultValue={defaultDate} required />
+            </Field>
+          )}
         </div>
 
         <Field label="Conta" required>
