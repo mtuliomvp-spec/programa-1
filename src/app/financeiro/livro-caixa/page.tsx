@@ -2,7 +2,8 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
-import { matchesSearch, inValueRange } from "@/lib/search";
+import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
+import { getCashboxState } from "@/lib/cashbox";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -23,18 +24,20 @@ function parseMonth(value: string | undefined): { year: number; month: number } 
 export default async function LivroCaixaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string; ver?: string }>;
+  searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string; de?: string; ate?: string; ver?: string }>;
 }) {
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
   const accountFilter = params.conta || "";
   const q = (params.q || "").trim();
-  const { min, max } = params;
+  const { min, max, de, ate } = params;
   // ?ver=1 revela o extrato completo de um mês fechado (lançamentos + saldo
   // transportado + saldo corrente) — é o que o botão do mês fechado faz.
   const reveal = params.ver === "1";
-  // Com qualquer filtro ativo (texto ou valor) o saldo corrente não faz sentido.
-  const filtering = Boolean(q) || Boolean(min?.trim()) || Boolean(max?.trim());
+  // Com qualquer filtro ativo (texto, valor ou período) o saldo corrente não
+  // faz sentido — a coluna Saldo fica oculta.
+  const filtering =
+    Boolean(q) || Boolean(min?.trim()) || Boolean(max?.trim()) || Boolean(de) || Boolean(ate);
   const monthStart = new Date(Date.UTC(year, month, 1));
   const monthEnd = new Date(Date.UTC(year, month + 1, 1));
   const monthValue = `${year}-${String(month + 1).padStart(2, "0")}`;
@@ -45,6 +48,10 @@ export default async function LivroCaixaPage({
   });
 
   const accountWhere = accountFilter ? { accountId: accountFilter } : {};
+
+  // Data de trabalho do caixa aberto: novos lançamentos ficam travados nela.
+  const cashbox = await getCashboxState();
+  const cashboxWorkDate = cashbox.open ? cashbox.session?.workDate ?? null : null;
 
   const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers, health] =
     await Promise.all([
@@ -215,7 +222,9 @@ export default async function LivroCaixaPage({
             m.amount,
             formatCurrency(m.amount),
             m.kind,
-          ) && inValueRange(m.amount, min, max),
+          ) &&
+          inValueRange(m.amount, min, max) &&
+          inDateRange(m.date, de, ate),
       )
     : allRows;
 
@@ -313,7 +322,8 @@ export default async function LivroCaixaPage({
             beneficiaries={beneficiariesWithStatus}
             customers={customers}
             categories={categoryOptions}
-            defaultDate={toDateInputValue(new Date())}
+            defaultDate={toDateInputValue(cashboxWorkDate ?? new Date())}
+            lockedDate={!!cashboxWorkDate}
             preselectedAccountId={accountFilter || undefined}
           />
         ) : (
@@ -338,6 +348,28 @@ export default async function LivroCaixaPage({
               <Input name="q" defaultValue={q} placeholder="Descrição, quem, veículo, valor..." className="mt-0.5" />
             </label>
           </div>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            De
+            <Input
+              type="date"
+              name="de"
+              defaultValue={de}
+              min={toDateInputValue(monthStart)}
+              max={toDateInputValue(new Date(Date.UTC(year, month + 1, 0)))}
+              className="mt-0.5 w-40"
+            />
+          </label>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Até
+            <Input
+              type="date"
+              name="ate"
+              defaultValue={ate}
+              min={toDateInputValue(monthStart)}
+              max={toDateInputValue(new Date(Date.UTC(year, month + 1, 0)))}
+              className="mt-0.5 w-40"
+            />
+          </label>
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Valor mín.
             <Input name="min" inputMode="decimal" defaultValue={min} placeholder="0,00" className="mt-0.5 w-28" />

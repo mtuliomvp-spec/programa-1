@@ -41,6 +41,29 @@ export async function openCashbox(userName: string | null, workDate: Date): Prom
   });
 }
 
+/**
+ * Trava a data do lançamento na data de trabalho do caixa aberto: todo
+ * lançamento do movimento precisa ter a MESMA data do caixa (dia em UTC).
+ * Fail-open se a leitura falhar; se não houver sessão aberta, deixa passar —
+ * `assertCashboxOpen` já barra esse caso antes.
+ */
+export async function assertCashDateIsWorkDate(date: Date): Promise<void> {
+  let session: CashboxSession | null;
+  try {
+    session = (await getCashboxState()).session;
+  } catch {
+    return; // fail-open
+  }
+  if (!session || session.closedAt != null) return;
+  if (dayKey(session.workDate) !== dayKey(date)) {
+    const label = session.workDate.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+    throw new Error(
+      `O lançamento precisa ter a data do caixa aberto (${label}). ` +
+        "Ajuste a data ou abra o caixa na data desejada.",
+    );
+  }
+}
+
 /** Fecha o caixa aberto (no-op se já estiver fechado). */
 export async function closeCashbox(userName: string | null): Promise<void> {
   const session = await prisma.cashboxSession.findFirst({ orderBy: { openedAt: "desc" } });

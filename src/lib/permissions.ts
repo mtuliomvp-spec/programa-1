@@ -32,6 +32,7 @@ export const MODULES: ModuleConfig[] = [
       EXCLUIR,
       { acao: "custos", label: "Lançar custos" },
       { acao: "debitos", label: "Consultar/importar débitos" },
+      { acao: "publicar", label: "Postar na vitrine" },
     ],
   },
   {

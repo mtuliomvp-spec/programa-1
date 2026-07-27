@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
@@ -59,6 +59,7 @@ export async function createCashEntryAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
   try {
+    await assertCashDateIsWorkDate(parseDateInput(d.date));
     await assertMonthOpen(parseDateInput(d.date));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };

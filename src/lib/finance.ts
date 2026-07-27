@@ -1884,21 +1884,28 @@ export async function createCashEntry(input: {
  * baixas geradas por essas operações devem ser revertidas na própria origem.
  */
 export async function deleteCashEntry(kind: "entrada" | "saida", id: string) {
-  if (kind === "entrada") {
-    const r = await prisma.receivable.findUnique({ where: { id } });
-    if (!r) return;
-    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
-      throw new Error("Este lançamento veio de uma venda/recorrência e deve ser revertido na origem.");
+  // Atômico: se o lançamento estiver vinculado a uma transação de Capital
+  // (aporte/retirada/implantação de saldo), apaga os dois juntos — senão a
+  // transação de Capital fica órfã e quebra os checks de convergência.
+  await prisma.$transaction(async (tx) => {
+    if (kind === "entrada") {
+      const r = await tx.receivable.findUnique({ where: { id } });
+      if (!r) return;
+      if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
+        throw new Error("Este lançamento veio de uma venda/recorrência e deve ser revertido na origem.");
+      }
+      await tx.capitalTransaction.deleteMany({ where: { receivableId: id } });
+      await tx.receivable.delete({ where: { id } });
+      return;
     }
-    await prisma.receivable.delete({ where: { id } });
-    return;
-  }
-  const p = await prisma.payable.findUnique({ where: { id } });
-  if (!p) return;
-  if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
-    throw new Error("Este lançamento veio de outra operação e deve ser revertido na origem.");
-  }
-  await prisma.payable.delete({ where: { id } });
+    const p = await tx.payable.findUnique({ where: { id } });
+    if (!p) return;
+    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
+      throw new Error("Este lançamento veio de outra operação e deve ser revertido na origem.");
+    }
+    await tx.capitalTransaction.deleteMany({ where: { payableId: id } });
+    await tx.payable.delete({ where: { id } });
+  });
 }
 
 export async function createManualReceivable(input: {

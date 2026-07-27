@@ -35,3 +35,25 @@ export async function userCan(moduleKey: ModuleKey, action: string): Promise<boo
   const user = await getSessionUser();
   return !!user && can(user, moduleKey, action);
 }
+
+/** True se o usuário logado tem QUALQUER uma das ações da lista (uma leitura só). */
+export async function userCanAny(pairs: [ModuleKey, string][]): Promise<boolean> {
+  const user = await getSessionUser();
+  return !!user && pairs.some(([m, a]) => can(user, m, a));
+}
+
+/**
+ * Pode usar as consultas-auxiliares de formulário (CEP, CNPJ, pessoa por
+ * documento, placa): qualquer permissão de criar/editar que leve a um dos
+ * formulários que as utilizam (cadastros, estoque ou vendas). Admin sempre.
+ */
+export async function canUseFormLookup(): Promise<boolean> {
+  return userCanAny([
+    ["cadastros", "criar"],
+    ["cadastros", "editar"],
+    ["estoque", "criar"],
+    ["estoque", "editar"],
+    ["vendas", "prevenda"],
+    ["vendas", "registrar"],
+  ]);
+}

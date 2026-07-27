@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { cancelVehicleSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { assertCan } from "@/lib/guards";
+import { assertCan, userCanAny } from "@/lib/guards";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState } from "./sale-core";
 
 /**
@@ -19,6 +19,13 @@ export async function checkPreSaleConflictAction(
   excludePreSaleId?: string,
 ): Promise<{ conflict: boolean; message?: string }> {
   if (!vehicleId || !customerId) return { conflict: false };
+  // Probe usado no formulário de venda: exige acesso a vendas; senão não bloqueia.
+  const allowed = await userCanAny([
+    ["vendas", "visualizar"],
+    ["vendas", "prevenda"],
+    ["vendas", "registrar"],
+  ]);
+  if (!allowed) return { conflict: false };
   try {
     await assertNoConflictingPreSale(vehicleId, customerId, excludePreSaleId || undefined);
     return { conflict: false };
