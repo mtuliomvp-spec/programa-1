@@ -35,11 +35,11 @@ export default async function AccountStatementPage({
     getAccountsWithBalances(),
     prisma.payable.findMany({
       where: { accountId: id, status: "PAGO" },
-      include: { supplier: { select: { name: true } } },
+      include: { supplier: { select: { name: true } }, capitalBeneficiary: { select: { name: true } } },
     }),
     prisma.receivable.findMany({
       where: { accountId: id, status: "RECEBIDO" },
-      include: { customer: { select: { name: true } } },
+      include: { customer: { select: { name: true } }, capitalBeneficiary: { select: { name: true } } },
     }),
     prisma.accountTransfer.findMany({
       where: { OR: [{ fromId: id }, { toId: id }] },
@@ -101,7 +101,7 @@ export default async function AccountStatementPage({
       id: `r-${r.id}`,
       date: r.receivedDate ?? r.dueDate,
       description: r.description,
-      who: r.customer?.name || "-",
+      who: r.customer?.name || r.capitalBeneficiary?.name || "-",
       kind: "entrada" as const,
       amount: r.amount,
     })),
@@ -109,7 +109,7 @@ export default async function AccountStatementPage({
       id: `p-${p.id}`,
       date: p.paymentDate ?? p.dueDate,
       description: p.description,
-      who: p.supplier?.name || "-",
+      who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
       kind: "saida" as const,
       amount: p.amount,
     })),
