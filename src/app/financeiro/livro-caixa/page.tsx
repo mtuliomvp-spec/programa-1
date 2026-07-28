@@ -154,6 +154,7 @@ export default async function LivroCaixaPage({
     notes: string | null;
     who: string;
     vehicle: string | null;
+    account: string | null;
     kind: "entrada" | "saida";
     amount: number;
     // link para a ordem de pagamento (saídas com conta a pagar)
@@ -174,6 +175,7 @@ export default async function LivroCaixaPage({
       notes: null,
       who: t.toId === accountFilter ? t.from.name : t.to.name,
       vehicle: null,
+      account: null,
       kind: (t.toId === accountFilter ? "entrada" : "saida") as "entrada" | "saida",
       amount: t.amount,
     }));
@@ -187,6 +189,7 @@ export default async function LivroCaixaPage({
       notes: r.notes,
       who: r.customer?.name || r.capitalBeneficiary?.name || "-",
       vehicle: vehicleLabel(r.vehicle),
+      account: r.account?.name ?? null,
       kind: "entrada" as const,
       amount: r.amount,
       deletable:
@@ -201,6 +204,7 @@ export default async function LivroCaixaPage({
       notes: p.notes,
       who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
       vehicle: vehicleLabel(p.vehicle),
+      account: p.account?.name ?? null,
       kind: "saida" as const,
       amount: p.amount,
       href: `/financeiro/a-pagar/${p.id}/ordem`,
@@ -228,6 +232,7 @@ export default async function LivroCaixaPage({
             m.notes,
             m.who,
             m.vehicle,
+            m.account,
             m.amount,
             formatCurrency(m.amount),
             m.kind,
@@ -426,6 +431,7 @@ export default async function LivroCaixaPage({
                 <Th>Descrição</Th>
                 <Th>Quem</Th>
                 <Th>Veículo</Th>
+                <Th>Conta</Th>
                 <Th className="text-right">Entrada</Th>
                 <Th className="text-right">Saída</Th>
                 {!filtering ? <Th className="text-right">Saldo</Th> : null}
@@ -436,6 +442,7 @@ export default async function LivroCaixaPage({
                 <Tr className="bg-slate-50">
                   <Td className="text-slate-500">—</Td>
                   <Td className="font-medium text-slate-700">Saldo inicial</Td>
+                  <Td>{""}</Td>
                   <Td>{""}</Td>
                   <Td>{""}</Td>
                   <Td>{""}</Td>
@@ -471,6 +478,7 @@ export default async function LivroCaixaPage({
                   </Td>
                   <Td>{m.who}</Td>
                   <Td className="whitespace-nowrap text-slate-600">{m.vehicle || "-"}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{m.account || "-"}</Td>
                   <Td className="text-right tabular-nums text-emerald-600">
                     {m.kind === "entrada" ? formatCurrency(m.amount) : ""}
                   </Td>
@@ -494,6 +502,7 @@ export default async function LivroCaixaPage({
               ))}
               <Tr className="bg-slate-50 font-semibold">
                 <Td className="text-slate-700">{filtering ? "Total da busca" : "Total"}</Td>
+                <Td>{""}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
