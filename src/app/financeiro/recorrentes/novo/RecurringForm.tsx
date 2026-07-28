@@ -97,7 +97,22 @@ export default function RecurringForm({
                 : "Cada título vira um APORTE do sócio quando você recebe."}
             </p>
           </Field>
-        ) : kind === "PAGAR" ? (
+        ) : null}
+
+        {isCapital && kind === "PAGAR" ? (
+          <Field label="Fornecedor (opcional)">
+            <Select name="supplierId" defaultValue="">
+              <option value="">Sem fornecedor</option>
+              {suppliers.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        ) : null}
+
+        {!isCapital && kind === "PAGAR" ? (
           <>
             <Field label="Categoria" required>
               <Select name="categoryPagar" defaultValue="DESPESA_OPERACIONAL">
@@ -119,7 +134,9 @@ export default function RecurringForm({
               </Select>
             </Field>
           </>
-        ) : (
+        ) : null}
+
+        {!isCapital && kind === "RECEBER" ? (
           <>
             <Field label="Categoria" required>
               <Select name="categoryReceber" defaultValue="OUTROS">
@@ -139,7 +156,7 @@ export default function RecurringForm({
               </Select>
             </Field>
           </>
-        )}
+        ) : null}
 
         <Field label="Começa em" required>
           <Input type="date" name="startDate" defaultValue={toDateInputValue(new Date())} required />
