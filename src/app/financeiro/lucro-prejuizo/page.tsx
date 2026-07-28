@@ -1,7 +1,8 @@
 import { getProfitLossStatement } from "@/lib/reports";
 import { getClosedMonths, monthBounds, monthLabelBR } from "@/lib/monthly-closing";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 
 export const dynamic = "force-dynamic";
@@ -23,9 +24,15 @@ const metaFor = (kind: string) => kindMeta[kind] ?? { label: kind, tone: "defaul
 export default async function LucroPrejuizoPage({
   searchParams,
 }: {
-  searchParams: Promise<{ mes?: string }>;
+  searchParams: Promise<{ mes?: string; q?: string; tipo?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
-  const { mes } = await searchParams;
+  const { mes, tipo, de, ate, min, max } = await searchParams;
+  const q = ((await searchParams).q ?? "").trim();
+  // Com qualquer filtro ativo, o saldo acumulado deixa de fazer sentido (a linha
+  // deixa de ser o extrato completo) — a coluna Saldo acumulado fica oculta.
+  const tipoFilter = tipo && tipo !== "TODOS" ? tipo : "";
+  const filtering =
+    Boolean(q) || Boolean(tipoFilter) || Boolean(de) || Boolean(ate) || Boolean(min?.trim()) || Boolean(max?.trim());
   const closings = await getClosedMonths(); // ordem: mais recente primeiro
 
   // ?mes=AAAA-MM abre um mês FECHADO específico; sem isso, mostra o período aberto.
@@ -63,6 +70,31 @@ export default async function LucroPrejuizoPage({
   const extrato = [...s.entries].sort((a, b) => a.date.getTime() - b.date.getTime());
   let acc = 0;
   const linhas = extrato.map((e) => ({ ...e, saldo: (acc += e.value) }));
+
+  // Origens presentes no período, para o filtro por origem.
+  const origensPresentes = Array.from(new Set(extrato.map((e) => e.kind)));
+
+  // Busca + filtros (origem, data, faixa de valor) sobre os campos exibidos.
+  // Com filtro ativo o "saldo acumulado" fica oculto (só vale no extrato completo).
+  const linhasVisiveis = filtering
+    ? linhas.filter(
+        (e) =>
+          matchesSearch(
+            q,
+            formatDate(e.date),
+            e.description,
+            e.detail,
+            metaFor(e.kind).label,
+            e.value,
+            formatCurrency(e.value),
+          ) &&
+          inDateRange(e.date, de, ate) &&
+          inValueRange(e.value, min, max) &&
+          (!tipoFilter || e.kind === tipoFilter),
+      )
+    : linhas;
+  const totalBusca = linhasVisiveis.reduce((soma, e) => soma + e.value, 0);
+  const clearHref = mes ? `/financeiro/lucro-prejuizo?mes=${mes}` : "/financeiro/lucro-prejuizo";
 
   const Row = ({ label, value, kind = "sub" }: { label: string; value: number; kind?: "sub" | "total" | "final" }) => (
     <div
@@ -154,10 +186,59 @@ export default async function LucroPrejuizoPage({
           title="Extrato do resultado"
           description="Os lançamentos que geraram o lucro/prejuízo. Em veículos e peças entra só a margem (venda − custo)."
         />
+        <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+          {mes ? <input type="hidden" name="mes" value={mes} /> : null}
+          <div className="min-w-[200px] flex-1">
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Buscar
+              <Input name="q" defaultValue={q} placeholder="Descrição, origem, valor..." className="mt-0.5" />
+            </label>
+          </div>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Origem
+            <Select name="tipo" defaultValue={tipoFilter || "TODOS"} className="mt-0.5 w-44">
+              <option value="TODOS">Todas</option>
+              {origensPresentes.map((k) => (
+                <option key={k} value={k}>
+                  {metaFor(k).label}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            De
+            <Input type="date" name="de" defaultValue={de} className="mt-0.5 w-40" />
+          </label>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Até
+            <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 w-40" />
+          </label>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Valor mín.
+            <Input name="min" inputMode="decimal" defaultValue={min} placeholder="0,00" className="mt-0.5 w-28" />
+          </label>
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Valor máx.
+            <Input name="max" inputMode="decimal" defaultValue={max} placeholder="—" className="mt-0.5 w-28" />
+          </label>
+          <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
+            Filtrar
+          </button>
+          {filtering ? (
+            <LinkButton variant="secondary" href={clearHref}>
+              Limpar
+            </LinkButton>
+          ) : null}
+        </form>
         {s.entries.length === 0 ? (
           <EmptyState
             title="Nenhum lançamento no período"
             description="Vendas concluídas e despesas do período aparecem aqui."
+          />
+        ) : linhasVisiveis.length === 0 ? (
+          <EmptyState
+            title="Nada encontrado para o filtro"
+            description="Tente outros termos ou limpe o filtro."
           />
         ) : (
           <Table>
@@ -167,11 +248,11 @@ export default async function LucroPrejuizoPage({
                 <Th>Origem</Th>
                 <Th>Descrição</Th>
                 <Th className="text-right">Valor no resultado</Th>
-                <Th className="text-right">Saldo acumulado</Th>
+                {!filtering ? <Th className="text-right">Saldo acumulado</Th> : null}
               </Tr>
             </Thead>
             <tbody>
-              {linhas.map((e) => (
+              {linhasVisiveis.map((e) => (
                 <Tr key={e.id}>
                   <Td className="whitespace-nowrap">{formatDate(e.date)}</Td>
                   <Td>
@@ -188,37 +269,47 @@ export default async function LucroPrejuizoPage({
                       formatCurrency(e.value)
                     )}
                   </Td>
-                  <Td className="text-right font-semibold tabular-nums">
-                    {e.saldo < 0 ? (
-                      <span className="text-rose-600">{formatCurrency(e.saldo)}</span>
-                    ) : (
-                      formatCurrency(e.saldo)
-                    )}
-                  </Td>
+                  {!filtering ? (
+                    <Td className="text-right font-semibold tabular-nums">
+                      {e.saldo < 0 ? (
+                        <span className="text-rose-600">{formatCurrency(e.saldo)}</span>
+                      ) : (
+                        formatCurrency(e.saldo)
+                      )}
+                    </Td>
+                  ) : null}
                 </Tr>
               ))}
               <Tr className="bg-slate-50 font-bold">
-                <Td>Resultado do período</Td>
+                <Td>{filtering ? "Total do filtro" : "Resultado do período"}</Td>
                 <Td>{""}</Td>
                 <Td>{""}</Td>
                 <Td className="text-right tabular-nums">
-                  {s.lucroLiquido < 0 ? (
-                    <span className="text-rose-600">{formatCurrency(s.lucroLiquido)}</span>
+                  {(filtering ? totalBusca : s.lucroLiquido) < 0 ? (
+                    <span className="text-rose-600">{formatCurrency(filtering ? totalBusca : s.lucroLiquido)}</span>
                   ) : (
-                    formatCurrency(s.lucroLiquido)
+                    formatCurrency(filtering ? totalBusca : s.lucroLiquido)
                   )}
                 </Td>
-                <Td className="text-right tabular-nums">
-                  {s.lucroLiquido < 0 ? (
-                    <span className="text-rose-600">{formatCurrency(s.lucroLiquido)}</span>
-                  ) : (
-                    formatCurrency(s.lucroLiquido)
-                  )}
-                </Td>
+                {!filtering ? (
+                  <Td className="text-right tabular-nums">
+                    {s.lucroLiquido < 0 ? (
+                      <span className="text-rose-600">{formatCurrency(s.lucroLiquido)}</span>
+                    ) : (
+                      formatCurrency(s.lucroLiquido)
+                    )}
+                  </Td>
+                ) : null}
               </Tr>
             </tbody>
           </Table>
         )}
+        {filtering ? (
+          <p className="px-5 py-2 text-xs text-slate-500">
+            O filtro vale só para este extrato. Os cartões acima (lucro do período e a composição do
+            resultado) continuam considerando o período inteiro.
+          </p>
+        ) : null}
         <p className="px-5 py-3 text-xs text-slate-400">
           O custo do veículo (compra + preparação) entra no resultado no dia em que ele é vendido —
           por isso só a diferença (a margem) aparece aqui, não o valor cheio da venda. As despesas
