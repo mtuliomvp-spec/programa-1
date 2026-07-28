@@ -10,16 +10,21 @@ export default function ReceivableRowActions({
   status,
   amount,
   accounts,
+  canReceber = true,
 }: {
   id: string;
   status: "PENDENTE" | "RECEBIDO" | "ATRASADO";
   amount: number;
   accounts: Account[];
+  canReceber?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [choosing, setChoosing] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [value, setValue] = useState<string>(String(amount));
+
+  // Sem permissão de baixa: nenhum controle de receber/reverter aparece.
+  if (!canReceber) return null;
 
   if (status === "RECEBIDO") {
     return (

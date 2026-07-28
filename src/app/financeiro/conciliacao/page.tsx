@@ -1,10 +1,12 @@
 import { PageHeader } from "@/components/ui";
 import { getActiveAccounts } from "@/lib/accounts";
+import { requireAction } from "@/lib/guards";
 import ReconcileClient from "./ReconcileClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConciliacaoPage() {
+  await requireAction("financeiro", "conciliar");
   const accounts = await getActiveAccounts();
   return (
     <div>

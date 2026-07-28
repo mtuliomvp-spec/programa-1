@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { requireAction } from "@/lib/guards";
 import EditPartForm from "./EditPartForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditarPecaPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAction("pecas", "editar");
   const { id } = await params;
   const [part, suppliers] = await Promise.all([
     prisma.part.findUnique({ where: { id } }),

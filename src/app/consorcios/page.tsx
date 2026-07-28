@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import ConsortiumForm from "./ConsortiumForm";
 import ConsortiumActions from "./ConsortiumActions";
 
@@ -23,6 +24,7 @@ export default async function ConsorciosPage({
   await ensureConsortiumInstallments();
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canManage = await userCan("administrativo", "consorcios");
 
   const consortiums = await prisma.consortium.findMany({
     include: { payables: { select: { amount: true, status: true } } },
@@ -123,21 +125,25 @@ export default async function ConsorciosPage({
                       />
                     </div>
                   </div>
-                  <div className="mt-3 flex justify-end">
-                    <ConsortiumActions id={c.id} status={c.status} />
-                  </div>
+                  {canManage ? (
+                    <div className="mt-3 flex justify-end">
+                      <ConsortiumActions id={c.id} status={c.status} />
+                    </div>
+                  ) : null}
                 </Card>
               );
             })
           )}
         </div>
 
-        <Card className="h-fit print:hidden">
-          <CardHeader title="Novo consórcio" />
-          <div className="p-5">
-            <ConsortiumForm />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit print:hidden">
+            <CardHeader title="Novo consórcio" />
+            <div className="p-5">
+              <ConsortiumForm />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

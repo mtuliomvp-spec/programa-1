@@ -108,7 +108,12 @@ export default async function PreVendaFichaPage({
   return (
     <div className="mx-auto max-w-3xl">
       <div className="mb-4">
-        <PreSaleActions id={pre.id} editHref={editHref} canRegister={await userCan("vendas", "registrar")} />
+        <PreSaleActions
+          id={pre.id}
+          editHref={editHref}
+          canRegister={await userCan("vendas", "registrar")}
+          canPreSale={await userCan("vendas", "prevenda")}
+        />
       </div>
 
       {erro ? (

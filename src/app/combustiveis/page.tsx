@@ -3,6 +3,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import FuelForm from "./FuelForm";
 import DeleteFuelButton from "./DeleteFuelButton";
 
@@ -15,6 +16,7 @@ export default async function CombustiveisPage({
 }) {
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canManage = await userCan("administrativo", "combustiveis");
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
@@ -117,7 +119,7 @@ export default async function CombustiveisPage({
                     <Td className="text-right tabular-nums">{e.pricePerLiter.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</Td>
                     <Td className="text-right font-medium tabular-nums">{formatCurrency(e.total)}</Td>
                     <Td>
-                      <DeleteFuelButton id={e.id} />
+                      {canManage ? <DeleteFuelButton id={e.id} /> : null}
                     </Td>
                   </Tr>
                 ))}
@@ -126,12 +128,14 @@ export default async function CombustiveisPage({
           )}
         </Card>
 
-        <Card className="h-fit print:hidden">
-          <CardHeader title="Novo abastecimento" />
-          <div className="p-5">
-            <FuelForm vehicles={vehicles} />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit print:hidden">
+            <CardHeader title="Novo abastecimento" />
+            <div className="p-5">
+              <FuelForm vehicles={vehicles} />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

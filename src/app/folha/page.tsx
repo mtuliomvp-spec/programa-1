@@ -4,6 +4,7 @@ import { effectivePayableStatus } from "@/lib/status";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import EmployeeForm from "./EmployeeForm";
 import EmployeeRowActions from "./EmployeeRowActions";
 import GeneratePayrollButton from "./GeneratePayrollButton";
@@ -20,6 +21,7 @@ export default async function FolhaPage({
 }) {
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canManage = await userCan("administrativo", "folha");
   const now = new Date();
   const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
 
@@ -45,7 +47,7 @@ export default async function FolhaPage({
       <PageHeader
         title="Folha de pagamento"
         description={`${active.length} funcionário(s) ativo(s) · folha mensal estimada: ${formatCurrency(monthlyTotal)}`}
-        action={<GeneratePayrollButton />}
+        action={canManage ? <GeneratePayrollButton /> : undefined}
       />
 
       <ReportToolbar
@@ -102,7 +104,7 @@ export default async function FolhaPage({
                         </Badge>
                       </Td>
                       <Td>
-                        <EmployeeRowActions id={e.id} active={e.active} />
+                        {canManage ? <EmployeeRowActions id={e.id} active={e.active} /> : null}
                       </Td>
                     </Tr>
                   ))}
@@ -154,12 +156,14 @@ export default async function FolhaPage({
           </Card>
         </div>
 
-        <Card className="h-fit print:hidden">
-          <CardHeader title="Novo funcionário" />
-          <div className="p-5">
-            <EmployeeForm />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit print:hidden">
+            <CardHeader title="Novo funcionário" />
+            <div className="p-5">
+              <EmployeeForm />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

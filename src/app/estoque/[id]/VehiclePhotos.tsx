@@ -17,11 +17,15 @@ export default function VehiclePhotos({
   photos,
   published,
   inStock,
+  canManage = true,
+  canPublish = true,
 }: {
   vehicleId: string;
   photos: Photo[];
   published: boolean;
   inStock: boolean;
+  canManage?: boolean;
+  canPublish?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
   const [selectedCount, setSelectedCount] = useState(0);
@@ -50,7 +54,7 @@ export default function VehiclePhotos({
 
   return (
     <div className="space-y-4 p-5">
-      {inStock ? (
+      {inStock && canPublish ? (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
           {published ? (
             <>
@@ -105,41 +109,45 @@ export default function VehiclePhotos({
                   className="aspect-square w-full rounded-lg border border-slate-200 object-cover"
                 />
               </a>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => {
-                  if (!confirm("Excluir esta foto?")) return;
-                  startDelete(() => deleteVehicleAttachmentAction(p.id, vehicleId));
-                }}
-                className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
-                title="Excluir foto"
-              >
-                ✕
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => {
+                    if (!confirm("Excluir esta foto?")) return;
+                    startDelete(() => deleteVehicleAttachmentAction(p.id, vehicleId));
+                  }}
+                  className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
+                  title="Excluir foto"
+                >
+                  ✕
+                </button>
+              ) : null}
             </div>
           ))}
         </div>
       )}
 
-      <form ref={formRef} action={formAction} className="space-y-2">
-        <input type="hidden" name="vehicleId" value={vehicleId} />
-        <input
-          type="file"
-          name="photos"
-          accept="image/*"
-          multiple
-          onChange={(e) => setSelectedCount(e.target.files?.length ?? 0)}
-          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
-        />
-        <div className="flex items-center gap-3">
-          <Button type="submit" disabled={pending || selectedCount === 0}>
-            {pending ? "Enviando..." : selectedCount > 1 ? `Enviar ${selectedCount} fotos` : "Enviar foto"}
-          </Button>
-          <p className="text-xs text-slate-400">Pode escolher várias de uma vez (até 15 MB cada).</p>
-        </div>
-        {state.error ? <p className="text-sm font-medium text-rose-600">{state.error}</p> : null}
-      </form>
+      {canManage ? (
+        <form ref={formRef} action={formAction} className="space-y-2">
+          <input type="hidden" name="vehicleId" value={vehicleId} />
+          <input
+            type="file"
+            name="photos"
+            accept="image/*"
+            multiple
+            onChange={(e) => setSelectedCount(e.target.files?.length ?? 0)}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
+          />
+          <div className="flex items-center gap-3">
+            <Button type="submit" disabled={pending || selectedCount === 0}>
+              {pending ? "Enviando..." : selectedCount > 1 ? `Enviar ${selectedCount} fotos` : "Enviar foto"}
+            </Button>
+            <p className="text-xs text-slate-400">Pode escolher várias de uma vez (até 15 MB cada).</p>
+          </div>
+          {state.error ? <p className="text-sm font-medium text-rose-600">{state.error}</p> : null}
+        </form>
+      ) : null}
     </div>
   );
 }

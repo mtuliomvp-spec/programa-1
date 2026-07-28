@@ -4,6 +4,8 @@ import { matchesSearch } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import DeleteRowButton from "@/components/DeleteRowButton";
+import Can from "@/components/Can";
+import { userCan } from "@/lib/guards";
 import { deleteSupplierAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -14,6 +16,10 @@ export default async function FornecedoresPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
+  const [canEditar, canExcluir] = await Promise.all([
+    userCan("cadastros", "editar"),
+    userCan("cadastros", "excluir"),
+  ]);
   const allSuppliers = await prisma.supplier.findMany({
     orderBy: { name: "asc" },
     include: { _count: { select: { vehicles: true, parts: true } } },
@@ -27,7 +33,11 @@ export default async function FornecedoresPage({
       <PageHeader
         title="Fornecedores"
         description={`${suppliers.length} fornecedor(es) cadastrado(s)`}
-        action={<LinkButton href="/fornecedores/novo">+ Novo fornecedor</LinkButton>}
+        action={
+          <Can module="cadastros" action="criar">
+            <LinkButton href="/fornecedores/novo">+ Novo fornecedor</LinkButton>
+          </Can>
+        }
       />
       <ReportToolbar
         basePath="/fornecedores"
@@ -39,7 +49,13 @@ export default async function FornecedoresPage({
         {suppliers.length === 0 ? (
           <EmptyState
             title={q ? "Nada encontrado para a busca" : "Nenhum fornecedor cadastrado"}
-            action={q ? undefined : <LinkButton href="/fornecedores/novo">+ Novo fornecedor</LinkButton>}
+            action={
+              q ? undefined : (
+                <Can module="cadastros" action="criar">
+                  <LinkButton href="/fornecedores/novo">+ Novo fornecedor</LinkButton>
+                </Can>
+              )
+            }
           />
         ) : (
           <Table>
@@ -65,10 +81,14 @@ export default async function FornecedoresPage({
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-3">
-                      <Link href={`/fornecedores/${s.id}/editar`} className="text-sm font-medium text-slate-900 hover:underline">
-                        Editar
-                      </Link>
-                      <DeleteRowButton id={s.id} action={deleteSupplierAction} confirmMessage={`Excluir o fornecedor ${s.name}?`} />
+                      {canEditar ? (
+                        <Link href={`/fornecedores/${s.id}/editar`} className="text-sm font-medium text-slate-900 hover:underline">
+                          Editar
+                        </Link>
+                      ) : null}
+                      {canExcluir ? (
+                        <DeleteRowButton id={s.id} action={deleteSupplierAction} confirmMessage={`Excluir o fornecedor ${s.name}?`} />
+                      ) : null}
                     </div>
                   </Td>
                 </Tr>

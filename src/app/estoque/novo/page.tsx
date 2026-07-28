@@ -1,10 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { requireAction } from "@/lib/guards";
 import VehicleForm from "../VehicleForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function NovoVeiculoPage() {
+  await requireAction("estoque", "criar");
   const suppliers = await prisma.supplier.findMany({ orderBy: { name: "asc" } });
 
   return (

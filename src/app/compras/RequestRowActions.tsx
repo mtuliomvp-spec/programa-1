@@ -13,12 +13,14 @@ import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 export default function RequestRowActions({
   id,
   status,
-  isAdmin,
+  canApprove,
+  canCreate,
   structuralKey,
 }: {
   id: string;
   status: "PENDENTE" | "APROVADA" | "REJEITADA" | "CONCLUIDA" | "CANCELADA";
-  isAdmin: boolean;
+  canApprove: boolean;
+  canCreate: boolean;
   structuralKey?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
@@ -35,7 +37,7 @@ export default function RequestRowActions({
   if (status === "PENDENTE") {
     return (
       <div className="flex items-center justify-end gap-3 text-sm font-medium">
-        {isAdmin ? (
+        {canApprove ? (
           <>
             <button
               type="button"
@@ -57,7 +59,8 @@ export default function RequestRowActions({
               Rejeitar
             </button>
           </>
-        ) : (
+        ) : null}
+        {canCreate ? (
           <button
             type="button"
             disabled={pending}
@@ -70,12 +73,12 @@ export default function RequestRowActions({
           >
             Cancelar
           </button>
-        )}
+        ) : null}
       </div>
     );
   }
 
-  if (status === "APROVADA") {
+  if (status === "APROVADA" && canApprove) {
     return (
       <div className="flex flex-col items-end gap-1.5">
         {showConclude ? (

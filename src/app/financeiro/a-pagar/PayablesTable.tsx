@@ -30,9 +30,11 @@ const statusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atrasado" }
 export default function PayablesTable({
   rows,
   accounts,
+  canPagar = true,
 }: {
   rows: PayableRow[];
   accounts: Account[];
+  canPagar?: boolean;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
@@ -86,13 +88,15 @@ export default function PayablesTable({
         <Thead>
           <Tr>
             <Th className="w-8">
-              <input
-                type="checkbox"
-                aria-label="Selecionar todas"
-                checked={allSelected}
-                onChange={toggleAll}
-                className="h-4 w-4 rounded border-slate-300"
-              />
+              {canPagar ? (
+                <input
+                  type="checkbox"
+                  aria-label="Selecionar todas"
+                  checked={allSelected}
+                  onChange={toggleAll}
+                  className="h-4 w-4 rounded border-slate-300"
+                />
+              ) : null}
             </Th>
             <Th>Nº</Th>
             <Th>Descrição</Th>
@@ -111,7 +115,7 @@ export default function PayablesTable({
             return (
               <Tr key={p.id} className={selected.has(p.id) ? "bg-blue-50/60" : undefined}>
                 <Td>
-                  {selectable ? (
+                  {selectable && canPagar ? (
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${p.description}`}
@@ -159,7 +163,7 @@ export default function PayablesTable({
                   ) : null}
                 </Td>
                 <Td>
-                  {p.status === "PAGO" ? (
+                  {p.status === "PAGO" && canPagar ? (
                     <button
                       type="button"
                       disabled={reverting}
@@ -176,7 +180,7 @@ export default function PayablesTable({
         </tbody>
       </Table>
 
-      {accounts.length === 0 ? (
+      {accounts.length === 0 && canPagar ? (
         <p className="px-5 py-3 text-sm text-amber-700">
           Cadastre uma conta financeira para poder pagar os títulos.{" "}
           <Link href="/financeiro/contas" className="font-medium text-blue-700 hover:underline">

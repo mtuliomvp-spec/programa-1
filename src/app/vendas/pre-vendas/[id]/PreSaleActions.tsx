@@ -7,7 +7,17 @@ import PrintButton from "@/components/PrintButton";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { convertPreSaleAction, deletePreSaleAction } from "../actions";
 
-export default function PreSaleActions({ id, editHref, canRegister = true }: { id: string; editHref: string; canRegister?: boolean }) {
+export default function PreSaleActions({
+  id,
+  editHref,
+  canRegister = true,
+  canPreSale = true,
+}: {
+  id: string;
+  editHref: string;
+  canRegister?: boolean;
+  canPreSale?: boolean;
+}) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [runningLabel, setRunningLabel] = useState("Registrando a venda… aguarde. Não feche esta página.");
@@ -41,16 +51,20 @@ export default function PreSaleActions({ id, editHref, canRegister = true }: { i
         <LinkButton variant="secondary" href="/vendas">
           ← Vendas
         </LinkButton>
-        <LinkButton variant="secondary" href={editHref}>
-          ✏️ Editar
-        </LinkButton>
+        {canPreSale ? (
+          <LinkButton variant="secondary" href={editHref}>
+            ✏️ Editar
+          </LinkButton>
+        ) : null}
         <LinkButton variant="secondary" href={`/vendas/pre-vendas/${id}/contrato`}>
           📄 Contrato de venda
         </LinkButton>
         <PrintButton />
-        <Button type="button" variant="danger" onClick={handleDelete} disabled={pending}>
-          {pending ? "..." : "Excluir"}
-        </Button>
+        {canPreSale ? (
+          <Button type="button" variant="danger" onClick={handleDelete} disabled={pending}>
+            {pending ? "..." : "Excluir"}
+          </Button>
+        ) : null}
         {canRegister ? (
           <Button type="button" onClick={handleConvert} disabled={pending}>
             {pending ? "Registrando..." : "✓ Registrar venda"}

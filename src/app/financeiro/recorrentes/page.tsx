@@ -4,6 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import RecurringRowActions from "./RecurringRowActions";
 import GenerateNowButton from "./GenerateNowButton";
 
@@ -35,6 +36,7 @@ export default async function RecorrentesPage({
   await ensureRecurringGenerated();
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canCriar = await userCan("financeiro", "criar");
 
   const allEntries = await prisma.recurringEntry.findMany({
     include: { supplier: true, customer: true, capitalBeneficiary: true },
@@ -68,10 +70,12 @@ export default async function RecorrentesPage({
         title="Lançamentos recorrentes"
         description={`Todo mês: ${formatCurrency(monthlyPagar)} a pagar · ${formatCurrency(monthlyReceber)} a receber`}
         action={
-          <div className="flex flex-wrap items-center gap-2 print:hidden">
-            <GenerateNowButton />
-            <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
-          </div>
+          canCriar ? (
+            <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <GenerateNowButton />
+              <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
+            </div>
+          ) : undefined
         }
       />
 
@@ -98,7 +102,11 @@ export default async function RecorrentesPage({
           <EmptyState
             title="Nenhuma recorrência cadastrada"
             description="Cadastre despesas e receitas fixas (aluguel, salários, assinaturas...) para o sistema lançar sozinho todo mês."
-            action={<LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>}
+            action={
+              canCriar ? (
+                <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
+              ) : undefined
+            }
           />
         ) : (
           <Table>
@@ -143,7 +151,7 @@ export default async function RecorrentesPage({
                     </Badge>
                   </Td>
                   <Td>
-                    <RecurringRowActions id={e.id} active={e.active} />
+                    {canCriar ? <RecurringRowActions id={e.id} active={e.active} /> : null}
                   </Td>
                 </Tr>
               ))}

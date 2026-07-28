@@ -16,6 +16,7 @@ import {
   Tr,
 } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import Can from "@/components/Can";
 
 export const dynamic = "force-dynamic";
 
@@ -98,7 +99,9 @@ export default async function FinanciamentoTerceirosListPage({
         title="Financiamento de terceiros"
         description="Operações em que a loja apenas intermediou o financiamento (o veículo é de terceiro)"
         action={
-          <LinkButton href="/vendas/financiamento-terceiros/novo">+ Nova operação</LinkButton>
+          <Can module="vendas" action="prevenda">
+            <LinkButton href="/vendas/financiamento-terceiros/novo">+ Nova operação</LinkButton>
+          </Can>
         }
       />
 

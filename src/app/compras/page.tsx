@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { getSessionUser } from "@/lib/auth";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import NewRequestForm from "./NewRequestForm";
 import RequestRowActions from "./RequestRowActions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
@@ -29,8 +29,7 @@ export default async function ComprasPage({
 }) {
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const [user, allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
-    getSessionUser(),
+  const [allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
     prisma.purchaseRequest.findMany({
       include: { supplier: true },
       orderBy: { createdAt: "desc" },
@@ -77,7 +76,10 @@ export default async function ComprasPage({
 
   const pendentes = requests.filter((r) => r.status === "PENDENTE");
   const aprovadas = requests.filter((r) => r.status === "APROVADA");
-  const isAdmin = user?.role === "ADMIN";
+  const [canCreate, canApprove] = await Promise.all([
+    userCan("compras", "criar"),
+    userCan("compras", "aprovar"),
+  ]);
 
   return (
     <div>
@@ -168,7 +170,8 @@ export default async function ComprasPage({
                       <RequestRowActions
                         id={r.id}
                         status={r.status}
-                        isAdmin={isAdmin}
+                        canApprove={canApprove}
+                        canCreate={canCreate}
                         structuralKey={r.structuralKey}
                       />
                     </Td>
@@ -179,12 +182,14 @@ export default async function ComprasPage({
           )}
         </Card>
 
-        <Card className="h-fit print:hidden">
-          <CardHeader title="Nova solicitação" />
-          <div className="p-5">
-            <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />
-          </div>
-        </Card>
+        {canCreate ? (
+          <Card className="h-fit print:hidden">
+            <CardHeader title="Nova solicitação" />
+            <div className="p-5">
+              <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

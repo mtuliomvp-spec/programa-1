@@ -4,6 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import Can from "@/components/Can";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +38,11 @@ export default async function PecasPage({
       <PageHeader
         title="Peças"
         description={`${parts.length} peça(s) · valor em estoque: ${formatCurrency(stockValue)}${lowStock.length ? ` · ${lowStock.length} com estoque baixo` : ""}`}
-        action={<LinkButton href="/pecas/novo">+ Nova peça</LinkButton>}
+        action={
+          <Can module="pecas" action="criar">
+            <LinkButton href="/pecas/novo">+ Nova peça</LinkButton>
+          </Can>
+        }
       />
       <ReportToolbar
         basePath="/pecas"
@@ -52,7 +57,13 @@ export default async function PecasPage({
         {parts.length === 0 ? (
           <EmptyState
             title={q ? "Nada encontrado para a busca" : "Nenhuma peça cadastrada"}
-            action={q ? undefined : <LinkButton href="/pecas/novo">+ Nova peça</LinkButton>}
+            action={
+              q ? undefined : (
+                <Can module="pecas" action="criar">
+                  <LinkButton href="/pecas/novo">+ Nova peça</LinkButton>
+                </Can>
+              )
+            }
           />
         ) : (
           <Table>

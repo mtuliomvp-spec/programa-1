@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +17,7 @@ export default async function CapitalPage({
 }) {
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canManage = await userCan("administrativo", "capital");
   // A empresa dos Parâmetros sempre aparece como beneficiária própria
   await ensureCompanyBeneficiary();
   const [beneficiaries, allocationsByBenef] = await Promise.all([
@@ -119,14 +121,16 @@ export default async function CapitalPage({
           )}
         </div>
 
-        <Card className="h-fit print:hidden">
-          <div className="border-b border-slate-100 px-5 py-4">
-            <h2 className="text-base font-semibold text-slate-900">Novo beneficiário</h2>
-          </div>
-          <div className="p-5">
-            <NewBeneficiaryForm />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit print:hidden">
+            <div className="border-b border-slate-100 px-5 py-4">
+              <h2 className="text-base font-semibold text-slate-900">Novo beneficiário</h2>
+            </div>
+            <div className="p-5">
+              <NewBeneficiaryForm />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

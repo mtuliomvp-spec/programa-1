@@ -31,9 +31,11 @@ function humanSize(bytes: number): string {
 export default function VehicleAttachments({
   vehicleId,
   attachments,
+  canManage = true,
 }: {
   vehicleId: string;
   attachments: Attachment[];
+  canManage?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     uploadVehicleAttachmentAction,
@@ -87,25 +89,31 @@ export default function VehicleAttachments({
                 >
                   Baixar
                 </a>
-                <button
-                  type="button"
-                  disabled={removing}
-                  onClick={() => {
-                    if (confirm(`Excluir o documento "${a.description}"?`)) {
-                      startRemove(() => deleteVehicleAttachmentAction(a.id, vehicleId));
-                    }
-                  }}
-                  className="font-medium text-rose-600 hover:underline disabled:opacity-50"
-                >
-                  Excluir
-                </button>
+                {canManage ? (
+                  <button
+                    type="button"
+                    disabled={removing}
+                    onClick={() => {
+                      if (confirm(`Excluir o documento "${a.description}"?`)) {
+                        startRemove(() => deleteVehicleAttachmentAction(a.id, vehicleId));
+                      }
+                    }}
+                    className="font-medium text-rose-600 hover:underline disabled:opacity-50"
+                  >
+                    Excluir
+                  </button>
+                ) : null}
               </div>
             </li>
           ))}
         </ul>
       )}
 
-      <form ref={formRef} action={formAction} className="space-y-3 border-t border-slate-100 pt-4">
+      <form
+        ref={formRef}
+        action={formAction}
+        className={`space-y-3 border-t border-slate-100 pt-4 ${canManage ? "" : "hidden"}`}
+      >
         <input type="hidden" name="vehicleId" value={vehicleId} />
         {state.error ? (
           <p className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">

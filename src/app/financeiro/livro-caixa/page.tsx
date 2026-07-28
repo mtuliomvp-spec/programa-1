@@ -4,6 +4,7 @@ import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { getCashboxState } from "@/lib/cashbox";
+import { userCan } from "@/lib/guards";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -52,6 +53,7 @@ export default async function LivroCaixaPage({
   // Data de trabalho do caixa aberto: novos lançamentos ficam travados nela.
   const cashbox = await getCashboxState();
   const cashboxWorkDate = cashbox.open ? cashbox.session?.workDate ?? null : null;
+  const canCriar = await userCan("financeiro", "criar");
 
   const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers, health] =
     await Promise.all([
@@ -313,7 +315,7 @@ export default async function LivroCaixaPage({
 
       <BooksHealthChecks health={health} />
 
-      <div className="mb-4">
+      <div className={`mb-4 ${canCriar ? "" : "hidden"}`}>
         {health.allOk ? (
           <CashEntryForm
             accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
@@ -452,7 +454,7 @@ export default async function LivroCaixaPage({
                       ) : (
                         m.description
                       )}
-                      {m.deletable ? (
+                      {m.deletable && canCriar ? (
                         <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} />
                       ) : null}
                     </span>
