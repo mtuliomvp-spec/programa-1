@@ -9,6 +9,7 @@ import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
+import VehicleCrlv from "./VehicleCrlv";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import ParecerIAButton from "@/components/ParecerIAButton";
@@ -322,13 +323,27 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
           <Card>
             <CardHeader
+              title="CRLV"
+              description="Anexe o CRLV do veículo informando o ano em exercício (ex.: CRLV 2025)"
+            />
+            <VehicleCrlv
+              vehicleId={vehicle.id}
+              canManage={canEditar}
+              crlvs={vehicle.attachments.filter((a) => a.kind === "CRLV")}
+            />
+          </Card>
+
+          <Card>
+            <CardHeader
               title="Documentos do veículo"
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
             <VehicleAttachments
               vehicleId={vehicle.id}
               canManage={canEditar}
-              attachments={vehicle.attachments.filter((a) => a.kind !== "FOTO_VEICULO")}
+              attachments={vehicle.attachments.filter(
+                (a) => a.kind !== "FOTO_VEICULO" && a.kind !== "CRLV",
+              )}
             />
           </Card>
 

@@ -135,6 +135,7 @@ export async function restoreBackupAction(
       prisma.financialAccount.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.supplier.deleteMany(),
+      prisma.companyDocument.deleteMany(),
       prisma.companySettings.deleteMany(),
       prisma.user.deleteMany(),
       prisma.profile.deleteMany(),
@@ -184,6 +185,15 @@ export async function restoreBackupAction(
     });
     if (attachmentRows.length) {
       ops.push(prisma.vehicleAttachment.createMany({ data: attachmentRows as never[] }));
+    }
+
+    // Documentos da empresa: mesmo esquema (arquivo em base64 → Bytes).
+    const companyDocRows = arr("companyDocuments").map((d) => {
+      const { data, ...rest } = d as Record<string, unknown>;
+      return { ...rest, data: Buffer.from(String(data ?? ""), "base64") };
+    });
+    if (companyDocRows.length) {
+      ops.push(prisma.companyDocument.createMany({ data: companyDocRows as never[] }));
     }
 
     // Alinha os contadores (sequences) ao maior número restaurado, para o

@@ -102,6 +102,11 @@ export const MODULES: ModuleConfig[] = [
     label: "Cadastros (clientes e fornecedores)",
     acoes: [VER, CRIAR, EDITAR, EXCLUIR],
   },
+  {
+    key: "documentos_empresa",
+    label: "Documentos da empresa",
+    acoes: [VER, CRIAR, EXCLUIR],
+  },
 ];
 
 export type ModuleKey = (typeof MODULES)[number]["key"];

@@ -415,6 +415,7 @@ enum AttachmentKind {
   DOCUMENTO
   FOTO_CLIENTE
   FOTO_VEICULO
+  CRLV
 }
 
 model VehicleAttachment {
@@ -437,6 +438,22 @@ model VehicleAttachment {
 
   @@index([vehicleId])
   @@map("vehicle_attachments")
+}
+
+// Documento da EMPRESA (ex.: contrato social, cartão CNPJ, alvará). Não tem
+// vínculo com veículo — é da loja. O arquivo é guardado no próprio banco
+// (bytea), como os anexos de veículo, para funcionar no Vercel/Neon sem
+// storage externo.
+model CompanyDocument {
+  id          String   @id @default(cuid())
+  description String
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
+
+  @@map("company_documents")
 }
 
 // Custo lançado sobre um veículo específico (preparação, documentação,

@@ -23,6 +23,11 @@ function agingTone(days: number): "success" | "info" | "warning" | "danger" {
   return "danger";
 }
 
+/** Texto do selo de CRLV no card (com o ano em exercício quando anexado). */
+function crlvBadgeLabel(hasCrlv: boolean, year: string | null): string {
+  return hasCrlv ? `✓ CRLV${year ? ` ${year}` : ""}` : "⚠ CRLV pendente";
+}
+
 export default async function EstoquePage({
   searchParams,
 }: {
@@ -78,6 +83,15 @@ export default async function EstoquePage({
     preSaleNumber: preSaleByVehicle.get(v.id) ?? null,
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
+    hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
+    crlvYear:
+      v.attachments
+        .filter((a) => a.kind === "CRLV")
+        .map((a) => a.description.match(/(\d{4})/)?.[1] ?? "")
+        .filter(Boolean)
+        .sort()
+        .at(-1) ?? null,
     invested: v.purchasePrice + v.costs.reduce((sum, c) => sum + c.amount, 0),
     // Custo real = tudo o que já foi efetivamente PAGO por esse veículo
     // (aquisição + manutenção/custos), pela conta financeira.
@@ -230,11 +244,17 @@ export default async function EstoquePage({
                     </div>
                   </div>
                   {v.status !== "VENDIDO" ? (
-                    <div className="mt-2 flex justify-end">
+                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
+                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
+                      </Badge>
                       <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
                     </div>
                   ) : (
                     <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
+                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
+                      </Badge>
                       <Badge tone={v.hasComunicacao ? "success" : "warning"}>
                         {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
                       </Badge>
@@ -306,6 +326,11 @@ export default async function EstoquePage({
                           <Badge tone="default">🔄 Recebido em troca</Badge>
                         </span>
                       ) : null}
+                      <span className="mt-1 block">
+                        <Badge tone={v.hasCrlv ? "success" : "warning"}>
+                          {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
+                        </Badge>
+                      </span>
                       {v.status === "VENDIDO" ? (
                         <span className="mt-1 flex flex-col items-start gap-1">
                           <Badge tone={v.hasComunicacao ? "success" : "warning"}>
