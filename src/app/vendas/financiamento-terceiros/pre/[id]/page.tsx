@@ -45,7 +45,12 @@ export default async function IntermediationPreSalePage({
       ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId } })
       : Promise.resolve(null),
   ]);
-  if (!vehicle || !customer) notFound();
+  // Veículo/cliente podem não existir mais (ex.: apagados num "zerar dados").
+  // Ainda assim a ficha precisa abrir para poder ser cancelada.
+  const vehicleLabel = vehicle
+    ? `${vehicle.brand} ${vehicle.model} · ${vehicle.plate}`
+    : "Veículo removido";
+  const customerName = customer?.name ?? pre.ownerName ?? "—";
 
   const referrals = parseReferrals(pre.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
@@ -68,7 +73,7 @@ export default async function IntermediationPreSalePage({
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Financiamento de terceiros — pré-venda"
-        description={`${vehicle.brand} ${vehicle.model} · ${vehicle.plate}`}
+        description={vehicleLabel}
         action={
           <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/pre/${pre.id}/contrato`}>
             📄 Contrato de intermediação
@@ -105,7 +110,7 @@ export default async function IntermediationPreSalePage({
         <div className="grid grid-cols-1 gap-x-6 gap-y-1 p-5 text-sm sm:grid-cols-2">
           <p><span className="text-slate-500">Vendedor (proprietário):</span> <strong>{pre.ownerName || "—"}</strong></p>
           <p><span className="text-slate-500">Documento:</span> {pre.ownerDocument || "—"}</p>
-          <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{customer.name}</strong></p>
+          <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{customerName}</strong></p>
           <p><span className="text-slate-500">Financeira:</span> {financerAccount?.name || "—"}</p>
           <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
           <p><span className="text-slate-500">Banco do comprador:</span> {pre.buyerBankName || "—"} {pre.buyerBankAgency ? `· Ag ${pre.buyerBankAgency}` : ""} {pre.buyerBankAccount ? `· Cc ${pre.buyerBankAccount}` : ""}</p>
