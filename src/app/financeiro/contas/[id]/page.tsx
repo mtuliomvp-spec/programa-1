@@ -7,6 +7,7 @@ import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { userCan } from "@/lib/guards";
+import PrintButton from "@/components/PrintButton";
 import AccountFinancerSettings from "./AccountFinancerSettings";
 import InvestmentPanel from "./InvestmentPanel";
 
@@ -166,9 +167,12 @@ export default async function AccountStatementPage({
             : ""
         }`}
         action={
-          <LinkButton href="/financeiro/contas" variant="secondary">
-            ← Contas
-          </LinkButton>
+          <div className="flex flex-wrap gap-2 print:hidden">
+            <LinkButton href="/financeiro/contas" variant="secondary">
+              ← Contas
+            </LinkButton>
+            <PrintButton title={`Conta ${account.name}`} />
+          </div>
         }
       />
 
