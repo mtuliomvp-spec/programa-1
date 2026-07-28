@@ -65,7 +65,7 @@ export async function createRecurringAction(
         // No fluxo Capital a categoria não é despesa/receita — usa OUTROS.
         categoryPagar: data.kind === "PAGAR" ? (isCapital ? "OUTROS" : data.categoryPagar ?? "DESPESA_OPERACIONAL") : null,
         categoryReceber: data.kind === "RECEBER" ? (isCapital ? "OUTROS" : data.categoryReceber ?? "OUTROS") : null,
-        supplierId: data.kind === "PAGAR" && !isCapital ? data.supplierId || null : null,
+        supplierId: data.kind === "PAGAR" ? data.supplierId || null : null,
         customerId: data.kind === "RECEBER" && !isCapital ? data.customerId || null : null,
         capitalBeneficiaryId: isCapital ? data.capitalBeneficiaryId || null : null,
         startDate: parseDateInput(data.startDate),
