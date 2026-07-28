@@ -2,11 +2,13 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import PersonForm from "@/components/PersonForm";
+import { requireAction } from "@/lib/guards";
 import { updateCustomerAction } from "../../actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function EditarClientePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireAction("cadastros", "editar");
   const { id } = await params;
   const customer = await prisma.customer.findUnique({ where: { id } });
   if (!customer) notFound();

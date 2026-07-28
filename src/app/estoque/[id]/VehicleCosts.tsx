@@ -21,10 +21,12 @@ export default function VehicleCosts({
   vehicleId,
   costs,
   sold,
+  canManage = true,
 }: {
   vehicleId: string;
   costs: Cost[];
   sold: boolean;
+  canManage?: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
   const [state, formAction, pending] = useActionState<CostFormState, FormData>(
@@ -65,7 +67,7 @@ export default function VehicleCosts({
                 <span className="text-sm font-semibold text-slate-900">
                   {formatCurrency(c.amount)}
                 </span>
-                {!sold || c.postSale ? (
+                {(!sold || c.postSale) && canManage ? (
                   <button
                     type="button"
                     disabled={deleting}
@@ -85,7 +87,7 @@ export default function VehicleCosts({
         </ul>
       )}
 
-      <div className="border-t border-slate-100 px-5 py-4">
+      <div className={`border-t border-slate-100 px-5 py-4 ${canManage ? "" : "hidden"}`}>
         {sold && !showForm ? (
           <p className="mb-2 text-xs text-slate-500">
             Veículo vendido. Novos custos entram como <strong>pós-venda</strong> (não mexem na

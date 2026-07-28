@@ -3,6 +3,7 @@ import { ensureCompanyBeneficiary } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { stockVehiclesForInterest, stockInterestHistory } from "@/lib/stock-interest";
+import { userCan } from "@/lib/guards";
 import RemuneracaoForm from "./RemuneracaoForm";
 import ReverseRunButton from "./ReverseRunButton";
 
@@ -10,6 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function RemuneracaoEstoquePage() {
   await ensureCompanyBeneficiary();
+  const canManage = await userCan("administrativo", "capital");
   const [vehicles, beneficiaries, history] = await Promise.all([
     stockVehiclesForInterest(),
     prisma.capitalBeneficiary.findMany({
@@ -44,9 +46,9 @@ export default async function RemuneracaoEstoquePage() {
             description="Cadastre veículos no estoque para aplicar a remuneração de capital."
           />
         </Card>
-      ) : (
+      ) : canManage ? (
         <RemuneracaoForm vehicles={vehicles} beneficiaries={beneficiaries} />
-      )}
+      ) : null}
 
       <Card className="mt-6 print:hidden">
         <div className="border-b border-slate-100 px-5 py-4">
@@ -92,7 +94,7 @@ export default async function RemuneracaoEstoquePage() {
                     )}
                   </Td>
                   <Td>
-                    {h.canReverse ? (
+                    {h.canReverse && canManage ? (
                       <ReverseRunButton runId={h.id} runDate={h.date.toISOString()} />
                     ) : null}
                   </Td>

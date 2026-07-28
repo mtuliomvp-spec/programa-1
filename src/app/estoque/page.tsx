@@ -5,6 +5,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { daysBetween } from "@/lib/reports";
 import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import Can from "@/components/Can";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -139,7 +140,11 @@ export default async function EstoquePage({
       <PageHeader
         title="Estoque de veículos"
         description={`${rows.length} veículo(s) · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)} · valor anunciado: ${formatCurrency(totalValue)}`}
-        action={<LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>}
+        action={
+          <Can module="estoque" action="criar">
+            <LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>
+          </Can>
+        }
       />
 
       <ReportToolbar
@@ -171,7 +176,11 @@ export default async function EstoquePage({
           <EmptyState
             title="Nenhum veículo encontrado"
             description="Cadastre o primeiro veículo do estoque para começar."
-            action={<LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>}
+            action={
+              <Can module="estoque" action="criar">
+                <LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>
+              </Can>
+            }
           />
         </Card>
       ) : (

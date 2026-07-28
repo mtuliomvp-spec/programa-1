@@ -12,6 +12,19 @@ export async function requireModule(moduleKey: ModuleKey) {
 }
 
 /**
+ * Garante uma AÇÃO específica numa PÁGINA (server component). Como
+ * `requireModule`, mas para uma ação: manda para "/" se o usuário não tiver a
+ * permissão. Usar no topo das páginas de formulário/ação (novo, editar) para
+ * que o operador sem permissão não abra a tela nem por link direto.
+ */
+export async function requireAction(moduleKey: ModuleKey, action: string) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  if (!can(user, moduleKey, action)) redirect("/");
+  return user;
+}
+
+/**
  * Garante uma AÇÃO específica dentro de um módulo (ex.: vendas.registrar).
  * Lança Error com mensagem amigável — para usar em server actions dentro de
  * try/catch (não redireciona). Admin passa sempre.

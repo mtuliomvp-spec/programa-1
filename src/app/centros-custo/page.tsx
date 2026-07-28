@@ -5,6 +5,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, PageHeader } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import CostCenterForm from "./CostCenterForm";
 import ToggleCostCenterButton from "./ToggleCostCenterButton";
 
@@ -19,6 +20,7 @@ export default async function CentrosCustoPage({
 }) {
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canManage = await userCan("administrativo", "centros");
   // Garante os centros estruturais (Capital, Veículos, Administrativo) e
   // classifica lançamentos antigos que ainda estavam sem centro.
   await ensureStructuralCostCenters();
@@ -134,7 +136,7 @@ export default async function CentrosCustoPage({
                         {formatCurrency(c.resultado)}
                       </p>
                     </div>
-                    {!c.structural ? <ToggleCostCenterButton id={c.id} active={c.active} /> : null}
+                    {!c.structural && canManage ? <ToggleCostCenterButton id={c.id} active={c.active} /> : null}
                   </div>
                 </div>
               </Card>
@@ -155,12 +157,14 @@ export default async function CentrosCustoPage({
           </Card>
         </div>
 
-        <Card className="h-fit print:hidden">
-          <CardHeader title="Novo centro de custo" />
-          <div className="p-5">
-            <CostCenterForm />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit print:hidden">
+            <CardHeader title="Novo centro de custo" />
+            <div className="p-5">
+              <CostCenterForm />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

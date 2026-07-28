@@ -8,6 +8,7 @@ import { matchesSearch } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
+import { userCan } from "@/lib/guards";
 import CashboxCard from "./CashboxCard";
 import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
@@ -36,6 +37,7 @@ export default async function ContasPage({
     prisma.cashboxSession.findMany({ orderBy: { openedAt: "desc" }, take: 30 }),
   ]);
 
+  const canContas = await userCan("financeiro", "contas");
   const active = accounts.filter((a) => a.active);
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
@@ -78,12 +80,12 @@ export default async function ContasPage({
               {formatCurrency(a.balance)}
             </p>
           </div>
-          {a.isInvestment && a.active ? (
+          {a.isInvestment && a.active && canContas ? (
             <LinkButton href={`/financeiro/contas/${a.id}`} className="whitespace-nowrap">
               📈 Aplicar
             </LinkButton>
           ) : null}
-          <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} />
+          <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} canManage={canContas} />
         </div>
       </div>
     </Card>
@@ -96,7 +98,7 @@ export default async function ContasPage({
         description="Cadastre as contas da loja — toda baixa de pagamento/recebimento passa por uma delas"
       />
 
-      <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} />
+      <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} canManage={canContas} />
 
       <BooksHealthChecks health={health} />
 
@@ -170,7 +172,7 @@ export default async function ContasPage({
                       <Td>{t.description || "—"}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(t.amount)}</Td>
                       <Td>
-                        <DeleteTransferButton id={t.id} />
+                        {canContas ? <DeleteTransferButton id={t.id} /> : null}
                       </Td>
                     </Tr>
                   ))}
@@ -180,24 +182,26 @@ export default async function ContasPage({
           </Card>
         </div>
 
-        <div className="space-y-4 print:hidden">
-          <Card>
-            <CardHeader title="Nova conta" />
-            <div className="p-5">
-              <AccountForm />
-            </div>
-          </Card>
-          {active.filter((a) => !a.isInvestment).length >= 2 ? (
+        {canContas ? (
+          <div className="space-y-4 print:hidden">
             <Card>
-              <CardHeader title="Transferir entre contas" />
+              <CardHeader title="Nova conta" />
               <div className="p-5">
-                <TransferForm
-                  accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
-                />
+                <AccountForm />
               </div>
             </Card>
-          ) : null}
-        </div>
+            {active.filter((a) => !a.isInvestment).length >= 2 ? (
+              <Card>
+                <CardHeader title="Transferir entre contas" />
+                <div className="p-5">
+                  <TransferForm
+                    accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                  />
+                </div>
+              </Card>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

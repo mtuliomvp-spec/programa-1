@@ -6,6 +6,8 @@ import { effectivePayableStatus } from "@/lib/status";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import Can from "@/components/Can";
+import { userCan } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
 
 export const dynamic = "force-dynamic";
@@ -28,6 +30,7 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canPagar = await userCan("financeiro", "pagar");
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
 
@@ -89,7 +92,11 @@ export default async function ContasAPagarPage({
       <PageHeader
         title="Contas a pagar"
         description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}`}
-        action={<LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>}
+        action={
+          <Can module="financeiro" action="criar">
+            <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
+          </Can>
+        }
       />
 
       <ReportToolbar
@@ -121,10 +128,12 @@ export default async function ContasAPagarPage({
           <EmptyState title={q ? "Nada encontrado para a busca" : "Nenhuma conta a pagar encontrada"} />
         ) : (
           <>
-            <p className="border-b border-slate-100 px-5 py-2.5 text-xs text-slate-500">
-              Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
-            </p>
-            <PayablesTable rows={tableRows} accounts={accounts} />
+            {canPagar ? (
+              <p className="border-b border-slate-100 px-5 py-2.5 text-xs text-slate-500">
+                Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
+              </p>
+            ) : null}
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} />
           </>
         )}
       </Card>

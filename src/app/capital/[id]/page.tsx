@@ -4,6 +4,7 @@ import { getSelectableAccounts } from "@/lib/accounts";
 import { appliedTotalOf, freeCapitalOf } from "@/lib/investments";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { userCan } from "@/lib/guards";
 import CapitalTransactionForm from "./CapitalTransactionForm";
 import DeleteTransactionButton from "./DeleteTransactionButton";
 import IncludeClosingToggle from "./IncludeClosingToggle";
@@ -22,6 +23,8 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
     include: { transactions: { orderBy: { date: "desc" } } },
   });
   if (!beneficiary) notFound();
+
+  const canManage = await userCan("administrativo", "capital");
 
   const sum = (kind: string) =>
     beneficiary.transactions.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
@@ -100,7 +103,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
-      {!beneficiary.isCompany && appliedTotal > 0 ? (
+      {!beneficiary.isCompany && appliedTotal > 0 && canManage ? (
         <div className="mb-4">
           <SubstitutionWithdrawForm
             beneficiaryId={beneficiary.id}
@@ -112,7 +115,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
-      {!beneficiary.isCompany ? (
+      {!beneficiary.isCompany && canManage ? (
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ProLaboreForm beneficiaryId={beneficiary.id} initial={beneficiary.proLabore} />
           <IncludeClosingToggle
@@ -159,7 +162,9 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
                       {formatCurrency(t.amount)}
                     </Td>
                     <Td>
-                      <DeleteTransactionButton id={t.id} beneficiaryId={beneficiary.id} />
+                      {canManage ? (
+                        <DeleteTransactionButton id={t.id} beneficiaryId={beneficiary.id} />
+                      ) : null}
                     </Td>
                   </Tr>
                 ))}
@@ -168,12 +173,14 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
           )}
         </Card>
 
-        <Card className="h-fit">
-          <CardHeader title="Nova movimentação" />
-          <div className="p-5">
-            <CapitalTransactionForm beneficiaryId={beneficiary.id} />
-          </div>
-        </Card>
+        {canManage ? (
+          <Card className="h-fit">
+            <CardHeader title="Nova movimentação" />
+            <div className="p-5">
+              <CapitalTransactionForm beneficiaryId={beneficiary.id} />
+            </div>
+          </Card>
+        ) : null}
       </div>
     </div>
   );

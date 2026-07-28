@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import DeleteRowButton from "@/components/DeleteRowButton";
+import { userCan } from "@/lib/guards";
 import { deletePartAction } from "../actions";
 import AddStockForm from "./AddStockForm";
 import SellPartForm from "./SellPartForm";
@@ -29,12 +30,23 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
 
   if (!part) notFound();
 
+  const [canEditar, canRepor, canVender, canExcluir] = await Promise.all([
+    userCan("pecas", "editar"),
+    userCan("pecas", "repor"),
+    userCan("pecas", "vender"),
+    userCan("pecas", "excluir"),
+  ]);
+
   return (
     <div className="mx-auto max-w-5xl">
       <PageHeader
         title={part.name}
         description={`Código ${part.code} · ${part.quantity} un. em estoque`}
-        action={<LinkButton href={`/pecas/${part.id}/editar`} variant="secondary">Editar</LinkButton>}
+        action={
+          canEditar ? (
+            <LinkButton href={`/pecas/${part.id}/editar`} variant="secondary">Editar</LinkButton>
+          ) : undefined
+        }
       />
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -111,30 +123,36 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
         </div>
 
         <div className="space-y-4">
-          <Card>
-            <CardHeader title="Repor estoque" description="Gera conta a pagar automaticamente" />
-            <div className="p-5">
-              <AddStockForm partId={part.id} currentCostPrice={part.costPrice} supplierId={part.supplierId} suppliers={suppliers} />
-            </div>
-          </Card>
+          {canRepor ? (
+            <Card>
+              <CardHeader title="Repor estoque" description="Gera conta a pagar automaticamente" />
+              <div className="p-5">
+                <AddStockForm partId={part.id} currentCostPrice={part.costPrice} supplierId={part.supplierId} suppliers={suppliers} />
+              </div>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader title="Vender peça" description="Gera conta a receber automaticamente" />
-            <div className="p-5">
-              <SellPartForm partId={part.id} currentSalePrice={part.salePrice} availableQuantity={part.quantity} customers={customers} />
-            </div>
-          </Card>
+          {canVender ? (
+            <Card>
+              <CardHeader title="Vender peça" description="Gera conta a receber automaticamente" />
+              <div className="p-5">
+                <SellPartForm partId={part.id} currentSalePrice={part.salePrice} availableQuantity={part.quantity} customers={customers} />
+              </div>
+            </Card>
+          ) : null}
 
-          <Card>
-            <CardHeader title="Zona de risco" />
-            <div className="p-5">
-              <DeleteRowButton
-                id={part.id}
-                action={deletePartAction}
-                confirmMessage={`Excluir a peça ${part.name}?`}
-              />
-            </div>
-          </Card>
+          {canExcluir ? (
+            <Card>
+              <CardHeader title="Zona de risco" />
+              <div className="p-5">
+                <DeleteRowButton
+                  id={part.id}
+                  action={deletePartAction}
+                  confirmMessage={`Excluir a peça ${part.name}?`}
+                />
+              </div>
+            </Card>
+          ) : null}
         </div>
       </div>
     </div>

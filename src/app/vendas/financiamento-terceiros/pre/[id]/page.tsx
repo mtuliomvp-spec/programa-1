@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireModule } from "@/lib/guards";
+import { requireModule, userCan } from "@/lib/guards";
 import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
@@ -92,7 +92,13 @@ export default async function IntermediationPreSalePage({
         </div>
       )}
 
-      {!canceled ? <IntermediationPreSaleActions id={pre.id} /> : null}
+      {!canceled ? (
+        <IntermediationPreSaleActions
+          id={pre.id}
+          canRegister={await userCan("vendas", "registrar")}
+          canPreSale={await userCan("vendas", "prevenda")}
+        />
+      ) : null}
 
       <Card className="mb-4">
         <CardHeader title="Partes" />

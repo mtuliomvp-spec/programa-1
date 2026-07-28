@@ -23,6 +23,7 @@ export default function InvestmentPanel({
   beneficiaries,
   sourceAccounts,
   today,
+  canManage = true,
 }: {
   accountId: string;
   balance: number;
@@ -32,6 +33,7 @@ export default function InvestmentPanel({
   beneficiaries: Beneficiary[];
   sourceAccounts: SourceAccount[];
   today: string;
+  canManage?: boolean;
 }) {
   const aplicarBound = aplicarAction.bind(null, accountId);
   const resgatarBound = resgatarAction.bind(null, accountId);
@@ -99,7 +101,7 @@ export default function InvestmentPanel({
         )}
       </Card>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <div className={`grid grid-cols-1 gap-4 lg:grid-cols-2 ${canManage ? "" : "hidden"}`}>
         {/* Aplicar */}
         <Card>
           <CardHeader title="Aplicar (creditar dinheiro na conta)" description="Um sócio passa a ter capital aplicado nesta conta" />

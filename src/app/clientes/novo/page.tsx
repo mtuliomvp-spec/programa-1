@@ -1,10 +1,12 @@
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import PersonForm from "@/components/PersonForm";
+import { requireAction } from "@/lib/guards";
 import { createCustomerAction } from "../actions";
 
 export const dynamic = "force-dynamic";
 
-export default function NovoClientePage() {
+export default async function NovoClientePage() {
+  await requireAction("cadastros", "criar");
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader title="Novo cliente" />

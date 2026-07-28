@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { requireAction } from "@/lib/guards";
 import ManualPayableForm from "./ManualPayableForm";
 
 export const dynamic = "force-dynamic";
@@ -7,6 +8,7 @@ export const dynamic = "force-dynamic";
 const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
 
 export default async function NovaContaPagarPage() {
+  await requireAction("financeiro", "criar");
   const [suppliers, costCenters, stockVehicles, beneficiaries, customCategories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.costCenter.findMany({

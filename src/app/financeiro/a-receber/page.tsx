@@ -6,6 +6,8 @@ import { effectiveReceivableStatus } from "@/lib/status";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import Can from "@/components/Can";
+import { userCan } from "@/lib/guards";
 import ReceivableRowActions from "./ReceivableRowActions";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +23,7 @@ export default async function ContasAReceberPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canReceber = await userCan("financeiro", "receber");
   await ensureRecurringGenerated();
 
   const [receivables, accounts] = await Promise.all([
@@ -59,7 +62,11 @@ export default async function ContasAReceberPage({
       <PageHeader
         title="Contas a receber"
         description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}`}
-        action={<LinkButton href="/financeiro/a-receber/novo">+ Nova conta</LinkButton>}
+        action={
+          <Can module="financeiro" action="criar">
+            <LinkButton href="/financeiro/a-receber/novo">+ Nova conta</LinkButton>
+          </Can>
+        }
       />
 
       <ReportToolbar
@@ -114,7 +121,7 @@ export default async function ContasAReceberPage({
                     <Badge tone={statusTone[r.effective]}>{statusLabelMap[r.effective]}</Badge>
                   </Td>
                   <Td>
-                    <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} />
+                    <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} canReceber={canReceber} />
                   </Td>
                 </Tr>
               ))}

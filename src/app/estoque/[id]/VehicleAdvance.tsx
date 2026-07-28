@@ -14,11 +14,13 @@ export default function VehicleAdvance({
   accounts,
   customers,
   advances,
+  canManage = true,
 }: {
   vehicleId: string;
   accounts: Account[];
   customers: Customer[];
   advances: Advance[];
+  canManage?: boolean;
 }) {
   const [state, formAction, pending] = useActionState<AdvanceFormState, FormData>(
     async (prev, formData) => {
@@ -46,18 +48,20 @@ export default function VehicleAdvance({
                   {a.customerName ? <span>· {a.customerName}</span> : null}
                 </p>
               </div>
-              <button
-                type="button"
-                disabled={deleting}
-                onClick={() => {
-                  if (confirm("Excluir este sinal? O valor recebido será estornado da conta.")) {
-                    startDelete(() => deleteVehicleAdvanceAction(a.id, vehicleId));
-                  }
-                }}
-                className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-              >
-                Excluir
-              </button>
+              {canManage ? (
+                <button
+                  type="button"
+                  disabled={deleting}
+                  onClick={() => {
+                    if (confirm("Excluir este sinal? O valor recebido será estornado da conta.")) {
+                      startDelete(() => deleteVehicleAdvanceAction(a.id, vehicleId));
+                    }
+                  }}
+                  className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
+                >
+                  Excluir
+                </button>
+              ) : null}
             </li>
           ))}
           <li className="flex items-center justify-between px-5 py-2 text-sm font-semibold text-slate-700">
@@ -71,7 +75,7 @@ export default function VehicleAdvance({
         </p>
       )}
 
-      <div className="border-t border-slate-100 px-5 py-4">
+      <div className={`border-t border-slate-100 px-5 py-4 ${canManage ? "" : "hidden"}`}>
         {show ? (
           <form action={formAction} className="space-y-3">
             <input type="hidden" name="vehicleId" value={vehicleId} />

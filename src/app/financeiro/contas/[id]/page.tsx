@@ -5,6 +5,7 @@ import { getAccountsWithBalances, getSelectableAccounts } from "@/lib/accounts";
 import { appliedByBeneficiary, reconcileInvestmentAccount, totalApplied } from "@/lib/investments";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { userCan } from "@/lib/guards";
 import AccountFinancerSettings from "./AccountFinancerSettings";
 import InvestmentPanel from "./InvestmentPanel";
 
@@ -34,6 +35,7 @@ export default async function AccountStatementPage({ params }: { params: Promise
 
   if (!account) notFound();
 
+  const canContas = await userCan("financeiro", "contas");
   const bal = balances.find((b) => b.id === id);
 
   // Conta de Aplicação: mostra a razão do capital por sócio + operações.
@@ -72,6 +74,7 @@ export default async function AccountStatementPage({ params }: { params: Promise
           applied={applied}
           beneficiaries={beneficiaries}
           sourceAccounts={sourceAccounts}
+          canManage={canContas}
           today={toDateInputValue(new Date())}
         />
       </div>
@@ -141,7 +144,7 @@ export default async function AccountStatementPage({ params }: { params: Promise
         }
       />
 
-      {account.type === "FINANCEIRA" ? (
+      {account.type === "FINANCEIRA" && canContas ? (
         <AccountFinancerSettings
           id={account.id}
           initialPercent={account.returnTaxPercent}

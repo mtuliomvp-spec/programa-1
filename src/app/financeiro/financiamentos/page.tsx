@@ -5,6 +5,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { retornoLabel } from "@/lib/retorno";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
 import FinancingSettleButton from "./FinancingSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
 
@@ -17,6 +18,7 @@ export default async function FinanciamentosPage({
 }) {
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
+  const canReceber = await userCan("financeiro", "receber");
   const [allSales, accounts] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", paymentMethod: "FINANCIADO" },
@@ -137,9 +139,9 @@ export default async function FinanciamentosPage({
                     {s.financerSettledAt ? (
                       <div className="flex flex-col items-end gap-0.5">
                         <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
-                        <ReverseSettleButton saleId={s.id} mode="financing" />
+                        {canReceber ? <ReverseSettleButton saleId={s.id} mode="financing" /> : null}
                       </div>
-                    ) : s.financerAccountId ? (
+                    ) : s.financerAccountId && canReceber ? (
                       <FinancingSettleButton saleId={s.id} accounts={companyAccounts} />
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
@@ -163,9 +165,9 @@ export default async function FinanciamentosPage({
                                 </span>
                               </span>
                             ) : null}
-                            <ReverseSettleButton saleId={s.id} mode="return" />
+                            {canReceber ? <ReverseSettleButton saleId={s.id} mode="return" /> : null}
                           </>
-                        ) : s.financerAccountId ? (
+                        ) : s.financerAccountId && canReceber ? (
                           <FinancingSettleButton
                             saleId={s.id}
                             accounts={companyAccounts}

@@ -22,10 +22,12 @@ export default function CashboxCard({
   open,
   session,
   history,
+  canManage = true,
 }: {
   open: boolean;
   session: Session | null;
   history: Session[];
+  canManage?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -85,7 +87,7 @@ export default function CashboxCard({
         </div>
 
         <div className="mt-3 flex flex-wrap items-end gap-2">
-          {!open ? (
+          {!open && canManage ? (
             <label className="text-xs font-medium text-slate-600">
               Data de trabalho
               <input
@@ -112,7 +114,7 @@ export default function CashboxCard({
             📋 Fechamento Mensal
           </a>
 
-          {open ? (
+          {canManage && open ? (
             <button
               type="button"
               onClick={doClose}
@@ -121,7 +123,7 @@ export default function CashboxCard({
             >
               🔒 {pending ? "Fechando..." : "Fechar Caixa"}
             </button>
-          ) : (
+          ) : canManage && !open ? (
             <button
               type="button"
               onClick={doOpen}
@@ -130,7 +132,7 @@ export default function CashboxCard({
             >
               🔓 {pending ? (willReopen ? "Reabrindo..." : "Abrindo...") : willReopen ? "Reabrir Caixa" : "Abrir Caixa"}
             </button>
-          )}
+          ) : null}
         </div>
 
         {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}

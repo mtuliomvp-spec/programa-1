@@ -12,6 +12,7 @@ import VehicleAttachments from "./VehicleAttachments";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import ParecerIAButton from "@/components/ParecerIAButton";
+import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
@@ -53,6 +54,17 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   });
 
   if (!vehicle) notFound();
+
+  // Permissões granulares: cada controle de ação só aparece para quem pode.
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender] =
+    await Promise.all([
+      userCan("estoque", "editar"),
+      userCan("estoque", "excluir"),
+      userCan("estoque", "custos"),
+      userCan("estoque", "debitos"),
+      userCan("estoque", "publicar"),
+      userCan("vendas", "prevenda"),
+    ]);
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
@@ -113,7 +125,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               📜 Contrato de compra
             </LinkButton>
             <ParecerIAButton mode="vehicle" vehicleId={vehicle.id} variant="secondary" />
-            {vehicle.status !== "VENDIDO" ? (
+            {vehicle.status !== "VENDIDO" && canVender ? (
               openPreSale ? (
                 <LinkButton href={`/vendas/pre-vendas/${openPreSale.id}`} variant="primary">
                   Abrir pré-venda nº {String(openPreSale.number).padStart(4, "0")}
@@ -124,7 +136,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 </LinkButton>
               )
             ) : null}
-            {vehicle.status !== "VENDIDO" ? (
+            {vehicle.status !== "VENDIDO" && canEditar ? (
               <LinkButton href={`/estoque/${vehicle.id}/editar`} variant="secondary">
                 Editar
               </LinkButton>
@@ -206,6 +218,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <VehicleCosts
               vehicleId={vehicle.id}
               sold={vehicle.status === "VENDIDO"}
+              canManage={canCustos}
               costs={vehicle.costs.map((c) => ({
                 id: c.id,
                 description: c.description,
@@ -218,7 +231,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   : null,
               }))}
             />
-            {vehicle.status !== "VENDIDO" ? <VehicleDebtsLookup vehicleId={vehicle.id} /> : null}
+            {vehicle.status !== "VENDIDO" && canDebitos ? (
+              <VehicleDebtsLookup vehicleId={vehicle.id} />
+            ) : null}
           </Card>
 
           {inStock ? (
@@ -229,6 +244,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               />
               <VehicleAdvance
                 vehicleId={vehicle.id}
+                canManage={canEditar}
                 accounts={advanceAccounts.map((a) => ({ id: a.id, name: a.name }))}
                 customers={advanceCustomers}
                 advances={advances.map((r) => ({
@@ -299,6 +315,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               photos={vehicle.attachments.filter((a) => a.kind === "FOTO_VEICULO")}
               published={vehicle.published}
               inStock={vehicle.status === "ESTOQUE"}
+              canManage={canEditar}
+              canPublish={canPublicar}
             />
           </Card>
 
@@ -309,21 +327,24 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleAttachments
               vehicleId={vehicle.id}
+              canManage={canEditar}
               attachments={vehicle.attachments.filter((a) => a.kind !== "FOTO_VEICULO")}
             />
           </Card>
 
-          <Card>
-            <CardHeader
-              title="Foto do cliente (antifraude)"
-              description="Registre o comprador com data/hora e localização — prova contra alegação de fraude"
-            />
-            <ClientPhotoCapture vehicleId={vehicle.id} />
-          </Card>
+          {canEditar ? (
+            <Card>
+              <CardHeader
+                title="Foto do cliente (antifraude)"
+                description="Registre o comprador com data/hora e localização — prova contra alegação de fraude"
+              />
+              <ClientPhotoCapture vehicleId={vehicle.id} />
+            </Card>
+          ) : null}
         </div>
 
         <div className="space-y-4">
-          {vehicle.status !== "VENDIDO" ? (
+          {vehicle.status !== "VENDIDO" && canEditar ? (
             <Card>
               <CardHeader title="Situação no estoque" />
               <div className="p-5">
@@ -332,7 +353,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             </Card>
           ) : null}
 
-          {vehicle.status !== "VENDIDO" ? (
+          {vehicle.status !== "VENDIDO" && canExcluir ? (
             <Card>
               <CardHeader title="Zona de risco" />
               <div className="p-5">
