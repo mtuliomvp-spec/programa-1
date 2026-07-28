@@ -149,8 +149,8 @@ export default function LinkedBeneficiaries({
         </p>
       </div>
       <p className="mt-0.5 text-xs text-slate-500">
-        Beneficiários atrelados a este responsável. O saldo deles continua no capital total — aqui é só
-        o agrupamento. Para usar/devolver, retire da caução (sai do caixa).
+        Valores de terceiros atrelados a este responsável — <strong>não entram no saldo investido dele</strong>
+        (mas seguem contando no capital total da loja). Para usar/devolver, retire da caução (sai do caixa).
       </p>
 
       {childrenList.length > 0 ? (

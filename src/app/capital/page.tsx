@@ -121,12 +121,6 @@ export default async function CapitalPage({
                           </span>
                         </p>
                       ) : null}
-                      {caucaoByParent.has(b.id) ? (
-                        <p className="mt-0.5 text-xs font-medium text-slate-600">
-                          🏠 Caução vinculada {formatCurrency(caucaoByParent.get(b.id)!.total)} ·{" "}
-                          {caucaoByParent.get(b.id)!.count} vinculado(s)
-                        </p>
-                      ) : null}
                     </div>
                     <div className="text-right">
                       <p className="text-xs uppercase tracking-wide text-slate-400">Saldo investido</p>
@@ -137,6 +131,21 @@ export default async function CapitalPage({
                       </p>
                     </div>
                   </div>
+                  {caucaoByParent.has(b.id) ? (
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                          🏠 Caução de terceiros · {caucaoByParent.get(b.id)!.count} vinculado(s)
+                        </p>
+                        <p className="text-[11px] text-amber-700/80">
+                          Guardada em nome de terceiros — <strong>não entra</strong> no saldo investido dele.
+                        </p>
+                      </div>
+                      <p className="text-base font-bold text-amber-700">
+                        {formatCurrency(caucaoByParent.get(b.id)!.total)}
+                      </p>
+                    </div>
+                  ) : null}
                 </Card>
               </Link>
             ))
