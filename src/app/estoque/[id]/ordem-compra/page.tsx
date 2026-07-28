@@ -130,13 +130,8 @@ export default async function OrdemCompraPage({ params }: { params: Promise<{ id
           anteriores à entrega.
         </p>
 
-        <div className="grid grid-cols-2 gap-10 pt-6 text-center text-sm">
-          <div>
-            <div className="border-t border-slate-400 pt-2">{s?.name || "Vendedor"}</div>
-          </div>
-          <div>
-            <div className="border-t border-slate-400 pt-2">{company.razaoSocial} (comprador)</div>
-          </div>
+        <div className="mx-auto max-w-xs pt-6 text-center text-sm">
+          <div className="border-t border-slate-400 pt-2">{company.razaoSocial} (comprador)</div>
         </div>
       </div>
     </div>
