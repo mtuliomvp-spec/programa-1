@@ -129,21 +129,34 @@ export default async function FinanciamentoTerceirosListPage({
                 <Th>Data</Th>
                 <Th className="text-right">Financiamento</Th>
                 <Th className="text-right">Devolução</Th>
+                <Th />
               </Tr>
             </Thead>
             <tbody>
               {openPre.map((p) => (
                 <Tr key={p.id}>
                   <Td className="font-medium text-slate-900">
-                    <Link href={`/vendas/financiamento-terceiros/pre/${p.id}`} className="hover:underline">
-                      {p.vehicle?.brand} {p.vehicle?.model}
-                    </Link>
-                    <span className="ml-1.5 text-xs text-slate-400">{p.vehicle?.plate}</span>
+                    {p.vehicle ? (
+                      <>
+                        {p.vehicle.brand} {p.vehicle.model}
+                        <span className="ml-1.5 text-xs text-slate-400">{p.vehicle.plate}</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-400">Veículo removido</span>
+                    )}
                   </Td>
                   <Td>{p.customer?.name ?? "—"}</Td>
                   <Td>{formatDate(p.saleDate)}</Td>
                   <Td className="text-right tabular-nums">{formatCurrency(p.financingAmount)}</Td>
                   <Td className="text-right tabular-nums">{formatCurrency(p.refundAmount)}</Td>
+                  <Td className="text-right">
+                    <Link
+                      href={`/vendas/financiamento-terceiros/pre/${p.id}`}
+                      className="whitespace-nowrap text-sm font-medium text-amber-700 hover:underline"
+                    >
+                      Abrir ficha
+                    </Link>
+                  </Td>
                 </Tr>
               ))}
             </tbody>
