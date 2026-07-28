@@ -4,7 +4,8 @@ import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances, getSelectableAccounts } from "@/lib/accounts";
 import { appliedByBeneficiary, reconcileInvestmentAccount, totalApplied } from "@/lib/investments";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
-import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
+import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { userCan } from "@/lib/guards";
 import AccountFinancerSettings from "./AccountFinancerSettings";
 import InvestmentPanel from "./InvestmentPanel";
@@ -13,8 +14,21 @@ export const dynamic = "force-dynamic";
 
 const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
 
-export default async function AccountStatementPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function AccountStatementPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ q?: string; tipo?: string; de?: string; ate?: string; min?: string; max?: string }>;
+}) {
   const { id } = await params;
+  const { q: qRaw, tipo, de, ate, min, max } = await searchParams;
+  const q = (qRaw ?? "").trim();
+  // Com qualquer filtro ativo, o saldo corrente deixa de fazer sentido (a lista
+  // não é mais o histórico completo) — a coluna Saldo fica oculta.
+  const tipoFilter = tipo === "ENTRADA" || tipo === "SAIDA" ? tipo : "";
+  const filtering =
+    Boolean(q) || Boolean(tipoFilter) || Boolean(de) || Boolean(ate) || Boolean(min?.trim()) || Boolean(max?.trim());
 
   const [account, balances, paid, received, transfers] = await Promise.all([
     prisma.financialAccount.findUnique({ where: { id } }),
@@ -114,14 +128,28 @@ export default async function AccountStatementPage({ params }: { params: Promise
 
   // saldo corrente a partir do saldo inicial
   let running = account.initialBalance;
-  const rows = movements.map((m) => {
+  const allRows = movements.map((m) => {
     running += m.kind === "entrada" ? m.amount : -m.amount;
     return { ...m, balance: running };
   });
-  rows.reverse(); // mais recente primeiro
+  allRows.reverse(); // mais recente primeiro
+
+  // Busca + filtros (tipo, data, faixa de valor) sobre os campos exibidos.
+  // Com filtro ativo, a coluna Saldo fica oculta (só vale no histórico completo).
+  const rows = filtering
+    ? allRows.filter(
+        (m) =>
+          matchesSearch(q, formatDate(m.date), m.description, m.who, m.amount, formatCurrency(m.amount)) &&
+          inDateRange(m.date, de, ate) &&
+          inValueRange(m.amount, min, max) &&
+          (!tipoFilter || (tipoFilter === "ENTRADA" ? m.kind === "entrada" : m.kind === "saida")),
+      )
+    : allRows;
 
   const totalIn = movements.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0);
   const totalOut = movements.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0);
+  const filtIn = rows.filter((m) => m.kind === "entrada").reduce((s, m) => s + m.amount, 0);
+  const filtOut = rows.filter((m) => m.kind === "saida").reduce((s, m) => s + m.amount, 0);
 
   return (
     <div>
@@ -161,8 +189,52 @@ export default async function AccountStatementPage({ params }: { params: Promise
 
       <Card>
         <CardHeader title="Histórico de movimentações" description="Todas as entradas e saídas desta conta, da mais recente para a mais antiga" />
-        {rows.length === 0 ? (
+        {movements.length > 0 ? (
+          <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+            <div className="min-w-[200px] flex-1">
+              <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+                Buscar
+                <Input name="q" defaultValue={q} placeholder="Descrição, quem, valor..." className="mt-0.5" />
+              </label>
+            </div>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Tipo
+              <Select name="tipo" defaultValue={tipoFilter || "TODOS"} className="mt-0.5 w-36">
+                <option value="TODOS">Todas</option>
+                <option value="ENTRADA">Entradas</option>
+                <option value="SAIDA">Saídas</option>
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              De
+              <Input type="date" name="de" defaultValue={de} className="mt-0.5 w-40" />
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Até
+              <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 w-40" />
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Valor mín.
+              <Input name="min" inputMode="decimal" defaultValue={min} placeholder="0,00" className="mt-0.5 w-28" />
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Valor máx.
+              <Input name="max" inputMode="decimal" defaultValue={max} placeholder="—" className="mt-0.5 w-28" />
+            </label>
+            <button type="submit" className="rounded-lg bg-slate-900 px-3.5 py-2 text-sm font-medium text-white hover:bg-slate-700">
+              Filtrar
+            </button>
+            {filtering ? (
+              <LinkButton variant="secondary" href={`/financeiro/contas/${id}`}>
+                Limpar
+              </LinkButton>
+            ) : null}
+          </form>
+        ) : null}
+        {movements.length === 0 ? (
           <EmptyState title="Sem movimentações" description="Pagamentos, recebimentos e transferências desta conta aparecem aqui." />
+        ) : rows.length === 0 ? (
+          <EmptyState title="Nada encontrado para o filtro" description="Tente outros termos ou limpe o filtro." />
         ) : (
           <Table>
             <Thead>
@@ -172,7 +244,7 @@ export default async function AccountStatementPage({ params }: { params: Promise
                 <Th>Quem</Th>
                 <Th className="text-right">Entrada</Th>
                 <Th className="text-right">Saída</Th>
-                <Th className="text-right">Saldo</Th>
+                {!filtering ? <Th className="text-right">Saldo</Th> : null}
               </Tr>
             </Thead>
             <tbody>
@@ -190,14 +262,31 @@ export default async function AccountStatementPage({ params }: { params: Promise
                   <Td className="text-right tabular-nums text-rose-600">
                     {m.kind === "saida" ? formatCurrency(m.amount) : ""}
                   </Td>
-                  <Td className={`text-right font-medium tabular-nums ${m.balance >= 0 ? "text-slate-900" : "text-rose-600"}`}>
-                    {formatCurrency(m.balance)}
-                  </Td>
+                  {!filtering ? (
+                    <Td className={`text-right font-medium tabular-nums ${m.balance >= 0 ? "text-slate-900" : "text-rose-600"}`}>
+                      {formatCurrency(m.balance)}
+                    </Td>
+                  ) : null}
                 </Tr>
               ))}
+              {filtering ? (
+                <Tr className="bg-slate-50 font-semibold">
+                  <Td className="text-slate-700">Total do filtro</Td>
+                  <Td>{""}</Td>
+                  <Td>{""}</Td>
+                  <Td className="text-right tabular-nums text-emerald-600">{formatCurrency(filtIn)}</Td>
+                  <Td className="text-right tabular-nums text-rose-600">{formatCurrency(filtOut)}</Td>
+                </Tr>
+              ) : null}
             </tbody>
           </Table>
         )}
+        {filtering ? (
+          <p className="px-5 py-2 text-xs text-slate-500">
+            O filtro vale só para esta lista. Os cartões acima (saldo, entradas e saídas) seguem
+            considerando a conta inteira.
+          </p>
+        ) : null}
       </Card>
     </div>
   );
