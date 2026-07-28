@@ -807,6 +807,12 @@ model CapitalBeneficiary {
   // Vínculo 1:1 com um usuário do sistema (o sócio que também tem login).
   userId       String?              @unique
   user         User?                @relation("BeneficiaryUser", fields: [userId], references: [id], onDelete: SetNull)
+  // Agrupamento pai→filhos: um beneficiário "responsável" reúne outros
+  // vinculados (ex.: cauções recebidas em nome dele). Só agrupa/visualiza —
+  // não altera nenhum cálculo financeiro. Um nível apenas.
+  parentId     String?
+  parent       CapitalBeneficiary?  @relation("BeneficiaryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children     CapitalBeneficiary[] @relation("BeneficiaryParent")
   transactions CapitalTransaction[]
   allocations  InvestmentAllocation[]
   purchaseRequests PurchaseRequest[]

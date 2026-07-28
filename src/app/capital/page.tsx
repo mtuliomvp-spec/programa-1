@@ -31,25 +31,41 @@ export default async function CapitalPage({
     allocationsByBenef.map((a) => [a.beneficiaryId, Math.round((a._sum.amount ?? 0) * 100) / 100]),
   );
 
-  const withTotals = beneficiaries
-    .map((b) => {
-      const sum = (kind: string) =>
-        b.transactions.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
-      const aportes = sum("APORTE");
-      const retiradas = sum("RETIRADA");
-      const proLabore = sum("PRO_LABORE");
-      const saldo = aportes - retiradas;
-      const aplicado = appliedByBenef.get(b.id) ?? 0;
-      return { ...b, aportes, retiradas, proLabore, saldo, aplicado, livre: saldo - aplicado };
-    })
-    .filter(
-      (b) =>
-        matchesSearch(q, b.name, b.saldo, formatCurrency(b.saldo)) && inValueRange(b.saldo, min, max),
-    );
+  const mapped = beneficiaries.map((b) => {
+    const sum = (kind: string) =>
+      b.transactions.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
+    const aportes = sum("APORTE");
+    const retiradas = sum("RETIRADA");
+    const proLabore = sum("PRO_LABORE");
+    const saldo = aportes - retiradas;
+    const aplicado = appliedByBenef.get(b.id) ?? 0;
+    return { ...b, aportes, retiradas, proLabore, saldo, aplicado, livre: saldo - aplicado };
+  });
 
-  const totalInvestido = withTotals.reduce((s, b) => s + b.saldo, 0);
-  const totalAportes = withTotals.reduce((s, b) => s + b.aportes, 0);
-  const totalRetiradas = withTotals.reduce((s, b) => s + b.retiradas, 0);
+  const filtered = mapped.filter(
+    (b) => matchesSearch(q, b.name, b.saldo, formatCurrency(b.saldo)) && inValueRange(b.saldo, min, max),
+  );
+
+  // Totais somam TODOS (inclusive os vinculados/caução) — não podem divergir dos
+  // checks de saldo nem da equação patrimonial; o agrupamento é só visual.
+  const totalInvestido = filtered.reduce((s, b) => s + b.saldo, 0);
+  const totalAportes = filtered.reduce((s, b) => s + b.aportes, 0);
+  const totalRetiradas = filtered.reduce((s, b) => s + b.retiradas, 0);
+
+  // Caução por responsável: soma dos saldos dos vinculados (de todos, não só os
+  // filtrados), para exibir no card do responsável.
+  const caucaoByParent = new Map<string, { count: number; total: number }>();
+  for (const b of mapped) {
+    if (b.parentId) {
+      const cur = caucaoByParent.get(b.parentId) ?? { count: 0, total: 0 };
+      cur.count += 1;
+      cur.total += b.saldo;
+      caucaoByParent.set(b.parentId, cur);
+    }
+  }
+
+  // A LISTA de cards esconde os vinculados (aparecem sob o responsável).
+  const cards = filtered.filter((b) => b.parentId == null);
 
   return (
     <div>
@@ -76,7 +92,7 @@ export default async function CapitalPage({
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
-          {withTotals.length === 0 ? (
+          {cards.length === 0 ? (
             <Card>
               <EmptyState
                 title="Nenhum sócio cadastrado"
@@ -84,7 +100,7 @@ export default async function CapitalPage({
               />
             </Card>
           ) : (
-            withTotals.map((b) => (
+            cards.map((b) => (
               <Link key={b.id} href={`/capital/${b.id}`} className="block">
                 <Card className="px-5 py-4 transition-shadow hover:shadow-md">
                   <div className="flex flex-wrap items-center justify-between gap-3">
@@ -103,6 +119,12 @@ export default async function CapitalPage({
                           <span className={b.livre < 0 ? "text-rose-600" : ""}>
                             Livre {formatCurrency(b.livre)}
                           </span>
+                        </p>
+                      ) : null}
+                      {caucaoByParent.has(b.id) ? (
+                        <p className="mt-0.5 text-xs font-medium text-slate-600">
+                          🏠 Caução vinculada {formatCurrency(caucaoByParent.get(b.id)!.total)} ·{" "}
+                          {caucaoByParent.get(b.id)!.count} vinculado(s)
                         </p>
                       ) : null}
                     </div>
