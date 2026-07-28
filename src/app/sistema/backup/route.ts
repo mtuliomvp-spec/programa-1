@@ -44,6 +44,7 @@ export async function GET() {
     cashboxSessions,
     launchCategories,
     vehicleAttachments,
+    companyDocuments,
   ] = await Promise.all([
     prisma.companySettings.findMany(),
     prisma.user.findMany(),
@@ -74,6 +75,7 @@ export async function GET() {
     prisma.cashboxSession.findMany(),
     prisma.launchCategory.findMany(),
     prisma.vehicleAttachment.findMany(),
+    prisma.companyDocument.findMany(),
   ]);
 
   const backup = {
@@ -110,6 +112,10 @@ export async function GET() {
     vehicleAttachments: vehicleAttachments.map((a) => ({
       ...a,
       data: Buffer.from(a.data).toString("base64"),
+    })),
+    companyDocuments: companyDocuments.map((d) => ({
+      ...d,
+      data: Buffer.from(d.data).toString("base64"),
     })),
   };
 

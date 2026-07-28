@@ -395,6 +395,8 @@ export async function uploadVehicleAttachmentAction(
 
   const vehicleId = String(formData.get("vehicleId") || "").trim();
   const description = String(formData.get("description") || "").trim() || "Comunicação de venda";
+  // Só documentos comuns ou o CRLV passam por aqui (fotos têm ação própria).
+  const kind = String(formData.get("kind") || "") === "CRLV" ? "CRLV" : "DOCUMENTO";
   const file = formData.get("file");
   if (!vehicleId) return { error: "Veículo inválido." };
   if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
@@ -409,6 +411,7 @@ export async function uploadVehicleAttachmentAction(
   await prisma.vehicleAttachment.create({
     data: {
       vehicleId,
+      kind,
       description,
       filename: file.name || "documento",
       mimeType: file.type || "application/octet-stream",
