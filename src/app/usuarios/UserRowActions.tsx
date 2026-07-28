@@ -6,6 +6,7 @@ import {
   resetPasswordAction,
   updatePermissionsAction,
   updateUserBankAction,
+  updateUserIdentityAction,
   applyProfileAction,
   approveUserAction,
   rejectUserAction,
@@ -16,9 +17,11 @@ import PermissionsChecklist from "./PermissionsChecklist";
 import UserBankFields, { type UserBank } from "./UserBankFields";
 
 type ProfileOption = { id: string; name: string };
+type BeneficiaryOption = { id: string; name: string };
 
 export default function UserRowActions({
   id,
+  name,
   active,
   pending: isPending,
   isSelf,
@@ -27,8 +30,11 @@ export default function UserRowActions({
   bank,
   profiles,
   profileId,
+  beneficiaries,
+  beneficiaryId,
 }: {
   id: string;
+  name: string;
   active: boolean;
   pending: boolean;
   isSelf: boolean;
@@ -37,8 +43,19 @@ export default function UserRowActions({
   bank: UserBank;
   profiles: ProfileOption[];
   profileId: string | null;
+  beneficiaries: BeneficiaryOption[];
+  beneficiaryId: string | null;
 }) {
   const [pending, startTransition] = useTransition();
+  const [showIdentity, setShowIdentity] = useState(false);
+  const [identityState, identityAction, identityPending] = useActionState(
+    async (prev: UserFormState, formData: FormData) => {
+      const result = await updateUserIdentityAction(prev, formData);
+      if (result.success) setShowIdentity(false);
+      return result;
+    },
+    {} as UserFormState,
+  );
   const [showProfile, setShowProfile] = useState(false);
   const [profileSel, setProfileSel] = useState(role === "ADMIN" ? "ADMIN" : profileId ?? "MANUAL");
   const [profileMsg, setProfileMsg] = useState<string | null>(null);
@@ -100,6 +117,13 @@ export default function UserRowActions({
   return (
     <div className="flex flex-col items-end gap-1">
       <div className="flex items-center gap-3 text-sm font-medium">
+        <button
+          type="button"
+          onClick={() => setShowIdentity((v) => !v)}
+          className="text-blue-700 hover:underline"
+        >
+          Nome e vínculo
+        </button>
         {role === "OPERADOR" ? (
           <button
             type="button"
@@ -146,6 +170,34 @@ export default function UserRowActions({
           </button>
         ) : null}
       </div>
+      {showIdentity ? (
+        <form action={identityAction} className="w-72 space-y-2 text-left">
+          <input type="hidden" name="userId" value={id} />
+          <label className="block text-xs font-medium text-slate-600">
+            Nome
+            <Input name="name" defaultValue={name} required className="mt-0.5 h-8 text-xs" />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Beneficiário do capital (vínculo)
+            <Select name="beneficiaryId" defaultValue={beneficiaryId ?? ""} className="mt-0.5 h-8 text-xs">
+              <option value="">Sem vínculo</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </label>
+          <p className="text-[11px] text-slate-400">
+            Ao vincular, o nome do beneficiário passa a ser o mesmo do usuário.
+          </p>
+          <Button type="submit" disabled={identityPending} className="h-8 w-full px-2.5 text-xs">
+            {identityPending ? "Salvando..." : "Salvar nome e vínculo"}
+          </Button>
+          {identityState.error ? <p className="text-xs text-rose-600">{identityState.error}</p> : null}
+          {identityState.success ? <p className="text-xs text-emerald-700">{identityState.success}</p> : null}
+        </form>
+      ) : null}
       {showProfile ? (
         <div className="flex flex-col items-end gap-1">
           <Select

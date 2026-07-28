@@ -3,6 +3,7 @@ import { ensureRecurringGenerated, ensureConsortiumInstallments } from "@/lib/re
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
+import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
@@ -45,6 +46,24 @@ export default async function ContasAPagarPage({
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
   const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((p) => p.effective === statusFilter) : withStatus;
 
+  // Comissões de vendedores vinculados a um beneficiário do capital: permitem
+  // pagar um valor maior (o excedente vira retirada de capital). Mapeia o
+  // vendedor → { nome do beneficiário, capital livre } para a tela.
+  const commissionSellerIds = Array.from(
+    new Set(payables.filter((p) => p.category === "COMISSAO" && p.beneficiaryUserId).map((p) => p.beneficiaryUserId as string)),
+  );
+  const linkedBeneficiaries = commissionSellerIds.length
+    ? await prisma.capitalBeneficiary.findMany({
+        where: { userId: { in: commissionSellerIds } },
+        select: { id: true, name: true, userId: true },
+      })
+    : [];
+  const capStatus = linkedBeneficiaries.length ? await capitalStatusByBeneficiary() : new Map();
+  const excessByUser = new Map<string, { beneficiaryName: string; free: number }>();
+  for (const b of linkedBeneficiaries) {
+    if (b.userId) excessByUser.set(b.userId, { beneficiaryName: b.name, free: capStatus.get(b.id)?.free ?? 0 });
+  }
+
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);
   const totalAtrasado = withStatus.filter((p) => p.effective === "ATRASADO").reduce((s, p) => s + p.amount, 0);
 
@@ -62,6 +81,10 @@ export default async function ContasAPagarPage({
     status: p.status,
     accountName: p.account?.name ?? null,
     recurring: Boolean(p.recurringId),
+    commissionExcess:
+      p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
+        ? excessByUser.get(p.beneficiaryUserId)!
+        : null,
   }));
 
   // Busca livre pelos campos exibidos (nº, descrição, categoria, fornecedor,

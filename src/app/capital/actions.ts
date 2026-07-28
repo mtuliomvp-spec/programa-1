@@ -10,6 +10,8 @@ import { getDefaultAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
+import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -130,6 +132,62 @@ export async function addCapitalTransactionAction(
   revalidatePath("/capital");
   revalidatePath("/financeiro/livro-caixa");
   return {};
+}
+
+/** Edita o nome do beneficiário (sincroniza com o usuário vinculado, se houver). */
+export async function renameBeneficiaryAction(
+  beneficiaryId: string,
+  name: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const clean = (name || "").trim();
+  if (!clean) return { ok: false, error: "Informe o nome." };
+  const beneficiary = await prisma.capitalBeneficiary.findUnique({
+    where: { id: beneficiaryId },
+    select: { isCompany: true },
+  });
+  if (!beneficiary) return { ok: false, error: "Beneficiário não encontrado." };
+  if (beneficiary.isCompany) {
+    return { ok: false, error: "O nome da empresa é definido nos Parâmetros da empresa." };
+  }
+  await renameLinkedPair({ beneficiaryId }, clean);
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath("/capital");
+  revalidatePath("/usuarios");
+  return { ok: true };
+}
+
+/** Vincula/desvincula o beneficiário a um usuário do sistema (somente admin). */
+export async function linkBeneficiaryUserAction(
+  beneficiaryId: string,
+  userId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const actor = await getSessionUser();
+  if (!actor || actor.role !== "ADMIN") {
+    return { ok: false, error: "Apenas administradores podem vincular usuários." };
+  }
+  const beneficiary = await prisma.capitalBeneficiary.findUnique({
+    where: { id: beneficiaryId },
+    select: { isCompany: true },
+  });
+  if (!beneficiary) return { ok: false, error: "Beneficiário não encontrado." };
+  if (beneficiary.isCompany) {
+    return { ok: false, error: "O beneficiário da empresa não pode ser vinculado a um usuário." };
+  }
+  try {
+    if (userId) await linkBeneficiaryToUser(beneficiaryId, userId);
+    else await unlinkBeneficiary(beneficiaryId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível vincular." };
+  }
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath("/capital");
+  revalidatePath("/usuarios");
+  return { ok: true };
 }
 
 /** Edita o valor do pró-labore combinado do beneficiário (R$/mês). */

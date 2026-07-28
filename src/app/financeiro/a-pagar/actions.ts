@@ -10,6 +10,105 @@ import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
+import { structuralCenterId } from "@/lib/structural";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Converte texto de valor ("1.234,50" ou "1234.5") em número (ou NaN). */
+function parseAmountInput(v: string): number {
+  return Number(String(v).trim().replace(/\./g, "").replace(",", "."));
+}
+
+/**
+ * Baixa a comissão de um vendedor podendo pagar um valor MAIOR que a comissão:
+ * o excedente vira uma RETIRADA de capital do beneficiário vinculado ao vendedor
+ * (o Payable do excedente carrega capitalBeneficiaryId e, ao ser pago, gera a
+ * retirada via syncPayableCapital). Sem checagem de capital livre — o aviso
+ * (pode ficar negativo) é dado na tela.
+ */
+export async function payCommissionWithExcessAction(
+  payableId: string,
+  accountId: string,
+  totalPagoInput: string,
+  dateInput?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
+  const date = dateInput ? parseDateInput(dateInput) : new Date();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const payable = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: { id: true, category: true, status: true, amount: true, beneficiaryUserId: true },
+  });
+  if (!payable) return { ok: false, error: "Título não encontrado." };
+  if (payable.status === "PAGO") return { ok: false, error: "Este título já está pago." };
+  if (payable.category !== "COMISSAO" || !payable.beneficiaryUserId) {
+    return { ok: false, error: "Pagamento com excedente só vale para comissões de um vendedor." };
+  }
+
+  const total = parseAmountInput(totalPagoInput);
+  if (!Number.isFinite(total) || total <= 0) return { ok: false, error: "Informe o valor total pago." };
+  const comissao = payable.amount;
+  const excedente = round2(total - comissao);
+  if (excedente < 0) {
+    return { ok: false, error: "O valor total não pode ser menor que a comissão." };
+  }
+
+  // Se há excedente, o vendedor precisa estar vinculado a um beneficiário.
+  let beneficiary: { id: string; name: string } | null = null;
+  if (excedente > 0.005) {
+    beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { userId: payable.beneficiaryUserId },
+      select: { id: true, name: true },
+    });
+    if (!beneficiary) {
+      return {
+        ok: false,
+        error: "Este vendedor não está vinculado a um beneficiário do capital — não é possível debitar o excedente.",
+      };
+    }
+  }
+
+  // 1) paga a comissão pelo próprio valor.
+  await markPayablePaid(payableId, date, accountId);
+
+  // 2) excedente → conta a pagar (fluxo Capital) já paga → vira RETIRADA.
+  if (beneficiary) {
+    const capitalCenterId = await structuralCenterId("CAPITAL");
+    const extra = await prisma.payable.create({
+      data: {
+        costCenterId: capitalCenterId,
+        description: `Excedente de comissão (retirada de capital) - ${beneficiary.name}`,
+        category: "OUTROS",
+        amount: excedente,
+        dueDate: date,
+        status: "PENDENTE",
+        capitalBeneficiaryId: beneficiary.id,
+        beneficiaryUserId: payable.beneficiaryUserId,
+      },
+    });
+    await markPayablePaid(extra.id, date, accountId);
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/capital");
+  revalidatePath("/");
+  return { ok: true };
+}
 
 export async function markPaidAction(id: string, accountId?: string) {
   await assertCan("financeiro", "pagar");

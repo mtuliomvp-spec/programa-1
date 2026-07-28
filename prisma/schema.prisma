@@ -282,6 +282,8 @@ model User {
   commissionPayables Payable[] @relation("PayableBeneficiary")
   sales            Sale[]    @relation("SaleSeller")
   preSales         PreSale[] @relation("PreSaleSeller")
+  // Vínculo 1:1 com um beneficiário do capital (usuário que também é sócio).
+  beneficiary      CapitalBeneficiary? @relation("BeneficiaryUser")
   // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
   profileId        String?
   profile          Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
@@ -802,6 +804,9 @@ model CapitalBeneficiary {
   includeInMonthlyClosing Boolean   @default(false)
   active       Boolean              @default(true)
   notes        String?
+  // Vínculo 1:1 com um usuário do sistema (o sócio que também tem login).
+  userId       String?              @unique
+  user         User?                @relation("BeneficiaryUser", fields: [userId], references: [id], onDelete: SetNull)
   transactions CapitalTransaction[]
   allocations  InvestmentAllocation[]
   purchaseRequests PurchaseRequest[]

@@ -5,6 +5,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { markPendingAction, payBatchAction } from "./actions";
+import CommissionPayButton from "./CommissionPayButton";
 
 type Account = { id: string; name: string };
 
@@ -22,6 +23,8 @@ export type PayableRow = {
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
   recurring: boolean;
+  // Comissão de vendedor vinculado a beneficiário: permite pagar com excedente.
+  commissionExcess: { beneficiaryName: string; free: number } | null;
 };
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
@@ -172,6 +175,14 @@ export default function PayablesTable({
                     >
                       Reverter
                     </button>
+                  ) : selectable && canPagar && p.commissionExcess && accounts.length > 0 ? (
+                    <CommissionPayButton
+                      payableId={p.id}
+                      commissionAmount={p.amount}
+                      accounts={accounts}
+                      beneficiaryName={p.commissionExcess.beneficiaryName}
+                      free={p.commissionExcess.free}
+                    />
                   ) : null}
                 </Td>
               </Tr>
