@@ -1243,6 +1243,17 @@ export async function registerPartSale(input: {
 // ---------------------------------------------------------------------------
 
 /**
+ * Junta a descrição e as observações num texto só (a tabela do Capital mostra
+ * apenas a descrição, então as observações do lançamento entram aqui para não
+ * se perderem). Ex.: "teste mt — teste de estorno".
+ */
+function withNotes(description: string, notes?: string | null): string {
+  const n = (notes || "").trim();
+  if (!n) return description;
+  return description ? `${description} — ${n}` : n;
+}
+
+/**
  * Sincroniza o lançamento de capital (RETIRADA) de um título A PAGAR do fluxo
  * Capital com o status dele: cria a retirada quando PAGO (dinheiro saiu), remove
  * quando volta a PENDENTE. Idempotente — o capital só se move junto do dinheiro,
@@ -1259,6 +1270,7 @@ export async function syncPayableCapital(payableId: string) {
       paymentDate: true,
       dueDate: true,
       description: true,
+      notes: true,
     },
   });
   if (!p || !p.capitalBeneficiaryId) return;
@@ -1271,7 +1283,7 @@ export async function syncPayableCapital(payableId: string) {
           kind: "RETIRADA",
           amount: p.amount,
           date: p.paymentDate ?? p.dueDate,
-          description: p.description,
+          description: withNotes(p.description, p.notes),
           payableId: p.id,
         },
       });
@@ -1293,6 +1305,7 @@ export async function syncReceivableCapital(receivableId: string) {
       receivedDate: true,
       dueDate: true,
       description: true,
+      notes: true,
     },
   });
   if (!r || !r.capitalBeneficiaryId) return;
@@ -1305,7 +1318,7 @@ export async function syncReceivableCapital(receivableId: string) {
           kind: "APORTE",
           amount: r.amount,
           date: r.receivedDate ?? r.dueDate,
-          description: r.description,
+          description: withNotes(r.description, r.notes),
           receivableId: r.id,
         },
       });
@@ -1797,7 +1810,7 @@ export async function createExpensePayable(input: {
           kind: "RETIRADA",
           amount: input.amount,
           date: input.paymentDate || input.dueDate,
-          description: input.description,
+          description: withNotes(input.description, input.notes),
           payableId: payable.id,
         },
       });
@@ -1844,7 +1857,9 @@ export async function createCashEntry(input: {
           notes: input.notes || null,
         },
       });
-      // Aporte de capital: registra a movimentação do beneficiário.
+      // Aporte de capital: registra a movimentação do beneficiário. As
+      // observações do lançamento entram na descrição (a tabela do capital
+      // mostra a descrição), para não se perderem.
       if (input.capitalBeneficiaryId) {
         await tx.capitalTransaction.create({
           data: {
@@ -1852,7 +1867,7 @@ export async function createCashEntry(input: {
             kind: "APORTE",
             amount: input.amount,
             date: input.date,
-            description: input.description,
+            description: withNotes(input.description, input.notes),
             receivableId: receivable.id,
           },
         });
