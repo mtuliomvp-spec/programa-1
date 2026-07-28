@@ -9,6 +9,35 @@ import type { UserBank } from "./UserBankFields";
 
 export const dynamic = "force-dynamic";
 
+/** Igualdade de conjunto (mesmos elementos, sem depender da ordem). */
+function sameSet(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) return false;
+  const s = new Set(b);
+  return a.every((x) => s.has(x));
+}
+
+/**
+ * Selo ao lado do perfil: "Padrão" quando as permissões do usuário são idênticas
+ * às do perfil cadastrado; "Personalizado" quando têm alguma permissão a mais ou
+ * a menos. Nada para admin ou usuário sem perfil.
+ */
+function ProfileTag({
+  role,
+  profile,
+  permissions,
+}: {
+  role: "ADMIN" | "OPERADOR";
+  profile: { permissions: string[] } | null;
+  permissions: string[];
+}) {
+  if (role === "ADMIN" || !profile) return null;
+  return sameSet(permissions, profile.permissions) ? (
+    <Badge tone="default">Padrão</Badge>
+  ) : (
+    <Badge tone="warning">Personalizado</Badge>
+  );
+}
+
 function bankOf(u: UserBank): UserBank {
   return {
     document: u.document,
@@ -26,7 +55,10 @@ export default async function UsuariosPage() {
   if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
 
   const [users, profiles] = await Promise.all([
-    prisma.user.findMany({ orderBy: { createdAt: "asc" }, include: { profile: { select: { name: true } } } }),
+    prisma.user.findMany({
+      orderBy: { createdAt: "asc" },
+      include: { profile: { select: { name: true, permissions: true } } },
+    }),
     prisma.profile.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   const pendingUsers = users.filter((u) => u.pending);
@@ -93,9 +125,12 @@ export default async function UsuariosPage() {
                     </p>
                     <p className="truncate text-xs text-slate-500">{u.email}</p>
                   </div>
-                  <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                    {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
-                  </Badge>
+                  <div className="flex flex-col items-end gap-1">
+                    <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
+                      {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
+                    </Badge>
+                    <ProfileTag role={u.role} profile={u.profile} permissions={u.permissions} />
+                  </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
                   <Badge tone={u.active ? "success" : "danger"}>
@@ -145,9 +180,12 @@ export default async function UsuariosPage() {
                     </Td>
                     <Td>{u.email}</Td>
                     <Td>
-                      <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                        {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
-                      </Badge>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
+                          {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
+                        </Badge>
+                        <ProfileTag role={u.role} profile={u.profile} permissions={u.permissions} />
+                      </div>
                     </Td>
                     <Td>{formatDate(u.createdAt)}</Td>
                     <Td>
