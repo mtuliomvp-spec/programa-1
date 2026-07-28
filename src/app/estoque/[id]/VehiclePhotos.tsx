@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition, useActionState } from "react";
 import { Button } from "@/components/ui";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehiclePhotosAction,
   deleteVehicleAttachmentAction,
@@ -28,7 +29,9 @@ export default function VehiclePhotos({
   canPublish?: boolean;
 }) {
   const formRef = useRef<HTMLFormElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const [selectedCount, setSelectedCount] = useState(0);
+  const [preparing, setPreparing] = useState(false);
   const [publishing, startPublish] = useTransition();
   const [publishError, setPublishError] = useState<string | null>(null);
   const [deleting, startDelete] = useTransition();
@@ -43,6 +46,24 @@ export default function VehiclePhotos({
     },
     {} as AttachmentState,
   );
+
+  // Redimensiona as fotos no navegador antes de enviar (JPEG, lado máx. 1600px).
+  // Evita estourar o limite do Server Action / a memória do celular ("This page
+  // couldn't load") quando são várias fotos grandes de uma vez.
+  async function handleSend() {
+    const files = Array.from(fileRef.current?.files ?? []);
+    if (files.length === 0) return;
+    setPreparing(true);
+    try {
+      const resized = await Promise.all(files.map((f) => resizeImageToJpeg(f)));
+      const fd = new FormData();
+      fd.set("vehicleId", vehicleId);
+      for (const f of resized) fd.append("photos", f);
+      formAction(fd);
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   function togglePublish(next: boolean) {
     setPublishError(null);
@@ -129,9 +150,9 @@ export default function VehiclePhotos({
       )}
 
       {canManage ? (
-        <form ref={formRef} action={formAction} className="space-y-2">
-          <input type="hidden" name="vehicleId" value={vehicleId} />
+        <form ref={formRef} className="space-y-2">
           <input
+            ref={fileRef}
             type="file"
             name="photos"
             accept="image/*"
@@ -140,10 +161,16 @@ export default function VehiclePhotos({
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
           />
           <div className="flex items-center gap-3">
-            <Button type="submit" disabled={pending || selectedCount === 0}>
-              {pending ? "Enviando..." : selectedCount > 1 ? `Enviar ${selectedCount} fotos` : "Enviar foto"}
+            <Button type="button" onClick={handleSend} disabled={pending || preparing || selectedCount === 0}>
+              {preparing
+                ? "Preparando as fotos…"
+                : pending
+                  ? "Enviando..."
+                  : selectedCount > 1
+                    ? `Enviar ${selectedCount} fotos`
+                    : "Enviar foto"}
             </Button>
-            <p className="text-xs text-slate-400">Pode escolher várias de uma vez (até 15 MB cada).</p>
+            <p className="text-xs text-slate-400">Pode escolher várias de uma vez — as fotos são otimizadas automaticamente.</p>
           </div>
           {state.error ? <p className="text-sm font-medium text-rose-600">{state.error}</p> : null}
         </form>

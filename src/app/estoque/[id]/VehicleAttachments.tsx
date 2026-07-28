@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { formatDate } from "@/lib/format";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehicleAttachmentAction,
   deleteVehicleAttachmentAction,
@@ -43,10 +44,28 @@ export default function VehicleAttachments({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const [removing, startRemove] = useTransition();
+  const [preparing, setPreparing] = useState(false);
 
   useEffect(() => {
     if (state.ok) formRef.current?.reset();
   }, [state.ok]);
+
+  // Se o anexo for imagem, redimensiona no navegador antes de enviar (evita
+  // travar em fotos grandes). PDFs/documentos passam sem alteração.
+  async function handleSend() {
+    const form = formRef.current;
+    if (!form) return;
+    const fd = new FormData(form);
+    const file = fd.get("file");
+    if (!(file instanceof File) || file.size === 0) return;
+    setPreparing(true);
+    try {
+      fd.set("file", await resizeImageToJpeg(file));
+      formAction(fd);
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   return (
     <div className="p-5">
@@ -111,7 +130,6 @@ export default function VehicleAttachments({
 
       <form
         ref={formRef}
-        action={formAction}
         className={`space-y-3 border-t border-slate-100 pt-4 ${canManage ? "" : "hidden"}`}
       >
         <input type="hidden" name="vehicleId" value={vehicleId} />
@@ -140,8 +158,8 @@ export default function VehicleAttachments({
           </Field>
         </div>
         <div className="flex justify-end">
-          <Button type="submit" disabled={pending}>
-            {pending ? "Anexando..." : "Anexar documento"}
+          <Button type="button" onClick={handleSend} disabled={pending || preparing}>
+            {preparing ? "Preparando…" : pending ? "Anexando..." : "Anexar documento"}
           </Button>
         </div>
         <p className="text-xs text-slate-400">
