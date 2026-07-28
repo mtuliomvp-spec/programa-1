@@ -57,7 +57,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -65,6 +65,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "debitos"),
       userCan("estoque", "publicar"),
       userCan("vendas", "prevenda"),
+      userCan("estoque", "comunicacao"),
+      userCan("estoque", "crlv"),
     ]);
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
@@ -328,7 +330,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleCrlv
               vehicleId={vehicle.id}
-              canManage={canEditar}
+              canManage={canCrlv}
               crlvs={vehicle.attachments.filter((a) => a.kind === "CRLV")}
             />
           </Card>
@@ -340,7 +342,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleAttachments
               vehicleId={vehicle.id}
-              canManage={canEditar}
+              canManage={canComunicacao}
               attachments={vehicle.attachments.filter(
                 (a) => a.kind !== "FOTO_VEICULO" && a.kind !== "CRLV",
               )}

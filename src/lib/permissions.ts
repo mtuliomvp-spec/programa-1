@@ -33,6 +33,8 @@ export const MODULES: ModuleConfig[] = [
       { acao: "custos", label: "Lançar custos" },
       { acao: "debitos", label: "Consultar/importar débitos" },
       { acao: "publicar", label: "Postar na vitrine" },
+      { acao: "comunicacao", label: "Anexar comunicação de venda / documentos" },
+      { acao: "crlv", label: "Anexar CRLV" },
     ],
   },
   {
