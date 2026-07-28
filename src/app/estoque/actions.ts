@@ -387,16 +387,18 @@ export async function uploadVehicleAttachmentAction(
   const { getSessionUser } = await import("@/lib/auth");
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
+  // Só documentos comuns ou o CRLV passam por aqui (fotos têm ação própria).
+  // Cada tipo tem sua permissão granular: CRLV → estoque.crlv; documentos/
+  // comunicação de venda → estoque.comunicacao.
+  const kind = String(formData.get("kind") || "") === "CRLV" ? "CRLV" : "DOCUMENTO";
   try {
-    await assertCan("estoque", "editar");
+    await assertCan("estoque", kind === "CRLV" ? "crlv" : "comunicacao");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
 
   const vehicleId = String(formData.get("vehicleId") || "").trim();
   const description = String(formData.get("description") || "").trim() || "Comunicação de venda";
-  // Só documentos comuns ou o CRLV passam por aqui (fotos têm ação própria).
-  const kind = String(formData.get("kind") || "") === "CRLV" ? "CRLV" : "DOCUMENTO";
   const file = formData.get("file");
   if (!vehicleId) return { error: "Veículo inválido." };
   if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
@@ -424,7 +426,13 @@ export async function uploadVehicleAttachmentAction(
 }
 
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
-  await assertCan("estoque", "editar");
+  // A permissão depende do tipo do anexo (a mesma ação serve fotos, documentos
+  // e CRLV): CRLV → estoque.crlv; documentos → estoque.comunicacao; fotos →
+  // estoque.editar.
+  const att = await prisma.vehicleAttachment.findUnique({ where: { id }, select: { kind: true } });
+  if (!att) return;
+  const action = att.kind === "CRLV" ? "crlv" : att.kind === "DOCUMENTO" ? "comunicacao" : "editar";
+  await assertCan("estoque", action);
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
