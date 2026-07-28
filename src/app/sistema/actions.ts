@@ -53,6 +53,18 @@ export async function resetSystemDataAction(
       prisma.financialAccount.deleteMany(),
       prisma.customer.deleteMany(),
       prisma.supplier.deleteMany(),
+      // Reinicia os contadores (sequences) dos números de documento para que
+      // ordens/contratos/fichas/ordens de pagamento recomecem do 0001.
+      prisma.$executeRawUnsafe(`
+        DO $$
+        BEGIN
+          PERFORM setval(pg_get_serial_sequence('vehicles','orderNumber'), 1, false);
+          PERFORM setval(pg_get_serial_sequence('sales','orderNumber'), 1, false);
+          PERFORM setval(pg_get_serial_sequence('payables','orderNumber'), 1, false);
+          PERFORM setval(pg_get_serial_sequence('pre_sales','number'), 1, false);
+          PERFORM setval(pg_get_serial_sequence('purchase_requests','number'), 1, false);
+        END $$;
+      `),
     ]);
   } catch {
     return { error: "Não foi possível zerar os dados. Tente novamente." };
@@ -173,6 +185,27 @@ export async function restoreBackupAction(
     if (attachmentRows.length) {
       ops.push(prisma.vehicleAttachment.createMany({ data: attachmentRows as never[] }));
     }
+
+    // Alinha os contadores (sequences) ao maior número restaurado, para o
+    // próximo lançamento não colidir com um número já existente (@unique).
+    ops.push(
+      prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE v bigint;
+        BEGIN
+          SELECT COALESCE(MAX("orderNumber"),0) INTO v FROM "vehicles";
+          PERFORM setval(pg_get_serial_sequence('vehicles','orderNumber'), GREATEST(v,1), v > 0);
+          SELECT COALESCE(MAX("orderNumber"),0) INTO v FROM "sales";
+          PERFORM setval(pg_get_serial_sequence('sales','orderNumber'), GREATEST(v,1), v > 0);
+          SELECT COALESCE(MAX("orderNumber"),0) INTO v FROM "payables";
+          PERFORM setval(pg_get_serial_sequence('payables','orderNumber'), GREATEST(v,1), v > 0);
+          SELECT COALESCE(MAX("number"),0) INTO v FROM "pre_sales";
+          PERFORM setval(pg_get_serial_sequence('pre_sales','number'), GREATEST(v,1), v > 0);
+          SELECT COALESCE(MAX("number"),0) INTO v FROM "purchase_requests";
+          PERFORM setval(pg_get_serial_sequence('purchase_requests','number'), GREATEST(v,1), v > 0);
+        END $$;
+      `),
+    );
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await prisma.$transaction(ops as any);
