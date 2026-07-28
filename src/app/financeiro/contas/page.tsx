@@ -80,12 +80,15 @@ export default async function ContasPage({
               {formatCurrency(a.balance)}
             </p>
           </div>
-          {a.isInvestment && a.active && canContas ? (
-            <LinkButton href={`/financeiro/contas/${a.id}`} className="whitespace-nowrap">
-              📈 Aplicar
-            </LinkButton>
-          ) : null}
-          <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} canManage={canContas} />
+          {/* data-no-pdf: os botões de ação ficam fora do PDF de saldos. */}
+          <div data-no-pdf className="flex items-center gap-4">
+            {a.isInvestment && a.active && canContas ? (
+              <LinkButton href={`/financeiro/contas/${a.id}`} className="whitespace-nowrap">
+                📈 Aplicar
+              </LinkButton>
+            ) : null}
+            <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} canManage={canContas} />
+          </div>
         </div>
       </div>
     </Card>
@@ -98,9 +101,11 @@ export default async function ContasPage({
         description="Cadastre as contas da loja — toda baixa de pagamento/recebimento passa por uma delas"
       />
 
-      <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} canManage={canContas} />
-
-      <BooksHealthChecks health={health} />
+      {/* data-no-pdf: fora do PDF "Contas e caixas", que traz só o saldo das contas. */}
+      <div data-no-pdf>
+        <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} canManage={canContas} />
+        <BooksHealthChecks health={health} />
+      </div>
 
       <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
         <LinkButton href="/financeiro/livro-caixa" variant="secondary" className="justify-center">
@@ -147,39 +152,42 @@ export default async function ContasPage({
             accountRows.map((a) => renderAccountCard(a))
           )}
 
-          <Card>
-            <CardHeader title="Transferências entre contas" description="Últimas 20" />
-            {transfers.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-slate-500">Nenhuma transferência registrada.</p>
-            ) : (
-              <Table>
-                <Thead>
-                  <Tr>
-                    <Th>Data</Th>
-                    <Th>De</Th>
-                    <Th>Para</Th>
-                    <Th>Descrição</Th>
-                    <Th className="text-right">Valor</Th>
-                    <Th />
-                  </Tr>
-                </Thead>
-                <tbody>
-                  {transfers.map((t) => (
-                    <Tr key={t.id}>
-                      <Td className="whitespace-nowrap">{formatDate(t.date)}</Td>
-                      <Td>{t.from.name}</Td>
-                      <Td>{t.to.name}</Td>
-                      <Td>{t.description || "—"}</Td>
-                      <Td className="text-right tabular-nums">{formatCurrency(t.amount)}</Td>
-                      <Td>
-                        {canContas ? <DeleteTransferButton id={t.id} /> : null}
-                      </Td>
+          {/* data-no-pdf: transferências não entram no PDF de saldo das contas. */}
+          <div data-no-pdf>
+            <Card>
+              <CardHeader title="Transferências entre contas" description="Últimas 20" />
+              {transfers.length === 0 ? (
+                <p className="px-5 py-4 text-sm text-slate-500">Nenhuma transferência registrada.</p>
+              ) : (
+                <Table>
+                  <Thead>
+                    <Tr>
+                      <Th>Data</Th>
+                      <Th>De</Th>
+                      <Th>Para</Th>
+                      <Th>Descrição</Th>
+                      <Th className="text-right">Valor</Th>
+                      <Th />
                     </Tr>
-                  ))}
-                </tbody>
-              </Table>
-            )}
-          </Card>
+                  </Thead>
+                  <tbody>
+                    {transfers.map((t) => (
+                      <Tr key={t.id}>
+                        <Td className="whitespace-nowrap">{formatDate(t.date)}</Td>
+                        <Td>{t.from.name}</Td>
+                        <Td>{t.to.name}</Td>
+                        <Td>{t.description || "—"}</Td>
+                        <Td className="text-right tabular-nums">{formatCurrency(t.amount)}</Td>
+                        <Td>
+                          {canContas ? <DeleteTransferButton id={t.id} /> : null}
+                        </Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+              )}
+            </Card>
+          </div>
         </div>
 
         {canContas ? (
