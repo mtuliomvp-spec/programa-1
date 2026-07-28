@@ -149,6 +149,7 @@ export default async function LivroCaixaPage({
     id: string;
     date: Date;
     description: string;
+    notes: string | null;
     who: string;
     vehicle: string | null;
     kind: "entrada" | "saida";
@@ -168,6 +169,7 @@ export default async function LivroCaixaPage({
       id: `t-${t.id}`,
       date: t.date,
       description: t.description || `Transferência ${t.from.name} → ${t.to.name}`,
+      notes: null,
       who: t.toId === accountFilter ? t.from.name : t.to.name,
       vehicle: null,
       kind: (t.toId === accountFilter ? "entrada" : "saida") as "entrada" | "saida",
@@ -180,6 +182,7 @@ export default async function LivroCaixaPage({
       id: `r-${r.id}`,
       date: r.receivedDate!,
       description: r.description,
+      notes: r.notes,
       who: r.customer?.name || "-",
       vehicle: vehicleLabel(r.vehicle),
       kind: "entrada" as const,
@@ -193,6 +196,7 @@ export default async function LivroCaixaPage({
       id: `p-${p.id}`,
       date: p.paymentDate!,
       description: p.description,
+      notes: p.notes,
       who: p.supplier?.name || "-",
       vehicle: vehicleLabel(p.vehicle),
       kind: "saida" as const,
@@ -219,6 +223,7 @@ export default async function LivroCaixaPage({
             q,
             formatDate(m.date),
             m.description,
+            m.notes,
             m.who,
             m.vehicle,
             m.amount,
@@ -458,6 +463,9 @@ export default async function LivroCaixaPage({
                         <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} />
                       ) : null}
                     </span>
+                    {m.notes ? (
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">{m.notes}</span>
+                    ) : null}
                   </Td>
                   <Td>{m.who}</Td>
                   <Td className="whitespace-nowrap text-slate-600">{m.vehicle || "-"}</Td>
