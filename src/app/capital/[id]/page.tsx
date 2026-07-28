@@ -5,10 +5,13 @@ import { appliedTotalOf, freeCapitalOf } from "@/lib/investments";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { userCan } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
 import CapitalTransactionForm from "./CapitalTransactionForm";
 import DeleteTransactionButton from "./DeleteTransactionButton";
 import IncludeClosingToggle from "./IncludeClosingToggle";
 import ProLaboreForm from "./ProLaboreForm";
+import BeneficiaryNameForm from "./BeneficiaryNameForm";
+import BeneficiaryUserLink from "./BeneficiaryUserLink";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +28,16 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   if (!beneficiary) notFound();
 
   const canManage = await userCan("administrativo", "capital");
+  const sessionUser = await getSessionUser();
+  const isAdmin = sessionUser?.role === "ADMIN";
+  // Lista de usuários para o vínculo (só admin vê o controle).
+  const linkableUsers = isAdmin && !beneficiary.isCompany
+    ? await prisma.user.findMany({
+        where: { active: true, pending: false },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      })
+    : [];
 
   const sum = (kind: string) =>
     beneficiary.transactions.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
@@ -112,6 +125,25 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
             payAccounts={payAccounts}
             today={toDateInputValue(new Date())}
           />
+        </div>
+      ) : null}
+
+      {!beneficiary.isCompany && (canManage || isAdmin) ? (
+        <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          {canManage ? (
+            <BeneficiaryNameForm
+              beneficiaryId={beneficiary.id}
+              initial={beneficiary.name}
+              linked={beneficiary.userId != null}
+            />
+          ) : null}
+          {isAdmin ? (
+            <BeneficiaryUserLink
+              beneficiaryId={beneficiary.id}
+              users={linkableUsers}
+              currentUserId={beneficiary.userId}
+            />
+          ) : null}
         </div>
       ) : null}
 

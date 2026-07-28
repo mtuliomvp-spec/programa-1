@@ -54,12 +54,20 @@ export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
 
-  const [users, profiles] = await Promise.all([
+  const [users, profiles, beneficiaries] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "asc" },
-      include: { profile: { select: { name: true, permissions: true } } },
+      include: {
+        profile: { select: { name: true, permissions: true } },
+        beneficiary: { select: { id: true } },
+      },
     }),
     prisma.profile.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.capitalBeneficiary.findMany({
+      where: { isCompany: false },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
   const pendingUsers = users.filter((u) => u.pending);
   const regularUsers = users.filter((u) => !u.pending);
@@ -92,6 +100,9 @@ export default async function UsuariosPage() {
                 </div>
                 <UserRowActions
                   id={u.id}
+                  name={u.name}
+                  beneficiaries={beneficiaries}
+                  beneficiaryId={u.beneficiary?.id ?? null}
                   active={u.active}
                   pending={u.pending}
                   isSelf={false}
@@ -142,6 +153,9 @@ export default async function UsuariosPage() {
                 <div className="mt-3">
                   <UserRowActions
                     id={u.id}
+                    name={u.name}
+                    beneficiaries={beneficiaries}
+                    beneficiaryId={u.beneficiary?.id ?? null}
                     active={u.active}
                     pending={u.pending}
                     isSelf={u.id === sessionUser.id}
@@ -199,6 +213,9 @@ export default async function UsuariosPage() {
                     <Td>
                       <UserRowActions
                         id={u.id}
+                        name={u.name}
+                        beneficiaries={beneficiaries}
+                        beneficiaryId={u.beneficiary?.id ?? null}
                         active={u.active}
                         pending={u.pending}
                         isSelf={u.id === sessionUser.id}

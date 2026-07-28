@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser, hashPassword } from "@/lib/auth";
 import { DEFAULT_OPERATOR_PERMISSIONS } from "@/lib/permissions";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
+import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
 
 export type UserFormState = { error?: string; success?: string };
 
@@ -24,6 +25,62 @@ const bankSchema = {
   bankAccountType: z.string().optional(),
   pixKey: z.string().optional(),
 };
+
+const identitySchema = z.object({
+  userId: z.string().min(1),
+  name: z.string().min(1, "Informe o nome"),
+  beneficiaryId: z.string().optional(),
+});
+
+/**
+ * Edita o nome do usuário e o vínculo com um beneficiário do capital.
+ * Nomes sincronizados: renomear reflete no beneficiário vinculado; ao vincular,
+ * o beneficiário adota o nome do usuário.
+ */
+export async function updateUserIdentityAction(
+  _prev: UserFormState,
+  formData: FormData,
+): Promise<UserFormState> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { error: "Apenas administradores podem gerenciar usuários." };
+  }
+  const parsed = identitySchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const { userId, name } = parsed.data;
+  const beneficiaryId = (parsed.data.beneficiaryId || "").trim();
+
+  // Beneficiário escolhido não pode ser o da empresa.
+  if (beneficiaryId) {
+    const b = await prisma.capitalBeneficiary.findUnique({
+      where: { id: beneficiaryId },
+      select: { isCompany: true },
+    });
+    if (!b) return { error: "Beneficiário não encontrado." };
+    if (b.isCompany) return { error: "O beneficiário da empresa não pode ser vinculado." };
+  }
+
+  try {
+    // 1) renomeia o usuário (e o beneficiário já vinculado, se houver).
+    await renameLinkedPair({ userId }, name);
+    // 2) ajusta o vínculo.
+    const current = await prisma.capitalBeneficiary.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+    if (beneficiaryId) {
+      if (current?.id !== beneficiaryId) await linkBeneficiaryToUser(beneficiaryId, userId);
+    } else if (current) {
+      await unlinkBeneficiary(current.id);
+    }
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível salvar." };
+  }
+  revalidatePath("/usuarios");
+  revalidatePath("/capital");
+  return { success: "Nome e vínculo salvos." };
+}
 
 /** Campos bancários normalizados (string vazia → null). */
 function bankData(d: Record<string, string | undefined>) {
