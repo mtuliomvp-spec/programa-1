@@ -69,6 +69,7 @@ export default async function LivroCaixaPage({
         where: { status: "PAGO", paymentDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
         include: {
           supplier: true,
+          capitalBeneficiary: { select: { name: true } },
           account: { select: { name: true } },
           vehicle: { select: { brand: true, model: true, plate: true } },
         },
@@ -77,6 +78,7 @@ export default async function LivroCaixaPage({
         where: { status: "RECEBIDO", receivedDate: { gte: monthStart, lt: monthEnd }, ...accountWhere },
         include: {
           customer: true,
+          capitalBeneficiary: { select: { name: true } },
           account: { select: { name: true } },
           vehicle: { select: { brand: true, model: true, plate: true } },
         },
@@ -183,7 +185,7 @@ export default async function LivroCaixaPage({
       date: r.receivedDate!,
       description: r.description,
       notes: r.notes,
-      who: r.customer?.name || "-",
+      who: r.customer?.name || r.capitalBeneficiary?.name || "-",
       vehicle: vehicleLabel(r.vehicle),
       kind: "entrada" as const,
       amount: r.amount,
@@ -197,7 +199,7 @@ export default async function LivroCaixaPage({
       date: p.paymentDate!,
       description: p.description,
       notes: p.notes,
-      who: p.supplier?.name || "-",
+      who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
       vehicle: vehicleLabel(p.vehicle),
       kind: "saida" as const,
       amount: p.amount,
