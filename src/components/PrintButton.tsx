@@ -84,10 +84,14 @@ export default function PrintButton({
       // larga (que pode transbordar um contêiner com rolagem horizontal).
       const tables = Array.from(root.querySelectorAll("table"));
       const widestTable = tables.reduce((m, t) => Math.max(m, t.scrollWidth), 0);
-      const captureWidth = Math.max(root.clientWidth, widestTable + 48);
+      const desiredWidth = Math.max(root.clientWidth, widestTable + 48);
       // Força o layout de desktop (media queries reavaliadas nessa largura),
       // para o PDF sair consistente mesmo a partir de janelas estreitas.
-      const windowWidth = Math.max(1024, captureWidth);
+      const windowWidth = Math.max(1024, desiredWidth);
+      // Captura a largura INTEIRA em que o conteúdo foi disposto (windowWidth).
+      // Se capturasse menos que isso (ex.: telas estreitas onde o layout desktop
+      // é mais largo que a tabela), o lado direito saía cortado no PDF.
+      const captureWidth = windowWidth;
 
       // Escala alvo 2×, reduzida para nunca estourar o teto de canvas do
       // navegador (senão a captura sai em branco e cai no fallback).
