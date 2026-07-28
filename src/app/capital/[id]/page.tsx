@@ -12,6 +12,8 @@ import IncludeClosingToggle from "./IncludeClosingToggle";
 import ProLaboreForm from "./ProLaboreForm";
 import BeneficiaryNameForm from "./BeneficiaryNameForm";
 import BeneficiaryUserLink from "./BeneficiaryUserLink";
+import BeneficiaryParentSelect from "./BeneficiaryParentSelect";
+import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +25,10 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   const { id } = await params;
   const beneficiary = await prisma.capitalBeneficiary.findUnique({
     where: { id },
-    include: { transactions: { orderBy: { date: "desc" } } },
+    include: {
+      transactions: { orderBy: { date: "desc" } },
+      parent: { select: { id: true, name: true } },
+    },
   });
   if (!beneficiary) notFound();
 
@@ -38,6 +43,42 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         select: { id: true, name: true },
       })
     : [];
+
+  // Agrupamento pai→filhos (ex.: cauções). Só visual — não muda cálculos.
+  const isChild = beneficiary.parentId != null;
+  const [childrenRaw, eligibleChildren, eligibleParents] = await Promise.all([
+    prisma.capitalBeneficiary.findMany({
+      where: { parentId: id },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, transactions: { select: { kind: true, amount: true } } },
+    }),
+    // Podem virar vinculados: não-empresa, sem responsável, sem filhos próprios.
+    canManage && !beneficiary.isCompany && !isChild
+      ? prisma.capitalBeneficiary.findMany({
+          where: { isCompany: false, parentId: null, id: { not: id }, children: { none: {} } },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    // Podem ser responsáveis: não-empresa, de topo (sem responsável).
+    prisma.capitalBeneficiary.findMany({
+      where: { isCompany: false, parentId: null, id: { not: id } },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const childrenList = childrenRaw.map((c) => ({
+    id: c.id,
+    name: c.name,
+    saldo:
+      Math.round(
+        c.transactions.reduce(
+          (s, t) => s + (t.kind === "APORTE" ? t.amount : t.kind === "RETIRADA" ? -t.amount : 0),
+          0,
+        ) * 100,
+      ) / 100,
+  }));
+  const isParent = childrenList.length > 0;
 
   const sum = (kind: string) =>
     beneficiary.transactions.filter((t) => t.kind === kind).reduce((s, t) => s + t.amount, 0);
@@ -116,6 +157,27 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
+      {isChild && beneficiary.parent ? (
+        <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
+          🏠 Caução vinculada a{" "}
+          <a href={`/capital/${beneficiary.parent.id}`} className="font-medium text-blue-700 hover:underline">
+            {beneficiary.parent.name}
+          </a>
+          . O saldo continua contando no capital total.
+        </p>
+      ) : null}
+
+      {!beneficiary.isCompany && canManage && !isChild ? (
+        <div className="mb-4">
+          <LinkedBeneficiaries
+            parentId={beneficiary.id}
+            childrenList={childrenList}
+            eligible={eligibleChildren}
+            today={toDateInputValue(new Date())}
+          />
+        </div>
+      ) : null}
+
       {!beneficiary.isCompany && appliedTotal > 0 && canManage ? (
         <div className="mb-4">
           <SubstitutionWithdrawForm
@@ -142,6 +204,13 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
               beneficiaryId={beneficiary.id}
               users={linkableUsers}
               currentUserId={beneficiary.userId}
+            />
+          ) : null}
+          {canManage && !isParent ? (
+            <BeneficiaryParentSelect
+              beneficiaryId={beneficiary.id}
+              parents={eligibleParents}
+              currentParentId={beneficiary.parentId}
             />
           ) : null}
         </div>

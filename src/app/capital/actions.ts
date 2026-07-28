@@ -190,6 +190,48 @@ export async function linkBeneficiaryUserAction(
   return { ok: true };
 }
 
+/**
+ * Atrela (ou desatrela) um beneficiário a um "responsável" (outro beneficiário).
+ * Apenas agrupamento visual (ex.: cauções): não mexe em nenhum valor. Um nível
+ * só — o responsável precisa ser top-level e o vinculado não pode ter filhos.
+ */
+export async function setBeneficiaryParentAction(
+  beneficiaryId: string,
+  parentId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const target = await prisma.capitalBeneficiary.findUnique({
+    where: { id: beneficiaryId },
+    select: { id: true, isCompany: true, _count: { select: { children: true } } },
+  });
+  if (!target) return { ok: false, error: "Beneficiário não encontrado." };
+  if (target.isCompany) return { ok: false, error: "A empresa não pode ser vinculada." };
+
+  if (parentId) {
+    if (parentId === beneficiaryId) return { ok: false, error: "Um beneficiário não pode ser responsável por si mesmo." };
+    if (target._count.children > 0) {
+      return { ok: false, error: "Este beneficiário já é responsável por outros — não pode virar vinculado." };
+    }
+    const parent = await prisma.capitalBeneficiary.findUnique({
+      where: { id: parentId },
+      select: { id: true, isCompany: true, parentId: true },
+    });
+    if (!parent) return { ok: false, error: "Responsável não encontrado." };
+    if (parent.isCompany) return { ok: false, error: "A empresa não pode ser responsável." };
+    if (parent.parentId) return { ok: false, error: "O responsável já está vinculado a outro — escolha um responsável de topo." };
+  }
+
+  await prisma.capitalBeneficiary.update({ where: { id: beneficiaryId }, data: { parentId: parentId || null } });
+  revalidatePath("/capital");
+  revalidatePath(`/capital/${beneficiaryId}`);
+  if (parentId) revalidatePath(`/capital/${parentId}`);
+  return { ok: true };
+}
+
 /** Edita o valor do pró-labore combinado do beneficiário (R$/mês). */
 export async function setProLaboreAction(
   beneficiaryId: string,
