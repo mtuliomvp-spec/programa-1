@@ -117,7 +117,12 @@ export default async function ContasAPagarPage({
         description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}`}
         action={
           <Can module="financeiro" action="criar">
-            <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
+            <div className="flex flex-wrap gap-2">
+              <LinkButton href="/financeiro/a-pagar/contrato-locacao" variant="secondary">
+                🏠 Contrato de locação
+              </LinkButton>
+              <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
+            </div>
           </Can>
         }
       />
