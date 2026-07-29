@@ -1,12 +1,11 @@
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
-import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import { Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import NewRequestForm from "./NewRequestForm";
-import RequestRowActions from "./RequestRowActions";
+import RequestsTable, { type RequestRow } from "./RequestsTable";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 
 export const dynamic = "force-dynamic";
@@ -81,6 +80,30 @@ export default async function ComprasPage({
     userCan("compras", "aprovar"),
   ]);
 
+  const rowData: RequestRow[] = requests.map((r) => ({
+    id: r.id,
+    number: formatRequestNumber(r.seq, r.year),
+    description: r.description,
+    hasAttachment: r._count.attachments > 0,
+    subInfo: [
+      formatDate(r.createdAt),
+      flowName(r.structuralKey),
+      r.supplier?.name,
+      r.decisionNotes,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    requestedBy: r.requestedBy,
+    valueText: r.finalAmount
+      ? formatCurrency(r.finalAmount)
+      : r.estimatedAmount
+        ? `~${formatCurrency(r.estimatedAmount)}`
+        : "—",
+    status: r.status,
+    statusLabel: statusMeta[r.status].label,
+    statusTone: statusMeta[r.status].tone,
+  }));
+
   return (
     <div>
       <PageHeader
@@ -125,64 +148,7 @@ export default async function ComprasPage({
               description={q ? "Tente outros termos ou limpe a busca." : "Registre a primeira solicitação de compra ao lado."}
             />
           ) : (
-            <Table>
-              <Thead>
-                <Tr>
-                  <Th>Nº</Th>
-                  <Th>Descrição</Th>
-                  <Th>Solicitante</Th>
-                  <Th className="text-right">Valor</Th>
-                  <Th>Status</Th>
-                  <Th />
-                </Tr>
-              </Thead>
-              <tbody>
-                {requests.map((r) => (
-                  <Tr key={r.id}>
-                    <Td className="whitespace-nowrap tabular-nums text-slate-500">
-                      <Link href={`/compras/${r.id}`} className="text-blue-700 hover:underline">
-                        {formatRequestNumber(r.seq, r.year)}
-                      </Link>
-                    </Td>
-                    <Td className="max-w-[260px] font-medium text-slate-900">
-                      <Link href={`/compras/${r.id}`} className="block hover:underline">
-                        <span className="block truncate">
-                          {r.description}
-                          {r._count.attachments > 0 ? (
-                            <span className="ml-1 text-slate-400" title="Tem anexo">📎</span>
-                          ) : null}
-                        </span>
-                        <span className="block truncate text-xs font-normal text-slate-400">
-                          {formatDate(r.createdAt)}
-                          {flowName(r.structuralKey) ? ` · ${flowName(r.structuralKey)}` : ""}
-                          {r.supplier ? ` · ${r.supplier.name}` : ""}
-                          {r.decisionNotes ? ` · ${r.decisionNotes}` : ""}
-                        </span>
-                      </Link>
-                    </Td>
-                    <Td>{r.requestedBy}</Td>
-                    <Td className="text-right tabular-nums">
-                      {r.finalAmount
-                        ? formatCurrency(r.finalAmount)
-                        : r.estimatedAmount
-                          ? `~${formatCurrency(r.estimatedAmount)}`
-                          : "—"}
-                    </Td>
-                    <Td>
-                      <Badge tone={statusMeta[r.status].tone}>{statusMeta[r.status].label}</Badge>
-                    </Td>
-                    <Td>
-                      <RequestRowActions
-                        id={r.id}
-                        status={r.status}
-                        canApprove={canApprove}
-                        canCreate={canCreate}
-                      />
-                    </Td>
-                  </Tr>
-                ))}
-              </tbody>
-            </Table>
+            <RequestsTable rows={rowData} canApprove={canApprove} canCreate={canCreate} />
           )}
         </Card>
 

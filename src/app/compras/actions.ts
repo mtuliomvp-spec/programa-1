@@ -270,6 +270,29 @@ export async function updateRequestAction(
   redirect(`/compras/${d.id}`);
 }
 
+/**
+ * Aprova uma solicitação PENDENTE: gera o espelho em Contas a pagar e marca
+ * APROVADA. Devolve true se aprovou; false se não estava pendente. Lança se
+ * faltar valor/beneficiário (tratado pelo chamador em lote).
+ */
+async function approveRequest(id: string, userName: string): Promise<boolean> {
+  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
+  if (!request || request.status !== "PENDENTE") return false;
+
+  const firstPayableId = await generateEspelho(request);
+  await prisma.purchaseRequest.update({
+    where: { id },
+    data: {
+      status: "APROVADA",
+      decidedBy: userName,
+      decidedAt: new Date(),
+      finalAmount: request.estimatedAmount,
+      payableId: firstPayableId,
+    },
+  });
+  return true;
+}
+
 export async function decideRequestAction(id: string, approve: boolean, notes?: string) {
   const user = await assertCan("compras", "aprovar");
 
@@ -282,29 +305,86 @@ export async function decideRequestAction(id: string, approve: boolean, notes?: 
     return;
   }
 
-  // Aprovar gera o espelho em Contas a pagar (1 título ou N parcelas) vinculado
-  // à solicitação. Pagar (aqui ou no a-pagar) conclui a solicitação.
-  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
-  if (!request || request.status !== "PENDENTE") {
-    revalidatePath("/compras");
-    return;
-  }
-
-  const firstPayableId = await generateEspelho(request);
-
-  await prisma.purchaseRequest.update({
-    where: { id },
-    data: {
-      status: "APROVADA",
-      decidedBy: user.name,
-      decidedAt: new Date(),
-      decisionNotes: notes || null,
-      finalAmount: request.estimatedAmount,
-      payableId: firstPayableId,
-    },
-  });
+  await approveRequest(id, user.name);
   revalidatePath("/compras");
   revalidatePath("/financeiro/a-pagar");
+}
+
+export type BatchResult = { ok: boolean; done: number; skipped: number; error?: string };
+
+/** Aprova várias solicitações PENDENTES de uma vez (gera o espelho de cada). */
+export async function batchApproveRequestsAction(ids: string[]): Promise<BatchResult> {
+  let user;
+  try {
+    user = await assertCan("compras", "aprovar");
+  } catch (e) {
+    return { ok: false, done: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  let done = 0;
+  let skipped = 0;
+  for (const id of ids) {
+    try {
+      if (await approveRequest(id, user.name)) done += 1;
+      else skipped += 1;
+    } catch {
+      skipped += 1;
+    }
+  }
+  revalidatePath("/compras");
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: done > 0, done, skipped };
+}
+
+/** Rejeita várias solicitações PENDENTES de uma vez. */
+export async function batchRejectRequestsAction(ids: string[]): Promise<BatchResult> {
+  let user;
+  try {
+    user = await assertCan("compras", "aprovar");
+  } catch (e) {
+    return { ok: false, done: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const res = await prisma.purchaseRequest.updateMany({
+    where: { id: { in: ids }, status: "PENDENTE" },
+    data: { status: "REJEITADA", decidedBy: user.name, decidedAt: new Date() },
+  });
+  revalidatePath("/compras");
+  return { ok: res.count > 0, done: res.count, skipped: ids.length - res.count };
+}
+
+/** Cancela várias solicitações PENDENTES de uma vez. */
+export async function batchCancelRequestsAction(ids: string[]): Promise<BatchResult> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { ok: false, done: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem acesso." };
+  }
+  const res = await prisma.purchaseRequest.updateMany({
+    where: { id: { in: ids }, status: "PENDENTE" },
+    data: { status: "CANCELADA" },
+  });
+  revalidatePath("/compras");
+  return { ok: res.count > 0, done: res.count, skipped: ids.length - res.count };
+}
+
+/** Exclui várias solicitações (pula as com parcela paga). */
+export async function batchDeleteRequestsAction(ids: string[]): Promise<BatchResult> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { ok: false, done: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem acesso." };
+  }
+  let done = 0;
+  let skipped = 0;
+  for (const id of ids) {
+    const res = await deleteRequestCore(id);
+    if (res.ok) done += 1;
+    else skipped += 1;
+  }
+  revalidatePath("/compras");
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: done > 0, done, skipped };
 }
 
 /**
@@ -312,13 +392,8 @@ export async function decideRequestAction(id: string, approve: boolean, notes?: 
  * pendentes do espelho e o capital vinculado; bloqueia se houver parcela paga.
  * Anexos são apagados por cascade.
  */
-export async function deleteRequestAction(id: string): Promise<{ ok: boolean; error?: string }> {
-  try {
-    await requireCompras();
-    await assertCan("compras", "criar");
-  } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
-  }
+/** Núcleo da exclusão (sem guard/revalidate) — reusado individual e em lote. */
+async function deleteRequestCore(id: string): Promise<{ ok: boolean; error?: string }> {
   const request = await prisma.purchaseRequest.findUnique({
     where: { id },
     include: { payables: { select: { id: true, status: true } } },
@@ -338,10 +413,22 @@ export async function deleteRequestAction(id: string): Promise<{ ok: boolean; er
       : []),
     prisma.purchaseRequest.delete({ where: { id } }),
   ]);
-
-  revalidatePath("/compras");
-  revalidatePath("/financeiro/a-pagar");
   return { ok: true };
+}
+
+export async function deleteRequestAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
+  }
+  const res = await deleteRequestCore(id);
+  if (res.ok) {
+    revalidatePath("/compras");
+    revalidatePath("/financeiro/a-pagar");
+  }
+  return res;
 }
 
 /**
