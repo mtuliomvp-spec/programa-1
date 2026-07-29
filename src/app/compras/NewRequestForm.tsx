@@ -33,6 +33,7 @@ export default function NewRequestForm({
   // Se houver anexo e for imagem, redimensiona no navegador antes de enviar
   // (evita travar em fotos grandes). PDFs/documentos passam sem alteração.
   async function handleSend() {
+    if (pending || preparing) return; // evita envio duplicado (duplo clique)
     const form = formRef.current;
     if (!form) return;
     const fd = new FormData(form);

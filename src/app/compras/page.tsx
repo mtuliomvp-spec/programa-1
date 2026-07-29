@@ -31,7 +31,7 @@ export default async function ComprasPage({
   const q = (qParam || "").trim();
   const [allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
     prisma.purchaseRequest.findMany({
-      include: { supplier: true },
+      include: { supplier: true, _count: { select: { attachments: true } } },
       orderBy: { createdAt: "desc" },
       take: 100,
     }),
@@ -146,7 +146,12 @@ export default async function ComprasPage({
                     </Td>
                     <Td className="max-w-[260px] font-medium text-slate-900">
                       <Link href={`/compras/${r.id}`} className="block hover:underline">
-                        <span className="block truncate">{r.description}</span>
+                        <span className="block truncate">
+                          {r.description}
+                          {r._count.attachments > 0 ? (
+                            <span className="ml-1 text-slate-400" title="Tem anexo">📎</span>
+                          ) : null}
+                        </span>
                         <span className="block truncate text-xs font-normal text-slate-400">
                           {formatDate(r.createdAt)}
                           {flowName(r.structuralKey) ? ` · ${flowName(r.structuralKey)}` : ""}

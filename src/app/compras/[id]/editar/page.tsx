@@ -15,10 +15,16 @@ export default async function EditarSolicitacaoPage({
   await requireAction("compras", "criar");
   const { id } = await params;
 
-  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
+  const request = await prisma.purchaseRequest.findUnique({
+    where: { id },
+    include: { payables: { select: { status: true } } },
+  });
   if (!request) notFound();
-  // Só dá para editar enquanto pendente (depois de aprovada o espelho já existe).
-  if (request.status !== "PENDENTE") redirect(`/compras/${id}`);
+  // Edita pendente ou aprovada. Depois de paga (alguma parcela), bloqueia.
+  const podeEditar =
+    request.status === "PENDENTE" ||
+    (request.status === "APROVADA" && !request.payables.some((p) => p.status === "PAGO"));
+  if (!podeEditar) redirect(`/compras/${id}`);
 
   const [suppliers, stockVehicles, beneficiaries] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
