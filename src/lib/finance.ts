@@ -1743,6 +1743,7 @@ export async function createExpensePayable(input: {
   costCenterId?: string | null;
   structuralKey?: StructuralKey;
   notes?: string | null;
+  avulso?: boolean;
 }) {
   // Se o veículo já foi vendido, a despesa é pós-venda: sai do centro Veículos
   // (o carro não está mais no estoque) e vira despesa Administrativa; o custo é
@@ -1782,6 +1783,7 @@ export async function createExpensePayable(input: {
         vehicleId: input.vehicleId || null,
         capitalBeneficiaryId: input.capitalBeneficiaryId || null,
         notes: input.notes || null,
+        avulso: input.avulso ?? false,
       },
     });
     if (input.vehicleId) {
@@ -1855,6 +1857,7 @@ export async function createCashEntry(input: {
           customerId: input.customerId || null,
           capitalBeneficiaryId: input.capitalBeneficiaryId || null,
           notes: input.notes || null,
+          avulso: true,
         },
       });
       // Aporte de capital: registra a movimentação do beneficiário. As
@@ -1890,37 +1893,59 @@ export async function createCashEntry(input: {
     capitalBeneficiaryId: input.capitalBeneficiaryId || null,
     structuralKey: input.structuralKey,
     notes: input.notes || null,
+    avulso: true,
   });
 }
 
 /**
- * Exclui um lançamento avulso do movimento de caixa. Só remove entradas/saídas
- * que não estejam vinculadas a veículo, peça, venda, consórcio ou recorrência —
- * baixas geradas por essas operações devem ser revertidas na própria origem.
+ * "Exclui" um lançamento do movimento de caixa.
+ * - Lançamento AVULSO (dinheiro lançado direto no caixa): apaga de vez (atômico,
+ *   junto da transação de Capital vinculada, para não deixar órfã).
+ * - TÍTULO baixado (veio do Contas a pagar/receber): não destrói — ESTORNA a
+ *   baixa (volta a PENDENTE via markPayablePending/markReceivablePending, que já
+ *   desfazem a retirada/aporte de capital), fazendo o título voltar à lista.
+ * Baixas de venda/peça/recorrência/consórcio/funcionário seguem bloqueadas
+ * (devem ser revertidas na própria origem).
  */
 export async function deleteCashEntry(kind: "entrada" | "saida", id: string) {
-  // Atômico: se o lançamento estiver vinculado a uma transação de Capital
-  // (aporte/retirada/implantação de saldo), apaga os dois juntos — senão a
-  // transação de Capital fica órfã e quebra os checks de convergência.
-  await prisma.$transaction(async (tx) => {
-    if (kind === "entrada") {
-      const r = await tx.receivable.findUnique({ where: { id } });
-      if (!r) return;
-      if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
-        throw new Error("Este lançamento veio de uma venda/recorrência e deve ser revertido na origem.");
-      }
-      await tx.capitalTransaction.deleteMany({ where: { receivableId: id } });
-      await tx.receivable.delete({ where: { id } });
-      return;
+  if (kind === "entrada") {
+    const r = await prisma.receivable.findUnique({
+      where: { id },
+      select: { id: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true },
+    });
+    if (!r) return;
+    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
+      throw new Error("Este lançamento veio de uma venda/recorrência e deve ser revertido na origem.");
     }
-    const p = await tx.payable.findUnique({ where: { id } });
-    if (!p) return;
-    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
-      throw new Error("Este lançamento veio de outra operação e deve ser revertido na origem.");
+    if (r.avulso) {
+      await prisma.$transaction([
+        prisma.capitalTransaction.deleteMany({ where: { receivableId: id } }),
+        prisma.receivable.delete({ where: { id } }),
+      ]);
+    } else {
+      // Estorna: o título volta a PENDENTE no Contas a receber.
+      await markReceivablePending(id);
     }
-    await tx.capitalTransaction.deleteMany({ where: { payableId: id } });
-    await tx.payable.delete({ where: { id } });
+    return;
+  }
+
+  const p = await prisma.payable.findUnique({
+    where: { id },
+    select: { id: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true },
   });
+  if (!p) return;
+  if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
+    throw new Error("Este lançamento veio de outra operação e deve ser revertido na origem.");
+  }
+  if (p.avulso) {
+    await prisma.$transaction([
+      prisma.capitalTransaction.deleteMany({ where: { payableId: id } }),
+      prisma.payable.delete({ where: { id } }),
+    ]);
+  } else {
+    // Estorna: o título volta a PENDENTE no Contas a pagar.
+    await markPayablePending(id);
+  }
 }
 
 export async function createManualReceivable(input: {

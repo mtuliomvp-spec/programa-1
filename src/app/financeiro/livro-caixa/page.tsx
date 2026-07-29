@@ -159,8 +159,10 @@ export default async function LivroCaixaPage({
     amount: number;
     // link para a ordem de pagamento (saídas com conta a pagar)
     href?: string;
-    // preenchido só em lançamentos avulsos que podem ser excluídos daqui
-    deletable?: { kind: "entrada" | "saida"; id: string };
+    // preenchido nos lançamentos que podem ser removidos daqui. `avulso` decide
+    // se é exclusão de vez (dinheiro lançado direto no caixa) ou estorno do
+    // título (volta pendente ao a-pagar/receber).
+    deletable?: { kind: "entrada" | "saida"; id: string; avulso: boolean };
   };
 
   const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
@@ -194,7 +196,7 @@ export default async function LivroCaixaPage({
       amount: r.amount,
       deletable:
         !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null
-          ? ({ kind: "entrada", id: r.id } as const)
+          ? ({ kind: "entrada", id: r.id, avulso: r.avulso } as const)
           : undefined,
     })),
     ...paidMonth.map((p) => ({
@@ -210,7 +212,7 @@ export default async function LivroCaixaPage({
       href: `/financeiro/a-pagar/${p.id}/ordem`,
       deletable:
         !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId
-          ? ({ kind: "saida", id: p.id } as const)
+          ? ({ kind: "saida", id: p.id, avulso: p.avulso } as const)
           : undefined,
     })),
   ].sort((a, b) => a.date.getTime() - b.date.getTime());
@@ -469,7 +471,7 @@ export default async function LivroCaixaPage({
                         m.description
                       )}
                       {m.deletable && canCriar ? (
-                        <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} />
+                        <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} avulso={m.deletable.avulso} />
                       ) : null}
                     </span>
                     {m.notes ? (
