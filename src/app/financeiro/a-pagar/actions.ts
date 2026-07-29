@@ -442,3 +442,53 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   revalidatePath("/");
   return { ok: deleted > 0, deleted, skipped };
 }
+
+// ---------------------------------------------------------------------------
+// Anexos do título (nota fiscal, comprovante…)
+// ---------------------------------------------------------------------------
+
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export type AttachmentState = { error?: string; ok?: boolean };
+
+export async function uploadPayableAttachmentAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const payableId = String(formData.get("payableId") || "").trim();
+  const description = String(formData.get("description") || "").trim() || "Nota fiscal";
+  const file = formData.get("file");
+  if (!payableId) return { error: "Título inválido." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Arquivo muito grande (máximo 15 MB)." };
+
+  const payable = await prisma.payable.findUnique({ where: { id: payableId }, select: { id: true } });
+  if (!payable) return { error: "Título não encontrado." };
+
+  const data = new Uint8Array(await file.arrayBuffer());
+  await prisma.payableAttachment.create({
+    data: {
+      payableId,
+      description,
+      filename: file.name || "anexo",
+      mimeType: file.type || "application/octet-stream",
+      size: data.byteLength,
+      data,
+    },
+  });
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+  return { ok: true };
+}
+
+export async function deletePayableAttachmentAction(id: string, payableId: string) {
+  await assertCan("financeiro", "criar");
+  await prisma.payableAttachment.delete({ where: { id } });
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+}

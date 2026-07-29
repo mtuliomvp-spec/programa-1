@@ -752,6 +752,8 @@ model Payable {
   // Solicitação de compra que gerou este título (espelho da aprovação).
   purchaseRequestId String?
   purchaseRequest   PurchaseRequest? @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  // Anexos do título (ex.: nota fiscal, comprovante).
+  attachments  PayableAttachment[]
   reconciledAt DateTime?
   bankRef      String?
   employeeId   String?
@@ -772,6 +774,22 @@ model Payable {
   updatedAt    DateTime        @updatedAt
 
   @@map("payables")
+}
+
+// Arquivo anexado a um título de contas a pagar (nota fiscal, comprovante…).
+model PayableAttachment {
+  id         String   @id @default(cuid())
+  payableId  String
+  payable    Payable  @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  description String
+  filename   String
+  mimeType   String
+  size       Int
+  data       Bytes
+  createdAt  DateTime @default(now())
+
+  @@index([payableId])
+  @@map("payable_attachments")
 }
 
 model Receivable {
