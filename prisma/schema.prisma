@@ -255,11 +255,29 @@ model PurchaseRequest {
   decisionNotes   String?
   finalAmount     Float?
   payableId       String?
+  attachments     PurchaseRequestAttachment[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
   @@unique([year, seq])
   @@map("purchase_requests")
+}
+
+// Arquivo anexado a uma solicitação de compra (foto, PDF, orçamento…).
+// Guardado como bytes no próprio banco, igual aos demais anexos.
+model PurchaseRequestAttachment {
+  id                String          @id @default(cuid())
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id], onDelete: Cascade)
+  description       String
+  filename          String
+  mimeType          String
+  size              Int
+  data              Bytes
+  createdAt         DateTime        @default(now())
+
+  @@index([purchaseRequestId])
+  @@map("purchase_request_attachments")
 }
 
 // Usuário do sistema (login por e-mail e senha).

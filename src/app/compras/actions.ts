@@ -11,6 +11,8 @@ import { formatRequestNumber } from "@/lib/format";
 
 export type ComprasFormState = { error?: string; success?: string };
 
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+
 async function requireCompras() {
   const user = await getSessionUser();
   if (!user || !hasModuleAccess(user, "compras")) throw new Error("Acesso negado");
@@ -41,13 +43,30 @@ export async function createRequestAction(
   const parsed = createSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
 
+  // Anexo opcional (foto, PDF, orçamento…): o Zod não valida File, então lemos
+  // direto do formData e gravamos os bytes no próprio banco.
+  const file = formData.get("file");
+  let attachment:
+    | { filename: string; mimeType: string; size: number; data: Uint8Array<ArrayBuffer> }
+    | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Arquivo muito grande (máximo 15 MB)." };
+    const data = new Uint8Array(await file.arrayBuffer());
+    attachment = {
+      filename: file.name || "anexo",
+      mimeType: file.type || "application/octet-stream",
+      size: data.byteLength,
+      data,
+    };
+  }
+
   // Numeração por ano: 0001/2026, reiniciando a cada ano.
   const year = new Date().getFullYear();
   await prisma.$transaction(async (tx) => {
     const last = await tx.purchaseRequest.aggregate({ where: { year }, _max: { seq: true } });
     const seq = (last._max.seq ?? 0) + 1;
     const flow = parsed.data.structuralKey || "ADMINISTRATIVO";
-    await tx.purchaseRequest.create({
+    const created = await tx.purchaseRequest.create({
       data: {
         description: parsed.data.description,
         details: parsed.data.details || null,
@@ -62,6 +81,11 @@ export async function createRequestAction(
         seq,
       },
     });
+    if (attachment) {
+      await tx.purchaseRequestAttachment.create({
+        data: { purchaseRequestId: created.id, description: "Anexo", ...attachment },
+      });
+    }
   });
   revalidatePath("/compras");
   return { success: "Solicitação registrada. Aguardando aprovação." };

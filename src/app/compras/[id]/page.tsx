@@ -20,6 +20,12 @@ const statusMeta = {
 const flowName = (key?: string | null) =>
   STRUCTURAL_FLOWS.find((f) => f.key === key)?.name ?? "Administrativo";
 
+function humanSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 function Linha({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-slate-100 py-3 last:border-0 sm:flex-row sm:items-baseline sm:gap-3">
@@ -39,7 +45,15 @@ export default async function SolicitacaoDetalhePage({
 
   const request = await prisma.purchaseRequest.findUnique({
     where: { id },
-    include: { supplier: true, vehicle: true, capitalBeneficiary: true },
+    include: {
+      supplier: true,
+      vehicle: true,
+      capitalBeneficiary: true,
+      attachments: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, filename: true, size: true },
+      },
+    },
   });
   if (!request) notFound();
 
@@ -106,6 +120,33 @@ export default async function SolicitacaoDetalhePage({
         </Linha>
         {request.finalAmount ? (
           <Linha label="Valor final">{formatCurrency(request.finalAmount)}</Linha>
+        ) : null}
+        {request.attachments.length > 0 ? (
+          <Linha label="Anexo">
+            <ul className="space-y-1.5">
+              {request.attachments.map((a) => (
+                <li key={a.id} className="flex flex-wrap items-center gap-3">
+                  <span className="text-slate-700">
+                    {a.filename} · {humanSize(a.size)}
+                  </span>
+                  <a
+                    href={`/compras/anexos/${a.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-blue-700 hover:underline"
+                  >
+                    Abrir
+                  </a>
+                  <a
+                    href={`/compras/anexos/${a.id}?download=1`}
+                    className="font-medium text-slate-600 hover:underline"
+                  >
+                    Baixar
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </Linha>
         ) : null}
         {request.decidedBy ? (
           <Linha label="Decisão">
