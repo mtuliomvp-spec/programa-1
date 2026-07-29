@@ -328,7 +328,9 @@ function originBlockReason(p: {
   purchaseRequestId: string | null;
 }): string | null {
   if (p.status === "PAGO") return "pago";
-  if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId || p.saleId || p.purchaseRequestId) {
+  // Veículo é permitido excluir (remove o custo do veículo junto). Recorrência/
+  // consórcio se regeneram; venda/peça/espelho têm origem própria.
+  if (p.partId || p.recurringId || p.consortiumId || p.employeeId || p.saleId || p.purchaseRequestId) {
     return "origem";
   }
   return null;
@@ -430,6 +432,7 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
       continue;
     }
     await prisma.$transaction([
+      prisma.vehicleCost.deleteMany({ where: { payableId: id } }),
       prisma.capitalTransaction.deleteMany({ where: { payableId: id } }),
       prisma.payable.delete({ where: { id } }),
     ]);
