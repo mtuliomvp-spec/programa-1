@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import NewSupplierInline from "@/components/NewSupplierInline";
 import { createRecurringAction, type RecurringFormState } from "../actions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -22,6 +23,39 @@ export default function RecurringForm({
   const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">("MENSAL");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
+  // Fornecedor: lista + seleção controladas, para poder cadastrar um novo na hora.
+  const [supplierList, setSupplierList] = useState<Option[]>(suppliers);
+  const [supplierId, setSupplierId] = useState("");
+  const [newSupplier, setNewSupplier] = useState(false);
+
+  const supplierField = (label: string) => (
+    <Field label={label}>
+      <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
+        <option value="">Sem fornecedor</option>
+        {supplierList.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </Select>
+      <button
+        type="button"
+        onClick={() => setNewSupplier((v) => !v)}
+        className="mt-1 text-xs font-medium text-blue-700 hover:underline"
+      >
+        {newSupplier ? "Fechar" : "➕ Cadastrar fornecedor"}
+      </button>
+      {newSupplier ? (
+        <NewSupplierInline
+          onCreated={(name, id) => {
+            setSupplierList((prev) => (prev.some((s) => s.id === id) ? prev : [...prev, { id, name }]));
+            setSupplierId(id);
+            setNewSupplier(false);
+          }}
+        />
+      ) : null}
+    </Field>
+  );
 
   return (
     <form action={formAction} className="space-y-4">
@@ -99,18 +133,7 @@ export default function RecurringForm({
           </Field>
         ) : null}
 
-        {isCapital && kind === "PAGAR" ? (
-          <Field label="Fornecedor (opcional)">
-            <Select name="supplierId" defaultValue="">
-              <option value="">Sem fornecedor</option>
-              {suppliers.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </Select>
-          </Field>
-        ) : null}
+        {isCapital && kind === "PAGAR" ? supplierField("Fornecedor (opcional)") : null}
 
         {!isCapital && kind === "PAGAR" ? (
           <>
@@ -123,16 +146,7 @@ export default function RecurringForm({
                 <option value="OUTROS">Outros</option>
               </Select>
             </Field>
-            <Field label="Fornecedor">
-              <Select name="supplierId" defaultValue="">
-                <option value="">Sem fornecedor</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+            {supplierField("Fornecedor")}
           </>
         ) : null}
 

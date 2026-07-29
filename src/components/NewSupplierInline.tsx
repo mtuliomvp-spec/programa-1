@@ -11,7 +11,11 @@ import { findPersonByDocument } from "@/app/person-lookup";
  * dados (BrasilAPI/ReceitaWS) e cadastra. Ao concluir, avisa o nome criado para
  * o formulário selecioná-lo. Reutilizável em qualquer lançamento.
  */
-export default function NewSupplierInline({ onCreated }: { onCreated: (name: string) => void }) {
+export default function NewSupplierInline({
+  onCreated,
+}: {
+  onCreated: (name: string, id: string) => void;
+}) {
   const [data, setData] = useState({ name: "", document: "", phone: "", email: "", address: "" });
   const [alsoCustomer, setAlsoCustomer] = useState(false);
   const [saving, start] = useTransition();
@@ -74,7 +78,7 @@ export default function NewSupplierInline({ onCreated }: { onCreated: (name: str
         setMsg({ tone: "err", text: result.error });
         return;
       }
-      onCreated(result.name);
+      onCreated(result.name, result.id);
     });
   }
 
