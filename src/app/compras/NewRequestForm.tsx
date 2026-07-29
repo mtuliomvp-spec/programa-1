@@ -60,6 +60,15 @@ export default function NewRequestForm({
         <Input name="estimatedAmount" type="number" step="0.01" min={0} />
       </Field>
 
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Vencimento (opcional)">
+          <Input name="dueDate" type="date" />
+        </Field>
+        <Field label="Nº da NF / documento (opcional)">
+          <Input name="documentNumber" placeholder="Ex: NF 12345" />
+        </Field>
+      </div>
+
       <Field label="Fluxo (obra estrutural)">
         <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
           {STRUCTURAL_FLOWS.map((f) => (

@@ -238,6 +238,10 @@ model PurchaseRequest {
   description     String
   details         String?
   estimatedAmount Float?
+  // Vencimento e número da NF/documento informados na solicitação; levados até
+  // a conta a pagar quando a compra é concluída.
+  dueDate         DateTime?
+  documentNumber  String?
   supplierId      String?
   supplier        Supplier?         @relation(fields: [supplierId], references: [id])
   requestedBy     String
