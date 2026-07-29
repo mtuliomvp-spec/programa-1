@@ -1,9 +1,10 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import { createRequestAction, type ComprasFormState } from "./actions";
 
 type Option = { id: string; name: string };
@@ -20,9 +21,33 @@ export default function NewRequestForm({
 }) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState("ADMINISTRATIVO");
+  const formRef = useRef<HTMLFormElement>(null);
+  const [preparing, setPreparing] = useState(false);
+
+  useEffect(() => {
+    if (state.success) formRef.current?.reset();
+  }, [state.success]);
+
+  // Se houver anexo e for imagem, redimensiona no navegador antes de enviar
+  // (evita travar em fotos grandes). PDFs/documentos passam sem alteração.
+  async function handleSend() {
+    const form = formRef.current;
+    if (!form) return;
+    const fd = new FormData(form);
+    const file = fd.get("file");
+    if (file instanceof File && file.size > 0) {
+      setPreparing(true);
+      try {
+        fd.set("file", await resizeImageToJpeg(file));
+      } finally {
+        setPreparing(false);
+      }
+    }
+    formAction(fd);
+  }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form ref={formRef} className="space-y-3">
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
       {state.success ? <p className="text-sm text-emerald-700">{state.success}</p> : null}
       <Field label="O que comprar" required>
@@ -72,8 +97,19 @@ export default function NewRequestForm({
       ) : null}
 
       <SupplierSelect suppliers={suppliers} label="Fornecedor sugerido" emptyLabel="Sem sugestão" />
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? "Enviando..." : "Solicitar compra"}
+
+      <Field label="Anexo (opcional — foto, PDF…)">
+        <input
+          type="file"
+          name="file"
+          accept="image/*,.pdf,.doc,.docx"
+          capture="environment"
+          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+        />
+      </Field>
+
+      <Button type="button" onClick={handleSend} disabled={pending || preparing} className="w-full">
+        {preparing ? "Preparando…" : pending ? "Enviando..." : "Solicitar compra"}
       </Button>
     </form>
   );
