@@ -121,70 +121,31 @@ export async function createRequestAction(
 
 const updateSchema = createSchema.extend({ id: z.string().min(1) });
 
-/** Edita uma solicitação ainda PENDENTE (antes de gerar o espelho na aprovação). */
-export async function updateRequestAction(
-  _prev: ComprasFormState,
-  formData: FormData,
-): Promise<ComprasFormState> {
-  try {
-    await requireCompras();
-    await assertCan("compras", "criar");
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
-  }
-  const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
-  const d = parsed.data;
+type RequestForEspelho = {
+  id: string;
+  seq: number;
+  year: number;
+  description: string;
+  details: string | null;
+  estimatedAmount: number | null;
+  dueDate: Date | null;
+  documentNumber: string | null;
+  category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS";
+  installmentsCount: number;
+  installmentPeriod: string | null;
+  installmentDays: number;
+  structuralKey: string | null;
+  vehicleId: string | null;
+  capitalBeneficiaryId: string | null;
+  supplierId: string | null;
+};
 
-  const parcelado = d.paymentMode === "PARCELADO";
-  const installmentsCount = parcelado ? d.installmentsCount : 1;
-  if (parcelado && installmentsCount < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
-
-  const flow = d.structuralKey || "ADMINISTRATIVO";
-  const result = await prisma.purchaseRequest.updateMany({
-    where: { id: d.id, status: "PENDENTE" },
-    data: {
-      description: d.description,
-      details: d.details || null,
-      estimatedAmount: d.estimatedAmount || null,
-      dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
-      documentNumber: d.documentNumber?.trim() || null,
-      category: d.category,
-      installmentsCount,
-      installmentPeriod: parcelado ? d.installmentPeriod : null,
-      installmentDays: d.installmentDays,
-      supplierId: d.supplierId || null,
-      structuralKey: flow,
-      vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
-      capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
-    },
-  });
-  if (result.count === 0) return { error: "Só é possível editar solicitações aguardando aprovação." };
-
-  revalidatePath("/compras");
-  revalidatePath(`/compras/${d.id}`);
-  redirect(`/compras/${d.id}`);
-}
-
-export async function decideRequestAction(id: string, approve: boolean, notes?: string) {
-  const user = await assertCan("compras", "aprovar");
-
-  if (!approve) {
-    await prisma.purchaseRequest.update({
-      where: { id, status: "PENDENTE" },
-      data: { status: "REJEITADA", decidedBy: user.name, decidedAt: new Date(), decisionNotes: notes || null },
-    });
-    revalidatePath("/compras");
-    return;
-  }
-
-  // Aprovar gera o espelho em Contas a pagar (1 título ou N parcelas) vinculado
-  // à solicitação. Pagar (aqui ou no a-pagar) conclui a solicitação.
-  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
-  if (!request || request.status !== "PENDENTE") {
-    revalidatePath("/compras");
-    return;
-  }
+/**
+ * Gera o espelho da solicitação em Contas a pagar (1 título ou N parcelas)
+ * vinculado via purchaseRequestId. Devolve o id do 1º título. Lança erro se
+ * faltar valor ou (no Capital) o beneficiário.
+ */
+async function generateEspelho(request: RequestForEspelho): Promise<string | null> {
   const amount = request.estimatedAmount;
   if (!amount || amount <= 0) throw new Error("Defina o valor da solicitação antes de aprovar.");
   const flowKey = (request.structuralKey || "ADMINISTRATIVO") as "CAPITAL" | "VEICULOS" | "ADMINISTRATIVO";
@@ -218,6 +179,118 @@ export async function decideRequestAction(id: string, approve: boolean, notes?: 
     });
     if (i === 0) firstPayableId = payable.id;
   }
+  return firstPayableId;
+}
+
+/** Remove os títulos pendentes do espelho (para regerar ou excluir). */
+async function clearPendingEspelho(purchaseRequestId: string) {
+  const pending = await prisma.payable.findMany({
+    where: { purchaseRequestId, status: { not: "PAGO" } },
+    select: { id: true },
+  });
+  const ids = pending.map((p) => p.id);
+  if (ids.length === 0) return;
+  await prisma.$transaction([
+    prisma.capitalTransaction.deleteMany({ where: { payableId: { in: ids } } }),
+    prisma.payable.deleteMany({ where: { id: { in: ids } } }),
+  ]);
+}
+
+/**
+ * Edita uma solicitação PENDENTE ou APROVADA. Se aprovada, regera o espelho em
+ * Contas a pagar com os novos valores (bloqueia se alguma parcela já foi paga).
+ */
+export async function updateRequestAction(
+  _prev: ComprasFormState,
+  formData: FormData,
+): Promise<ComprasFormState> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
+  }
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+
+  const parcelado = d.paymentMode === "PARCELADO";
+  const installmentsCount = parcelado ? d.installmentsCount : 1;
+  if (parcelado && installmentsCount < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
+
+  const existing = await prisma.purchaseRequest.findUnique({
+    where: { id: d.id },
+    include: { payables: { select: { status: true } } },
+  });
+  if (!existing) return { error: "Solicitação não encontrada." };
+  if (existing.status !== "PENDENTE" && existing.status !== "APROVADA") {
+    return { error: "Só é possível editar solicitações pendentes ou aprovadas." };
+  }
+  if (existing.status === "APROVADA" && existing.payables.some((p) => p.status === "PAGO")) {
+    return { error: "Já há pagamento nesta compra. Reverta o título antes de editar." };
+  }
+
+  const flow = d.structuralKey || "ADMINISTRATIVO";
+  const updated = await prisma.purchaseRequest.update({
+    where: { id: d.id },
+    data: {
+      description: d.description,
+      details: d.details || null,
+      estimatedAmount: d.estimatedAmount || null,
+      dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
+      documentNumber: d.documentNumber?.trim() || null,
+      category: d.category,
+      installmentsCount,
+      installmentPeriod: parcelado ? d.installmentPeriod : null,
+      installmentDays: d.installmentDays,
+      supplierId: d.supplierId || null,
+      structuralKey: flow,
+      vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
+      capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
+    },
+  });
+
+  // Aprovada: regera o espelho em Contas a pagar com os valores atualizados.
+  if (existing.status === "APROVADA") {
+    try {
+      await clearPendingEspelho(updated.id);
+      const firstPayableId = await generateEspelho(updated);
+      await prisma.purchaseRequest.update({
+        where: { id: updated.id },
+        data: { finalAmount: updated.estimatedAmount, payableId: firstPayableId },
+      });
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Não foi possível gerar o espelho." };
+    }
+    revalidatePath("/financeiro/a-pagar");
+  }
+
+  revalidatePath("/compras");
+  revalidatePath(`/compras/${d.id}`);
+  redirect(`/compras/${d.id}`);
+}
+
+export async function decideRequestAction(id: string, approve: boolean, notes?: string) {
+  const user = await assertCan("compras", "aprovar");
+
+  if (!approve) {
+    await prisma.purchaseRequest.update({
+      where: { id, status: "PENDENTE" },
+      data: { status: "REJEITADA", decidedBy: user.name, decidedAt: new Date(), decisionNotes: notes || null },
+    });
+    revalidatePath("/compras");
+    return;
+  }
+
+  // Aprovar gera o espelho em Contas a pagar (1 título ou N parcelas) vinculado
+  // à solicitação. Pagar (aqui ou no a-pagar) conclui a solicitação.
+  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
+  if (!request || request.status !== "PENDENTE") {
+    revalidatePath("/compras");
+    return;
+  }
+
+  const firstPayableId = await generateEspelho(request);
 
   await prisma.purchaseRequest.update({
     where: { id },
@@ -226,12 +299,49 @@ export async function decideRequestAction(id: string, approve: boolean, notes?: 
       decidedBy: user.name,
       decidedAt: new Date(),
       decisionNotes: notes || null,
-      finalAmount: amount,
+      finalAmount: request.estimatedAmount,
       payableId: firstPayableId,
     },
   });
   revalidatePath("/compras");
   revalidatePath("/financeiro/a-pagar");
+}
+
+/**
+ * Exclui uma solicitação de compra (ex.: duplicada). Remove os títulos
+ * pendentes do espelho e o capital vinculado; bloqueia se houver parcela paga.
+ * Anexos são apagados por cascade.
+ */
+export async function deleteRequestAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
+  }
+  const request = await prisma.purchaseRequest.findUnique({
+    where: { id },
+    include: { payables: { select: { id: true, status: true } } },
+  });
+  if (!request) return { ok: false, error: "Solicitação não encontrada." };
+  if (request.payables.some((p) => p.status === "PAGO")) {
+    return { ok: false, error: "Há pagamento nesta compra. Reverta o título antes de excluir." };
+  }
+
+  const payableIds = request.payables.map((p) => p.id);
+  await prisma.$transaction([
+    ...(payableIds.length
+      ? [
+          prisma.capitalTransaction.deleteMany({ where: { payableId: { in: payableIds } } }),
+          prisma.payable.deleteMany({ where: { id: { in: payableIds } } }),
+        ]
+      : []),
+    prisma.purchaseRequest.delete({ where: { id } }),
+  ]);
+
+  revalidatePath("/compras");
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: true };
 }
 
 /**

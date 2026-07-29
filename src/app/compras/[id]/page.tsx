@@ -9,6 +9,7 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import RequestDetailActions from "./RequestDetailActions";
 import RequestPayables from "./RequestPayables";
+import DeleteRequestButton from "./DeleteRequestButton";
 
 export const dynamic = "force-dynamic";
 
@@ -83,6 +84,10 @@ export default async function SolicitacaoDetalhePage({
     accountName: p.account?.name ?? null,
   }));
   const accounts = activeAccounts.map((a) => ({ id: a.id, name: a.name }));
+  const hasPaid = request.payables.some((p) => p.status === "PAGO");
+  const canEdit =
+    canCreate && !hasPaid && (request.status === "PENDENTE" || request.status === "APROVADA");
+  const canDelete = canCreate && !hasPaid && request.status !== "CONCLUIDA";
 
   const meta = statusMeta[request.status];
 
@@ -92,13 +97,14 @@ export default async function SolicitacaoDetalhePage({
         title={`Solicitação ${formatRequestNumber(request.seq, request.year)}`}
         description={request.description}
         action={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge tone={meta.tone}>{meta.label}</Badge>
-            {request.status === "PENDENTE" && canCreate ? (
+            {canEdit ? (
               <LinkButton href={`/compras/${request.id}/editar`} variant="secondary">
                 Editar
               </LinkButton>
             ) : null}
+            {canDelete ? <DeleteRequestButton id={request.id} /> : null}
             <LinkButton href="/compras" variant="secondary">
               ← Voltar
             </LinkButton>
