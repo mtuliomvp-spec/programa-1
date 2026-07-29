@@ -6,7 +6,16 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
-import { createManualPayable } from "@/lib/finance";
+import {
+  createManualPayable,
+  markPayablePaid,
+  splitInstallments,
+  addMonths,
+  addDays,
+} from "@/lib/finance";
+import { assertBooksBalanced } from "@/lib/books-health";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
 
 export type ComprasFormState = { error?: string; success?: string };
@@ -25,6 +34,12 @@ const createSchema = z.object({
   estimatedAmount: z.coerce.number().min(0).optional(),
   dueDate: z.string().optional(),
   documentNumber: z.string().optional(),
+  category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]).default("OUTROS"),
+  // À vista ou parcelado em N vezes (mensal ou a cada X dias).
+  paymentMode: z.enum(["A_VISTA", "PARCELADO"]).default("A_VISTA"),
+  installmentsCount: z.coerce.number().int().min(0).default(0),
+  installmentPeriod: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
+  installmentDays: z.coerce.number().int().min(1).default(30),
   supplierId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
@@ -44,6 +59,10 @@ export async function createRequestAction(
   }
   const parsed = createSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const parcelado = parsed.data.paymentMode === "PARCELADO";
+  const installmentsCount = parcelado ? parsed.data.installmentsCount : 1;
+  if (parcelado && installmentsCount < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
 
   // Anexo opcional (foto, PDF, orçamento…): o Zod não valida File, então lemos
   // direto do formData e gravamos os bytes no próprio banco.
@@ -75,6 +94,10 @@ export async function createRequestAction(
         estimatedAmount: parsed.data.estimatedAmount || null,
         dueDate: parsed.data.dueDate ? parseDateInput(parsed.data.dueDate) : null,
         documentNumber: parsed.data.documentNumber?.trim() || null,
+        category: parsed.data.category,
+        installmentsCount,
+        installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
+        installmentDays: parsed.data.installmentDays,
         supplierId: parsed.data.supplierId || null,
         structuralKey: flow,
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
@@ -97,16 +120,110 @@ export async function createRequestAction(
 
 export async function decideRequestAction(id: string, approve: boolean, notes?: string) {
   const user = await assertCan("compras", "aprovar");
+
+  if (!approve) {
+    await prisma.purchaseRequest.update({
+      where: { id, status: "PENDENTE" },
+      data: { status: "REJEITADA", decidedBy: user.name, decidedAt: new Date(), decisionNotes: notes || null },
+    });
+    revalidatePath("/compras");
+    return;
+  }
+
+  // Aprovar gera o espelho em Contas a pagar (1 título ou N parcelas) vinculado
+  // à solicitação. Pagar (aqui ou no a-pagar) conclui a solicitação.
+  const request = await prisma.purchaseRequest.findUnique({ where: { id } });
+  if (!request || request.status !== "PENDENTE") {
+    revalidatePath("/compras");
+    return;
+  }
+  const amount = request.estimatedAmount;
+  if (!amount || amount <= 0) throw new Error("Defina o valor da solicitação antes de aprovar.");
+  const flowKey = (request.structuralKey || "ADMINISTRATIVO") as "CAPITAL" | "VEICULOS" | "ADMINISTRATIVO";
+  if (flowKey === "CAPITAL" && !request.capitalBeneficiaryId) {
+    throw new Error("Escolha o beneficiário do capital antes de aprovar.");
+  }
+
+  const count = request.installmentsCount > 1 ? request.installmentsCount : 1;
+  const firstDue = request.dueDate ?? new Date();
+  const amounts = count > 1 ? splitInstallments(amount, count) : [amount];
+  const label = `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`;
+
+  let firstPayableId: string | null = null;
+  for (let i = 0; i < amounts.length; i++) {
+    const payable = await createManualPayable({
+      description: count > 1 ? `${label} - Parcela ${i + 1}/${count}` : label,
+      category: request.category,
+      documentNumber: request.documentNumber,
+      amount: amounts[i],
+      dueDate:
+        request.installmentPeriod === "DIAS"
+          ? addDays(firstDue, i * request.installmentDays)
+          : addMonths(firstDue, i),
+      supplierId: request.supplierId,
+      structuralKey: flowKey,
+      vehicleId: flowKey === "VEICULOS" ? request.vehicleId : null,
+      capitalBeneficiaryId: flowKey === "CAPITAL" ? request.capitalBeneficiaryId : null,
+      notes: request.details,
+      alreadyPaid: false,
+      purchaseRequestId: request.id,
+    });
+    if (i === 0) firstPayableId = payable.id;
+  }
+
   await prisma.purchaseRequest.update({
-    where: { id, status: "PENDENTE" },
+    where: { id },
     data: {
-      status: approve ? "APROVADA" : "REJEITADA",
+      status: "APROVADA",
       decidedBy: user.name,
       decidedAt: new Date(),
       decisionNotes: notes || null,
+      finalAmount: amount,
+      payableId: firstPayableId,
     },
   });
   revalidatePath("/compras");
+  revalidatePath("/financeiro/a-pagar");
+}
+
+/**
+ * Paga um título do espelho direto pela solicitação (mesmas regras do a-pagar:
+ * exige caixa aberto, livros batidos e mês aberto). Ao pagar todas as parcelas,
+ * a solicitação vira Concluída automaticamente (via markPayablePaid).
+ */
+export async function payRequestPayableAction(
+  payableId: string,
+  accountId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+  const payable = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: { status: true },
+  });
+  if (!payable) return { ok: false, error: "Título não encontrado." };
+  if (payable.status === "PAGO") return { ok: false, error: "Este título já está pago." };
+
+  await markPayablePaid(payableId, date, accountId);
+  revalidatePath("/compras");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/");
+  return { ok: true };
 }
 
 export async function cancelRequestAction(id: string) {
@@ -119,75 +236,3 @@ export async function cancelRequestAction(id: string) {
   revalidatePath("/compras");
 }
 
-const concludeSchema = z.object({
-  requestId: z.string().min(1),
-  finalAmount: z.coerce.number().positive("Informe o valor pago/combinado"),
-  category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
-  vehicleId: z.string().optional(),
-  capitalBeneficiaryId: z.string().optional(),
-  supplierId: z.string().optional(),
-});
-
-/** Marca a compra como concluída e lança a conta a pagar correspondente. */
-export async function concludeRequestAction(
-  _prev: ComprasFormState,
-  formData: FormData,
-): Promise<ComprasFormState> {
-  try {
-    await requireCompras();
-    await assertCan("compras", "aprovar");
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
-  }
-  const parsed = concludeSchema.safeParse(Object.fromEntries(formData.entries()));
-  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
-  const data = parsed.data;
-
-  try {
-    const request = await prisma.purchaseRequest.findUniqueOrThrow({
-      where: { id: data.requestId },
-    });
-    if (request.status !== "APROVADA") throw new Error("Somente aprovadas podem ser concluídas");
-
-    const flowKey = (data.structuralKey || request.structuralKey || "ADMINISTRATIVO") as
-      | "CAPITAL"
-      | "VEICULOS"
-      | "ADMINISTRATIVO";
-    // Destino do lançamento conforme o fluxo (o do formulário, ou o já guardado
-    // na solicitação). No Capital o beneficiário é obrigatório.
-    const vehicleId = flowKey === "VEICULOS" ? data.vehicleId || request.vehicleId || null : null;
-    const capitalBeneficiaryId =
-      flowKey === "CAPITAL" ? data.capitalBeneficiaryId || request.capitalBeneficiaryId || null : null;
-    if (flowKey === "CAPITAL" && !capitalBeneficiaryId) {
-      return { error: "Escolha o beneficiário do capital." };
-    }
-
-    // Usa o mesmo lançamento das contas manuais: cria a conta a pagar e, quando
-    // há veículo, o custo do veículo; quando há beneficiário, a retirada de capital.
-    const payable = await createManualPayable({
-      description: `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`,
-      category: data.category,
-      documentNumber: request.documentNumber,
-      amount: data.finalAmount,
-      dueDate: request.dueDate ?? new Date(),
-      // Fornecedor escolhido na conclusão (ou o sugerido na solicitação).
-      supplierId: data.supplierId || request.supplierId,
-      structuralKey: flowKey,
-      vehicleId,
-      capitalBeneficiaryId,
-      notes: request.details,
-      alreadyPaid: false,
-    });
-
-    await prisma.purchaseRequest.update({
-      where: { id: request.id },
-      data: { status: "CONCLUIDA", finalAmount: data.finalAmount, payableId: payable.id },
-    });
-  } catch {
-    return { error: "Não foi possível concluir a solicitação." };
-  }
-  revalidatePath("/compras");
-  revalidatePath("/financeiro/a-pagar");
-  return { success: "Compra concluída e lançada no financeiro." };
-}

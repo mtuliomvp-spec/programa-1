@@ -1328,6 +1328,25 @@ export async function syncReceivableCapital(receivableId: string) {
   }
 }
 
+/**
+ * Sincroniza o status da solicitação de compra conforme os títulos do espelho:
+ * todos PAGO → CONCLUIDA; se ainda houver pendente e estava CONCLUIDA → volta
+ * para APROVADA. Chamada ao pagar/estornar um título vinculado.
+ */
+export async function syncPurchaseRequestStatus(purchaseRequestId: string) {
+  const req = await prisma.purchaseRequest.findUnique({
+    where: { id: purchaseRequestId },
+    select: { status: true, payables: { select: { status: true } } },
+  });
+  if (!req || req.payables.length === 0) return;
+  const allPaid = req.payables.every((p) => p.status === "PAGO");
+  if (allPaid && req.status !== "CONCLUIDA") {
+    await prisma.purchaseRequest.update({ where: { id: purchaseRequestId }, data: { status: "CONCLUIDA" } });
+  } else if (!allPaid && req.status === "CONCLUIDA") {
+    await prisma.purchaseRequest.update({ where: { id: purchaseRequestId }, data: { status: "APROVADA" } });
+  }
+}
+
 export async function markPayablePaid(id: string, paymentDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
   const updated = await prisma.payable.update({
@@ -1335,6 +1354,7 @@ export async function markPayablePaid(id: string, paymentDate: Date, accountId?:
     data: { status: "PAGO", paymentDate, accountId: account },
   });
   await syncPayableCapital(id);
+  if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }
 
@@ -1344,6 +1364,7 @@ export async function markPayablePending(id: string) {
     data: { status: "PENDENTE", paymentDate: null, accountId: null },
   });
   await syncPayableCapital(id);
+  if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }
 
@@ -1440,6 +1461,7 @@ export async function createManualPayable(input: {
   capitalBeneficiaryId?: string | null;
   notes?: string | null;
   alreadyPaid: boolean;
+  purchaseRequestId?: string | null;
 }) {
   return createExpensePayable({
     description: input.description,
@@ -1455,6 +1477,7 @@ export async function createManualPayable(input: {
     costCenterId: input.costCenterId || null,
     structuralKey: input.structuralKey,
     notes: input.notes || null,
+    purchaseRequestId: input.purchaseRequestId || null,
   });
 }
 
@@ -1744,6 +1767,7 @@ export async function createExpensePayable(input: {
   structuralKey?: StructuralKey;
   notes?: string | null;
   avulso?: boolean;
+  purchaseRequestId?: string | null;
 }) {
   // Se o veículo já foi vendido, a despesa é pós-venda: sai do centro Veículos
   // (o carro não está mais no estoque) e vira despesa Administrativa; o custo é
@@ -1784,6 +1808,7 @@ export async function createExpensePayable(input: {
         capitalBeneficiaryId: input.capitalBeneficiaryId || null,
         notes: input.notes || null,
         avulso: input.avulso ?? false,
+        purchaseRequestId: input.purchaseRequestId || null,
       },
     });
     if (input.vehicleId) {

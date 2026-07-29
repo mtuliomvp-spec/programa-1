@@ -239,9 +239,15 @@ model PurchaseRequest {
   details         String?
   estimatedAmount Float?
   // Vencimento e número da NF/documento informados na solicitação; levados até
-  // a conta a pagar quando a compra é concluída.
+  // a conta a pagar quando a compra é aprovada/concluída.
   dueDate         DateTime?
   documentNumber  String?
+  // Configuração de pagamento definida na criação (usada ao gerar o espelho em
+  // Contas a pagar na aprovação): categoria e parcelamento.
+  category           CategoriaPagar @default(OUTROS)
+  installmentsCount  Int            @default(1)
+  installmentPeriod  String?        // MENSAL | DIAS
+  installmentDays    Int            @default(30)
   supplierId      String?
   supplier        Supplier?         @relation(fields: [supplierId], references: [id])
   requestedBy     String
@@ -259,6 +265,8 @@ model PurchaseRequest {
   decisionNotes   String?
   finalAmount     Float?
   payableId       String?
+  // Espelho gerado em Contas a pagar (1 título ou N parcelas) ao aprovar.
+  payables        Payable[]         @relation("PayablePurchaseRequest")
   attachments     PurchaseRequestAttachment[]
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
@@ -741,6 +749,9 @@ model Payable {
   beneficiaryUser   User?      @relation("PayableBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: SetNull)
   recurringId  String?
   recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  // Solicitação de compra que gerou este título (espelho da aprovação).
+  purchaseRequestId String?
+  purchaseRequest   PurchaseRequest? @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
   reconciledAt DateTime?
   bankRef      String?
   employeeId   String?

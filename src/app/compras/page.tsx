@@ -172,7 +172,6 @@ export default async function ComprasPage({
                         status={r.status}
                         canApprove={canApprove}
                         canCreate={canCreate}
-                        structuralKey={r.structuralKey}
                       />
                     </Td>
                   </Tr>
