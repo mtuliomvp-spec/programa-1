@@ -51,11 +51,15 @@ export default function RentContractForm({
   );
 
   const schedule = useMemo(() => buildRentSchedule(params), [params]);
-  const totalTitulos = schedule.parcelas.length + (schedule.caucao ? 1 : 0);
+  const totalPagar = schedule.parcelas.length + (schedule.caucao ? 1 : 0);
+  const totalReceber = schedule.caucao ? 1 : 0;
 
   function gerar() {
     setMsg(null);
-    if (!confirm(`Gerar ${totalTitulos} título(s) no Contas a pagar?`)) return;
+    const resumo = `Gerar ${totalPagar} título(s) no Contas a pagar${
+      totalReceber ? ` e ${totalReceber} no Contas a receber (devolução da caução)` : ""
+    }?`;
+    if (!confirm(resumo)) return;
     start(async () => {
       const r = await createRentContractAction(locador, params);
       if (!r.ok) {
@@ -114,8 +118,8 @@ export default function RentContractForm({
         />
         <div className="grid grid-cols-2 gap-3 px-5 pt-4 sm:grid-cols-4">
           <div>
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Total de títulos</p>
-            <p className="text-lg font-bold text-slate-900">{totalTitulos}</p>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Títulos a pagar</p>
+            <p className="text-lg font-bold text-slate-900">{totalPagar}</p>
           </div>
           <div>
             <p className="text-[11px] uppercase tracking-wide text-slate-400">Caução</p>
@@ -130,6 +134,14 @@ export default function RentContractForm({
             <p className="text-lg font-bold text-amber-700">{formatCurrency(schedule.totais.naoPago)}</p>
           </div>
         </div>
+
+        {schedule.caucao ? (
+          <p className="mx-5 mt-3 rounded-lg border border-dashed border-blue-300 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+            💧 Também será lançado em <strong>Contas a receber</strong>: devolução da caução{" "}
+            <strong>{formatCurrency(schedule.caucao.amount)}</strong> em{" "}
+            <strong>{fmt(schedule.caucao.returnDate)}</strong> (fim do contrato).
+          </p>
+        ) : null}
 
         <div className="max-h-[520px] overflow-auto p-5">
           <Table>
@@ -176,8 +188,10 @@ export default function RentContractForm({
 
         <div className="flex flex-wrap items-center justify-end gap-3 border-t border-slate-100 px-5 py-4">
           {msg ? <p className="text-sm text-rose-600">{msg}</p> : null}
-          <Button type="button" onClick={gerar} disabled={pending || totalTitulos === 0}>
-            {pending ? "Gerando..." : `Gerar ${totalTitulos} título(s) no a-pagar`}
+          <Button type="button" onClick={gerar} disabled={pending || totalPagar === 0}>
+            {pending
+              ? "Gerando..."
+              : `Gerar ${totalPagar} no a-pagar${totalReceber ? ` + ${totalReceber} no a-receber` : ""}`}
           </Button>
         </div>
       </Card>

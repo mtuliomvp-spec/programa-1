@@ -9,7 +9,12 @@ import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { buildRentSchedule, type RentContractParams } from "@/lib/rent-contract";
 
-export type RentContractResult = { ok: boolean; error?: string; created?: number };
+export type RentContractResult = {
+  ok: boolean;
+  error?: string;
+  createdPagar?: number;
+  createdReceber?: number;
+};
 
 /**
  * Gera no Contas a pagar os títulos de um contrato de locação: a caução + os
@@ -66,11 +71,30 @@ export async function createRentContractAction(
       });
     }
 
-    await prisma.payable.createMany({ data });
+    // Devolução da caução → Contas a receber (a garantia volta no fim do contrato).
+    const receber: Prisma.ReceivableCreateManyInput[] = [];
+    if (schedule.caucao) {
+      receber.push({
+        description: `Devolução de caução (garantia locatícia) — ${nome}`,
+        category: "OUTROS",
+        amount: schedule.caucao.amount,
+        dueDate: parseDateInput(schedule.caucao.returnDate),
+        status: "PENDENTE",
+        costCenterId: admCenterId,
+        notes: "A receber ao fim do contrato de locação (Cl. 4ª / Lei 8.245/91).",
+      });
+    }
+
+    await prisma.$transaction([
+      prisma.payable.createMany({ data }),
+      ...(receber.length ? [prisma.receivable.createMany({ data: receber })] : []),
+    ]);
+
     revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/a-receber");
     revalidatePath("/financeiro/fluxo-caixa");
     revalidatePath("/");
-    return { ok: true, created: data.length };
+    return { ok: true, createdPagar: data.length, createdReceber: receber.length };
   } catch {
     return { ok: false, error: "Não foi possível gerar os títulos." };
   }

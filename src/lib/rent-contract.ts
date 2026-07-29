@@ -31,7 +31,7 @@ export type RentLine = {
 };
 
 export type RentSchedule = {
-  caucao: { date: string; amount: number } | null;
+  caucao: { date: string; amount: number; returnDate: string } | null;
   parcelas: RentLine[];
   totais: { aPagarParcelas: number; naoPago: number; caucao: number; totalGeral: number };
 };
@@ -41,6 +41,15 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 function addMonthsYM(y: number, m: number, add: number): { y: number; m: number } {
   const total = y * 12 + (m - 1) + add;
   return { y: Math.floor(total / 12), m: (total % 12) + 1 };
+}
+
+/** Fim do contrato = início + `meses` meses − 1 dia (data-only, sem fuso). */
+function contractEnd(startIso: string, meses: number): string {
+  const [y, m, d] = (startIso || "").split("-").map(Number);
+  if (!y || !m || !d) return startIso;
+  const dt = new Date(Date.UTC(y, m - 1 + meses, d));
+  dt.setUTCDate(dt.getUTCDate() - 1);
+  return `${dt.getUTCFullYear()}-${String(dt.getUTCMonth() + 1).padStart(2, "0")}-${String(dt.getUTCDate()).padStart(2, "0")}`;
 }
 
 export function buildRentSchedule(p: RentContractParams): RentSchedule {
@@ -95,7 +104,10 @@ export function buildRentSchedule(p: RentContractParams): RentSchedule {
   const caucaoValor = round2(p.caucaoValor || 0);
 
   return {
-    caucao: caucaoValor > 0 ? { date: p.caucaoData, amount: caucaoValor } : null,
+    caucao:
+      caucaoValor > 0
+        ? { date: p.caucaoData, amount: caucaoValor, returnDate: contractEnd(p.caucaoData, total) }
+        : null,
     parcelas,
     totais: {
       aPagarParcelas,
