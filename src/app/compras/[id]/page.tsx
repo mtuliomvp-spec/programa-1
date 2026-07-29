@@ -118,6 +118,8 @@ export default async function SolicitacaoDetalhePage({
         <Linha label="Valor estimado">
           {request.estimatedAmount ? formatCurrency(request.estimatedAmount) : "—"}
         </Linha>
+        {request.dueDate ? <Linha label="Vencimento">{formatDate(request.dueDate)}</Linha> : null}
+        {request.documentNumber ? <Linha label="Nº NF/Doc">{request.documentNumber}</Linha> : null}
         {request.finalAmount ? (
           <Linha label="Valor final">{formatCurrency(request.finalAmount)}</Linha>
         ) : null}

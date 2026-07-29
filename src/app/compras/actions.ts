@@ -7,7 +7,7 @@ import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
 import { createManualPayable } from "@/lib/finance";
-import { formatRequestNumber } from "@/lib/format";
+import { formatRequestNumber, parseDateInput } from "@/lib/format";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -23,6 +23,8 @@ const createSchema = z.object({
   description: z.string().min(1, "Descreva o que precisa ser comprado"),
   details: z.string().optional(),
   estimatedAmount: z.coerce.number().min(0).optional(),
+  dueDate: z.string().optional(),
+  documentNumber: z.string().optional(),
   supplierId: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
@@ -71,6 +73,8 @@ export async function createRequestAction(
         description: parsed.data.description,
         details: parsed.data.details || null,
         estimatedAmount: parsed.data.estimatedAmount || null,
+        dueDate: parsed.data.dueDate ? parseDateInput(parsed.data.dueDate) : null,
+        documentNumber: parsed.data.documentNumber?.trim() || null,
         supplierId: parsed.data.supplierId || null,
         structuralKey: flow,
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
@@ -164,8 +168,9 @@ export async function concludeRequestAction(
     const payable = await createManualPayable({
       description: `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`,
       category: data.category,
+      documentNumber: request.documentNumber,
       amount: data.finalAmount,
-      dueDate: new Date(),
+      dueDate: request.dueDate ?? new Date(),
       // Fornecedor escolhido na conclusão (ou o sugerido na solicitação).
       supplierId: data.supplierId || request.supplierId,
       structuralKey: flowKey,
