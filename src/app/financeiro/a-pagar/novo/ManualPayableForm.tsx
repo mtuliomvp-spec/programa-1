@@ -27,7 +27,6 @@ export default function ManualPayableForm({
   categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(createManualPayableAction, {} as ManualPayableState);
-  const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [paymentMode, setPaymentMode] = useState<"A_VISTA" | "PARCELADO">("A_VISTA");
   const [installmentPeriod, setInstallmentPeriod] = useState<"MENSAL" | "DIAS">("MENSAL");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
@@ -182,23 +181,9 @@ export default function ManualPayableForm({
           </Field>
         ) : null}
       </div>
-      {paymentMode === "A_VISTA" ? (
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            name="alreadyPaid"
-            value="true"
-            checked={alreadyPaid}
-            onChange={(e) => setAlreadyPaid(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          Já foi pago
-        </label>
-      ) : (
-        <p className="text-xs text-slate-400">
-          As parcelas nascem pendentes — a baixa é feita em Contas a pagar conforme forem pagas.
-        </p>
-      )}
+      <p className="text-xs text-slate-400">
+        O título nasce pendente — a baixa é feita em Contas a pagar (na data do caixa) conforme for pago.
+      </p>
       <Field label="Observações">
         <Textarea name="notes" rows={3} />
       </Field>
