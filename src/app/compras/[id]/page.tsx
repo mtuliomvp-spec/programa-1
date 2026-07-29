@@ -1,11 +1,14 @@
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireModule, userCan } from "@/lib/guards";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
+import { effectivePayableStatus } from "@/lib/status";
+import { getActiveAccounts } from "@/lib/accounts";
+import { getCashboxState } from "@/lib/cashbox";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import RequestDetailActions from "./RequestDetailActions";
+import RequestPayables from "./RequestPayables";
 
 export const dynamic = "force-dynamic";
 
@@ -53,35 +56,33 @@ export default async function SolicitacaoDetalhePage({
         orderBy: { createdAt: "desc" },
         select: { id: true, filename: true, size: true },
       },
+      payables: {
+        orderBy: { dueDate: "asc" },
+        include: { account: { select: { name: true } } },
+      },
     },
   });
   if (!request) notFound();
 
-  const payable = request.payableId
-    ? await prisma.payable.findUnique({
-        where: { id: request.payableId },
-        include: { account: true },
-      })
-    : null;
-
-  const [canApprove, canCreate, stockVehicles, beneficiaries, suppliers] = await Promise.all([
+  const [canApprove, canCreate, canPay, activeAccounts, cashbox] = await Promise.all([
     userCan("compras", "aprovar"),
     userCan("compras", "criar"),
-    prisma.vehicle.findMany({
-      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-      select: { id: true, brand: true, model: true, plate: true, status: true },
-    }),
-    prisma.capitalBeneficiary.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
-      select: { id: true, name: true },
-    }),
-    prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    userCan("financeiro", "pagar"),
+    getActiveAccounts(),
+    getCashboxState(),
   ]);
-  const vehicles = stockVehicles.map((v) => ({
-    id: v.id,
-    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+
+  const payableRows = request.payables.map((p) => ({
+    id: p.id,
+    description: p.description,
+    amount: p.amount,
+    dueDate: p.dueDate.toISOString(),
+    status: effectivePayableStatus(p.status, p.dueDate),
+    documentNumber: p.documentNumber,
+    paymentDate: p.paymentDate ? p.paymentDate.toISOString() : null,
+    accountName: p.account?.name ?? null,
   }));
+  const accounts = activeAccounts.map((a) => ({ id: a.id, name: a.name }));
 
   const meta = statusMeta[request.status];
 
@@ -115,14 +116,12 @@ export default async function SolicitacaoDetalhePage({
           <Linha label="Beneficiário">{request.capitalBeneficiary.name}</Linha>
         ) : null}
         {request.supplier ? <Linha label="Fornecedor">{request.supplier.name}</Linha> : null}
-        <Linha label="Valor estimado">
+        <Linha label="Valor">
           {request.estimatedAmount ? formatCurrency(request.estimatedAmount) : "—"}
+          {request.installmentsCount > 1 ? ` · ${request.installmentsCount}x` : ""}
         </Linha>
         {request.dueDate ? <Linha label="Vencimento">{formatDate(request.dueDate)}</Linha> : null}
         {request.documentNumber ? <Linha label="Nº NF/Doc">{request.documentNumber}</Linha> : null}
-        {request.finalAmount ? (
-          <Linha label="Valor final">{formatCurrency(request.finalAmount)}</Linha>
-        ) : null}
         {request.attachments.length > 0 ? (
           <Linha label="Anexo">
             <ul className="space-y-1.5">
@@ -159,28 +158,14 @@ export default async function SolicitacaoDetalhePage({
         ) : null}
       </Card>
 
-      {/* Ações conforme o status (aprovar/rejeitar/cancelar/concluir). */}
-      {request.status === "PENDENTE" || request.status === "APROVADA" ? (
+      {/* Decisão (aprovar/rejeitar/cancelar) enquanto pendente. */}
+      {request.status === "PENDENTE" ? (
         <Card className="mt-4">
-          <CardHeader
-            title={request.status === "APROVADA" ? "Concluir compra" : "Decisão"}
-            description={
-              request.status === "APROVADA"
-                ? "Ao concluir, a conta entra em Contas a pagar."
-                : undefined
-            }
-          />
+          <CardHeader title="Decisão" description="Ao aprovar, o espelho entra em Contas a pagar." />
           <div className="p-5">
             <RequestDetailActions
               id={request.id}
               status={request.status}
-              structuralKey={request.structuralKey}
-              vehicleId={request.vehicleId}
-              capitalBeneficiaryId={request.capitalBeneficiaryId}
-              supplierId={request.supplierId}
-              vehicles={vehicles}
-              beneficiaries={beneficiaries}
-              suppliers={suppliers}
               canApprove={canApprove}
               canCreate={canCreate}
             />
@@ -188,25 +173,20 @@ export default async function SolicitacaoDetalhePage({
         </Card>
       ) : null}
 
-      {/* Já concluída: mostra a conta a pagar gerada e o link para ela. */}
-      {payable ? (
+      {/* Espelho em Contas a pagar (1 título ou N parcelas), pagável por aqui. */}
+      {payableRows.length > 0 ? (
         <Card className="mt-4">
-          <CardHeader title="Conta a pagar gerada" description="Lançada no financeiro a partir desta compra" />
-          <div className="space-y-1 p-5 text-sm text-slate-700">
-            <p>
-              <span className="font-medium text-slate-900">{formatCurrency(payable.amount)}</span>{" "}
-              <Badge tone={payable.status === "PAGO" ? "success" : "warning"}>
-                {payable.status === "PAGO" ? "Pago" : "Pendente"}
-              </Badge>
-            </p>
-            <p className="text-slate-500">
-              Vencimento {formatDate(payable.dueDate)}
-              {payable.paymentDate ? ` · pago em ${formatDate(payable.paymentDate)}` : ""}
-              {payable.account ? ` · ${payable.account.name}` : ""}
-            </p>
-            <Link href="/financeiro/a-pagar" className="inline-block pt-1 font-medium text-blue-700 hover:underline">
-              Abrir em Contas a pagar →
-            </Link>
+          <CardHeader
+            title="Contas a pagar (espelho)"
+            description="Gerado na aprovação. Pode ser pago aqui ou em Contas a pagar."
+          />
+          <div className="p-5">
+            <RequestPayables
+              payables={payableRows}
+              accounts={accounts}
+              canPay={canPay}
+              cashboxOpen={cashbox.open}
+            />
           </div>
         </Card>
       ) : null}

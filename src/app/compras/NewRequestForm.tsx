@@ -21,6 +21,7 @@ export default function NewRequestForm({
 }) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState("ADMINISTRATIVO");
+  const [parcelado, setParcelado] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [preparing, setPreparing] = useState(false);
 
@@ -56,17 +57,58 @@ export default function NewRequestForm({
       <Field label="Detalhes / justificativa">
         <Textarea name="details" rows={3} placeholder="Marca, especificação, para qual veículo..." />
       </Field>
-      <Field label="Valor estimado (R$)">
-        <Input name="estimatedAmount" type="number" step="0.01" min={0} />
-      </Field>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Valor (R$)">
+          <Input name="estimatedAmount" type="number" step="0.01" min={0} placeholder="0,00" />
+        </Field>
+        <Field label="Categoria">
+          <Select name="category" defaultValue="OUTROS">
+            <option value="OUTROS">Outros</option>
+            <option value="COMPRA_PECA">Compra de peças</option>
+            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
+            <option value="COMBUSTIVEL">Combustível</option>
+          </Select>
+        </Field>
+      </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Vencimento (opcional)">
+        <Field label="Vencimento (1º, opcional)">
           <Input name="dueDate" type="date" />
         </Field>
         <Field label="Nº da NF / documento (opcional)">
           <Input name="documentNumber" placeholder="Ex: NF 12345" />
         </Field>
+      </div>
+
+      {/* Parcelamento: à vista ou N parcelas (vira 1 ou N títulos no a-pagar ao aprovar). */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="paymentMode"
+            value="PARCELADO"
+            checked={parcelado}
+            onChange={(e) => setParcelado(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Pagamento parcelado
+        </label>
+        {parcelado ? (
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Nº de parcelas">
+              <Input name="installmentsCount" type="number" min={2} defaultValue={2} />
+            </Field>
+            <Field label="Período">
+              <Select name="installmentPeriod" defaultValue="MENSAL">
+                <option value="MENSAL">Mensal</option>
+                <option value="DIAS">A cada X dias</option>
+              </Select>
+            </Field>
+            <Field label="Dias (se por dias)">
+              <Input name="installmentDays" type="number" min={1} defaultValue={30} />
+            </Field>
+          </div>
+        ) : null}
       </div>
 
       <Field label="Fluxo (obra estrutural)">
@@ -105,7 +147,7 @@ export default function NewRequestForm({
         </Field>
       ) : null}
 
-      <SupplierSelect suppliers={suppliers} label="Fornecedor sugerido" emptyLabel="Sem sugestão" />
+      <SupplierSelect suppliers={suppliers} label="Fornecedor" emptyLabel="Sem fornecedor" />
 
       <Field label="Anexo (opcional — foto, PDF…)">
         <input
