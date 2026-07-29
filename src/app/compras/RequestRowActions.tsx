@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { decideRequestAction, cancelRequestAction } from "./actions";
 
 export default function RequestRowActions({
@@ -44,18 +45,23 @@ export default function RequestRowActions({
         </>
       ) : null}
       {canCreate ? (
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => {
-            if (confirm("Cancelar esta solicitação?")) {
-              startTransition(() => cancelRequestAction(id));
-            }
-          }}
-          className="text-slate-500 hover:underline disabled:opacity-50"
-        >
-          Cancelar
-        </button>
+        <>
+          <Link href={`/compras/${id}/editar`} className="text-blue-700 hover:underline">
+            Editar
+          </Link>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              if (confirm("Cancelar esta solicitação?")) {
+                startTransition(() => cancelRequestAction(id));
+              }
+            }}
+            className="text-slate-500 hover:underline disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+        </>
       ) : null}
     </div>
   );

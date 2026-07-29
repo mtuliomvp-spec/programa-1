@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
@@ -116,6 +117,53 @@ export async function createRequestAction(
   });
   revalidatePath("/compras");
   return { success: "Solicitação registrada. Aguardando aprovação." };
+}
+
+const updateSchema = createSchema.extend({ id: z.string().min(1) });
+
+/** Edita uma solicitação ainda PENDENTE (antes de gerar o espelho na aprovação). */
+export async function updateRequestAction(
+  _prev: ComprasFormState,
+  formData: FormData,
+): Promise<ComprasFormState> {
+  try {
+    await requireCompras();
+    await assertCan("compras", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
+  }
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+
+  const parcelado = d.paymentMode === "PARCELADO";
+  const installmentsCount = parcelado ? d.installmentsCount : 1;
+  if (parcelado && installmentsCount < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
+
+  const flow = d.structuralKey || "ADMINISTRATIVO";
+  const result = await prisma.purchaseRequest.updateMany({
+    where: { id: d.id, status: "PENDENTE" },
+    data: {
+      description: d.description,
+      details: d.details || null,
+      estimatedAmount: d.estimatedAmount || null,
+      dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
+      documentNumber: d.documentNumber?.trim() || null,
+      category: d.category,
+      installmentsCount,
+      installmentPeriod: parcelado ? d.installmentPeriod : null,
+      installmentDays: d.installmentDays,
+      supplierId: d.supplierId || null,
+      structuralKey: flow,
+      vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
+      capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
+    },
+  });
+  if (result.count === 0) return { error: "Só é possível editar solicitações aguardando aprovação." };
+
+  revalidatePath("/compras");
+  revalidatePath(`/compras/${d.id}`);
+  redirect(`/compras/${d.id}`);
 }
 
 export async function decideRequestAction(id: string, approve: boolean, notes?: string) {

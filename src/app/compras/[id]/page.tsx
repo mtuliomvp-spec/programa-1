@@ -94,6 +94,11 @@ export default async function SolicitacaoDetalhePage({
         action={
           <div className="flex items-center gap-2">
             <Badge tone={meta.tone}>{meta.label}</Badge>
+            {request.status === "PENDENTE" && canCreate ? (
+              <LinkButton href={`/compras/${request.id}/editar`} variant="secondary">
+                Editar
+              </LinkButton>
+            ) : null}
             <LinkButton href="/compras" variant="secondary">
               ← Voltar
             </LinkButton>
