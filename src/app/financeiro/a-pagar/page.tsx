@@ -115,6 +115,10 @@ export default async function ContasAPagarPage({
       inValueRange(r.amount, min, max),
   );
 
+  // Contas em aberto (atrasadas e pendentes) primeiro; pagas por último. Ordenação
+  // estável: dentro de cada grupo mantém o vencimento crescente (ordem do findMany).
+  tableRows.sort((a, b) => (a.effective === "PAGO" ? 1 : 0) - (b.effective === "PAGO" ? 1 : 0));
+
   return (
     <div>
       <PageHeader
