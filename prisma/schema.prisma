@@ -302,6 +302,8 @@ model User {
   preSales         PreSale[] @relation("PreSaleSeller")
   // Vínculo 1:1 com um beneficiário do capital (usuário que também é sócio).
   beneficiary      CapitalBeneficiary? @relation("BeneficiaryUser")
+  // Fornecedor-espelho (todo usuário também pode ser escolhido como fornecedor).
+  supplier         Supplier? @relation("UserSupplier")
   // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
   profileId        String?
   profile          Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
@@ -343,6 +345,10 @@ model Supplier {
   bankAccount     String?
   bankAccountType String?
   pixKey          String?
+  // Quando preenchido, este fornecedor é o espelho de um usuário do sistema
+  // (nome e dados bancários sincronizados a partir do usuário).
+  userId    String?    @unique
+  user      User?      @relation("UserSupplier", fields: [userId], references: [id], onDelete: Cascade)
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
   vehicles         Vehicle[]

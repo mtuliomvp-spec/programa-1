@@ -169,6 +169,10 @@ export async function quickCreateSupplierAction(input: {
 
 export async function deleteSupplierAction(id: string) {
   await assertCan("cadastros", "excluir");
+  const supplier = await prisma.supplier.findUnique({ where: { id }, select: { userId: true } });
+  if (supplier?.userId) {
+    throw new Error("Este fornecedor é um usuário do sistema. Gerencie-o na tela de Usuários.");
+  }
   const [vehicleCount, partCount] = await Promise.all([
     prisma.vehicle.count({ where: { supplierId: id } }),
     prisma.part.count({ where: { supplierId: id } }),

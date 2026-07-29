@@ -7,6 +7,7 @@ import { getSessionUser, hashPassword } from "@/lib/auth";
 import { DEFAULT_OPERATOR_PERMISSIONS } from "@/lib/permissions";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
+import { syncUserSupplier } from "@/lib/user-supplier-link";
 
 export type UserFormState = { error?: string; success?: string };
 
@@ -77,6 +78,7 @@ export async function updateUserIdentityAction(
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar." };
   }
+  await syncUserSupplier(userId);
   revalidatePath("/usuarios");
   revalidatePath("/capital");
   return { success: "Nome e vínculo salvos." };
@@ -161,6 +163,7 @@ export async function updateUserBankAction(
   const parsed = bankUpdateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   await prisma.user.update({ where: { id: parsed.data.userId }, data: bankData(parsed.data) });
+  await syncUserSupplier(parsed.data.userId);
   revalidatePath("/usuarios");
   return { success: "Dados bancários salvos." };
 }
@@ -183,7 +186,7 @@ export async function createUserAction(
 
   const { role, permissions, profileId } = await resolvePerfil(parsed.data.perfil, formData);
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       name: parsed.data.name,
       email,
@@ -194,6 +197,7 @@ export async function createUserAction(
       ...bankData(parsed.data),
     },
   });
+  await syncUserSupplier(created.id);
   revalidatePath("/usuarios");
   return { success: "Usuário criado." };
 }
@@ -231,6 +235,7 @@ export async function approveUserAction(id: string) {
         : {}),
     },
   });
+  await syncUserSupplier(user.id);
   if (isEmailConfigured()) {
     // aviso de liberação — falha de envio não impede a aprovação
     await sendEmail({
