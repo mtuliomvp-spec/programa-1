@@ -20,6 +20,21 @@ export async function getCashboxState(): Promise<CashboxState> {
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
+ * Data de trabalho do caixa aberto — é a data que TODA baixa (pagar/receber)
+ * deve usar, para o movimento cair no dia do caixa (e não em "hoje"). As baixas
+ * chamam `assertCashboxOpen()` antes; o fallback para hoje é só defensivo.
+ */
+export async function getCashboxWorkDate(): Promise<Date> {
+  try {
+    const { open, session } = await getCashboxState();
+    if (open && session) return session.workDate;
+  } catch {
+    /* fail-open → hoje */
+  }
+  return new Date();
+}
+
+/**
  * Abre OU reabre o caixa. Se já estiver aberto, não faz nada. Se a última sessão
  * estiver FECHADA e for do MESMO dia de trabalho, **reabre** aquela sessão (limpa
  * o fechamento) — como no Agrasty, sem duplicar o dia no histórico. Se for um dia

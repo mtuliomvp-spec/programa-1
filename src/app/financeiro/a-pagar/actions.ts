@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
@@ -30,7 +30,6 @@ export async function payCommissionWithExcessAction(
   payableId: string,
   accountId: string,
   totalPagoInput: string,
-  dateInput?: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("financeiro", "pagar");
@@ -40,7 +39,8 @@ export async function payCommissionWithExcessAction(
     return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
   }
   if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
-  const date = dateInput ? parseDateInput(dateInput) : new Date();
+  // A baixa usa sempre a data de trabalho do caixa aberto.
+  const date = await getCashboxWorkDate();
   try {
     await assertMonthOpen(date);
   } catch (e) {
@@ -114,7 +114,7 @@ export async function markPaidAction(id: string, accountId?: string) {
   await assertCan("financeiro", "pagar");
   await assertBooksBalanced();
   await assertCashboxOpen();
-  await markPayablePaid(id, new Date(), accountId || null);
+  await markPayablePaid(id, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
@@ -125,12 +125,11 @@ export type PayBatchResult = { ok: boolean; paid: number; error?: string };
 
 /**
  * Baixa um ou vários títulos de uma vez pela conta escolhida (pagamento em
- * lote, como na Agrasty). A data padrão é hoje; se informada, usa a data dada.
+ * lote). A data da baixa é sempre a data de trabalho do caixa aberto.
  */
 export async function payBatchAction(
   ids: string[],
   accountId: string,
-  dateInput?: string,
 ): Promise<PayBatchResult> {
   if (!ids.length) return { ok: false, paid: 0, error: "Selecione ao menos um título." };
   if (!accountId) return { ok: false, paid: 0, error: "Escolha a conta que fará o pagamento." };
@@ -141,7 +140,7 @@ export async function payBatchAction(
   } catch (e) {
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Bloqueado." };
   }
-  const date = dateInput ? parseDateInput(dateInput) : new Date();
+  const date = await getCashboxWorkDate();
   try {
     await assertMonthOpen(date);
   } catch (e) {
