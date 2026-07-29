@@ -42,7 +42,14 @@ export default async function ContasAPagarPage({
   const [payables, accounts, cashbox] = await Promise.all([
     prisma.payable.findMany({
       orderBy: { dueDate: "asc" },
-      include: { supplier: true, vehicle: true, part: true, account: { select: { name: true } } },
+      include: {
+        supplier: true,
+        vehicle: true,
+        part: true,
+        account: { select: { name: true } },
+        _count: { select: { attachments: true } },
+        purchaseRequest: { select: { _count: { select: { attachments: true } } } },
+      },
     }),
     getActiveAccounts(),
     getCashboxState(),
@@ -91,6 +98,8 @@ export default async function ContasAPagarPage({
     recurring: Boolean(p.recurringId),
     // Editável: qualquer título ainda não pago (pagos: reverter antes).
     editable: p.effective !== "PAGO",
+    // Tem anexo no próprio título ou na solicitação de compra que o gerou.
+    hasAttachment: p._count.attachments > 0 || (p.purchaseRequest?._count.attachments ?? 0) > 0,
     commissionExcess:
       p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
         ? excessByUser.get(p.beneficiaryUserId)!

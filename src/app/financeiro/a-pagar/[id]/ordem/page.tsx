@@ -7,8 +7,10 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
+import { userCan } from "@/lib/guards";
 import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
 import SetSupplierForm from "./SetSupplierForm";
+import PayableAttachments from "./PayableAttachments";
 
 export const dynamic = "force-dynamic";
 
@@ -60,9 +62,16 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
       account: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true } },
       capitalBeneficiary: { select: { name: true } },
+      attachments: { orderBy: { createdAt: "desc" } },
+      purchaseRequest: {
+        select: { attachments: { orderBy: { createdAt: "desc" }, select: { id: true, filename: true, size: true } } },
+      },
     },
   });
   if (!payable) notFound();
+
+  const canManage = await userCan("financeiro", "criar");
+  const requestAttachments = payable.purchaseRequest?.attachments ?? [];
 
   const company = await getCompany();
   // Título sem fornecedor nem beneficiário: oferece corrigir aqui mesmo.
@@ -232,6 +241,37 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
             <p className="py-1 text-sm text-slate-800">{payable.notes}</p>
           </Section>
         ) : null}
+
+        <Section title="Anexos (NF, comprovantes)">
+          <PayableAttachments
+            payableId={payable.id}
+            attachments={payable.attachments}
+            canManage={canManage}
+          />
+          {requestAttachments.length > 0 ? (
+            <div className="mt-3 border-t border-slate-100 pt-3">
+              <p className="mb-1 text-xs font-medium text-slate-500">Anexos da solicitação de compra</p>
+              <ul className="space-y-1">
+                {requestAttachments.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-center gap-3 text-sm">
+                    <span className="text-slate-700">{a.filename}</span>
+                    <a
+                      href={`/compras/anexos/${a.id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="font-medium text-blue-700 hover:underline"
+                    >
+                      Abrir
+                    </a>
+                    <a href={`/compras/anexos/${a.id}?download=1`} className="font-medium text-slate-600 hover:underline">
+                      Baixar
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </Section>
 
         <div className="mt-6 flex items-center gap-4 border-t border-slate-200 pt-4">
           {/* eslint-disable-next-line @next/next/no-img-element */}

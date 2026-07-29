@@ -25,6 +25,8 @@ export type PayableRow = {
   recurring: boolean;
   // Manual e não pago: pode editar/excluir direto por aqui.
   editable: boolean;
+  // Tem anexo (NF/comprovante) no título ou na solicitação de origem.
+  hasAttachment: boolean;
   // Comissão de vendedor vinculado a beneficiário: permite pagar com excedente.
   commissionExcess: { beneficiaryName: string; free: number } | null;
 };
@@ -175,6 +177,11 @@ export default function PayablesTable({
                   {p.recurring ? (
                     <span className="ml-1.5 text-xs text-slate-400" title="Gerada por recorrência">
                       🔁
+                    </span>
+                  ) : null}
+                  {p.hasAttachment ? (
+                    <span className="ml-1.5 text-xs text-slate-400" title="Tem anexo">
+                      📎
                     </span>
                   ) : null}
                   {p.documentNumber ? (
