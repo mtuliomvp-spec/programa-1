@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
-import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
+import SupplierSelect from "@/components/SupplierSelect";
 import { updatePartAction, type FormState } from "../../actions";
 
 type Supplier = { id: string; name: string };
@@ -35,16 +36,7 @@ export default function EditPartForm({ part, suppliers }: { part: Part; supplier
         <Field label="Estoque mínimo">
           <Input type="number" min={0} name="minQuantity" defaultValue={part.minQuantity} />
         </Field>
-        <Field label="Fornecedor">
-          <Select name="supplierId" defaultValue={part.supplierId || ""}>
-            <option value="">Sem fornecedor</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <SupplierSelect suppliers={suppliers} defaultValue={part.supplierId || ""} />
         <Field label="Preço de custo" required>
           <Input type="number" step="0.01" min={0} name="costPrice" defaultValue={part.costPrice} required />
         </Field>

@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import SupplierSelect from "@/components/SupplierSelect";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createRequestAction, type ComprasFormState } from "./actions";
 
@@ -70,16 +71,7 @@ export default function NewRequestForm({
         </Field>
       ) : null}
 
-      <Field label="Fornecedor sugerido">
-        <Select name="supplierId" defaultValue="">
-          <option value="">Sem sugestão</option>
-          {suppliers.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      <SupplierSelect suppliers={suppliers} label="Fornecedor sugerido" emptyLabel="Sem sugestão" />
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Enviando..." : "Solicitar compra"}
       </Button>

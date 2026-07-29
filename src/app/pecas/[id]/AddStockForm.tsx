@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { Button, Field, Input } from "@/components/ui";
+import SupplierSelect from "@/components/SupplierSelect";
 import { addStockAction, type FormState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
@@ -35,16 +36,7 @@ export default function AddStockForm({
           <Input type="number" step="0.01" min={0} name="costPrice" required defaultValue={currentCostPrice} />
         </Field>
       </div>
-      <Field label="Fornecedor">
-        <Select name="supplierId" defaultValue={supplierId || ""}>
-          <option value="">Sem fornecedor</option>
-          {suppliers.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      <SupplierSelect suppliers={suppliers} defaultValue={supplierId || ""} />
       <label className="flex items-center gap-2 text-sm text-slate-600">
         <input
           type="checkbox"

@@ -1,7 +1,8 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { Button, Field, Input, Textarea } from "@/components/ui";
+import SupplierSelect from "@/components/SupplierSelect";
 import { createPartAction, type FormState } from "./actions";
 import { toDateInputValue } from "@/lib/format";
 
@@ -38,16 +39,7 @@ export default function PartForm({ suppliers }: { suppliers: Supplier[] }) {
         <Field label="Preço de venda (unitário)" required>
           <Input type="number" step="0.01" min={0} name="salePrice" required />
         </Field>
-        <Field label="Fornecedor">
-          <Select name="supplierId" defaultValue="">
-            <option value="">Sem fornecedor</option>
-            {suppliers.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </Select>
-        </Field>
+        <SupplierSelect suppliers={suppliers} />
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
