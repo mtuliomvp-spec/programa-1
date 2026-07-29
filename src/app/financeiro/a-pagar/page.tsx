@@ -32,7 +32,10 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const canPagar = await userCan("financeiro", "pagar");
+  const [canPagar, canManage] = await Promise.all([
+    userCan("financeiro", "pagar"),
+    userCan("financeiro", "criar"),
+  ]);
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
 
@@ -86,6 +89,16 @@ export default async function ContasAPagarPage({
     status: p.status,
     accountName: p.account?.name ?? null,
     recurring: Boolean(p.recurringId),
+    // Editável/excluível: manual (sem origem em outra operação) e ainda não pago.
+    editable:
+      p.effective !== "PAGO" &&
+      !p.vehicleId &&
+      !p.partId &&
+      !p.recurringId &&
+      !p.consortiumId &&
+      !p.employeeId &&
+      !p.saleId &&
+      !p.purchaseRequestId,
     commissionExcess:
       p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
         ? excessByUser.get(p.beneficiaryUserId)!
@@ -170,7 +183,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} cashboxDate={cashboxDate} />
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} cashboxDate={cashboxDate} />
           </>
         )}
       </Card>

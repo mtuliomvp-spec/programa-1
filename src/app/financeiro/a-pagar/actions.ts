@@ -300,3 +300,132 @@ export async function createManualPayableAction(
   revalidatePath("/");
   redirect("/financeiro/a-pagar");
 }
+
+// ---------------------------------------------------------------------------
+// Editar / excluir título manual (não pago e sem origem em outra operação).
+// ---------------------------------------------------------------------------
+
+/** Campos que indicam que o título veio de outra operação (ajustar na origem). */
+const ORIGIN_SELECT = {
+  status: true,
+  vehicleId: true,
+  partId: true,
+  recurringId: true,
+  consortiumId: true,
+  employeeId: true,
+  saleId: true,
+  purchaseRequestId: true,
+} as const;
+
+function originBlockReason(p: {
+  status: string;
+  vehicleId: string | null;
+  partId: string | null;
+  recurringId: string | null;
+  consortiumId: string | null;
+  employeeId: string | null;
+  saleId: string | null;
+  purchaseRequestId: string | null;
+}): string | null {
+  if (p.status === "PAGO") return "pago";
+  if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId || p.saleId || p.purchaseRequestId) {
+    return "origem";
+  }
+  return null;
+}
+
+const updatePayableSchema = z.object({
+  id: z.string().min(1),
+  description: z.string().min(1, "Informe a descrição"),
+  categoryLabel: z.string().optional(),
+  documentNumber: z.string().optional(),
+  amount: z.coerce.number().min(0.01, "Informe um valor válido"),
+  dueDate: z.string().min(1),
+  supplierId: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+export type EditPayableState = { error?: string };
+
+/** Edita um título manual ainda pendente (dados do título — não mexe em saldos). */
+export async function updatePayableAction(
+  _prev: EditPayableState,
+  formData: FormData,
+): Promise<EditPayableState> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const parsed = updatePayableSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+
+  const current = await prisma.payable.findUnique({ where: { id: d.id }, select: ORIGIN_SELECT });
+  if (!current) return { error: "Título não encontrado." };
+  const blocked = originBlockReason(current);
+  if (blocked === "pago") return { error: "Título já pago. Reverta antes de editar." };
+  if (blocked === "origem") return { error: "Este título veio de outra operação — ajuste na origem." };
+
+  const label = (d.categoryLabel || "").trim();
+  if (!label) return { error: "Informe a categoria." };
+  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
+    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
+  }
+
+  await prisma.payable.update({
+    where: { id: d.id },
+    data: {
+      description: d.description,
+      category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
+      categoryLabel: label,
+      documentNumber: d.documentNumber?.trim() || null,
+      amount: d.amount,
+      dueDate: parseDateInput(d.dueDate),
+      supplierId: d.supplierId || null,
+      notes: d.notes?.trim() || null,
+    },
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  redirect("/financeiro/a-pagar");
+}
+
+export type DeletePayablesResult = { ok: boolean; deleted: number; skipped: number; error?: string };
+
+/**
+ * Exclui um ou vários títulos manuais e NÃO pagos. Títulos pagos ou vindos de
+ * outra operação são ignorados (contam em `skipped`). Remove também eventual
+ * movimentação de capital vinculada.
+ */
+export async function deletePayablesAction(ids: string[]): Promise<DeletePayablesResult> {
+  if (!ids.length) return { ok: false, deleted: 0, skipped: 0, error: "Selecione ao menos um título." };
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, deleted: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  let deleted = 0;
+  let skipped = 0;
+  for (const id of ids) {
+    const p = await prisma.payable.findUnique({ where: { id }, select: ORIGIN_SELECT });
+    if (!p || originBlockReason(p)) {
+      skipped += 1;
+      continue;
+    }
+    await prisma.$transaction([
+      prisma.capitalTransaction.deleteMany({ where: { payableId: id } }),
+      prisma.payable.delete({ where: { id } }),
+    ]);
+    deleted += 1;
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/");
+  return { ok: deleted > 0, deleted, skipped };
+}
