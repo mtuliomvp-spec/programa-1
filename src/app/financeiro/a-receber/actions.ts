@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
@@ -14,7 +14,7 @@ export async function markReceivedAction(id: string, accountId?: string) {
   await assertCan("financeiro", "receber");
   await assertBooksBalanced();
   await assertCashboxOpen();
-  await markReceivableReceived(id, new Date(), accountId || null);
+  await markReceivableReceived(id, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
@@ -29,7 +29,7 @@ export async function receiveAction(id: string, amount: number, accountId?: stri
   await assertCan("financeiro", "receber");
   await assertBooksBalanced();
   await assertCashboxOpen();
-  await receiveReceivable(id, amount, new Date(), accountId || null);
+  await receiveReceivable(id, amount, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");

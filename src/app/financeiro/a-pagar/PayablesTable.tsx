@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
-import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { markPendingAction, payBatchAction } from "./actions";
 import CommissionPayButton from "./CommissionPayButton";
 
@@ -34,14 +34,15 @@ export default function PayablesTable({
   rows,
   accounts,
   canPagar = true,
+  cashboxDate = null,
 }: {
   rows: PayableRow[];
   accounts: Account[];
   canPagar?: boolean;
+  cashboxDate?: string | null;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [payDate, setPayDate] = useState(toDateInputValue(new Date()));
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [reverting, startRevert] = useTransition();
@@ -76,7 +77,7 @@ export default function PayablesTable({
     const ids = [...selected];
     setMsg(null);
     startTransition(async () => {
-      const res = await payBatchAction(ids, accountId, payDate);
+      const res = await payBatchAction(ids, accountId);
       if (!res.ok) {
         setMsg(res.error || "Não foi possível pagar.");
         return;
@@ -182,6 +183,7 @@ export default function PayablesTable({
                       accounts={accounts}
                       beneficiaryName={p.commissionExcess.beneficiaryName}
                       free={p.commissionExcess.free}
+                      cashboxDate={cashboxDate}
                     />
                   ) : null}
                 </Td>
@@ -225,15 +227,12 @@ export default function PayablesTable({
                 ))}
               </select>
             </label>
-            <label className="flex flex-col gap-1 text-xs text-slate-500">
+            <div className="flex flex-col gap-1 text-xs text-slate-500">
               Data do pagamento
-              <input
-                type="date"
-                value={payDate}
-                onChange={(e) => setPayDate(e.target.value)}
-                className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
-              />
-            </label>
+              <span className="flex h-9 items-center rounded-lg bg-slate-100 px-2 text-sm font-medium text-slate-700">
+                {cashboxDate ? `${cashboxDate} (caixa)` : "—"}
+              </span>
+            </div>
             <button
               type="button"
               disabled={pending}

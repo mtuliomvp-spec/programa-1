@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { formatCurrency, toDateInputValue } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { payCommissionWithExcessAction } from "./actions";
 
 type Account = { id: string; name: string };
@@ -22,18 +22,19 @@ export default function CommissionPayButton({
   accounts,
   beneficiaryName,
   free,
+  cashboxDate = null,
 }: {
   payableId: string;
   commissionAmount: number;
   accounts: Account[];
   beneficiaryName: string;
   free: number;
+  cashboxDate?: string | null;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [total, setTotal] = useState(commissionAmount.toFixed(2).replace(".", ","));
-  const [date, setDate] = useState(toDateInputValue(new Date()));
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
@@ -48,7 +49,7 @@ export default function CommissionPayButton({
       return;
     }
     start(async () => {
-      const r = await payCommissionWithExcessAction(payableId, accountId, total, date);
+      const r = await payCommissionWithExcessAction(payableId, accountId, total);
       if (!r.ok) {
         setMsg(r.error || "Não foi possível pagar.");
         return;
@@ -101,15 +102,9 @@ export default function CommissionPayButton({
           ))}
         </select>
       </label>
-      <label className="block text-xs font-medium text-slate-600">
-        Data
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          className="mt-0.5 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-sm"
-        />
-      </label>
+      <p className="text-xs text-slate-500">
+        Data do pagamento: <strong>{cashboxDate ? `${cashboxDate} (caixa)` : "—"}</strong>
+      </p>
       {excedente > 0 ? (
         <p className={`text-xs ${passaDoLivre ? "text-amber-700" : "text-slate-500"}`}>
           Excedente de <strong>{formatCurrency(excedente)}</strong> vira retirada de capital de {beneficiaryName}.

@@ -4,6 +4,7 @@ import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
+import { getCashboxState } from "@/lib/cashbox";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
@@ -35,13 +36,17 @@ export default async function ContasAPagarPage({
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
 
-  const [payables, accounts] = await Promise.all([
+  const [payables, accounts, cashbox] = await Promise.all([
     prisma.payable.findMany({
       orderBy: { dueDate: "asc" },
       include: { supplier: true, vehicle: true, part: true, account: { select: { name: true } } },
     }),
     getActiveAccounts(),
+    getCashboxState(),
   ]);
+  // Data em que as baixas vão cair (data de trabalho do caixa aberto).
+  const cashboxDate =
+    cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
   const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((p) => p.effective === statusFilter) : withStatus;
@@ -161,7 +166,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} />
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} cashboxDate={cashboxDate} />
           </>
         )}
       </Card>
