@@ -7,6 +7,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
+import { syncUserSupplier } from "@/lib/user-supplier-link";
 
 async function baseUrl(): Promise<string> {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -93,6 +94,7 @@ export async function setupAdminAction(
     },
   });
 
+  await syncUserSupplier(user.id);
   await setSessionCookie(user);
   redirect("/");
 }
@@ -125,7 +127,7 @@ export async function signupAction(
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "Já existe um cadastro com esse e-mail. Tente entrar ou use o esqueci a senha." };
 
-  await prisma.user.create({
+  const created = await prisma.user.create({
     data: {
       name: parsed.data.name,
       email,
@@ -135,6 +137,7 @@ export async function signupAction(
       permissions: [],
     },
   });
+  await syncUserSupplier(created.id);
   return {
     success:
       "Cadastro enviado! Seu acesso está aguardando aprovação do administrador — você será avisado quando for liberado.",
