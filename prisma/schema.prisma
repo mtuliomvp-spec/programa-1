@@ -777,6 +777,8 @@ model Payable {
 model Receivable {
   id                String            @id @default(cuid())
   description       String
+  // Nº do documento de origem (nota fiscal, recibo) informado no lançamento.
+  documentNumber    String?
   category          CategoriaReceber
   amount            Float
   dueDate           DateTime
