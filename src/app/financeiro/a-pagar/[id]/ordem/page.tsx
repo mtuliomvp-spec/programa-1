@@ -59,6 +59,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
       costCenter: { select: { name: true } },
       account: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true } },
+      capitalBeneficiary: { select: { name: true } },
     },
   });
   if (!payable) notFound();
@@ -117,6 +118,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   if (payable.documentNumber) tituloRows.push(["Nº do documento", payable.documentNumber]);
   if (payable.vehicle) tituloRows.push(["Veículo", `${payable.vehicle.brand} ${payable.vehicle.model} (${payable.vehicle.plate})`]);
   if (payable.costCenter?.name) tituloRows.push(["Centro de custo", payable.costCenter.name]);
+  if (payable.capitalBeneficiary?.name) tituloRows.push(["Beneficiário do capital", payable.capitalBeneficiary.name]);
   tituloRows.push(["Vencimento", formatDate(payable.dueDate)]);
   tituloRows.push(["Forma de pagamento", formaPagamento]);
   tituloRows.push(["Status", statusInfo[effective].label]);
