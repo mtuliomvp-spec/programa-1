@@ -1854,6 +1854,7 @@ export async function createCashEntry(input: {
   accountId: string;
   category?: CategoriaPagar;
   categoryLabel?: string | null;
+  documentNumber?: string | null;
   structuralKey?: StructuralKey;
   supplierId?: string | null;
   vehicleId?: string | null;
@@ -1871,6 +1872,7 @@ export async function createCashEntry(input: {
       const receivable = await tx.receivable.create({
         data: {
           description: input.description,
+          documentNumber: input.documentNumber || null,
           category: "OUTROS",
           amount: input.amount,
           dueDate: input.date,
@@ -1908,6 +1910,7 @@ export async function createCashEntry(input: {
     description: input.description,
     category: input.category || "OUTROS",
     categoryLabel: input.categoryLabel || null,
+    documentNumber: input.documentNumber || null,
     amount: input.amount,
     dueDate: input.date,
     paid: true,

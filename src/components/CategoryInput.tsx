@@ -23,7 +23,11 @@ export default function CategoryInput({
   const [open, setOpen] = useState(false);
 
   const q = value.trim().toLowerCase();
-  const matches = (q ? options.filter((o) => o.toLowerCase().includes(q)) : options).slice(0, 40);
+  // Filtra por substring só quando o texto é PARCIAL (nova categoria sendo
+  // digitada). Vazio ou correspondência exata (ex.: o default "Outros") mostra
+  // todas as categorias cadastradas.
+  const exact = options.some((o) => o.toLowerCase() === q);
+  const matches = (q && !exact ? options.filter((o) => o.toLowerCase().includes(q)) : options).slice(0, 40);
 
   return (
     <div className="relative">

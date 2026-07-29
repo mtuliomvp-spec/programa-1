@@ -203,6 +203,10 @@ export default function CashEntryForm({
           )}
         </div>
 
+        <Field label="Nº do documento (opcional)">
+          <Input name="documentNumber" placeholder="Ex.: NF 12345 / recibo" />
+        </Field>
+
         <Field label="Conta" required>
           <Select name="accountId" defaultValue={preselectedAccountId || accounts[0]?.id} required>
             {accounts.map((a) => (
