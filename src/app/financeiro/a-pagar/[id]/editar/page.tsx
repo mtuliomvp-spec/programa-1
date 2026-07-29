@@ -25,23 +25,39 @@ export default async function EditarPayablePage({
   await requireAction("financeiro", "criar");
   const { id } = await params;
 
-  const payable = await prisma.payable.findUnique({ where: { id } });
-  if (!payable) notFound();
-  // Só edita título manual e ainda não pago (os demais têm origem em outra operação).
-  const hasOrigin =
-    payable.vehicleId ||
-    payable.partId ||
-    payable.recurringId ||
-    payable.consortiumId ||
-    payable.employeeId ||
-    payable.saleId ||
-    payable.purchaseRequestId;
-  if (payable.status === "PAGO" || hasOrigin) redirect("/financeiro/a-pagar");
-
-  const suppliers = await prisma.supplier.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true },
+  const payable = await prisma.payable.findUnique({
+    where: { id },
+    include: { costCenter: { select: { key: true } } },
   });
+  if (!payable) notFound();
+  // Título pago não é editável (reverter antes); os demais podem.
+  if (payable.status === "PAGO") redirect("/financeiro/a-pagar");
+
+  const [suppliers, stockVehicles, beneficiaries] = await Promise.all([
+    prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.vehicle.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const vehicles = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+  }));
+
+  // Fluxo atual: veículo → Veículos; beneficiário → Capital; senão o centro estrutural.
+  const structuralKeys = ["CAPITAL", "VEICULOS", "ADMINISTRATIVO"] as const;
+  const centerKey = structuralKeys.find((k) => k === payable.costCenter?.key);
+  const flow = payable.vehicleId
+    ? "VEICULOS"
+    : payable.capitalBeneficiaryId
+      ? "CAPITAL"
+      : centerKey || "ADMINISTRATIVO";
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -66,8 +82,13 @@ export default async function EditarPayablePage({
               dueDate: payable.dueDate.toISOString(),
               supplierId: payable.supplierId,
               notes: payable.notes,
+              structuralKey: flow,
+              vehicleId: payable.vehicleId,
+              capitalBeneficiaryId: payable.capitalBeneficiaryId,
             }}
             suppliers={suppliers}
+            vehicles={vehicles}
+            beneficiaries={beneficiaries}
           />
         </div>
       </Card>

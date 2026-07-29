@@ -89,16 +89,8 @@ export default async function ContasAPagarPage({
     status: p.status,
     accountName: p.account?.name ?? null,
     recurring: Boolean(p.recurringId),
-    // Editável/excluível: manual (sem origem em outra operação) e ainda não pago.
-    editable:
-      p.effective !== "PAGO" &&
-      !p.vehicleId &&
-      !p.partId &&
-      !p.recurringId &&
-      !p.consortiumId &&
-      !p.employeeId &&
-      !p.saleId &&
-      !p.purchaseRequestId,
+    // Editável: qualquer título ainda não pago (pagos: reverter antes).
+    editable: p.effective !== "PAGO",
     commissionExcess:
       p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
         ? excessByUser.get(p.beneficiaryUserId)!
