@@ -1846,6 +1846,74 @@ export async function createExpensePayable(input: {
   });
 }
 
+/**
+ * Edita um título manual (não pago) permitindo mudar o destino: fluxo, veículo e
+ * beneficiário do capital. Mantém o custo do veículo (VehicleCost) e o centro de
+ * custo coerentes — cria/move/remove o VehicleCost conforme o veículo escolhido.
+ */
+export async function updateManualPayable(input: {
+  id: string;
+  description: string;
+  category: CategoriaPagar;
+  categoryLabel?: string | null;
+  documentNumber?: string | null;
+  amount: number;
+  dueDate: Date;
+  supplierId?: string | null;
+  notes?: string | null;
+  structuralKey?: StructuralKey;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
+}) {
+  let vehicleSold = false;
+  if (input.vehicleId) {
+    const v = await prisma.vehicle.findUnique({ where: { id: input.vehicleId }, select: { status: true } });
+    vehicleSold = v?.status === "VENDIDO";
+  }
+  const centerId = input.vehicleId
+    ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
+    : input.capitalBeneficiaryId
+      ? await structuralCenterId("CAPITAL")
+      : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+
+  return prisma.$transaction(async (tx) => {
+    const payable = await tx.payable.update({
+      where: { id: input.id },
+      data: {
+        description: input.description,
+        category: input.category,
+        categoryLabel: input.categoryLabel || null,
+        documentNumber: input.documentNumber || null,
+        amount: input.amount,
+        dueDate: input.dueDate,
+        supplierId: input.supplierId || null,
+        notes: input.notes || null,
+        vehicleId: input.vehicleId || null,
+        capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+        costCenterId: centerId,
+      },
+    });
+
+    // Sincroniza o custo do veículo com o novo destino.
+    const existing = await tx.vehicleCost.findUnique({ where: { payableId: input.id } });
+    if (input.vehicleId) {
+      const costData = {
+        vehicleId: input.vehicleId,
+        description: input.categoryLabel ? `${input.categoryLabel}: ${input.description}` : input.description,
+        amount: input.amount,
+        date: input.dueDate,
+        postSale: vehicleSold,
+        notes: input.notes || null,
+      };
+      if (existing) await tx.vehicleCost.update({ where: { payableId: input.id }, data: costData });
+      else await tx.vehicleCost.create({ data: { ...costData, category: "OUTROS", payableId: input.id } });
+    } else if (existing) {
+      await tx.vehicleCost.delete({ where: { payableId: input.id } });
+    }
+    return payable;
+  });
+}
+
 export async function createCashEntry(input: {
   kind: "entrada" | "saida";
   description: string;

@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
@@ -343,11 +343,17 @@ const updatePayableSchema = z.object({
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
   notes: z.string().optional(),
+  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  vehicleId: z.string().optional(),
+  capitalBeneficiaryId: z.string().optional(),
 });
 
 export type EditPayableState = { error?: string };
 
-/** Edita um título manual ainda pendente (dados do título — não mexe em saldos). */
+/**
+ * Edita um título não pago — dados do título e destino (fluxo/veículo/beneficiário).
+ * Sincroniza o custo do veículo e o centro de custo. Pagos precisam ser revertidos.
+ */
 export async function updatePayableAction(
   _prev: EditPayableState,
   formData: FormData,
@@ -361,34 +367,41 @@ export async function updatePayableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
 
-  const current = await prisma.payable.findUnique({ where: { id: d.id }, select: ORIGIN_SELECT });
+  const current = await prisma.payable.findUnique({ where: { id: d.id }, select: { status: true } });
   if (!current) return { error: "Título não encontrado." };
-  const blocked = originBlockReason(current);
-  if (blocked === "pago") return { error: "Título já pago. Reverta antes de editar." };
-  if (blocked === "origem") return { error: "Este título veio de outra operação — ajuste na origem." };
+  if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de editar." };
 
   const label = (d.categoryLabel || "").trim();
   if (!label) return { error: "Informe a categoria." };
+
+  const flow = d.structuralKey || "ADMINISTRATIVO";
+  const vehicleId = flow === "VEICULOS" ? d.vehicleId || null : null;
+  const capitalBeneficiaryId = flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
+  if (flow === "CAPITAL" && !capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
+
   if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
     await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
   }
 
-  await prisma.payable.update({
-    where: { id: d.id },
-    data: {
-      description: d.description,
-      category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-      categoryLabel: label,
-      documentNumber: d.documentNumber?.trim() || null,
-      amount: d.amount,
-      dueDate: parseDateInput(d.dueDate),
-      supplierId: d.supplierId || null,
-      notes: d.notes?.trim() || null,
-    },
+  await updateManualPayable({
+    id: d.id,
+    description: d.description,
+    category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
+    categoryLabel: label,
+    documentNumber: d.documentNumber?.trim() || null,
+    amount: d.amount,
+    dueDate: parseDateInput(d.dueDate),
+    supplierId: d.supplierId || null,
+    notes: d.notes?.trim() || null,
+    structuralKey: flow,
+    vehicleId,
+    capitalBeneficiaryId,
   });
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/estoque");
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect("/financeiro/a-pagar");
 }
