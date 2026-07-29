@@ -726,6 +726,9 @@ model Payable {
   accountId    String?
   account      FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   notes        String?
+  // Lançamento avulso feito direto no Livro caixa (não é um título do a-pagar).
+  // Excluir um avulso no caixa apaga de vez; excluir um título estorna (volta PENDENTE).
+  avulso       Boolean         @default(false)
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -762,6 +765,8 @@ model Receivable {
   accountId         String?
   account           FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   notes             String?
+  // Lançamento avulso feito direto no Livro caixa (não é um título do a-receber).
+  avulso            Boolean           @default(false)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
