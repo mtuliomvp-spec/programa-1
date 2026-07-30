@@ -330,18 +330,25 @@ export default async function LivroCaixaPage({
       <BooksHealthChecks health={health} />
 
       <div className={`mb-4 ${canCriar ? "" : "hidden"}`}>
-        {health.allOk ? (
-          <CashEntryForm
-            accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
-            supplierNames={suppliers.map((s) => s.name)}
-            vehicles={vehicleOptions}
-            beneficiaries={beneficiariesWithStatus}
-            customers={customers}
-            categories={categoryOptions}
-            defaultDate={toDateInputValue(cashboxWorkDate ?? new Date())}
-            lockedDate={!!cashboxWorkDate}
-            preselectedAccountId={accountFilter || undefined}
-          />
+        {health.blockingOk ? (
+          <>
+            {!health.allOk ? (
+              <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 print:hidden">
+                ⚖️ O Banco Neutro está fora de zero. Lance o par (débito e crédito) pelo Banco Neutro para zerá-lo novamente.
+              </div>
+            ) : null}
+            <CashEntryForm
+              accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+              supplierNames={suppliers.map((s) => s.name)}
+              vehicles={vehicleOptions}
+              beneficiaries={beneficiariesWithStatus}
+              customers={customers}
+              categories={categoryOptions}
+              defaultDate={toDateInputValue(cashboxWorkDate ?? new Date())}
+              lockedDate={!!cashboxWorkDate}
+              preselectedAccountId={accountFilter || undefined}
+            />
+          </>
         ) : (
           <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 print:hidden">
             🔒 Novos lançamentos bloqueados até os saldos convergirem (veja os checks acima).
