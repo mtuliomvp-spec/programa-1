@@ -541,6 +541,9 @@ model PreSale {
   // terceiro cujos dados ficam nos campos owner*.
   financingAmount   Float          @default(0)
   refundAmount      Float          @default(0)
+  // Refinanciamento: o proprietário refinancia o próprio veículo. A financeira
+  // paga o valor financiado direto ao financiado; a loja recebe só o retorno.
+  refinancing       Boolean        @default(false)
   ownerName         String?
   ownerDocument     String?
   ownerPhone        String?
@@ -613,6 +616,9 @@ model Sale {
   // ao cliente (D) e dados do proprietário do documento (VENDEDOR do contrato).
   financingAmount   Float          @default(0)
   refundAmount      Float          @default(0)
+  // Refinanciamento: proprietário refinancia o próprio veículo (F vai direto ao
+  // financiado; a loja recebe só o retorno).
+  refinancing       Boolean        @default(false)
   ownerName         String?
   ownerDocument     String?
   ownerPhone        String?

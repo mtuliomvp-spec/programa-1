@@ -54,6 +54,9 @@ export type IntermediationContractData = {
   date: Date;
   financingAmount: number;
   refundAmount: number;
+  // Refinanciamento: a financeira paga o valor financiado direto ao financiado
+  // (o próprio proprietário); a intermediadora não faz devolução.
+  refinancing?: boolean;
   financerName: string | null;
   // Parcelamento informado ao comprador (só informativo, preenchido na venda).
   installmentsInfo: { count: number; amount: number } | null;
@@ -108,7 +111,7 @@ export default function IntermediationContractDocument(d: IntermediationContract
         />
 
         <h1 className="mb-5 text-center text-base font-bold uppercase tracking-wide">
-          Contrato de intermediação de financiamento de veículo
+          Contrato de intermediação de {d.refinancing ? "refinanciamento" : "financiamento"} de veículo
         </h1>
 
         <section className="mb-5 space-y-2 text-sm leading-relaxed text-slate-800">
@@ -187,19 +190,31 @@ export default function IntermediationContractDocument(d: IntermediationContract
                 <td className="py-1">Valor do financiamento{d.financerName ? ` — ${d.financerName}` : ""}</td>
                 <td className="py-1 text-right tabular-nums font-medium">{formatCurrency(d.financingAmount)}</td>
               </tr>
-              <tr>
-                <td className="py-1">(−) Valor devolvido ao(à) COMPRADOR(A)</td>
-                <td className="py-1 text-right tabular-nums">{formatCurrency(d.refundAmount)}</td>
-              </tr>
+              {!d.refinancing ? (
+                <tr>
+                  <td className="py-1">(−) Valor devolvido ao(à) COMPRADOR(A)</td>
+                  <td className="py-1 text-right tabular-nums">{formatCurrency(d.refundAmount)}</td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
-          <p className="mt-2">
-            A INTERMEDIADORA efetuará a <strong>transferência bancária</strong> do valor de{" "}
-            <strong>{formatCurrency(d.refundAmount)}</strong> ao(à) COMPRADOR(A), a título de devolução
-            do financiamento, <strong>tão logo receba</strong> o valor do financiamento da instituição
-            financeira{d.financerName ? <> <strong>{d.financerName}</strong></> : null}, na conta
-            bancária abaixo indicada:
-          </p>
+          {d.refinancing ? (
+            <p className="mt-2">
+              A instituição financeira{d.financerName ? <> <strong>{d.financerName}</strong></> : null}{" "}
+              efetuará o <strong>pagamento do valor financiado</strong> de{" "}
+              <strong>{formatCurrency(d.financingAmount)}</strong> <strong>diretamente</strong> ao(à)
+              FINANCIADO(A) (proprietário do veículo), na conta bancária abaixo indicada. A INTERMEDIADORA
+              atua apenas na viabilização do refinanciamento.
+            </p>
+          ) : (
+            <p className="mt-2">
+              A INTERMEDIADORA efetuará a <strong>transferência bancária</strong> do valor de{" "}
+              <strong>{formatCurrency(d.refundAmount)}</strong> ao(à) COMPRADOR(A), a título de devolução
+              do financiamento, <strong>tão logo receba</strong> o valor do financiamento da instituição
+              financeira{d.financerName ? <> <strong>{d.financerName}</strong></> : null}, na conta
+              bancária abaixo indicada:
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-3">
             <p><span className="text-slate-500">Titular:</span> <strong>{buyer.name}</strong></p>
             <p><span className="text-slate-500">CPF/CNPJ:</span> {buyer.document || "—"}</p>

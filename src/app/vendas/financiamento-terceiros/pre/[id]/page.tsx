@@ -72,7 +72,7 @@ export default async function IntermediationPreSalePage({
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        title="Financiamento de terceiros — pré-venda"
+        title={`Financiamento de terceiros${pre.refinancing ? " (Refinanciamento)" : ""} — pré-venda`}
         description={vehicleLabel}
         action={
           <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/pre/${pre.id}/contrato`}>

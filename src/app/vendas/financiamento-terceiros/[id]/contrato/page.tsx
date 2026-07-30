@@ -46,6 +46,7 @@ export default async function ContratoIntermediacaoPage({
       date={sale.saleDate}
       financingAmount={sale.financingAmount}
       refundAmount={sale.refundAmount}
+      refinancing={sale.refinancing}
       financerName={sale.financerAccount?.name ?? null}
       installmentsInfo={
         sale.installmentsInfoCount && sale.installmentsInfoAmount

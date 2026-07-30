@@ -51,6 +51,7 @@ export default async function ContratoIntermediacaoPrePage({
       date={pre.saleDate}
       financingAmount={pre.financingAmount}
       refundAmount={pre.refundAmount}
+      refinancing={pre.refinancing}
       financerName={financer?.name ?? null}
       installmentsInfo={
         pre.installmentsInfoCount && pre.installmentsInfoAmount
