@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import BankInput from "@/components/BankInput";
+import NewCustomerInline from "@/components/NewCustomerInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
@@ -80,6 +81,15 @@ export default function IntermediationForm({
   const [cepMsg, setCepMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
   const [refinancing, setRefinancing] = useState(Boolean(initial?.refinancing));
+  const [customerList, setCustomerList] = useState<Customer[]>(customers);
+  const [customerId, setCustomerId] = useState(initial?.customerId ?? "");
+  const [newCustomer, setNewCustomer] = useState(false);
+  const [customerPrefill, setCustomerPrefill] = useState<{
+    name?: string;
+    document?: string;
+    phone?: string;
+    address?: string;
+  }>({});
   const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
@@ -332,16 +342,59 @@ export default function IntermediationForm({
         </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Cliente (comprador/financiado)" required>
-            <Select name="customerId" required defaultValue={initial?.customerId ?? ""}>
+            <Select
+              name="customerId"
+              required
+              value={customerId}
+              onChange={(e) => setCustomerId(e.target.value)}
+            >
               <option value="" disabled>
                 Selecione o cliente
               </option>
-              {customers.map((c) => (
+              {customerList.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ))}
             </Select>
+            <button
+              type="button"
+              onClick={() => {
+                setCustomerPrefill(
+                  refinancing
+                    ? {
+                        name: readField("ownerName"),
+                        document: readField("ownerDocument"),
+                        phone: readField("ownerPhone"),
+                        address: readField("ownerAddress"),
+                      }
+                    : {},
+                );
+                setNewCustomer((v) => !v);
+              }}
+              className="mt-1 text-sm font-medium text-blue-600 hover:underline"
+            >
+              {newCustomer ? "Fechar cadastro" : "➕ Cadastrar cliente"}
+            </button>
+            {refinancing ? (
+              <p className="mt-1 text-xs text-slate-500">
+                No refinanciamento o cliente é o próprio proprietário. Use
+                &quot;Cadastrar cliente&quot; para registrá-lo (já vem preenchido com os dados do
+                proprietário) e selecioná-lo.
+              </p>
+            ) : null}
+            {newCustomer ? (
+              <NewCustomerInline
+                initial={customerPrefill}
+                onCreated={(c) => {
+                  setCustomerList((prev) =>
+                    prev.some((x) => x.id === c.id) ? prev : [...prev, c],
+                  );
+                  setCustomerId(c.id);
+                  setNewCustomer(false);
+                }}
+              />
+            ) : null}
           </Field>
           <Field label="Data" required>
             <Input name="saleDate" type="date" required defaultValue={initial?.saleDate ?? toDateInputValue(new Date())} />
@@ -433,38 +486,40 @@ export default function IntermediationForm({
         ) : null}
       </fieldset>
 
-      {/* Dados bancários do comprador (para a transferência da devolução) */}
-      <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
-        <legend className="px-1 text-sm font-semibold text-slate-700">
-          {refinancing ? "Dados bancários do financiado" : "Dados bancários do comprador (para a devolução)"}
-        </legend>
-        <p className="text-xs text-slate-500">
-          {refinancing
-            ? "Constam no contrato: a financeira deposita o valor financiado direto nesta conta do financiado."
-            : "Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a financeira pagar."}
-        </p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Banco">
-            <BankInput name="buyerBankName" defaultValue={initial?.buyerBankName ?? ""} placeholder="Banco do comprador" />
-          </Field>
-          <Field label="Tipo de conta">
-            <Select name="buyerBankAccountType" defaultValue={initial?.buyerBankAccountType ?? ""}>
-              <option value="">—</option>
-              <option value="Conta corrente">Conta corrente</option>
-              <option value="Conta poupança">Conta poupança</option>
-            </Select>
-          </Field>
-          <Field label="Agência">
-            <Input name="buyerBankAgency" defaultValue={initial?.buyerBankAgency ?? ""} />
-          </Field>
-          <Field label="Conta">
-            <Input name="buyerBankAccount" defaultValue={initial?.buyerBankAccount ?? ""} />
-          </Field>
-          <Field label="Chave PIX">
-            <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
-          </Field>
-        </div>
-      </fieldset>
+      {/* Dados bancários do comprador (para a transferência da devolução).
+          No refinanciamento não é necessário: a financeira paga direto ao financiado. */}
+      {!refinancing ? (
+        <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-semibold text-slate-700">
+            Dados bancários do comprador (para a devolução)
+          </legend>
+          <p className="text-xs text-slate-500">
+            Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a
+            financeira pagar.
+          </p>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Banco">
+              <BankInput name="buyerBankName" defaultValue={initial?.buyerBankName ?? ""} placeholder="Banco do comprador" />
+            </Field>
+            <Field label="Tipo de conta">
+              <Select name="buyerBankAccountType" defaultValue={initial?.buyerBankAccountType ?? ""}>
+                <option value="">—</option>
+                <option value="Conta corrente">Conta corrente</option>
+                <option value="Conta poupança">Conta poupança</option>
+              </Select>
+            </Field>
+            <Field label="Agência">
+              <Input name="buyerBankAgency" defaultValue={initial?.buyerBankAgency ?? ""} />
+            </Field>
+            <Field label="Conta">
+              <Input name="buyerBankAccount" defaultValue={initial?.buyerBankAccount ?? ""} />
+            </Field>
+            <Field label="Chave PIX">
+              <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
+            </Field>
+          </div>
+        </fieldset>
+      ) : null}
 
       {/* Vendedor / comissões */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
