@@ -13,10 +13,18 @@ import { findPersonByDocument } from "@/app/person-lookup";
  */
 export default function NewCustomerInline({
   onCreated,
+  initial,
 }: {
   onCreated: (c: { id: string; name: string }) => void;
+  initial?: { name?: string; document?: string; phone?: string; email?: string; address?: string };
 }) {
-  const [data, setData] = useState({ name: "", document: "", phone: "", email: "", address: "" });
+  const [data, setData] = useState({
+    name: initial?.name ?? "",
+    document: initial?.document ?? "",
+    phone: initial?.phone ?? "",
+    email: initial?.email ?? "",
+    address: initial?.address ?? "",
+  });
   const [alsoSupplier, setAlsoSupplier] = useState(false);
   const [saving, start] = useTransition();
   const [msg, setMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
