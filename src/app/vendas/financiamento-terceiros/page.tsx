@@ -144,6 +144,9 @@ export default async function FinanciamentoTerceirosListPage({
                     ) : (
                       <span className="text-slate-400">Veículo removido</span>
                     )}
+                    {p.refinancing ? (
+                      <span className="ml-1.5 rounded bg-blue-50 px-1 text-[10px] font-medium text-blue-700">Refi</span>
+                    ) : null}
                   </Td>
                   <Td>{p.customer?.name ?? "—"}</Td>
                   <Td>{formatDate(p.saleDate)}</Td>
@@ -191,6 +194,9 @@ export default async function FinanciamentoTerceirosListPage({
                       {o.vehicle.brand} {o.vehicle.model}
                     </Link>
                     <span className="ml-1.5 text-xs text-slate-400">{o.vehicle.plate}</span>
+                    {o.refinancing ? (
+                      <span className="ml-1.5 rounded bg-blue-50 px-1 text-[10px] font-medium text-blue-700">Refi</span>
+                    ) : null}
                   </Td>
                   <Td>{o.customer.name}</Td>
                   <Td>{formatDate(o.saleDate)}</Td>

@@ -51,7 +51,7 @@ export default async function FinanciamentoTerceirosDetailPage({
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
-        title="Financiamento de terceiros"
+        title={`Financiamento de terceiros${sale.refinancing ? " (Refinanciamento)" : ""}`}
         description={`${sale.vehicle.brand} ${sale.vehicle.model} · ${sale.vehicle.plate}`}
         action={
           <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/${sale.id}/contrato`}>

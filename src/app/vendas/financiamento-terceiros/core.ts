@@ -44,6 +44,9 @@ export const intermediationSchema = z.object({
   // Valores da operação
   financingAmount: z.coerce.number().min(0.01, "Informe o valor do financiamento"),
   refundAmount: z.coerce.number().min(0).default(0),
+  // Refinanciamento: o proprietário refinancia o próprio veículo. A financeira
+  // paga F direto ao financiado; a loja recebe só o retorno (sem repasse/devolução).
+  refinancing: z.coerce.boolean().optional(),
   financerAccountId: z.string().min(1, "Selecione a financeira"),
   returnLevel: z.coerce.number().int().min(0).default(0),
   // Parcelamento informado ao comprador (obrigatório — sempre financiado).
@@ -70,7 +73,9 @@ export type IntermediationData = z.infer<typeof intermediationSchema>;
 async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: string) {
   await assertMonthOpen(parseDateInput(d.saleDate));
   const F = Math.round(d.financingAmount * 100) / 100;
-  const D = Math.round(Math.max(0, d.refundAmount) * 100) / 100;
+  // Refinanciamento: a loja não vende o carro nem devolve — a financeira paga F
+  // direto ao financiado. Logo D = 0 (sem devolução pela loja).
+  const D = d.refinancing ? 0 : Math.round(Math.max(0, d.refundAmount) * 100) / 100;
   if (D > F) {
     throw new Error("A devolução ao cliente não pode ser maior que o valor do financiamento.");
   }
@@ -101,10 +106,12 @@ function buildPreSaleData(d: IntermediationData, F: number, D: number, sellerNam
     saleType: "FINANCIAMENTO_TERCEIROS" as const,
     customerId: d.customerId,
     saleDate: parseDateInput(d.saleDate),
-    totalAmount: Math.round((F - D) * 100) / 100,
+    // Refinanciamento: a loja não vende o carro (totalAmount 0); só o retorno é receita.
+    totalAmount: d.refinancing ? 0 : Math.round((F - D) * 100) / 100,
     paymentMethod: "FINANCIADO" as const,
     financingAmount: F,
     refundAmount: D,
+    refinancing: Boolean(d.refinancing),
     financedAmount: F,
     financerAccountId: d.financerAccountId,
     returnLevel: Math.max(0, d.returnLevel || 0),
@@ -213,7 +220,7 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     vehicleId: pre.vehicleId,
     customerId: pre.customerId,
     saleDate: pre.saleDate,
-    totalAmount: Math.round((F - D) * 100) / 100,
+    totalAmount: pre.refinancing ? 0 : Math.round((F - D) * 100) / 100,
     downPayment: 0,
     installmentsCount: 0,
     paymentMethod: "FINANCIADO",
@@ -228,6 +235,7 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     transferCharged: pre.transferCharged,
     transferAmount: pre.transferAmount,
     saleType: "FINANCIAMENTO_TERCEIROS",
+    refinancing: pre.refinancing,
     financingAmount: F,
     refundAmount: D,
     ownerName: pre.ownerName,

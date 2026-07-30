@@ -48,6 +48,7 @@ export default async function NovoFinanciamentoTerceirosPage({
         transmission: vehicle?.transmission ?? undefined,
         financingAmount: pre.financingAmount,
         refundAmount: pre.refundAmount,
+        refinancing: pre.refinancing,
         financerAccountId: pre.financerAccountId ?? undefined,
         returnLevel: pre.returnLevel,
         takeReturnCommission: pre.takeReturnCommission,

@@ -41,6 +41,7 @@ export type IntermediationInitial = {
   transmission?: string;
   financingAmount?: number;
   refundAmount?: number;
+  refinancing?: boolean;
   financerAccountId?: string;
   returnLevel?: number;
   takeReturnCommission?: boolean;
@@ -78,6 +79,7 @@ export default function IntermediationForm({
   const [cepLookup, startCepLookup] = useTransition();
   const [cepMsg, setCepMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
 
+  const [refinancing, setRefinancing] = useState(Boolean(initial?.refinancing));
   const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
@@ -101,7 +103,9 @@ export default function IntermediationForm({
       : 0;
 
   const referralsTotal = referrals.reduce((s, r) => s + (r.amount || 0), 0);
-  const grossProfit = Math.max(0, financing - refund); // lucro bruto (F − D)
+  // No refinanciamento a loja não fica com F − D (o valor vai direto ao financiado);
+  // a receita é só o retorno.
+  const grossProfit = refinancing ? 0 : Math.max(0, financing - refund); // lucro bruto (F − D)
   // Bloco do FINANCIAMENTO: lucro bruto menos as despesas da operação.
   const sobraFinanciamento =
     grossProfit - (commission || 0) - (transferCharged ? transferAmount || 0 : 0) - referralsTotal;
@@ -311,6 +315,21 @@ export default function IntermediationForm({
       {/* Cliente e valores */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">Operação</legend>
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="refinancing"
+            value="true"
+            checked={refinancing}
+            onChange={(e) => setRefinancing(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+          />
+          <span>
+            <span className="font-medium">Refinanciamento</span> — o proprietário refinancia o próprio
+            veículo. A financeira paga o valor financiado <strong>direto na conta do financiado</strong>;
+            a loja recebe <strong>só o retorno</strong> (sem repasse nem devolução).
+          </span>
+        </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Cliente (comprador/financiado)" required>
             <Select name="customerId" required defaultValue={initial?.customerId ?? ""}>
@@ -339,17 +358,19 @@ export default function IntermediationForm({
               placeholder="Valor liberado pelo banco"
             />
           </Field>
-          <Field label="Devolução de financiamento (ao cliente)">
-            <Input
-              name="refundAmount"
-              type="number"
-              step="0.01"
-              min={0}
-              value={refund || ""}
-              onChange={(e) => setRefund(Number(e.target.value) || 0)}
-              placeholder="Quanto será devolvido ao cliente"
-            />
-          </Field>
+          {!refinancing ? (
+            <Field label="Devolução de financiamento (ao cliente)">
+              <Input
+                name="refundAmount"
+                type="number"
+                step="0.01"
+                min={0}
+                value={refund || ""}
+                onChange={(e) => setRefund(Number(e.target.value) || 0)}
+                placeholder="Quanto será devolvido ao cliente"
+              />
+            </Field>
+          ) : null}
           <Field label="Nº de parcelas (informado ao comprador)" required>
             <Input name="installmentsInfoCount" type="number" min={1} required defaultValue={initial?.installmentsInfoCount ?? ""} placeholder="Ex.: 48" />
           </Field>
@@ -415,11 +436,12 @@ export default function IntermediationForm({
       {/* Dados bancários do comprador (para a transferência da devolução) */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">
-          Dados bancários do comprador (para a devolução)
+          {refinancing ? "Dados bancários do financiado" : "Dados bancários do comprador (para a devolução)"}
         </legend>
         <p className="text-xs text-slate-500">
-          Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a
-          financeira pagar.
+          {refinancing
+            ? "Constam no contrato: a financeira deposita o valor financiado direto nesta conta do financiado."
+            : "Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a financeira pagar."}
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Banco">

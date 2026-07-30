@@ -612,6 +612,9 @@ export async function registerVehicleSale(input: {
   // proprietário do documento. O motor de venda já trata o resto (o excedente
   // do financiamento sobre o "billable" vira a devolução ao cliente).
   saleType?: "VENDA" | "FINANCIAMENTO_TERCEIROS" | null;
+  // Refinanciamento (financiamento de terceiros): a financeira paga F direto ao
+  // financiado; a loja recebe só o retorno (sem repasse nem devolução).
+  refinancing?: boolean | null;
   financingAmount?: number | null;
   refundAmount?: number | null;
   ownerName?: string | null;
@@ -712,7 +715,10 @@ export async function registerVehicleSale(input: {
         sellerName: input.sellerName || null,
         sellerId: input.sellerId || null,
         financerName: input.paymentMethod === "FINANCIADO" ? input.financerName || null : null,
-        financedAmount: input.paymentMethod === "FINANCIADO" ? input.financedAmount ?? null : null,
+        // Refinanciamento: a loja não recebe repasse (F vai direto ao financiado),
+        // então guarda financedAmount 0 (nada a liquidar em "Receber financiamento").
+        financedAmount:
+          input.paymentMethod === "FINANCIADO" ? (input.refinancing ? 0 : input.financedAmount ?? null) : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
         commissionAmount: commission,
@@ -721,6 +727,7 @@ export async function registerVehicleSale(input: {
         transferAmount,
         viaPaidTraffic: Boolean(input.viaPaidTraffic),
         saleType: input.saleType === "FINANCIAMENTO_TERCEIROS" ? "FINANCIAMENTO_TERCEIROS" : "VENDA",
+        refinancing: Boolean(input.refinancing),
         financingAmount: Math.max(0, input.financingAmount ?? 0),
         refundAmount: Math.max(0, input.refundAmount ?? 0),
         ownerName: input.ownerName || null,
@@ -892,8 +899,13 @@ export async function registerVehicleSale(input: {
       // O que ainda sobra a receber do cliente (entrada).
       const entrada = Math.max(0, Math.round((billable - financedParaCarro) * 100) / 100);
       // Excedente do financiamento sobre o restante soma na devolução (que já
-      // pode conter o excedente da troca + sinal).
-      devolucaoCliente = Math.round((devolucaoCliente + Math.max(0, financed - billable)) * 100) / 100;
+      // pode conter o excedente da troca + sinal). No refinanciamento a loja não
+      // devolve nada (a financeira paga F direto ao financiado).
+      if (!input.refinancing) {
+        devolucaoCliente = Math.round((devolucaoCliente + Math.max(0, financed - billable)) * 100) / 100;
+      } else {
+        devolucaoCliente = 0;
+      }
 
       if (entrada > 0) {
         // A entrada do cliente vai para Contas a Receber como PENDENTE: o
@@ -915,17 +927,21 @@ export async function registerVehicleSale(input: {
         // entra NELA (fica lá até a financeira transferir para a empresa). Sem
         // conta, cai no fluxo antigo (a receber pendente).
         const naFinanceira = !!input.financerAccountId;
-        receivablesData.push({
-          description: `${baseDescription} - Repasse financiamento${input.financerName ? ` (${input.financerName})` : ""}`,
-          category: "VENDA_VEICULO",
-          amount: financed,
-          dueDate: naFinanceira ? input.saleDate : addDays(input.saleDate, 5),
-          receivedDate: naFinanceira ? input.saleDate : null,
-          status: naFinanceira ? "RECEBIDO" : "PENDENTE",
-          customerId: input.customerId,
-          saleId: sale.id,
-          accountId: naFinanceira ? input.financerAccountId : null,
-        });
+        // Refinanciamento: a financeira paga F direto ao financiado — a loja NÃO
+        // recebe o repasse. Só o retorno (abaixo) entra na loja.
+        if (!input.refinancing) {
+          receivablesData.push({
+            description: `${baseDescription} - Repasse financiamento${input.financerName ? ` (${input.financerName})` : ""}`,
+            category: "VENDA_VEICULO",
+            amount: financed,
+            dueDate: naFinanceira ? input.saleDate : addDays(input.saleDate, 5),
+            receivedDate: naFinanceira ? input.saleDate : null,
+            status: naFinanceira ? "RECEBIDO" : "PENDENTE",
+            customerId: input.customerId,
+            saleId: sale.id,
+            accountId: naFinanceira ? input.financerAccountId : null,
+          });
+        }
 
         // Retorno da financeira: comissão sobre o valor financiado. Só quando há
         // financeira cadastrada (é ela quem paga) e nível > 0. Espelha o repasse:
