@@ -68,28 +68,56 @@ function titleCase(value: string | undefined): string | undefined {
     .join(" ");
 }
 
+// Códigos curtos de combustível usados por alguns provedores (ex.: "F" = Flex).
+const FUEL_CODES: Record<string, string> = {
+  F: "Flex",
+  G: "Gasolina",
+  A: "Álcool",
+  E: "Elétrico",
+  D: "Diesel",
+  H: "Híbrido",
+  GNV: "GNV",
+};
+
 function fuelFromKeywords(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const fuel = value.toUpperCase();
-  if (fuel.includes("FLEX") || (fuel.includes("ALCOOL") && fuel.includes("GASOLINA"))) return "Flex";
+  if (
+    fuel.includes("FLEX") ||
+    fuel.includes("BICOMBUST") ||
+    (fuel.includes("ALCOOL") && fuel.includes("GASOLINA")) ||
+    (fuel.includes("ETANOL") && fuel.includes("GASOLINA"))
+  )
+    return "Flex";
   if (fuel.includes("HIBRIDO") || fuel.includes("HÍBRIDO")) return "Híbrido";
   if (fuel.includes("ELETRICO") || fuel.includes("ELÉTRICO")) return "Elétrico";
   if (fuel.includes("DIESEL")) return "Diesel";
+  if (fuel.includes("GNV") || fuel.includes("GAS NATURAL")) return "GNV";
   if (fuel.includes("GASOLINA")) return "Gasolina";
+  if (fuel.includes("ALCOOL") || fuel.includes("ETANOL")) return "Álcool";
   return undefined;
 }
 
 function normalizeFuel(value: string | undefined): string | undefined {
   if (!value) return undefined;
-  return fuelFromKeywords(value) ?? titleCase(value);
+  const byKeyword = fuelFromKeywords(value);
+  if (byKeyword) return byKeyword;
+  // Código curto (ex.: "F", "G", "GNV") → nome por extenso.
+  const code = value.trim().toUpperCase().replace(/[^A-Z]/g, "");
+  if (FUEL_CODES[code]) return FUEL_CODES[code];
+  // Sem correspondência: evita devolver lixo (ex.: "f"); só aceita textos com
+  // conteúdo real (≥3 caracteres).
+  const clean = value.trim();
+  return clean.length >= 3 ? titleCase(clean) : undefined;
 }
 
 function transmissionFromKeywords(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const v = value.toUpperCase();
   if (v.includes("CVT")) return "CVT";
-  if (v.includes("AUT")) return "Automático";
-  if (v.includes("MEC") || v.includes("MANUAL")) return "Manual";
+  if (v.includes("DCT") || v.includes("DUALOGIC") || v.includes("AUTOMATIZAD")) return "Automatizado";
+  if (v.includes("AUT") || v.includes("TIPTRONIC") || /\bAT\b/.test(v)) return "Automático";
+  if (v.includes("MEC") || v.includes("MANUAL") || /\bMT\b/.test(v)) return "Manual";
   return undefined;
 }
 
@@ -170,17 +198,26 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
     fuel:
       normalizeFuel(
         firstString(raw, ["combustivel", "COMBUSTIVEL", "combustível", "COMBUSTÍVEL", "fuel"]) ||
-          firstString(extra, ["combustivel", "combustível"]) ||
+          firstString(extra, ["combustivel", "combustível", "COMBUSTIVEL"]) ||
           fipeFuel,
       ) ||
-      // último recurso: o texto da versão FIPE costuma citar o combustível
+      // último recurso: o texto da versão/modelo/FIPE costuma citar o combustível
       // (ex.: "Hilux CD SR 4x4 2.8 TDI Diesel Aut.")
-      fuelFromKeywords(fipeOptions.map((o) => o.modelo).join(" ")),
+      fuelFromKeywords(
+        [model, firstString(raw, ["versao", "VERSAO", "version", "submodelo"]), ...fipeOptions.map((o) => o.modelo)]
+          .filter(Boolean)
+          .join(" "),
+      ),
     transmission:
       transmissionFromKeywords(
-        firstString(raw, ["cambio", "CAMBIO", "câmbio", "transmissao", "transmissão"]) ||
-          firstString(extra, ["cambio", "câmbio", "transmissao"]),
-      ) ?? transmissionFromKeywords(bestFipe?.modelo),
+        firstString(raw, ["cambio", "CAMBIO", "câmbio", "tipo_cambio", "caixa_cambio", "transmissao", "transmissão"]) ||
+          firstString(extra, ["cambio", "câmbio", "tipo_cambio", "caixa_cambio", "transmissao", "transmissão"]),
+      ) ??
+      transmissionFromKeywords(
+        [firstString(raw, ["versao", "VERSAO", "version", "submodelo"]), model, ...fipeOptions.map((o) => o.modelo)]
+          .filter(Boolean)
+          .join(" "),
+      ),
     chassi: firstString(raw, ["chassi", "CHASSI", "vin"]) || firstString(extra, ["chassi"]),
     fipePrice: bestFipe ? bestFipe.price : parseBrl(firstString(raw, ["valorFipe", "fipe_valor"])),
     fipeModelo: bestFipe?.modelo,
