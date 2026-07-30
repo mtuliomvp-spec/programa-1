@@ -65,7 +65,10 @@ export default async function NovoFinanciamentoTerceirosPage({
   }
 
   const [customers, financers, users] = await Promise.all([
-    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.customer.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, document: true, phone: true, address: true },
+    }),
     prisma.financialAccount.findMany({
       where: { active: true, type: "FINANCEIRA" },
       orderBy: { name: "asc" },

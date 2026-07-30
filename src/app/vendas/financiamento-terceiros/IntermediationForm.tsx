@@ -14,7 +14,13 @@ import { createIntermediationPreSaleAction } from "./actions";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import type { IntermediationFormState } from "./core";
 
-type Customer = { id: string; name: string };
+type Customer = {
+  id: string;
+  name: string;
+  document?: string | null;
+  phone?: string | null;
+  address?: string | null;
+};
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
 
@@ -98,6 +104,7 @@ export default function IntermediationForm({
     phone?: string;
     address?: string;
   }>({});
+  const [ownerPickId, setOwnerPickId] = useState("");
   const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
@@ -141,6 +148,18 @@ export default function IntermediationForm({
   function readField(name: string): string {
     const el = formRef.current?.elements.namedItem(name);
     return el instanceof HTMLInputElement ? el.value.trim() : "";
+  }
+
+  // Preenche os dados do proprietário a partir de um cliente já cadastrado.
+  function handlePickOwnerCustomer(id: string) {
+    setOwnerPickId(id);
+    const c = customerList.find((x) => x.id === id);
+    if (!c) return;
+    setField("ownerName", c.name);
+    setField("ownerDocument", c.document ?? undefined);
+    setField("ownerPhone", c.phone ?? undefined);
+    setField("ownerAddress", c.address ?? undefined);
+    setOwnerMsg({ tone: "ok", text: `Proprietário preenchido com o cliente ${c.name}.` });
   }
 
   // Proprietário pessoa jurídica: busca nome/telefone/endereço pelo CNPJ.
@@ -237,6 +256,21 @@ export default function IntermediationForm({
         <legend className="px-1 text-sm font-semibold text-slate-700">
           Proprietário do documento (Vendedor)
         </legend>
+        {customerList.length > 0 ? (
+          <Field label="Usar um cliente já cadastrado (opcional)">
+            <Select value={ownerPickId} onChange={(e) => handlePickOwnerCustomer(e.target.value)}>
+              <option value="">— Selecionar cliente cadastrado —</option>
+              {customerList.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              Selecione para preencher automaticamente nome, CPF/CNPJ, telefone e endereço abaixo.
+            </p>
+          </Field>
+        ) : null}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Nome do proprietário" required>
             <Input name="ownerName" required defaultValue={initial?.ownerName ?? ""} placeholder="Quem é o dono do veículo/documento" />
