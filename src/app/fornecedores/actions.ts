@@ -35,7 +35,11 @@ function bankData(d: z.infer<typeof schema>) {
   };
 }
 
-/** Cria um cliente equivalente (mesma pessoa), sem duplicar se o documento já existir. */
+/**
+ * Cria um cliente equivalente (mesma pessoa), sem duplicar se o documento já
+ * existir. Devolve o id do cliente (existente ou recém-criado) para quem
+ * precisar selecioná-lo em seguida; `null` quando não há nome.
+ */
 export async function replicateAsCustomer(d: {
   name: string;
   document?: string | null;
@@ -43,17 +47,17 @@ export async function replicateAsCustomer(d: {
   email?: string | null;
   address?: string | null;
   notes?: string | null;
-}) {
+}): Promise<{ id: string } | null> {
   // Também exposta como endpoint (arquivo "use server"): protege por conta própria.
   await assertCan("cadastros", "criar");
   const name = d.name?.trim();
-  if (!name) return;
+  if (!name) return null;
   const document = d.document?.trim() || null;
   if (document) {
     const existing = await prisma.customer.findFirst({ where: { document } });
-    if (existing) return;
+    if (existing) return { id: existing.id };
   }
-  await prisma.customer.create({
+  const created = await prisma.customer.create({
     data: {
       name,
       document,
@@ -64,6 +68,7 @@ export async function replicateAsCustomer(d: {
     },
   });
   revalidatePath("/clientes");
+  return { id: created.id };
 }
 
 export async function createSupplierAction(_prev: PersonFormState, formData: FormData): Promise<PersonFormState> {
@@ -130,7 +135,10 @@ export async function quickCreateSupplierAction(input: {
   email?: string;
   address?: string;
   alsoCustomer?: boolean;
-}): Promise<{ ok: true; id: string; name: string; existed: boolean } | { ok: false; error: string }> {
+}): Promise<
+  | { ok: true; id: string; name: string; existed: boolean; customerId?: string }
+  | { ok: false; error: string }
+> {
   try {
     await assertCan("cadastros", "criar");
   } catch (e) {
@@ -163,8 +171,8 @@ export async function quickCreateSupplierAction(input: {
     return { id: supplier.id, name: supplier.name };
   }
 
-  if (input.alsoCustomer) await replicateAsCustomer(input);
-  return { ok: true, ...result };
+  const customerId = input.alsoCustomer ? (await replicateAsCustomer(input))?.id : undefined;
+  return { ok: true, ...result, customerId };
 }
 
 export async function deleteSupplierAction(id: string) {

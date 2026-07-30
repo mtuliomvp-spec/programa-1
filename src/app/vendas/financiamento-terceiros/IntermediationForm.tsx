@@ -4,6 +4,7 @@ import { useActionState, useMemo, useRef, useState, useTransition } from "react"
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import BankInput from "@/components/BankInput";
 import NewCustomerInline from "@/components/NewCustomerInline";
+import NewSupplierInline from "@/components/NewSupplierInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
@@ -85,6 +86,13 @@ export default function IntermediationForm({
   const [customerId, setCustomerId] = useState(initial?.customerId ?? "");
   const [newCustomer, setNewCustomer] = useState(false);
   const [customerPrefill, setCustomerPrefill] = useState<{
+    name?: string;
+    document?: string;
+    phone?: string;
+    address?: string;
+  }>({});
+  const [newSupplier, setNewSupplier] = useState(false);
+  const [supplierPrefill, setSupplierPrefill] = useState<{
     name?: string;
     document?: string;
     phone?: string;
@@ -273,6 +281,43 @@ export default function IntermediationForm({
           <Field label="Endereço">
             <Input name="ownerAddress" defaultValue={initial?.ownerAddress ?? ""} placeholder="Rua, número, bairro, cidade/UF" />
           </Field>
+        </div>
+        <div>
+          <button
+            type="button"
+            onClick={() => {
+              setSupplierPrefill({
+                name: readField("ownerName"),
+                document: readField("ownerDocument"),
+                phone: readField("ownerPhone"),
+                address: readField("ownerAddress"),
+              });
+              setNewSupplier((v) => !v);
+            }}
+            className="text-sm font-medium text-blue-600 hover:underline"
+          >
+            {newSupplier ? "Fechar cadastro" : "➕ Cadastrar fornecedor"}
+          </button>
+          <p className="mt-1 text-xs text-slate-500">
+            Registra o proprietário como <strong>fornecedor</strong> (já vem preenchido com os dados
+            acima). Marque &quot;também como cliente&quot; para, no refinanciamento, já selecioná-lo no
+            campo Cliente.
+          </p>
+          {newSupplier ? (
+            <NewSupplierInline
+              initial={supplierPrefill}
+              onCreated={(name, _id, customerId) => {
+                setField("ownerName", name);
+                if (refinancing && customerId) {
+                  setCustomerList((prev) =>
+                    prev.some((x) => x.id === customerId) ? prev : [...prev, { id: customerId, name }],
+                  );
+                  setCustomerId(customerId);
+                }
+                setNewSupplier(false);
+              }}
+            />
+          ) : null}
         </div>
       </fieldset>
 
