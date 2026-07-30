@@ -78,6 +78,13 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", adminOnly: true },
     ],
   },
+  {
+    // Autoatendimento: cada usuário vê as próprias comissões (sem module → visível
+    // a todos). Fica por último para não mudar o destino pós-login de quem tem
+    // telas operacionais.
+    title: "Pessoal",
+    items: [{ href: "/minhas-comissoes", label: "Minhas comissões", icon: "💰" }],
+  },
 ];
 
 export function isNavActive(href: string, pathname: string) {
