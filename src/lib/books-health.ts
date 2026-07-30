@@ -35,6 +35,8 @@ export type UnattributedItem = { tipo: "entrada" | "saida"; descricao: string; v
 export type BooksHealth = {
   check1: {
     ok: boolean;
+    // Saldos convergentes SEM o Banco Neutro (o que realmente trava lançamentos).
+    saldosOk: boolean;
     contasTotal: number;
     caixaGeral: number;
     extrato: number;
@@ -49,6 +51,8 @@ export type BooksHealth = {
     diff: number;
   };
   allOk: boolean;
+  // Trava real de novos lançamentos: saldos + Lucro/Prejuízo (Banco Neutro ≠ 0 não bloqueia).
+  blockingOk: boolean;
 };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -87,10 +91,13 @@ export async function getBooksHealth(): Promise<BooksHealth> {
     ...recSemConta.map((r) => ({ tipo: "entrada" as const, descricao: r.description, valor: r.amount })),
     ...paySemConta.map((p) => ({ tipo: "saida" as const, descricao: p.description, valor: p.amount })),
   ];
-  const check1Ok =
-    Math.abs(baixasSemConta) <= TOLERANCE &&
-    Math.abs(caixaGeral - contasTotal) <= TOLERANCE &&
-    Math.abs(bancoNeutro) <= TOLERANCE;
+  // Saldos "de verdade" convergentes (sem o Banco Neutro). É o que realmente
+  // trava novos lançamentos. O Banco Neutro é conta de compensação: pode ficar
+  // transitoriamente ≠ 0 enquanto o usuário lança o par débito+crédito, então
+  // NÃO deve bloquear (mas segue vermelho no farol até voltar a zero).
+  const saldosOk =
+    Math.abs(baixasSemConta) <= TOLERANCE && Math.abs(caixaGeral - contasTotal) <= TOLERANCE;
+  const check1Ok = saldosOk && Math.abs(bancoNeutro) <= TOLERANCE;
 
   // ----- Check 2 -----
   // Guarda secundária: a DRE tem de somar internamente ao seu próprio total.
@@ -104,9 +111,11 @@ export async function getBooksHealth(): Promise<BooksHealth> {
   const check2Ok = drInternoOk && Math.abs(check2Diff) <= TOLERANCE;
 
   return {
-    check1: { ok: check1Ok, contasTotal, caixaGeral, extrato, baixasSemConta, bancoNeutro, itens },
+    check1: { ok: check1Ok, saldosOk, contasTotal, caixaGeral, extrato, baixasSemConta, bancoNeutro, itens },
     check2: { ok: check2Ok, equacao, lucroPrejuizo, diff: check2Diff },
     allOk: check1Ok && check2Ok,
+    // O que realmente bloqueia novos lançamentos (o Banco Neutro ≠ 0 não trava).
+    blockingOk: saldosOk && check2Ok,
   };
 }
 
@@ -124,9 +133,11 @@ export async function assertBooksBalanced(): Promise<void> {
     // Falha ao calcular o farol NÃO deve travar o sistema (fail-open).
     return;
   }
-  if (health.allOk) return;
+  // O Banco Neutro ≠ 0 NÃO trava (é compensação; pode ficar transitório entre as
+  // pernas do par débito+crédito). Só travam saldos reais e Lucro/Prejuízo.
+  if (health.blockingOk) return;
   const partes: string[] = [];
-  if (!health.check1.ok) partes.push("saldos das contas × caixa × extrato");
+  if (!health.check1.saldosOk) partes.push("saldos das contas × caixa × extrato");
   if (!health.check2.ok) partes.push("Lucro/Prejuízo");
   throw new Error(
     `Lançamento bloqueado: o financeiro está divergente (${partes.join(" e ")}). ` +
