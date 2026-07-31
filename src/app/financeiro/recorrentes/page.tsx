@@ -47,7 +47,7 @@ export default async function RecorrentesPage({
       matchesSearch(
         q,
         e.description,
-        categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"],
+        e.categoryLabel || categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"],
         e.supplier?.name,
         e.customer?.name,
         e.kind === "PAGAR" ? "A pagar" : "A receber",
@@ -138,7 +138,7 @@ export default async function RecorrentesPage({
                       ? e.kind === "PAGAR"
                         ? "Retirada"
                         : "Aporte"
-                      : categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"]}
+                      : e.categoryLabel || categoryLabel[e.categoryPagar ?? e.categoryReceber ?? "OUTROS"]}
                   </Td>
                   <Td>{e.capitalBeneficiary?.name || e.supplier?.name || e.customer?.name || "-"}</Td>
                   <Td className="text-right tabular-nums">

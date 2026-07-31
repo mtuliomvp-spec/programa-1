@@ -1,15 +1,14 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { requireAction } from "@/lib/guards";
+import { listCategoryNames } from "@/lib/categories";
 import ManualPayableForm from "./ManualPayableForm";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
-
 export default async function NovaContaPagarPage() {
   await requireAction("financeiro", "criar");
-  const [suppliers, costCenters, stockVehicles, beneficiaries, customCategories] = await Promise.all([
+  const [suppliers, costCenters, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.costCenter.findMany({
       where: { active: true, structural: false },
@@ -26,12 +25,9 @@ export default async function NovaContaPagarPage() {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
-    prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+    listCategoryNames("DESPESA"),
   ]);
 
-  const categories = Array.from(
-    new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
-  );
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
     label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,

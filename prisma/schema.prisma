@@ -804,6 +804,8 @@ model Receivable {
   // Nº do documento de origem (nota fiscal, recibo) informado no lançamento.
   documentNumber    String?
   category          CategoriaReceber
+  // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
+  categoryLabel     String?
   amount            Float
   dueDate           DateTime
   receivedDate      DateTime?
@@ -853,13 +855,26 @@ model CashboxSession {
   @@map("cashbox_sessions")
 }
 
-// Categoria personalizada de lançamento, cadastrada pelo usuário para
-// reaproveitar nas telas de lançamento (ex.: "Revisão", "Documentação").
-model LaunchCategory {
-  id        String   @id @default(cuid())
-  name      String   @unique
-  createdAt DateTime @default(now())
+// Tipo da categoria de lançamento: despesa (Contas a pagar/saída no caixa) ou
+// receita (Contas a receber/recorrência a receber).
+enum CategoriaKind {
+  DESPESA
+  RECEITA
+}
 
+// Categoria de lançamento gerenciável (Financeiro › Categorias). Serve de
+// sugestão + rótulo (categoryLabel) nas telas. O enum de lógica é derivado de
+// `code` (ex.: "COMISSAO", "VENDA_VEICULO"); `code` null = custom → OUTROS.
+// `system` = categoria padrão protegida (não pode ser excluída).
+model LaunchCategory {
+  id        String        @id @default(cuid())
+  name      String
+  kind      CategoriaKind @default(DESPESA)
+  system    Boolean       @default(false)
+  code      String?
+  createdAt DateTime      @default(now())
+
+  @@unique([name, kind])
   @@map("launch_categories")
 }
 
@@ -1037,6 +1052,8 @@ model RecurringEntry {
   capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
   categoryPagar   CategoriaPagar?
   categoryReceber CategoriaReceber?
+  // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
+  categoryLabel   String?
   supplierId      String?
   supplier        Supplier?         @relation(fields: [supplierId], references: [id])
   customerId      String?

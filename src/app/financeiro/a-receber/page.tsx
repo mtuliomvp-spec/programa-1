@@ -42,7 +42,7 @@ export default async function ContasAReceberPage({
       matchesSearch(
         q,
         r.description,
-        categoryLabel[r.category],
+        r.categoryLabel || categoryLabel[r.category],
         r.customer?.name,
         formatDate(r.dueDate),
         r.amount,
@@ -113,7 +113,7 @@ export default async function ContasAReceberPage({
               {filtered.map((r) => (
                 <Tr key={r.id}>
                   <Td className="font-medium text-slate-900">{r.description}</Td>
-                  <Td>{categoryLabel[r.category]}</Td>
+                  <Td>{r.categoryLabel || categoryLabel[r.category]}</Td>
                   <Td>{r.customer?.name || "-"}</Td>
                   <Td>{formatDate(r.dueDate)}</Td>
                   <Td>{formatCurrency(r.amount)}</Td>

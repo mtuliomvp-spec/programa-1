@@ -13,6 +13,7 @@ import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { capitalBalanceOf } from "@/lib/investments";
+import { resolveDespesaCategory } from "@/lib/categories";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -318,17 +319,6 @@ const manualSchema = z.object({
   alreadyPaid: z.coerce.boolean().optional(),
 });
 
-const KNOWN_CATEGORIES: Record<string, "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "OUTROS"> = {
-  outros: "OUTROS",
-  "despesa operacional": "DESPESA_OPERACIONAL",
-  comissão: "COMISSAO",
-  comissao: "COMISSAO",
-  salário: "SALARIO",
-  salario: "SALARIO",
-  combustível: "COMBUSTIVEL",
-  combustivel: "COMBUSTIVEL",
-};
-
 export type ManualPayableState = { error?: string };
 
 export async function createManualPayableAction(
@@ -363,10 +353,8 @@ export async function createManualPayableAction(
   if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
   if (!supplierName) return { error: "Informe o fornecedor." };
 
-  // Categoria nova é cadastrada para reaproveitar.
-  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
-    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
-  }
+  // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
+  const cat = await resolveDespesaCategory(label);
 
   // Parcelamento: N títulos mensais a partir do 1º vencimento. "Já foi pago"
   // só vale à vista (parcelas futuras nascem pendentes).
@@ -383,8 +371,8 @@ export async function createManualPayableAction(
   for (let i = 0; i < amounts.length; i++) {
     await createManualPayable({
       description: count > 1 ? `${d.description} - Parcela ${i + 1}/${count}` : d.description,
-      category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-      categoryLabel: label,
+      category: cat.category,
+      categoryLabel: cat.label,
       documentNumber: d.documentNumber?.trim() || null,
       amount: amounts[i],
       dueDate:
@@ -488,15 +476,13 @@ export async function updatePayableAction(
   const capitalBeneficiaryId = flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
   if (flow === "CAPITAL" && !capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
 
-  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
-    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
-  }
+  const cat = await resolveDespesaCategory(label);
 
   await updateManualPayable({
     id: d.id,
     description: d.description,
-    category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-    categoryLabel: label,
+    category: cat.category,
+    categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
     amount: d.amount,
     dueDate: parseDateInput(d.dueDate),
