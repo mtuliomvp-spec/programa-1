@@ -115,18 +115,29 @@ export default function IntermediationContractDocument(d: IntermediationContract
         </h1>
 
         <section className="mb-5 space-y-2 text-sm leading-relaxed text-slate-800">
-          <p>
-            <strong>VENDEDOR(A) (proprietário do documento):</strong> {seller.name}
-            {seller.document ? `, portador(a) do CPF/CNPJ nº ${seller.document}` : ""}
-            {seller.phone ? `, telefone ${seller.phone}` : ""}
-            {seller.address ? `, residente em ${seller.address}` : ""}.
-          </p>
-          <p>
-            <strong>COMPRADOR(A) (cliente financiado):</strong> {buyer.name}
-            {buyer.document ? `, portador(a) do CPF/CNPJ nº ${buyer.document}` : ""}
-            {buyer.phone ? `, telefone ${buyer.phone}` : ""}
-            {buyer.address ? `, residente em ${buyer.address}` : ""}.
-          </p>
+          {d.refinancing ? (
+            <p>
+              <strong>FINANCIADO(A) (proprietário do veículo):</strong> {seller.name}
+              {seller.document ? `, portador(a) do CPF/CNPJ nº ${seller.document}` : ""}
+              {seller.phone ? `, telefone ${seller.phone}` : ""}
+              {seller.address ? `, residente em ${seller.address}` : ""}.
+            </p>
+          ) : (
+            <>
+              <p>
+                <strong>VENDEDOR(A) (proprietário do documento):</strong> {seller.name}
+                {seller.document ? `, portador(a) do CPF/CNPJ nº ${seller.document}` : ""}
+                {seller.phone ? `, telefone ${seller.phone}` : ""}
+                {seller.address ? `, residente em ${seller.address}` : ""}.
+              </p>
+              <p>
+                <strong>COMPRADOR(A) (cliente financiado):</strong> {buyer.name}
+                {buyer.document ? `, portador(a) do CPF/CNPJ nº ${buyer.document}` : ""}
+                {buyer.phone ? `, telefone ${buyer.phone}` : ""}
+                {buyer.address ? `, residente em ${buyer.address}` : ""}.
+              </p>
+            </>
+          )}
           <p>
             <strong>INTERMEDIADORA:</strong> {company.razaoSocial}
             {company.cnpj ? `, inscrita no CNPJ sob o nº ${company.cnpj}` : ""}
@@ -136,11 +147,18 @@ export default function IntermediationContractDocument(d: IntermediationContract
         </section>
 
         <Clausula n={++n} titulo="Do objeto">
-          <p>
-            O presente contrato tem por objeto a <strong>intermediação</strong>, pela INTERMEDIADORA, do
-            financiamento do veículo abaixo, negociado diretamente entre o(a) VENDEDOR(A) e o(a)
-            COMPRADOR(A):
-          </p>
+          {d.refinancing ? (
+            <p>
+              O presente contrato tem por objeto a <strong>intermediação</strong>, pela INTERMEDIADORA, do
+              <strong> refinanciamento</strong> do veículo abaixo, de propriedade do(a) FINANCIADO(A):
+            </p>
+          ) : (
+            <p>
+              O presente contrato tem por objeto a <strong>intermediação</strong>, pela INTERMEDIADORA, do
+              financiamento do veículo abaixo, negociado diretamente entre o(a) VENDEDOR(A) e o(a)
+              COMPRADOR(A):
+            </p>
+          )}
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 sm:grid-cols-3">
             <p><span className="text-slate-500">Marca/Modelo:</span> <strong>{vehicle.brand} {vehicle.model}</strong></p>
             <p><span className="text-slate-500">Versão:</span> {vehicle.version || "—"}</p>
@@ -155,13 +173,23 @@ export default function IntermediationContractDocument(d: IntermediationContract
         </Clausula>
 
         <Clausula n={++n} titulo="Do papel da intermediadora">
-          <p>
-            A INTERMEDIADORA atua <strong>exclusivamente</strong> na viabilização do financiamento do
-            veículo junto à instituição financeira
-            {d.financerName ? <> <strong>{d.financerName}</strong></> : null}, <strong>não sendo
-            proprietária, vendedora nem compradora</strong> do bem. A negociação de compra e venda do
-            veículo ocorre direta e exclusivamente entre o(a) VENDEDOR(A) e o(a) COMPRADOR(A).
-          </p>
+          {d.refinancing ? (
+            <p>
+              A INTERMEDIADORA atua <strong>exclusivamente</strong> na viabilização do
+              <strong> refinanciamento</strong> do veículo junto à instituição financeira
+              {d.financerName ? <> <strong>{d.financerName}</strong></> : null}, <strong>não sendo
+              proprietária nem credora</strong> do bem. A contratação do financiamento ocorre direta e
+              exclusivamente entre o(a) FINANCIADO(A) e a instituição financeira.
+            </p>
+          ) : (
+            <p>
+              A INTERMEDIADORA atua <strong>exclusivamente</strong> na viabilização do financiamento do
+              veículo junto à instituição financeira
+              {d.financerName ? <> <strong>{d.financerName}</strong></> : null}, <strong>não sendo
+              proprietária, vendedora nem compradora</strong> do bem. A negociação de compra e venda do
+              veículo ocorre direta e exclusivamente entre o(a) VENDEDOR(A) e o(a) COMPRADOR(A).
+            </p>
+          )}
         </Clausula>
 
         <Clausula n={++n} titulo="Da isenção de responsabilidade">
@@ -169,19 +197,32 @@ export default function IntermediationContractDocument(d: IntermediationContract
             A INTERMEDIADORA <strong>não assume qualquer responsabilidade civil ou criminal</strong>
             decorrente do veículo, de sua procedência, estado de conservação, vícios aparentes ou
             ocultos, débitos, multas, gravames ou de qualquer obrigação relativa à propriedade,
-            respondendo por tais fatos exclusivamente as partes VENDEDOR(A) e COMPRADOR(A).
+            respondendo por tais fatos exclusivamente{" "}
+            {d.refinancing ? "o(a) FINANCIADO(A)" : "as partes VENDEDOR(A) e COMPRADOR(A)"}.
           </p>
         </Clausula>
 
-        <Clausula n={++n} titulo="Da transferência no DETRAN">
-          <p>
-            A INTERMEDIADORA <strong>não se obriga e não tem a responsabilidade de transferir o
-            veículo</strong> junto ao órgão de trânsito (DETRAN), por ter atuado apenas como
-            intermediadora do financiamento. A transferência da propriedade e a regularização dos
-            débitos são de responsabilidade exclusiva do(a) COMPRADOR(A) e do(a) VENDEDOR(A), no prazo
-            legal.
-          </p>
-        </Clausula>
+        {d.refinancing ? (
+          <Clausula n={++n} titulo="Do gravame e da regularização">
+            <p>
+              Por se tratar de <strong>refinanciamento do próprio veículo</strong>, não há
+              transferência de propriedade entre partes. A regularização do gravame/alienação
+              fiduciária junto à instituição financeira e ao órgão de trânsito (DETRAN), bem como dos
+              débitos do veículo, é de responsabilidade <strong>exclusiva do(a) FINANCIADO(A)</strong>,
+              no prazo legal. A INTERMEDIADORA não se obriga a tais providências.
+            </p>
+          </Clausula>
+        ) : (
+          <Clausula n={++n} titulo="Da transferência no DETRAN">
+            <p>
+              A INTERMEDIADORA <strong>não se obriga e não tem a responsabilidade de transferir o
+              veículo</strong> junto ao órgão de trânsito (DETRAN), por ter atuado apenas como
+              intermediadora do financiamento. A transferência da propriedade e a regularização dos
+              débitos são de responsabilidade exclusiva do(a) COMPRADOR(A) e do(a) VENDEDOR(A), no prazo
+              legal.
+            </p>
+          </Clausula>
+        )}
 
         <Clausula n={++n} titulo="Dos valores">
           <table className="mt-1 w-full text-sm">
@@ -216,7 +257,7 @@ export default function IntermediationContractDocument(d: IntermediationContract
             </p>
           )}
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-3">
-            <p><span className="text-slate-500">Titular:</span> <strong>{buyer.name}</strong></p>
+            <p><span className="text-slate-500">Titular:</span> <strong>{d.refinancing ? seller.name : buyer.name}</strong></p>
             <p><span className="text-slate-500">CPF/CNPJ:</span> {buyer.document || "—"}</p>
             <p><span className="text-slate-500">Banco:</span> {buyerBank.name || "—"}</p>
             <p><span className="text-slate-500">Agência:</span> {buyerBank.agency || "—"}</p>
@@ -226,7 +267,8 @@ export default function IntermediationContractDocument(d: IntermediationContract
           </div>
           {!hasBank ? (
             <p className="mt-1 text-xs text-slate-400">
-              (Preencha os dados bancários do comprador na operação para constarem aqui.)
+              (Preencha os dados bancários do {d.refinancing ? "financiado" : "comprador"} na operação
+              para constarem aqui.)
             </p>
           ) : null}
           {d.installmentsInfo && d.installmentsInfo.count > 0 ? (
@@ -255,20 +297,33 @@ export default function IntermediationContractDocument(d: IntermediationContract
 
         <p className="mb-10 text-sm">{cidadeData}.</p>
 
-        <div className="grid grid-cols-3 gap-6 text-center text-sm">
-          <div>
-            <div className="border-t border-slate-400 pt-2">{seller.name}</div>
-            <p className="text-xs text-slate-500">VENDEDOR(A)</p>
+        {d.refinancing ? (
+          <div className="grid grid-cols-2 gap-6 text-center text-sm">
+            <div>
+              <div className="border-t border-slate-400 pt-2">{seller.name}</div>
+              <p className="text-xs text-slate-500">FINANCIADO(A)</p>
+            </div>
+            <div>
+              <div className="border-t border-slate-400 pt-2">{company.razaoSocial}</div>
+              <p className="text-xs text-slate-500">INTERMEDIADORA</p>
+            </div>
           </div>
-          <div>
-            <div className="border-t border-slate-400 pt-2">{buyer.name}</div>
-            <p className="text-xs text-slate-500">COMPRADOR(A)</p>
+        ) : (
+          <div className="grid grid-cols-3 gap-6 text-center text-sm">
+            <div>
+              <div className="border-t border-slate-400 pt-2">{seller.name}</div>
+              <p className="text-xs text-slate-500">VENDEDOR(A)</p>
+            </div>
+            <div>
+              <div className="border-t border-slate-400 pt-2">{buyer.name}</div>
+              <p className="text-xs text-slate-500">COMPRADOR(A)</p>
+            </div>
+            <div>
+              <div className="border-t border-slate-400 pt-2">{company.razaoSocial}</div>
+              <p className="text-xs text-slate-500">INTERMEDIADORA</p>
+            </div>
           </div>
-          <div>
-            <div className="border-t border-slate-400 pt-2">{company.razaoSocial}</div>
-            <p className="text-xs text-slate-500">INTERMEDIADORA</p>
-          </div>
-        </div>
+        )}
 
         <div className="mt-10 grid grid-cols-2 gap-10 text-center text-xs text-slate-500">
           <div className="border-t border-slate-400 pt-1">Testemunha 1 — Nome / CPF</div>
