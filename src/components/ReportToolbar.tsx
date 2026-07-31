@@ -50,10 +50,10 @@ export default function ReportToolbar({
 
       <Card className="mb-4 px-4 py-3 print:hidden">
         <form className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
+          <div className="min-w-[320px] flex-[2] basis-full sm:basis-auto">
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Buscar
-              <Input name="q" placeholder={placeholder} defaultValue={q} className="mt-0.5" />
+              <Input name="q" placeholder={placeholder} defaultValue={q} className="mt-0.5 h-11 text-base" />
             </label>
           </div>
 
@@ -61,11 +61,11 @@ export default function ReportToolbar({
             <div className="flex items-end gap-2">
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 De
-                <Input type="date" name="de" defaultValue={de} className="mt-0.5 w-40" />
+                <Input type="date" name="de" defaultValue={de} className="mt-0.5 h-11 w-44" />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Até
-                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 w-40" />
+                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 h-11 w-44" />
               </label>
             </div>
           ) : null}
@@ -79,7 +79,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={min}
                   placeholder="0,00"
-                  className="mt-0.5 w-28"
+                  className="mt-0.5 h-11 w-32"
                 />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -89,7 +89,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={max}
                   placeholder="—"
-                  className="mt-0.5 w-28"
+                  className="mt-0.5 h-11 w-32"
                 />
               </label>
             </div>

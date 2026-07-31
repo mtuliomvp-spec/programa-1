@@ -28,9 +28,9 @@ const categoryLabel = {
 export default async function ContasAPagarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string }>;
 }) {
-  const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
+  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo } = await searchParams;
   const q = (qParam || "").trim();
   const [canPagar, canManage] = await Promise.all([
     userCan("financeiro", "pagar"),
@@ -47,6 +47,8 @@ export default async function ContasAPagarPage({
         vehicle: true,
         part: true,
         account: { select: { name: true } },
+        beneficiaryUser: { select: { id: true, name: true } },
+        capitalBeneficiary: { select: { id: true, name: true } },
         _count: { select: { attachments: true } },
         purchaseRequest: { select: { _count: { select: { attachments: true } } } },
       },
@@ -65,7 +67,42 @@ export default async function ContasAPagarPage({
     cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
-  const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((p) => p.effective === statusFilter) : withStatus;
+
+  // Opções distintas presentes nos títulos, para os filtros separados.
+  const supplierOptions = Array.from(
+    new Map(payables.filter((p) => p.supplier).map((p) => [p.supplier!.id, p.supplier!.name])).entries(),
+  )
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const vehicleOptions = Array.from(
+    new Map(
+      payables.filter((p) => p.vehicle).map((p) => [p.vehicle!.id, `${p.vehicle!.brand} ${p.vehicle!.model} · ${p.vehicle!.plate}`]),
+    ).entries(),
+  )
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  // Beneficiários = vendedores (usuário, valor "u:<id>") + sócios do capital
+  // (valor "c:<id>", com sufixo), unidos numa lista só.
+  const beneficiaryMap = new Map<string, string>();
+  for (const p of payables) {
+    if (p.beneficiaryUser) beneficiaryMap.set(`u:${p.beneficiaryUser.id}`, p.beneficiaryUser.name);
+    if (p.capitalBeneficiary) beneficiaryMap.set(`c:${p.capitalBeneficiary.id}`, `${p.capitalBeneficiary.name} (sócio)`);
+  }
+  const beneficiaryOptions = Array.from(beneficiaryMap.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+  const filtered = withStatus.filter((p) => {
+    if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) return false;
+    if (fornecedor && p.supplierId !== fornecedor) return false;
+    if (veiculo && p.vehicleId !== veiculo) return false;
+    if (beneficiario) {
+      const [kind, bid] = [beneficiario.slice(0, 2), beneficiario.slice(2)];
+      if (kind === "u:" && p.beneficiaryUserId !== bid) return false;
+      if (kind === "c:" && p.capitalBeneficiaryId !== bid) return false;
+    }
+    return true;
+  });
 
   // Comissões de vendedores vinculados a um beneficiário do capital: permitem
   // pagar um valor maior (o excedente vira retirada de capital). Mapeia o
@@ -100,6 +137,7 @@ export default async function ContasAPagarPage({
     categoryLabel: p.categoryLabel || categoryLabel[p.category],
     documentNumber: p.documentNumber ?? null,
     supplierName: p.supplier?.name ?? null,
+    beneficiaryName: p.beneficiaryUser?.name ?? p.capitalBeneficiary?.name ?? null,
     vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : null,
     dueDate: p.dueDate.toISOString(),
     amount: p.amount,
@@ -129,6 +167,7 @@ export default async function ContasAPagarPage({
         r.documentNumber,
         r.categoryLabel,
         r.supplierName,
+        r.beneficiaryName,
         r.vehicleLabel,
         formatDate(r.dueDate),
         r.amount,
@@ -168,7 +207,7 @@ export default async function ContasAPagarPage({
         basePath="/financeiro/a-pagar"
         printTitle="Contas a pagar"
         q={q}
-        placeholder="Buscar (descrição, fornecedor, veículo, valor...)"
+        placeholder="Buscar (descrição, fornecedor, beneficiário, veículo, valor...)"
         date
         value
         de={de}
@@ -176,15 +215,50 @@ export default async function ContasAPagarPage({
         min={min}
         max={max}
         extra={
-          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
-            Status
-            <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 w-48">
-              <option value="TODOS">Todos os status</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="ATRASADO">Atrasado</option>
-              <option value="PAGO">Pago</option>
-            </Select>
-          </label>
+          <>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Status
+              <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 h-11 w-44">
+                <option value="TODOS">Todos os status</option>
+                <option value="PENDENTE">Pendente</option>
+                <option value="ATRASADO">Atrasado</option>
+                <option value="PAGO">Pago</option>
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Fornecedor
+              <Select name="fornecedor" defaultValue={fornecedor || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os fornecedores</option>
+                {supplierOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Beneficiário
+              <Select name="beneficiario" defaultValue={beneficiario || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os beneficiários</option>
+                {beneficiaryOptions.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Veículo
+              <Select name="veiculo" defaultValue={veiculo || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os veículos</option>
+                {vehicleOptions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </>
         }
       />
 
