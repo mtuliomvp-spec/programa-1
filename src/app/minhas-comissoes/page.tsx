@@ -14,23 +14,62 @@ export default async function MinhasComissoesPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const payables = await prisma.payable.findMany({
-    where: { category: "COMISSAO", beneficiaryUserId: user.id },
-    orderBy: { dueDate: "desc" },
-    include: { account: { select: { name: true } } },
-  });
+  const [payables, beneficiary] = await Promise.all([
+    prisma.payable.findMany({
+      where: { category: "COMISSAO", beneficiaryUserId: user.id },
+      orderBy: { dueDate: "desc" },
+      include: { account: { select: { name: true } } },
+    }),
+    // Quando o usuário também é beneficiário do capital (sócio com login), traz
+    // as movimentações para calcular o saldo investido dele.
+    prisma.capitalBeneficiary.findUnique({
+      where: { userId: user.id },
+      include: { transactions: { select: { kind: true, amount: true } } },
+    }),
+  ]);
   const rows = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
 
   const totalReceber = rows.filter((r) => r.effective !== "PAGO").reduce((s, r) => s + r.amount, 0);
   const totalRecebido = rows.filter((r) => r.effective === "PAGO").reduce((s, r) => s + r.amount, 0);
 
+  // Saldo de capital do beneficiário = aportes − retiradas (mesma conta da tela
+  // de Capital). Só existe quando o usuário está vinculado a um beneficiário.
+  const capitalSaldo = beneficiary
+    ? beneficiary.transactions.reduce(
+        (s, t) => s + (t.kind === "APORTE" ? t.amount : t.kind === "RETIRADA" ? -t.amount : 0),
+        0,
+      )
+    : null;
+  // Saldo total = saldo de capital + comissões ainda a receber.
+  const saldoTotal = capitalSaldo != null ? capitalSaldo + totalReceber : null;
+
   return (
     <div>
       <PageHeader title="Minhas comissões" description={`Comissões de ${user.name}`} />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div
+        className={`mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 ${
+          capitalSaldo != null ? "lg:grid-cols-4" : ""
+        }`}
+      >
         <StatCard label="A receber" value={formatCurrency(totalReceber)} tone={totalReceber > 0 ? "warning" : "default"} />
         <StatCard label="Já recebido" value={formatCurrency(totalRecebido)} tone="positive" />
+        {capitalSaldo != null ? (
+          <StatCard
+            label="Saldo de capital"
+            value={formatCurrency(capitalSaldo)}
+            tone={capitalSaldo >= 0 ? "positive" : "negative"}
+            hint="aportes menos retiradas"
+          />
+        ) : null}
+        {saldoTotal != null ? (
+          <StatCard
+            label="Saldo total"
+            value={formatCurrency(saldoTotal)}
+            tone={saldoTotal >= 0 ? "positive" : "negative"}
+            hint="capital + comissões a receber"
+          />
+        ) : null}
       </div>
 
       <Card>
