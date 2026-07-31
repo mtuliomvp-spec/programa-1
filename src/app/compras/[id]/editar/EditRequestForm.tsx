@@ -1,11 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import { updateRequestAction, type ComprasFormState } from "../../actions";
 
 type Option = { id: string; name: string };
@@ -41,9 +42,40 @@ export default function EditRequestForm({
   const [state, formAction, pending] = useActionState(updateRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState(request.structuralKey || "ADMINISTRATIVO");
   const [parcelado, setParcelado] = useState(request.installmentsCount > 1);
+  const formRef = useRef<HTMLFormElement>(null);
+  const [preparing, setPreparing] = useState(false);
+  const submittingRef = useRef(false);
+
+  // Libera a trava quando o envio termina (pending volta a false).
+  useEffect(() => {
+    if (!pending) submittingRef.current = false;
+  }, [pending]);
+
+  // Redimensiona a imagem do anexo no navegador antes de enviar (fotos grandes).
+  // PDFs/documentos passam sem alteração. Trava síncrona evita envio duplicado.
+  async function handleSend() {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setPreparing(true);
+    try {
+      const form = formRef.current;
+      if (!form) {
+        submittingRef.current = false;
+        return;
+      }
+      const fd = new FormData(form);
+      const file = fd.get("file");
+      if (file instanceof File && file.size > 0) {
+        fd.set("file", await resizeImageToJpeg(file));
+      }
+      formAction(fd);
+    } finally {
+      setPreparing(false);
+    }
+  }
 
   return (
-    <form action={formAction} className="space-y-3">
+    <form ref={formRef} className="space-y-3">
       <input type="hidden" name="id" value={request.id} />
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
 
@@ -150,8 +182,17 @@ export default function EditRequestForm({
         defaultValue={request.supplierId || ""}
       />
 
-      <Button type="submit" disabled={pending} className="w-full">
-        {pending ? "Salvando..." : "Salvar alterações"}
+      <Field label="Anexo (opcional — foto, PDF…)">
+        <input
+          type="file"
+          name="file"
+          accept="image/*,.pdf,.doc,.docx"
+          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+        />
+      </Field>
+
+      <Button type="button" onClick={handleSend} disabled={pending || preparing} className="w-full">
+        {preparing ? "Preparando…" : pending ? "Salvando..." : "Salvar alterações"}
       </Button>
     </form>
   );
