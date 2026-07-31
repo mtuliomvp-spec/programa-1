@@ -83,6 +83,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   }
 
   const subtitle = (r: Row) => [r.supplierName || r.beneficiaryName, r.vehicleLabel].filter(Boolean).join(" · ") || "—";
+  const selectedTotal = available.filter((r) => selected.has(r.id)).reduce((s, r) => s + r.amount, 0);
 
   return (
     <div>
@@ -146,10 +147,15 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
           ))}
         </ul>
       )}
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         <Button className="h-9" disabled={pending || selected.size === 0} onClick={add}>
           Adicionar {selected.size > 0 ? `(${selected.size})` : ""}
         </Button>
+        {selected.size > 0 ? (
+          <span className="text-sm text-slate-600">
+            Selecionados: <strong className="tabular-nums text-slate-900">{formatCurrency(selectedTotal)}</strong>
+          </span>
+        ) : null}
         {selected.size > 0 ? (
           <button type="button" onClick={() => setSelected(new Set())} className="text-xs text-slate-400 hover:underline">
             Limpar seleção
