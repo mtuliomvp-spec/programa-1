@@ -18,7 +18,7 @@ export default async function EditarSolicitacaoPage({
 
   const request = await prisma.purchaseRequest.findUnique({
     where: { id },
-    include: { payables: { select: { status: true } } },
+    include: { payables: { select: { status: true } }, supplier: { select: { name: true } } },
   });
   if (!request) notFound();
   // Edita pendente ou aprovada. Depois de paga (alguma parcela), bloqueia.
@@ -71,7 +71,7 @@ export default async function EditarSolicitacaoPage({
               structuralKey: request.structuralKey,
               vehicleId: request.vehicleId,
               capitalBeneficiaryId: request.capitalBeneficiaryId,
-              supplierId: request.supplierId,
+              supplierName: request.supplier?.name ?? "",
             }}
             suppliers={suppliers}
             vehicles={vehicles}

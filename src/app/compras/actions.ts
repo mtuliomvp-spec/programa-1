@@ -13,6 +13,7 @@ import {
   splitInstallments,
   addMonths,
   addDays,
+  resolveSupplierByName,
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -42,7 +43,7 @@ const createSchema = z.object({
   installmentsCount: z.coerce.number().int().min(0).default(0),
   installmentPeriod: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   installmentDays: z.coerce.number().int().min(1).default(30),
-  supplierId: z.string().optional(),
+  supplierName: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
@@ -85,6 +86,9 @@ export async function createRequestAction(
 
   // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
   const cat = await resolveDespesaCategory(parsed.data.categoryLabel || "Outros");
+  // Fornecedor por nome (campo com digitação livre): reaproveita ou cadastra.
+  const supplierNameCreate = (parsed.data.supplierName || "").trim();
+  const supplierIdCreate = supplierNameCreate ? await resolveSupplierByName(supplierNameCreate) : null;
 
   // Numeração por ano: 0001/2026, reiniciando a cada ano.
   const year = new Date().getFullYear();
@@ -104,7 +108,7 @@ export async function createRequestAction(
         installmentsCount,
         installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
         installmentDays: parsed.data.installmentDays,
-        supplierId: parsed.data.supplierId || null,
+        supplierId: supplierIdCreate,
         structuralKey: flow,
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
         vehicleId: flow === "VEICULOS" ? parsed.data.vehicleId || null : null,
@@ -239,6 +243,8 @@ export async function updateRequestAction(
 
   const flow = d.structuralKey || "ADMINISTRATIVO";
   const cat = await resolveDespesaCategory(d.categoryLabel || "Outros");
+  const supplierNameUpdate = (d.supplierName || "").trim();
+  const supplierIdUpdate = supplierNameUpdate ? await resolveSupplierByName(supplierNameUpdate) : null;
   const updated = await prisma.purchaseRequest.update({
     where: { id: d.id },
     data: {
@@ -252,7 +258,7 @@ export async function updateRequestAction(
       installmentsCount,
       installmentPeriod: parcelado ? d.installmentPeriod : null,
       installmentDays: d.installmentDays,
-      supplierId: d.supplierId || null,
+      supplierId: supplierIdUpdate,
       structuralKey: flow,
       vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
