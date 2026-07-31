@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAction } from "@/lib/guards";
+import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
 
@@ -33,7 +34,7 @@ export default async function EditarPayablePage({
   // Título pago não é editável (reverter antes); os demais podem.
   if (payable.status === "PAGO") redirect("/financeiro/a-pagar");
 
-  const [suppliers, stockVehicles, beneficiaries] = await Promise.all([
+  const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -44,6 +45,7 @@ export default async function EditarPayablePage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    listCategoryNames("DESPESA"),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -89,6 +91,7 @@ export default async function EditarPayablePage({
             suppliers={suppliers}
             vehicles={vehicles}
             beneficiaries={beneficiaries}
+            categories={categories}
           />
         </div>
       </Card>

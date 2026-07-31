@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
+import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -30,11 +31,13 @@ export default function EditPayableForm({
   suppliers,
   vehicles,
   beneficiaries,
+  categories,
 }: {
   payable: Payable;
   suppliers: Supplier[];
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(updatePayableAction, {} as EditPayableState);
   const [flow, setFlow] = useState(payable.structuralKey || "ADMINISTRATIVO");
@@ -50,7 +53,7 @@ export default function EditPayableForm({
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <Field label="Categoria" required>
-          <Input name="categoryLabel" required defaultValue={payable.categoryLabel} placeholder="Ex: Compra de peças" />
+          <CategoryInput name="categoryLabel" options={categories} defaultValue={payable.categoryLabel} />
         </Field>
         <Field label="Nº da NF / documento">
           <Input name="documentNumber" defaultValue={payable.documentNumber || ""} placeholder="Ex: NF 12345" />

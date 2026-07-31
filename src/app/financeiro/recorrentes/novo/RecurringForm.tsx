@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import NewSupplierInline from "@/components/NewSupplierInline";
+import CategoryInput from "@/components/CategoryInput";
 import { createRecurringAction, type RecurringFormState } from "../actions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -13,10 +14,14 @@ export default function RecurringForm({
   suppliers,
   customers,
   beneficiaries,
+  despesaCategories,
+  receitaCategories,
 }: {
   suppliers: Option[];
   customers: Option[];
   beneficiaries: Option[];
+  despesaCategories: string[];
+  receitaCategories: string[];
 }) {
   const [state, formAction, pending] = useActionState(createRecurringAction, {} as RecurringFormState);
   const [kind, setKind] = useState<"PAGAR" | "RECEBER">("PAGAR");
@@ -138,13 +143,7 @@ export default function RecurringForm({
         {!isCapital && kind === "PAGAR" ? (
           <>
             <Field label="Categoria" required>
-              <Select name="categoryPagar" defaultValue="DESPESA_OPERACIONAL">
-                <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-                <option value="COMISSAO">Comissão</option>
-                <option value="SALARIO">Salário</option>
-                <option value="COMBUSTIVEL">Combustível</option>
-                <option value="OUTROS">Outros</option>
-              </Select>
+              <CategoryInput name="categoryLabel" options={despesaCategories} defaultValue="Despesa operacional" />
             </Field>
             {supplierField("Fornecedor")}
           </>
@@ -153,11 +152,7 @@ export default function RecurringForm({
         {!isCapital && kind === "RECEBER" ? (
           <>
             <Field label="Categoria" required>
-              <Select name="categoryReceber" defaultValue="OUTROS">
-                <option value="OUTROS">Outros</option>
-                <option value="VENDA_VEICULO">Venda de veículo</option>
-                <option value="VENDA_PECA">Venda de peças</option>
-              </Select>
+              <CategoryInput name="categoryLabel" options={receitaCategories} defaultValue="Outros" />
             </Field>
             <Field label="Cliente">
               <Select name="customerId" defaultValue="">

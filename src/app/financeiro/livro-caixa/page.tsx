@@ -7,6 +7,7 @@ import { getCashboxState } from "@/lib/cashbox";
 import { userCan } from "@/lib/guards";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
+import { listCategoryNames } from "@/lib/categories";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
@@ -55,7 +56,7 @@ export default async function LivroCaixaPage({
   const cashboxWorkDate = cashbox.open ? cashbox.session?.workDate ?? null : null;
   const canCriar = await userCan("financeiro", "criar");
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers, health] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, categoryOptions, beneficiaries, customers, health] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -99,7 +100,7 @@ export default async function LivroCaixaPage({
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
         select: { id: true, brand: true, model: true, plate: true, status: true },
       }),
-      prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+      listCategoryNames("DESPESA"),
       prisma.capitalBeneficiary.findMany({
         where: { active: true },
         orderBy: { name: "asc" },
@@ -124,10 +125,6 @@ export default async function LivroCaixaPage({
   // Oculta só por padrão; a busca ou o botão "Ver lançamentos" (ver=1) revela.
   const hideEntries = monthClosed && !filtering && !reveal;
 
-  const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
-  const categoryOptions = Array.from(
-    new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
-  );
   const vehicleOptions = stockVehicles.map((v) => ({
     id: v.id,
     label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,

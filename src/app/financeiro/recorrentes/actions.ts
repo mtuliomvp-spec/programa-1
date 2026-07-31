@@ -7,6 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
+import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
 
 const recurringSchema = z.object({
   kind: z.enum(["PAGAR", "RECEBER"]),
@@ -16,10 +17,7 @@ const recurringSchema = z.object({
   periodicidade: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
   intervalDays: z.coerce.number().int().min(1).max(365).optional(),
-  categoryPagar: z
-    .enum(["COMPRA_VEICULO", "COMPRA_PECA", "DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"])
-    .optional(),
-  categoryReceber: z.enum(["VENDA_VEICULO", "VENDA_PECA", "OUTROS"]).optional(),
+  categoryLabel: z.string().optional(),
   supplierId: z.string().optional(),
   customerId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
@@ -53,6 +51,31 @@ export async function createRecurringAction(
     return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
   }
 
+  const label = (data.categoryLabel || "").trim();
+  if (!isCapital && !label) {
+    return { error: "Informe a categoria." };
+  }
+  // No fluxo Capital a categoria não é despesa/receita — usa OUTROS, sem rótulo.
+  // Fora dele, resolve o rótulo escolhido/digitado para enum + nome canônico.
+  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS" | null = null;
+  let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
+  let categoryLabel: string | null = null;
+  if (data.kind === "PAGAR") {
+    if (isCapital) categoryPagar = "OUTROS";
+    else {
+      const cat = await resolveDespesaCategory(label);
+      categoryPagar = cat.category;
+      categoryLabel = cat.label;
+    }
+  } else {
+    if (isCapital) categoryReceber = "OUTROS";
+    else {
+      const cat = await resolveReceitaCategory(label);
+      categoryReceber = cat.category;
+      categoryLabel = cat.label;
+    }
+  }
+
   try {
     await prisma.recurringEntry.create({
       data: {
@@ -62,9 +85,9 @@ export async function createRecurringAction(
         structuralKey: data.structuralKey,
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
-        // No fluxo Capital a categoria não é despesa/receita — usa OUTROS.
-        categoryPagar: data.kind === "PAGAR" ? (isCapital ? "OUTROS" : data.categoryPagar ?? "DESPESA_OPERACIONAL") : null,
-        categoryReceber: data.kind === "RECEBER" ? (isCapital ? "OUTROS" : data.categoryReceber ?? "OUTROS") : null,
+        categoryPagar,
+        categoryReceber,
+        categoryLabel,
         supplierId: data.kind === "PAGAR" ? data.supplierId || null : null,
         customerId: data.kind === "RECEBER" && !isCapital ? data.customerId || null : null,
         capitalBeneficiaryId: isCapital ? data.capitalBeneficiaryId || null : null,
