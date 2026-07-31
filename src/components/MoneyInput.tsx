@@ -23,11 +23,14 @@ export default function MoneyInput({
   defaultValue,
   required = false,
   placeholder = "0,00",
+  onValueChange,
 }: {
   name: string;
   defaultValue?: number | null;
   required?: boolean;
   placeholder?: string;
+  /** Notifica o valor numérico atual (para formulários com resumo ao vivo). */
+  onValueChange?: (value: number) => void;
 }) {
   const seed =
     defaultValue != null && Number.isFinite(defaultValue) && defaultValue > 0 ? defaultValue : null;
@@ -39,11 +42,13 @@ export default function MoneyInput({
     if (!digits) {
       setDisplay("");
       setRaw("");
+      onValueChange?.(0);
       return;
     }
     const value = parseInt(digits, 10) / 100;
     setDisplay(format(value));
     setRaw(value.toFixed(2));
+    onValueChange?.(value);
   }
 
   return (
