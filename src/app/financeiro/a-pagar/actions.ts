@@ -11,8 +11,11 @@ import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
+import { getNeutralAccountId } from "@/lib/accounts";
+import { capitalBalanceOf } from "@/lib/investments";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** Converte texto de valor ("1.234,50" ou "1234.5") em número (ou NaN). */
 function parseAmountInput(v: string): number {
@@ -20,16 +23,22 @@ function parseAmountInput(v: string): number {
 }
 
 /**
- * Baixa a comissão de um vendedor podendo pagar um valor MAIOR que a comissão:
- * o excedente vira uma RETIRADA de capital do beneficiário vinculado ao vendedor
- * (o Payable do excedente carrega capitalBeneficiaryId e, ao ser pago, gera a
- * retirada via syncPayableCapital). Sem checagem de capital livre — o aviso
- * (pode ficar negativo) é dado na tela.
+ * Baixa a comissão de um vendedor informando o VALOR PAGO A ELE (líquido em
+ * dinheiro). A diferença em relação à comissão é acertada no capital do
+ * beneficiário vinculado ao vendedor:
+ *
+ *  - pago > comissão → o EXCEDENTE vira uma RETIRADA de capital (Payable com
+ *    capitalBeneficiaryId → syncPayableCapital gera a retirada);
+ *  - pago < comissão → a DIFERENÇA (limitada ao saldo devedor) cobre o saldo
+ *    devedor do vendedor como um APORTE. O acerto passa pelo Banco Neutro (par
+ *    Payable/Receivable que se anula) e NÃO toca o caixa real — só o líquido é
+ *    pago na conta escolhida. Assim a equação patrimonial não diverge.
+ *  - pago = comissão → baixa simples.
  */
-export async function payCommissionWithExcessAction(
+export async function settleCommissionAction(
   payableId: string,
   accountId: string,
-  totalPagoInput: string,
+  payoutInput: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("financeiro", "pagar");
@@ -49,25 +58,42 @@ export async function payCommissionWithExcessAction(
 
   const payable = await prisma.payable.findUnique({
     where: { id: payableId },
-    select: { id: true, category: true, status: true, amount: true, beneficiaryUserId: true },
+    select: {
+      id: true,
+      category: true,
+      status: true,
+      amount: true,
+      beneficiaryUserId: true,
+      saleId: true,
+      costCenterId: true,
+      description: true,
+    },
   });
   if (!payable) return { ok: false, error: "Título não encontrado." };
   if (payable.status === "PAGO") return { ok: false, error: "Este título já está pago." };
   if (payable.category !== "COMISSAO" || !payable.beneficiaryUserId) {
-    return { ok: false, error: "Pagamento com excedente só vale para comissões de um vendedor." };
+    return { ok: false, error: "Esta baixa só vale para comissões de um vendedor." };
   }
 
-  const total = parseAmountInput(totalPagoInput);
-  if (!Number.isFinite(total) || total <= 0) return { ok: false, error: "Informe o valor total pago." };
+  const payout = parseAmountInput(payoutInput);
+  if (!Number.isFinite(payout) || payout < 0) return { ok: false, error: "Informe o valor pago ao vendedor." };
   const comissao = payable.amount;
-  const excedente = round2(total - comissao);
-  if (excedente < 0) {
-    return { ok: false, error: "O valor total não pode ser menor que a comissão." };
-  }
+  const diff = round2(comissao - payout); // > 0 abate no capital; < 0 excedente (retirada)
 
-  // Se há excedente, o vendedor precisa estar vinculado a um beneficiário.
+  const done = () => {
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/capital");
+    revalidatePath("/minhas-comissoes");
+    revalidatePath("/");
+    return { ok: true as const };
+  };
+
+  // Qualquer acerto de capital exige o vendedor vinculado a um beneficiário.
   let beneficiary: { id: string; name: string } | null = null;
-  if (excedente > 0.005) {
+  if (Math.abs(diff) > 0.005) {
     beneficiary = await prisma.capitalBeneficiary.findUnique({
       where: { userId: payable.beneficiaryUserId },
       select: { id: true, name: true },
@@ -75,16 +101,15 @@ export async function payCommissionWithExcessAction(
     if (!beneficiary) {
       return {
         ok: false,
-        error: "Este vendedor não está vinculado a um beneficiário do capital — não é possível debitar o excedente.",
+        error: "Este vendedor não está vinculado a um beneficiário do capital — não é possível acertar o capital.",
       };
     }
   }
 
-  // 1) paga a comissão pelo próprio valor.
-  await markPayablePaid(payableId, date, accountId);
-
-  // 2) excedente → conta a pagar (fluxo Capital) já paga → vira RETIRADA.
-  if (beneficiary) {
+  // Excedente: paga mais que a comissão → o excedente vira RETIRADA de capital.
+  if (diff < -0.005 && beneficiary) {
+    const excedente = round2(-diff);
+    await markPayablePaid(payableId, date, accountId);
     const capitalCenterId = await structuralCenterId("CAPITAL");
     const extra = await prisma.payable.create({
       data: {
@@ -99,15 +124,91 @@ export async function payCommissionWithExcessAction(
       },
     });
     await markPayablePaid(extra.id, date, accountId);
+    return done();
   }
 
-  revalidatePath("/financeiro/a-pagar");
-  revalidatePath("/financeiro/fluxo-caixa");
-  revalidatePath("/financeiro/livro-caixa");
-  revalidatePath("/financeiro/contas");
-  revalidatePath("/capital");
-  revalidatePath("/");
-  return { ok: true };
+  // Abatimento: paga menos que a comissão → a diferença cobre o saldo devedor
+  // do vendedor como APORTE (via Banco Neutro, sem tocar o caixa real).
+  if (diff > 0.005 && beneficiary) {
+    const abate = diff;
+    const capital = await capitalBalanceOf(beneficiary.id);
+    const debt = Math.max(0, round2(-capital));
+    if (debt <= 0.005) {
+      return {
+        ok: false,
+        error: `${beneficiary.name} não tem saldo devedor de capital a cobrir. Pague a comissão pelo valor cheio.`,
+      };
+    }
+    if (round2(abate - debt) > 0.005) {
+      return {
+        ok: false,
+        error: `Não é possível abater mais que o saldo devedor (${brl(debt)}). O mínimo a pagar ao vendedor é ${brl(round2(comissao - debt))}.`,
+      };
+    }
+    const [capitalCenterId, neutralAccountId] = await Promise.all([
+      structuralCenterId("CAPITAL"),
+      getNeutralAccountId(),
+    ]);
+    await prisma.$transaction(async (tx) => {
+      // 1) O próprio título da comissão vira o líquido pago ao vendedor (conta real).
+      await tx.payable.update({
+        where: { id: payableId },
+        data: {
+          amount: payout,
+          status: "PAGO",
+          paymentDate: date,
+          accountId,
+          description: `${payable.description} (líquido ao vendedor)`,
+        },
+      });
+      // 2) Parte abatida: comissão PAGA no Banco Neutro (não passa pelo caixa real).
+      await tx.payable.create({
+        data: {
+          costCenterId: payable.costCenterId,
+          description: `${payable.description} (abatido no saldo de capital)`,
+          category: "COMISSAO",
+          amount: abate,
+          dueDate: date,
+          paymentDate: date,
+          status: "PAGO",
+          accountId: neutralAccountId,
+          saleId: payable.saleId,
+          beneficiaryUserId: payable.beneficiaryUserId,
+        },
+      });
+      // 3) Aporte do vendedor cobrindo a dívida: Receivable RECEBIDO no Banco
+      //    Neutro (centro Capital) + CapitalTransaction APORTE. O par com o
+      //    payable acima zera o Banco Neutro; o aporte zera o saldo devedor.
+      const receivable = await tx.receivable.create({
+        data: {
+          costCenterId: capitalCenterId,
+          description: `Aporte p/ abater saldo de capital (comissão) - ${beneficiary!.name}`,
+          category: "OUTROS",
+          amount: abate,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId: neutralAccountId,
+          capitalBeneficiaryId: beneficiary!.id,
+        },
+      });
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId: beneficiary!.id,
+          kind: "APORTE",
+          amount: abate,
+          date,
+          description: "Abatimento do saldo devedor pela comissão",
+          receivableId: receivable.id,
+        },
+      });
+    });
+    return done();
+  }
+
+  // Valor igual à comissão: baixa simples.
+  await markPayablePaid(payableId, date, accountId);
+  return done();
 }
 
 export async function markPaidAction(id: string, accountId?: string) {
