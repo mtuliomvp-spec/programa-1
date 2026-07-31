@@ -3,7 +3,9 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import NewSupplierInline from "@/components/NewSupplierInline";
+import SupplierInput from "@/components/SupplierInput";
 import CategoryInput from "@/components/CategoryInput";
+import MoneyInput from "@/components/MoneyInput";
 import { createRecurringAction, type RecurringFormState } from "../actions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -28,21 +30,20 @@ export default function RecurringForm({
   const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">("MENSAL");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
-  // Fornecedor: lista + seleção controladas, para poder cadastrar um novo na hora.
-  const [supplierList, setSupplierList] = useState<Option[]>(suppliers);
-  const [supplierId, setSupplierId] = useState("");
+  // Fornecedor: campo com digitação livre e sugestões (mais fácil de achar numa
+  // lista grande). Envia o NOME; o servidor reaproveita/cadastra pelo nome.
+  const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
+  const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
 
   const supplierField = (label: string) => (
     <Field label={label}>
-      <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-        <option value="">Sem fornecedor</option>
-        {supplierList.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </Select>
+      <SupplierInput
+        name="supplierName"
+        suppliers={supplierNames}
+        value={supplierName}
+        onValueChange={setSupplierName}
+      />
       <button
         type="button"
         onClick={() => setNewSupplier((v) => !v)}
@@ -52,9 +53,9 @@ export default function RecurringForm({
       </button>
       {newSupplier ? (
         <NewSupplierInline
-          onCreated={(name, id) => {
-            setSupplierList((prev) => (prev.some((s) => s.id === id) ? prev : [...prev, { id, name }]));
-            setSupplierId(id);
+          onCreated={(name) => {
+            setSupplierNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+            setSupplierName(name);
             setNewSupplier(false);
           }}
         />
@@ -87,7 +88,7 @@ export default function RecurringForm({
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="Valor (R$)" required>
-          <Input type="number" step="0.01" min={0.01} name="amount" required />
+          <MoneyInput name="amount" required />
         </Field>
         <Field label="Fluxo (obra estrutural)" required>
           <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>

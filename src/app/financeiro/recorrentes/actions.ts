@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
+import { resolveSupplierByName } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
@@ -18,7 +19,7 @@ const recurringSchema = z.object({
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
   intervalDays: z.coerce.number().int().min(1).max(365).optional(),
   categoryLabel: z.string().optional(),
-  supplierId: z.string().optional(),
+  supplierName: z.string().optional(),
   customerId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   startDate: z.string().min(1),
@@ -76,6 +77,11 @@ export async function createRecurringAction(
     }
   }
 
+  // Fornecedor por nome (campo com digitação livre): reaproveita ou cadastra.
+  const supplierName = (data.supplierName || "").trim();
+  const supplierId =
+    data.kind === "PAGAR" && supplierName ? await resolveSupplierByName(supplierName) : null;
+
   try {
     await prisma.recurringEntry.create({
       data: {
@@ -88,7 +94,7 @@ export async function createRecurringAction(
         categoryPagar,
         categoryReceber,
         categoryLabel,
-        supplierId: data.kind === "PAGAR" ? data.supplierId || null : null,
+        supplierId,
         customerId: data.kind === "RECEBER" && !isCapital ? data.customerId || null : null,
         capitalBeneficiaryId: isCapital ? data.capitalBeneficiaryId || null : null,
         startDate: parseDateInput(data.startDate),
