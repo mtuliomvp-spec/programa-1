@@ -245,6 +245,8 @@ model PurchaseRequest {
   // Configuração de pagamento definida na criação (usada ao gerar o espelho em
   // Contas a pagar na aprovação): categoria e parcelamento.
   category           CategoriaPagar @default(OUTROS)
+  // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
+  categoryLabel      String?
   installmentsCount  Int            @default(1)
   installmentPeriod  String?        // MENSAL | DIAS
   installmentDays    Int            @default(30)
