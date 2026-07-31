@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/format";
-import { payCommissionWithExcessAction } from "./actions";
+import { settleCommissionAction } from "./actions";
 
 type Account = { id: string; name: string };
 
@@ -13,8 +13,9 @@ function parseAmount(v: string): number {
 }
 
 /**
- * Baixa de comissão podendo pagar um valor MAIOR que a comissão — o excedente
- * é debitado do capital do beneficiário vinculado ao vendedor.
+ * Baixa de comissão informando o VALOR PAGO ao vendedor. A diferença acerta o
+ * capital do beneficiário vinculado: pagar MAIS que a comissão vira retirada;
+ * pagar MENOS cobre o saldo devedor do vendedor como aporte (via Banco Neutro).
  */
 export default function CommissionPayButton({
   payableId,
@@ -22,6 +23,7 @@ export default function CommissionPayButton({
   accounts,
   beneficiaryName,
   free,
+  capital,
   cashboxDate = null,
 }: {
   payableId: string;
@@ -29,18 +31,29 @@ export default function CommissionPayButton({
   accounts: Account[];
   beneficiaryName: string;
   free: number;
+  capital: number;
   cashboxDate?: string | null;
 }) {
   const router = useRouter();
+  // Saldo devedor de capital do vendedor (quando negativo). O padrão do valor
+  // pago já desconta a dívida — cobri-la é o caso comum.
+  const debt = Math.max(0, Math.round(-capital * 100) / 100);
+  const defaultPayout = Math.round((commissionAmount - debt) * 100) / 100;
+
   const [open, setOpen] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
-  const [total, setTotal] = useState(commissionAmount.toFixed(2).replace(".", ","));
+  const [payout, setPayout] = useState(defaultPayout.toFixed(2).replace(".", ","));
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
 
-  const parsedTotal = parseAmount(total);
-  const excedente = Number.isFinite(parsedTotal) ? Math.round((parsedTotal - commissionAmount) * 100) / 100 : 0;
+  const parsedPayout = parseAmount(payout);
+  const diff = Number.isFinite(parsedPayout)
+    ? Math.round((commissionAmount - parsedPayout) * 100) / 100
+    : 0;
+  const excedente = diff < 0 ? Math.round(-diff * 100) / 100 : 0;
+  const abate = diff > 0 ? diff : 0;
   const passaDoLivre = excedente > 0 && excedente > free;
+  const abatePassaDivida = abate > 0 && abate > debt + 0.005;
 
   function pay() {
     setMsg(null);
@@ -49,7 +62,7 @@ export default function CommissionPayButton({
       return;
     }
     start(async () => {
-      const r = await payCommissionWithExcessAction(payableId, accountId, total);
+      const r = await settleCommissionAction(payableId, accountId, payout);
       if (!r.ok) {
         setMsg(r.error || "Não foi possível pagar.");
         return;
@@ -65,9 +78,9 @@ export default function CommissionPayButton({
         type="button"
         onClick={() => setOpen(true)}
         className="text-sm font-medium text-blue-700 hover:underline"
-        title="Pagar a comissão podendo incluir um excedente debitado do capital"
+        title="Pagar a comissão; a diferença acerta o capital do vendedor"
       >
-        Pagar c/ excedente
+        Pagar comissão
       </button>
     );
   }
@@ -77,14 +90,20 @@ export default function CommissionPayButton({
       <p className="text-xs text-slate-500">
         Comissão: <strong>{formatCurrency(commissionAmount)}</strong>
         <br />
-        Vinculado a <strong>{beneficiaryName}</strong> · capital livre {formatCurrency(free)}
+        Vinculado a <strong>{beneficiaryName}</strong>
+        <br />
+        Saldo de capital:{" "}
+        <strong className={capital < 0 ? "text-rose-600" : "text-emerald-600"}>
+          {formatCurrency(capital)}
+        </strong>
+        {debt > 0 ? " (devedor)" : null}
       </p>
       <label className="block text-xs font-medium text-slate-600">
-        Valor total pago
+        Valor pago ao vendedor
         <input
           inputMode="decimal"
-          value={total}
-          onChange={(e) => setTotal(e.target.value)}
+          value={payout}
+          onChange={(e) => setPayout(e.target.value)}
           className="mt-0.5 h-8 w-full rounded-lg border border-slate-300 px-2 text-sm"
         />
       </label>
@@ -105,6 +124,18 @@ export default function CommissionPayButton({
       <p className="text-xs text-slate-500">
         Data do pagamento: <strong>{cashboxDate ? `${cashboxDate} (caixa)` : "—"}</strong>
       </p>
+      {abate > 0 ? (
+        <p className={`text-xs ${abatePassaDivida ? "text-amber-700" : "text-slate-500"}`}>
+          {abatePassaDivida ? (
+            <>⚠ Não é possível abater mais que o saldo devedor ({formatCurrency(debt)}).</>
+          ) : (
+            <>
+              <strong>{formatCurrency(abate)}</strong> abatem o saldo devedor de {beneficiaryName}{" "}
+              (viram aporte e zeram a dívida).
+            </>
+          )}
+        </p>
+      ) : null}
       {excedente > 0 ? (
         <p className={`text-xs ${passaDoLivre ? "text-amber-700" : "text-slate-500"}`}>
           Excedente de <strong>{formatCurrency(excedente)}</strong> vira retirada de capital de {beneficiaryName}.
@@ -114,7 +145,7 @@ export default function CommissionPayButton({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || abatePassaDivida}
           onClick={pay}
           className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
         >

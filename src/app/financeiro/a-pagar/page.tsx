@@ -74,9 +74,14 @@ export default async function ContasAPagarPage({
       })
     : [];
   const capStatus = linkedBeneficiaries.length ? await capitalStatusByBeneficiary() : new Map();
-  const excessByUser = new Map<string, { beneficiaryName: string; free: number }>();
+  const excessByUser = new Map<string, { beneficiaryName: string; free: number; capital: number }>();
   for (const b of linkedBeneficiaries) {
-    if (b.userId) excessByUser.set(b.userId, { beneficiaryName: b.name, free: capStatus.get(b.id)?.free ?? 0 });
+    if (b.userId)
+      excessByUser.set(b.userId, {
+        beneficiaryName: b.name,
+        free: capStatus.get(b.id)?.free ?? 0,
+        capital: capStatus.get(b.id)?.capital ?? 0,
+      });
   }
 
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);

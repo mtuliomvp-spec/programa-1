@@ -27,8 +27,8 @@ export type PayableRow = {
   editable: boolean;
   // Tem anexo (NF/comprovante) no título ou na solicitação de origem.
   hasAttachment: boolean;
-  // Comissão de vendedor vinculado a beneficiário: permite pagar com excedente.
-  commissionExcess: { beneficiaryName: string; free: number } | null;
+  // Comissão de vendedor vinculado a beneficiário: permite acertar o capital na baixa.
+  commissionExcess: { beneficiaryName: string; free: number; capital: number } | null;
 };
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
@@ -225,6 +225,7 @@ export default function PayablesTable({
                         accounts={accounts}
                         beneficiaryName={p.commissionExcess.beneficiaryName}
                         free={p.commissionExcess.free}
+                        capital={p.commissionExcess.capital}
                         cashboxDate={cashboxDate}
                       />
                     ) : null}

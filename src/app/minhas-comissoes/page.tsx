@@ -51,6 +51,13 @@ export default async function MinhasComissoesPage() {
   const totalComissoes = totalReceber + totalRecebido;
   const saldoTotal = capitalSaldo != null ? capitalSaldo + totalComissoes : null;
 
+  // Saldo devedor de capital (quando negativo) é abatido das comissões a receber
+  // no momento do pagamento: parte cobre a dívida (aporte) e o líquido é pago ao
+  // vendedor. Aqui mostramos essa projeção.
+  const debt = capitalSaldo != null && capitalSaldo < 0 ? Math.round(-capitalSaldo * 100) / 100 : 0;
+  const abateComissao = Math.min(totalReceber, debt);
+  const liquidoReceber = Math.round((totalReceber - abateComissao) * 100) / 100;
+
   return (
     <div>
       <PageHeader title="Minhas comissões" description={`Comissões de ${user.name}`} />
@@ -79,6 +86,14 @@ export default async function MinhasComissoesPage() {
           />
         ) : null}
       </div>
+
+      {abateComissao > 0 ? (
+        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Dos <strong>{formatCurrency(totalReceber)}</strong> em comissões a receber,{" "}
+          <strong>{formatCurrency(abateComissao)}</strong> abaterão seu saldo de capital devedor — líquido a
+          receber <strong>{formatCurrency(liquidoReceber)}</strong>.
+        </div>
+      ) : null}
 
       <Card>
         <CardHeader title="Comissões" description="Somente as suas comissões de venda" />
