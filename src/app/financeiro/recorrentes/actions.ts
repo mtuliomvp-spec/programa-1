@@ -112,6 +112,97 @@ export async function createRecurringAction(
   redirect("/financeiro/recorrentes");
 }
 
+const updateSchema = recurringSchema.extend({ id: z.string().min(1) });
+
+/**
+ * Edita a DEFINIÇÃO de uma recorrência. Os títulos já gerados permanecem como
+ * estão (podem ser ajustados/excluídos individualmente); as próximas gerações
+ * usam os novos valores.
+ */
+export async function updateRecurringAction(
+  _prev: RecurringFormState,
+  formData: FormData,
+): Promise<RecurringFormState> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) {
+    return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  }
+  const data = parsed.data;
+  const porDias = data.periodicidade === "DIAS";
+  if (porDias && !data.intervalDays) {
+    return { error: "Informe de quantos em quantos dias (1 a 365)." };
+  }
+  const isCapital = data.structuralKey === "CAPITAL";
+  if (isCapital && !data.capitalBeneficiaryId) {
+    return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
+  }
+
+  const label = (data.categoryLabel || "").trim();
+  if (!isCapital && !label) {
+    return { error: "Informe a categoria." };
+  }
+  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS" | null = null;
+  let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
+  let categoryLabel: string | null = null;
+  if (data.kind === "PAGAR") {
+    if (isCapital) categoryPagar = "OUTROS";
+    else {
+      const cat = await resolveDespesaCategory(label);
+      categoryPagar = cat.category;
+      categoryLabel = cat.label;
+    }
+  } else {
+    if (isCapital) categoryReceber = "OUTROS";
+    else {
+      const cat = await resolveReceitaCategory(label);
+      categoryReceber = cat.category;
+      categoryLabel = cat.label;
+    }
+  }
+
+  const supplierName = (data.supplierName || "").trim();
+  const supplierId =
+    data.kind === "PAGAR" && supplierName ? await resolveSupplierByName(supplierName) : null;
+
+  const existing = await prisma.recurringEntry.findUnique({ where: { id: data.id }, select: { id: true } });
+  if (!existing) return { error: "Recorrência não encontrada." };
+
+  try {
+    await prisma.recurringEntry.update({
+      where: { id: data.id },
+      data: {
+        kind: data.kind,
+        description: data.description,
+        amount: data.amount,
+        structuralKey: data.structuralKey,
+        dayOfMonth: data.dayOfMonth,
+        intervalDays: porDias ? data.intervalDays : null,
+        categoryPagar,
+        categoryReceber,
+        categoryLabel,
+        supplierId,
+        customerId: data.kind === "RECEBER" && !isCapital ? data.customerId || null : null,
+        capitalBeneficiaryId: isCapital ? data.capitalBeneficiaryId || null : null,
+        startDate: parseDateInput(data.startDate),
+        endDate: data.endDate ? parseDateInput(data.endDate) : null,
+        notes: data.notes || null,
+      },
+    });
+    await ensureRecurringGenerated();
+  } catch {
+    return { error: "Não foi possível salvar as alterações." };
+  }
+  revalidatePath("/financeiro/recorrentes");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
+  redirect("/financeiro/recorrentes");
+}
+
 export async function toggleRecurringAction(id: string, active: boolean) {
   await assertCan("financeiro", "criar");
   await prisma.recurringEntry.update({ where: { id }, data: { active } });
