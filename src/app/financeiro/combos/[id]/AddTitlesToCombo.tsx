@@ -5,17 +5,36 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { normalizeSearch } from "@/lib/search";
-import { Button, Input } from "@/components/ui";
+import { Button, Input, Select } from "@/components/ui";
 import { addPayablesToComboAction, removePayableFromComboAction } from "../actions";
 
-type Row = { id: string; description: string; supplier: string; dueDate: string; amount: number };
+type Row = {
+  id: string;
+  description: string;
+  supplierName: string;
+  beneficiaryName: string;
+  vehicleLabel: string;
+  dueDate: string;
+  amount: number;
+};
+
+function distinct(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR"));
+}
 
 export default function AddTitlesToCombo({ comboId, available }: { comboId: string; available: Row[] }) {
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [q, setQ] = useState("");
+  const [fornecedor, setFornecedor] = useState("");
+  const [beneficiario, setBeneficiario] = useState("");
+  const [veiculo, setVeiculo] = useState("");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+
+  const supplierOptions = distinct(available.map((r) => r.supplierName));
+  const beneficiaryOptions = distinct(available.map((r) => r.beneficiaryName));
+  const vehicleOptions = distinct(available.map((r) => r.vehicleLabel));
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -42,26 +61,57 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   }
 
   const nq = normalizeSearch(q.trim());
-  const shown = nq
-    ? available.filter((r) =>
-        normalizeSearch(`${r.description} ${r.supplier} ${formatCurrency(r.amount)} ${formatDate(r.dueDate)}`).includes(nq),
-      )
-    : available;
+  const shown = available.filter((r) => {
+    if (fornecedor && r.supplierName !== fornecedor) return false;
+    if (beneficiario && r.beneficiaryName !== beneficiario) return false;
+    if (veiculo && r.vehicleLabel !== veiculo) return false;
+    if (nq) {
+      const hay = normalizeSearch(
+        `${r.description} ${r.supplierName} ${r.beneficiaryName} ${r.vehicleLabel} ${formatCurrency(r.amount)} ${formatDate(r.dueDate)}`,
+      );
+      if (!hay.includes(nq)) return false;
+    }
+    return true;
+  });
 
   if (available.length === 0) {
     return <p className="px-1 py-3 text-sm text-slate-500">Nenhum título pendente disponível para adicionar.</p>;
   }
 
+  const subtitle = (r: Row) => [r.supplierName || r.beneficiaryName, r.vehicleLabel].filter(Boolean).join(" · ") || "—";
+
   return (
     <div>
-      <Input
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-        placeholder="Buscar título (descrição, fornecedor, valor...)"
-        className="mb-3 h-11 text-base"
-      />
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <div className="min-w-[220px] flex-1">
+          <Input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Buscar título (descrição, fornecedor, valor...)"
+            className="h-11 text-base"
+          />
+        </div>
+        <Select value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} className="h-11 w-48">
+          <option value="">Todos os fornecedores</option>
+          {supplierOptions.map((s) => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </Select>
+        <Select value={beneficiario} onChange={(e) => setBeneficiario(e.target.value)} className="h-11 w-48">
+          <option value="">Todos os beneficiários</option>
+          {beneficiaryOptions.map((b) => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </Select>
+        <Select value={veiculo} onChange={(e) => setVeiculo(e.target.value)} className="h-11 w-52">
+          <option value="">Todos os veículos</option>
+          {vehicleOptions.map((v) => (
+            <option key={v} value={v}>{v}</option>
+          ))}
+        </Select>
+      </div>
       {shown.length === 0 ? (
-        <p className="px-1 py-3 text-sm text-slate-500">Nenhum título encontrado para “{q}”.</p>
+        <p className="px-1 py-3 text-sm text-slate-500">Nenhum título encontrado para o filtro.</p>
       ) : (
         <ul className="max-h-80 divide-y divide-slate-100 overflow-auto rounded-lg border border-slate-200">
           {shown.map((r) => (
@@ -75,7 +125,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium text-slate-800">{r.description}</span>
                 <span className="block truncate text-xs text-slate-400">
-                  {r.supplier} · vence {formatDate(r.dueDate)}
+                  {subtitle(r)} · vence {formatDate(r.dueDate)}
                 </span>
               </span>
               <span className="tabular-nums text-slate-700">{formatCurrency(r.amount)}</span>

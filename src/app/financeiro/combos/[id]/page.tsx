@@ -69,13 +69,20 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           await prisma.payable.findMany({
             where: { status: { not: "PAGO" }, paymentComboId: null },
             orderBy: { dueDate: "asc" },
-            include: { supplier: { select: { name: true } }, beneficiaryUser: { select: { name: true } } },
-            take: 200,
+            include: {
+              supplier: { select: { name: true } },
+              beneficiaryUser: { select: { name: true } },
+              capitalBeneficiary: { select: { name: true } },
+              vehicle: { select: { brand: true, model: true, plate: true } },
+            },
+            take: 500,
           })
         ).map((p) => ({
           id: p.id,
           description: p.description,
-          supplier: p.supplier?.name || p.beneficiaryUser?.name || "—",
+          supplierName: p.supplier?.name ?? "",
+          beneficiaryName: p.beneficiaryUser?.name ?? p.capitalBeneficiary?.name ?? "",
+          vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : "",
           dueDate: p.dueDate.toISOString(),
           amount: p.amount,
         }))
