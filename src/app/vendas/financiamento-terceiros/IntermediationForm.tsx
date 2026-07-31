@@ -43,6 +43,7 @@ export type IntermediationInitial = {
   modelYear?: number;
   plate?: string;
   chassi?: string;
+  renavam?: string;
   color?: string;
   km?: number;
   fuel?: string;
@@ -230,6 +231,7 @@ export default function IntermediationForm({
       setField("modelYear", d.modelYear ? String(d.modelYear) : undefined);
       setField("color", d.color);
       setField("chassi", d.chassi);
+      setField("renavam", d.renavam);
       setField("fuel", d.fuel);
       setField("transmission", d.transmission);
       setLookupMsg(`Dados encontrados: ${d.brand ?? ""} ${d.model ?? ""}. Confira e complete.`);
@@ -408,6 +410,9 @@ export default function IntermediationForm({
           </Field>
           <Field label="Chassi">
             <Input name="chassi" defaultValue={initial?.chassi ?? ""} />
+          </Field>
+          <Field label="RENAVAM">
+            <Input name="renavam" defaultValue={initial?.renavam ?? ""} placeholder="Nº do RENAVAM (11 dígitos)" />
           </Field>
         </div>
       </fieldset>

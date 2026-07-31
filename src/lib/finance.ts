@@ -568,6 +568,7 @@ export async function createIntermediationVehicle(input: {
   modelYear: number;
   plate: string;
   chassi?: string | null;
+  renavam?: string | null;
   color?: string | null;
   km?: number | null;
   fuel?: string | null;
@@ -585,6 +586,7 @@ export async function createIntermediationVehicle(input: {
       modelYear: input.modelYear,
       plate: input.plate.toUpperCase(),
       chassi: input.chassi || null,
+      renavam: input.renavam || null,
       color: input.color || null,
       km: input.km ?? 0,
       fuel: input.fuel || null,

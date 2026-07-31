@@ -185,6 +185,7 @@ export default function VehicleForm({
       setField("manufactureYear", d.manufactureYear);
       setField("modelYear", d.modelYear ?? d.manufactureYear);
       setField("chassi", d.chassi);
+      setField("renavam", d.renavam);
       setField("color", d.color);
       setField("fuel", d.fuel);
       setField("transmission", d.transmission);

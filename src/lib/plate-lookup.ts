@@ -22,6 +22,7 @@ export type PlateLookupData = {
   fuel?: string;
   transmission?: string;
   chassi?: string;
+  renavam?: string;
   fipePrice?: number;
   fipeModelo?: string;
   /** Todas as versões FIPE retornadas, da mais provável para a menos provável */
@@ -111,6 +112,25 @@ function normalizeFuel(value: string | undefined): string | undefined {
   return clean.length >= 3 ? titleCase(clean) : undefined;
 }
 
+/**
+ * Deriva a "versão" da descrição FIPE quando o provedor não devolve o campo
+ * `versao`. Remove o prefixo do modelo (comparação por tokens) para não
+ * duplicar o nome do modelo (ex.: modelo "Fastback Abarth 270" +
+ * FIPE "Fastback Abarth 270 Turbo 1.3 Flex Aut." → versão "Turbo 1.3 Flex Aut.").
+ */
+function versionFromFipe(model: string | undefined, fipeModelo: string | undefined): string | undefined {
+  if (!fipeModelo) return undefined;
+  const fipeTokens = fipeModelo.split(/[^A-Za-z0-9.]+/).filter(Boolean);
+  if (!model) return titleCase(fipeTokens.join(" "));
+  const modelTokens = model.toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
+  let i = 0;
+  while (i < fipeTokens.length && i < modelTokens.length && fipeTokens[i].toUpperCase() === modelTokens[i]) {
+    i++;
+  }
+  const rest = fipeTokens.slice(i).join(" ").trim();
+  return titleCase(rest || fipeModelo);
+}
+
 function transmissionFromKeywords(value: string | undefined): string | undefined {
   if (!value) return undefined;
   const v = value.toUpperCase();
@@ -188,10 +208,19 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
   const fipeOptions: FipeOption[] = candidates.map(({ modelo, price, ano }) => ({ modelo, price, ano }));
   const bestFipe = fipeOptions[0];
 
+  const rawVersion = firstString(raw, ["versao", "VERSAO", "version", "submodelo"]);
+  // Versão: se o provedor não devolver, deriva da melhor descrição FIPE.
+  const version = rawVersion ?? versionFromFipe(titleCase(model), bestFipe?.modelo);
+  // Texto agregado (modelo + versão + FIPE + "marca/modelo") para extrair
+  // combustível/câmbio por palavra-chave quando o provedor não manda os campos.
+  const keywordText = [model, rawVersion, marcaModelo, ...fipeOptions.map((o) => o.modelo)]
+    .filter(Boolean)
+    .join(" ");
+
   return {
     brand: titleCase(brand),
     model: titleCase(model),
-    version: firstString(raw, ["versao", "VERSAO", "version", "submodelo"]),
+    version,
     manufactureYear: parseYear(firstString(raw, ["ano", "ANO", "anoFabricacao", "ano_fabricacao"])),
     modelYear: parseYear(firstString(raw, ["anoModelo", "ANO_MODELO", "ano_modelo"])),
     color: titleCase(firstString(raw, ["cor", "COR", "color"])),
@@ -203,22 +232,14 @@ function normalize(raw: Record<string, unknown>): PlateLookupData {
       ) ||
       // último recurso: o texto da versão/modelo/FIPE costuma citar o combustível
       // (ex.: "Hilux CD SR 4x4 2.8 TDI Diesel Aut.")
-      fuelFromKeywords(
-        [model, firstString(raw, ["versao", "VERSAO", "version", "submodelo"]), ...fipeOptions.map((o) => o.modelo)]
-          .filter(Boolean)
-          .join(" "),
-      ),
+      fuelFromKeywords(keywordText),
     transmission:
       transmissionFromKeywords(
         firstString(raw, ["cambio", "CAMBIO", "câmbio", "tipo_cambio", "caixa_cambio", "transmissao", "transmissão"]) ||
           firstString(extra, ["cambio", "câmbio", "tipo_cambio", "caixa_cambio", "transmissao", "transmissão"]),
-      ) ??
-      transmissionFromKeywords(
-        [firstString(raw, ["versao", "VERSAO", "version", "submodelo"]), model, ...fipeOptions.map((o) => o.modelo)]
-          .filter(Boolean)
-          .join(" "),
-      ),
+      ) ?? transmissionFromKeywords(keywordText),
     chassi: firstString(raw, ["chassi", "CHASSI", "vin"]) || firstString(extra, ["chassi"]),
+    renavam: firstString(raw, ["renavam", "RENAVAM", "renavan"]) || firstString(extra, ["renavam", "RENAVAM"]),
     fipePrice: bestFipe ? bestFipe.price : parseBrl(firstString(raw, ["valorFipe", "fipe_valor"])),
     fipeModelo: bestFipe?.modelo,
     fipeOptions,
