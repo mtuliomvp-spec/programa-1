@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { markPendingAction, payBatchAction, deletePayablesAction } from "./actions";
+import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
 
 type Account = { id: string; name: string };
@@ -40,19 +42,40 @@ export default function PayablesTable({
   canPagar = true,
   canManage = false,
   cashboxDate = null,
+  openCombos = [],
 }: {
   rows: PayableRow[];
   accounts: Account[];
   canPagar?: boolean;
   canManage?: boolean;
   cashboxDate?: string | null;
+  openCombos?: { id: string; name: string }[];
 }) {
+  const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [comboId, setComboId] = useState(openCombos[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
+  const [addingCombo, startAddCombo] = useTransition();
+
+  function addToCombo() {
+    const ids = [...selected];
+    if (!ids.length || !comboId) return;
+    setMsg(null);
+    startAddCombo(async () => {
+      const r = await addPayablesToComboAction(comboId, ids);
+      if (!r.ok) {
+        setMsg(r.error || "Não foi possível adicionar ao combo.");
+        return;
+      }
+      setSelected(new Set());
+      setMsg(`${r.added} título(s) adicionado(s) ao combo.`);
+      router.refresh();
+    });
+  }
 
   const payableRows = rows.filter((r) => r.effective !== "PAGO");
   const allSelected = payableRows.length > 0 && payableRows.every((r) => selected.has(r.id));
@@ -292,6 +315,32 @@ export default function PayablesTable({
                       : `Pagar ${selected.size} títulos`}
                 </button>
               </>
+            ) : null}
+            {canManage && openCombos.length > 0 ? (
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                Adicionar ao combo
+                <span className="flex items-center gap-2">
+                  <select
+                    value={comboId}
+                    onChange={(e) => setComboId(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+                  >
+                    {openCombos.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={addingCombo || !comboId}
+                    onClick={addToCombo}
+                    className="h-9 rounded-lg border border-blue-300 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {addingCombo ? "Adicionando..." : "🧺 Adicionar"}
+                  </button>
+                </span>
+              </label>
             ) : null}
             {canManage ? (
               <button
