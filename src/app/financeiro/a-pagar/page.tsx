@@ -54,6 +54,12 @@ export default async function ContasAPagarPage({
     getActiveAccounts(),
     getCashboxState(),
   ]);
+  // Combos ABERTOS para o botão "Adicionar ao combo" na seleção em lote.
+  const openCombos = await prisma.paymentCombo.findMany({
+    where: { status: "ABERTO" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true },
+  });
   // Data em que as baixas vão cair (data de trabalho do caixa aberto).
   const cashboxDate =
     cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
@@ -192,7 +198,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} cashboxDate={cashboxDate} />
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} cashboxDate={cashboxDate} openCombos={openCombos} />
           </>
         )}
       </Card>

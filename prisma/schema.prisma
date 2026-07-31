@@ -166,6 +166,7 @@ model FinancialAccount {
   transfersIn    AccountTransfer[] @relation("TransferTo")
   financedSales  Sale[]            @relation("SaleFinancer")
   allocations    InvestmentAllocation[]
+  paymentCombos  PaymentCombo[]
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
 
@@ -316,6 +317,8 @@ model User {
   preSales         PreSale[] @relation("PreSaleSeller")
   // Vínculo 1:1 com um beneficiário do capital (usuário que também é sócio).
   beneficiary      CapitalBeneficiary? @relation("BeneficiaryUser")
+  // Combos de pagamento que este usuário montou (é o beneficiário do borderô).
+  paymentCombos    PaymentCombo[] @relation("UserPaymentCombos")
   // Fornecedor-espelho (todo usuário também pode ser escolhido como fornecedor).
   supplier         Supplier? @relation("UserSupplier")
   // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
@@ -774,6 +777,9 @@ model Payable {
   capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
   accountId    String?
   account      FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  // Combo de pagamentos: título jogado numa cesta para pagar em conjunto.
+  paymentComboId String?
+  paymentCombo   PaymentCombo?  @relation(fields: [paymentComboId], references: [id], onDelete: SetNull)
   notes        String?
   // Lançamento avulso feito direto no Livro caixa (não é um título do a-pagar).
   // Excluir um avulso no caixa apaga de vez; excluir um título estorna (volta PENDENTE).
@@ -781,7 +787,39 @@ model Payable {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
+  @@index([paymentComboId])
   @@map("payables")
+}
+
+// Enum do ciclo de vida do combo de pagamentos.
+enum ComboStatus {
+  ABERTO
+  SOLICITADO
+  PAGO
+  CANCELADO
+}
+
+// "Combo de pagamentos": cesta persistente de títulos a pagar que o usuário monta
+// para quitar em conjunto. O beneficiário do borderô é o próprio usuário que o
+// montou (recebe o total para pagar as contas). Ciclo: ABERTO → SOLICITADO → PAGO.
+model PaymentCombo {
+  id          String      @id @default(cuid())
+  name        String
+  status      ComboStatus @default(ABERTO)
+  notes       String?
+  // Beneficiário/dono: usuário logado que montou o combo (dados do borderô).
+  userId      String?
+  user        User?       @relation("UserPaymentCombos", fields: [userId], references: [id], onDelete: SetNull)
+  requestedAt DateTime?
+  paidAt      DateTime?
+  // Conta que pagou o combo (na baixa).
+  accountId   String?
+  account     FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  payables    Payable[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@map("payment_combos")
 }
 
 // Arquivo anexado a um título de contas a pagar (nota fiscal, comprovante…).
