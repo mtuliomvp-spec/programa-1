@@ -18,6 +18,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
+import { resolveDespesaCategory } from "@/lib/categories";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -35,7 +36,7 @@ const createSchema = z.object({
   estimatedAmount: z.coerce.number().min(0).optional(),
   dueDate: z.string().optional(),
   documentNumber: z.string().optional(),
-  category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]).default("OUTROS"),
+  categoryLabel: z.string().optional(),
   // À vista ou parcelado em N vezes (mensal ou a cada X dias).
   paymentMode: z.enum(["A_VISTA", "PARCELADO"]).default("A_VISTA"),
   installmentsCount: z.coerce.number().int().min(0).default(0),
@@ -82,6 +83,9 @@ export async function createRequestAction(
     };
   }
 
+  // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
+  const cat = await resolveDespesaCategory(parsed.data.categoryLabel || "Outros");
+
   // Numeração por ano: 0001/2026, reiniciando a cada ano.
   const year = new Date().getFullYear();
   await prisma.$transaction(async (tx) => {
@@ -95,7 +99,8 @@ export async function createRequestAction(
         estimatedAmount: parsed.data.estimatedAmount || null,
         dueDate: parsed.data.dueDate ? parseDateInput(parsed.data.dueDate) : null,
         documentNumber: parsed.data.documentNumber?.trim() || null,
-        category: parsed.data.category,
+        category: cat.category,
+        categoryLabel: cat.label,
         installmentsCount,
         installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
         installmentDays: parsed.data.installmentDays,
@@ -131,6 +136,7 @@ type RequestForEspelho = {
   dueDate: Date | null;
   documentNumber: string | null;
   category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS";
+  categoryLabel: string | null;
   installmentsCount: number;
   installmentPeriod: string | null;
   installmentDays: number;
@@ -163,6 +169,7 @@ async function generateEspelho(request: RequestForEspelho): Promise<string | nul
     const payable = await createManualPayable({
       description: count > 1 ? `${label} - Parcela ${i + 1}/${count}` : label,
       category: request.category,
+      categoryLabel: request.categoryLabel,
       documentNumber: request.documentNumber,
       amount: amounts[i],
       dueDate:
@@ -231,6 +238,7 @@ export async function updateRequestAction(
   }
 
   const flow = d.structuralKey || "ADMINISTRATIVO";
+  const cat = await resolveDespesaCategory(d.categoryLabel || "Outros");
   const updated = await prisma.purchaseRequest.update({
     where: { id: d.id },
     data: {
@@ -239,7 +247,8 @@ export async function updateRequestAction(
       estimatedAmount: d.estimatedAmount || null,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
       documentNumber: d.documentNumber?.trim() || null,
-      category: d.category,
+      category: cat.category,
+      categoryLabel: cat.label,
       installmentsCount,
       installmentPeriod: parcelado ? d.installmentPeriod : null,
       installmentDays: d.installmentDays,

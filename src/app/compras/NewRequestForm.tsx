@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
+import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { resizeImageToJpeg } from "@/lib/image-resize";
@@ -15,10 +16,12 @@ export default function NewRequestForm({
   suppliers,
   vehicles,
   beneficiaries,
+  categories,
 }: {
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState("ADMINISTRATIVO");
@@ -76,12 +79,7 @@ export default function NewRequestForm({
           <MoneyInput name="estimatedAmount" />
         </Field>
         <Field label="Categoria">
-          <Select name="category" defaultValue="OUTROS">
-            <option value="OUTROS">Outros</option>
-            <option value="COMPRA_PECA">Compra de peças</option>
-            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-            <option value="COMBUSTIVEL">Combustível</option>
-          </Select>
+          <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
         </Field>
       </div>
 

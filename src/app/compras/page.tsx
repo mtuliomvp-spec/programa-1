@@ -4,6 +4,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
+import { listCategoryNames } from "@/lib/categories";
 import NewRequestForm from "./NewRequestForm";
 import RequestsTable, { type RequestRow } from "./RequestsTable";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
@@ -28,7 +29,7 @@ export default async function ComprasPage({
 }) {
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const [allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
+  const [allRequests, suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.purchaseRequest.findMany({
       include: { supplier: true, _count: { select: { attachments: true } } },
       orderBy: { createdAt: "desc" },
@@ -45,6 +46,7 @@ export default async function ComprasPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    listCategoryNames("DESPESA"),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -156,7 +158,7 @@ export default async function ComprasPage({
           <Card className="h-fit print:hidden">
             <CardHeader title="Nova solicitação" />
             <div className="p-5">
-              <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />
+              <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} categories={categories} />
             </div>
           </Card>
         ) : null}

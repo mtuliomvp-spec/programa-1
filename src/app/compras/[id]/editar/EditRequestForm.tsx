@@ -3,6 +3,7 @@
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
+import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -18,7 +19,7 @@ type Request = {
   estimatedAmount: number | null;
   dueDate: string | null;
   documentNumber: string | null;
-  category: string;
+  categoryLabel: string;
   installmentsCount: number;
   installmentPeriod: string | null;
   installmentDays: number;
@@ -33,11 +34,13 @@ export default function EditRequestForm({
   suppliers,
   vehicles,
   beneficiaries,
+  categories,
 }: {
   request: Request;
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(updateRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState(request.structuralKey || "ADMINISTRATIVO");
@@ -91,12 +94,7 @@ export default function EditRequestForm({
           <MoneyInput name="estimatedAmount" defaultValue={request.estimatedAmount} />
         </Field>
         <Field label="Categoria">
-          <Select name="category" defaultValue={request.category}>
-            <option value="OUTROS">Outros</option>
-            <option value="COMPRA_PECA">Compra de peças</option>
-            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-            <option value="COMBUSTIVEL">Combustível</option>
-          </Select>
+          <CategoryInput name="categoryLabel" options={categories} defaultValue={request.categoryLabel} />
         </Field>
       </div>
 
