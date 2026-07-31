@@ -54,7 +54,10 @@ export default async function IntermediationPreSalePage({
 
   const referrals = parseReferrals(pre.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
-  const grossProfit = Math.max(0, pre.financingAmount - pre.refundAmount);
+  // No refinanciamento a loja não fica com F − D: a financeira paga F direto ao
+  // financiado (repasse = F, lucro bruto = 0). A receita da loja é só o retorno.
+  const grossProfit = pre.refinancing ? 0 : Math.max(0, pre.financingAmount - pre.refundAmount);
+  const devolucaoDisplay = pre.refinancing ? pre.financingAmount : pre.refundAmount;
   const retorno =
     financerAccount && pre.returnLevel > 0
       ? computeReturn(pre.financingAmount, pre.returnLevel, financerAccount.returnTaxPercent)
@@ -121,7 +124,11 @@ export default async function IntermediationPreSalePage({
         <CardHeader title="Financiamento" />
         <div className="p-5">
           <Row label="Valor do financiamento (F)" value={formatCurrency(pre.financingAmount)} />
-          <Row label="(−) Devolução ao cliente (D)" value={formatCurrency(pre.refundAmount)} tone="rose" />
+          <Row
+            label={pre.refinancing ? "(−) Devolução ao financiado (D)" : "(−) Devolução ao cliente (D)"}
+            value={formatCurrency(devolucaoDisplay)}
+            tone="rose"
+          />
           <Row label="= Lucro bruto" value={formatCurrency(grossProfit)} />
           {pre.commissionAmount > 0 ? (
             <Row label="(−) Comissão do vendedor" value={formatCurrency(pre.commissionAmount)} tone="rose" />

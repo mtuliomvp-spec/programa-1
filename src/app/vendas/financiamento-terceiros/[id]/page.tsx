@@ -37,7 +37,10 @@ export default async function FinanciamentoTerceirosDetailPage({
 
   const referrals = parseReferrals(sale.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
-  const grossProfit = Math.max(0, sale.financingAmount - sale.refundAmount);
+  // No refinanciamento a loja não fica com F − D: a financeira paga F direto ao
+  // financiado (repasse = F, lucro bruto = 0). A receita da loja é só o retorno.
+  const grossProfit = sale.refinancing ? 0 : Math.max(0, sale.financingAmount - sale.refundAmount);
+  const devolucaoDisplay = sale.refinancing ? sale.financingAmount : sale.refundAmount;
   const sobraFinanciamento =
     grossProfit -
     sale.commissionAmount -
@@ -81,7 +84,11 @@ export default async function FinanciamentoTerceirosDetailPage({
         <CardHeader title="Financiamento" />
         <div className="p-5">
           <Row label="Valor do financiamento (F)" value={formatCurrency(sale.financingAmount)} />
-          <Row label="(−) Devolução ao cliente (D)" value={formatCurrency(sale.refundAmount)} tone="rose" />
+          <Row
+            label={sale.refinancing ? "(−) Devolução ao financiado (D)" : "(−) Devolução ao cliente (D)"}
+            value={formatCurrency(devolucaoDisplay)}
+            tone="rose"
+          />
           <Row label="= Lucro bruto" value={formatCurrency(grossProfit)} />
           {sale.commissionAmount > 0 ? (
             <Row label="(−) Comissão do vendedor" value={formatCurrency(sale.commissionAmount)} tone="rose" />
