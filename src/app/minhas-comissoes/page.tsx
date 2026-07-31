@@ -14,19 +14,25 @@ export default async function MinhasComissoesPage() {
   const user = await getSessionUser();
   if (!user) redirect("/login");
 
-  const [payables, beneficiary] = await Promise.all([
-    prisma.payable.findMany({
-      where: { category: "COMISSAO", beneficiaryUserId: user.id },
-      orderBy: { dueDate: "desc" },
-      include: { account: { select: { name: true } } },
-    }),
-    // Quando o usuário também é beneficiário do capital (sócio com login), traz
-    // as movimentações para calcular o saldo investido dele.
-    prisma.capitalBeneficiary.findUnique({
+  const payables = await prisma.payable.findMany({
+    where: { category: "COMISSAO", beneficiaryUserId: user.id },
+    orderBy: { dueDate: "desc" },
+    include: { account: { select: { name: true } } },
+  });
+
+  // Quando o usuário também é beneficiário do capital (sócio), traz as
+  // movimentações para calcular o saldo investido dele. Prioriza o vínculo
+  // explícito (userId); se não houver, cai para o beneficiário de mesmo nome
+  // (caso do João Itapary, cadastrado no capital mas não vinculado ao login).
+  const beneficiary =
+    (await prisma.capitalBeneficiary.findUnique({
       where: { userId: user.id },
       include: { transactions: { select: { kind: true, amount: true } } },
-    }),
-  ]);
+    })) ??
+    (await prisma.capitalBeneficiary.findFirst({
+      where: { userId: null, name: { equals: user.name, mode: "insensitive" } },
+      include: { transactions: { select: { kind: true, amount: true } } },
+    }));
   const rows = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
 
   const totalReceber = rows.filter((r) => r.effective !== "PAGO").reduce((s, r) => s + r.amount, 0);
