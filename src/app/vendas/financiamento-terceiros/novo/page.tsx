@@ -42,6 +42,7 @@ export default async function NovoFinanciamentoTerceirosPage({
         modelYear: vehicle?.modelYear,
         plate: vehicle?.plate,
         chassi: vehicle?.chassi ?? undefined,
+        renavam: vehicle?.renavam ?? undefined,
         color: vehicle?.color ?? undefined,
         km: vehicle?.km,
         fuel: vehicle?.fuel ?? undefined,
