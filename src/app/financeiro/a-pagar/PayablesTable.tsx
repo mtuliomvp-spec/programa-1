@@ -18,6 +18,7 @@ export type PayableRow = {
   categoryLabel: string;
   documentNumber: string | null;
   supplierName: string | null;
+  beneficiaryName: string | null;
   vehicleLabel: string | null;
   dueDate: string; // ISO
   amount: number;
