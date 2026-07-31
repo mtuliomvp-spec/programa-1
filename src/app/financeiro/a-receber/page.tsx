@@ -53,6 +53,9 @@ export default async function ContasAReceberPage({
       inDateRange(r.dueDate, de, ate) &&
       inValueRange(r.amount, min, max),
   );
+  // Igual a Contas a pagar: recebidos vão para o fim; atrasados e pendentes
+  // primeiro (dentro de cada grupo, o vencimento asc já traz os atrasados antes).
+  filtered.sort((a, b) => (a.effective === "RECEBIDO" ? 1 : 0) - (b.effective === "RECEBIDO" ? 1 : 0));
 
   const totalPendente = withStatus.filter((r) => r.effective !== "RECEBIDO").reduce((s, r) => s + r.amount, 0);
   const totalAtrasado = withStatus.filter((r) => r.effective === "ATRASADO").reduce((s, r) => s + r.amount, 0);
