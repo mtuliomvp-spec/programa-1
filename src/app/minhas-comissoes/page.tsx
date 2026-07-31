@@ -46,8 +46,10 @@ export default async function MinhasComissoesPage() {
         0,
       )
     : null;
-  // Saldo total = saldo de capital + comissões ainda a receber.
-  const saldoTotal = capitalSaldo != null ? capitalSaldo + totalReceber : null;
+  // Saldo total = saldo de capital + todas as comissões (a receber + já
+  // recebido), somadas a título informativo.
+  const totalComissoes = totalReceber + totalRecebido;
+  const saldoTotal = capitalSaldo != null ? capitalSaldo + totalComissoes : null;
 
   return (
     <div>
@@ -73,7 +75,7 @@ export default async function MinhasComissoesPage() {
             label="Saldo total"
             value={formatCurrency(saldoTotal)}
             tone={saldoTotal >= 0 ? "positive" : "negative"}
-            hint="capital + comissões a receber"
+            hint="capital + todas as comissões"
           />
         ) : null}
       </div>
