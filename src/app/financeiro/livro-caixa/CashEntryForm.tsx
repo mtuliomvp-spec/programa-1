@@ -4,6 +4,7 @@ import { useActionState, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import MoneyInput from "@/components/MoneyInput";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
@@ -46,7 +47,10 @@ export default function CashEntryForm({
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
-  const [amount, setAmount] = useState("");
+  const [amount, setAmount] = useState(0);
+  // Muda a cada lançamento bem-sucedido para remontar o MoneyInput (o estado
+  // interno dele não é limpo por form.reset()).
+  const [amountKey, setAmountKey] = useState(0);
   const [capitalBeneficiaryId, setCapitalBeneficiaryId] = useState("");
   const [description, setDescription] = useState("");
   const [customerList, setCustomerList] = useState(customers);
@@ -78,7 +82,8 @@ export default function CashEntryForm({
       setSupplierName("");
       setNewSupplier(false);
       setVehicleId("");
-      setAmount("");
+      setAmount(0);
+      setAmountKey((k) => k + 1);
       setCapitalBeneficiaryId("");
       setDescription("");
       setCustomerId("");
@@ -177,15 +182,7 @@ export default function CashEntryForm({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Valor (R$)" required>
-            <Input
-              name="amount"
-              type="number"
-              step="0.01"
-              min={0.01}
-              required
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-            />
+            <MoneyInput key={amountKey} name="amount" required onValueChange={setAmount} />
           </Field>
           {lockedDate ? (
             <Field label="Data">
@@ -322,7 +319,7 @@ export default function CashEntryForm({
               const b = beneficiaries.find((x) => x.id === capitalBeneficiaryId);
               const applied = b?.applied ?? 0;
               const free = b?.free ?? 0;
-              const val = Number(amount) || 0;
+              const val = amount;
               if (!b || applied <= 0 || val <= free) return null;
               return (
                 <div className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-800">

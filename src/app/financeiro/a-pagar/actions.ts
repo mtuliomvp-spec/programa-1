@@ -67,6 +67,7 @@ export async function settleCommissionAction(
       saleId: true,
       costCenterId: true,
       description: true,
+      notes: true,
     },
   });
   if (!payable) return { ok: false, error: "Título não encontrado." };
@@ -149,6 +150,10 @@ export async function settleCommissionAction(
       structuralCenterId("CAPITAL"),
       getNeutralAccountId(),
     ]);
+    // Observação explicando, na Ordem de pagamento, por que o título foi pago a
+    // menor: a comissão bruta, o quanto foi abatido no capital devedor e o líquido.
+    const breakdownNote = `Comissão bruta ${brl(comissao)}. Abatido ${brl(abate)} no saldo de capital devedor de ${beneficiary.name}. Líquido pago ao vendedor ${brl(payout)}.`;
+    const liquidoNotes = [payable.notes?.trim() || null, breakdownNote].filter(Boolean).join(" — ");
     await prisma.$transaction(async (tx) => {
       // 1) O próprio título da comissão vira o líquido pago ao vendedor (conta real).
       await tx.payable.update({
@@ -159,6 +164,7 @@ export async function settleCommissionAction(
           paymentDate: date,
           accountId,
           description: `${payable.description} (líquido ao vendedor)`,
+          notes: liquidoNotes,
         },
       });
       // 2) Parte abatida: comissão PAGA no Banco Neutro (não passa pelo caixa real).
@@ -198,7 +204,7 @@ export async function settleCommissionAction(
           kind: "APORTE",
           amount: abate,
           date,
-          description: "Abatimento do saldo devedor pela comissão",
+          description: `Abatido do saldo devedor pela ${payable.description}`,
           receivableId: receivable.id,
         },
       });
