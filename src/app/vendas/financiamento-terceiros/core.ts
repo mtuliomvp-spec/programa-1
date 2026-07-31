@@ -16,7 +16,10 @@ import { parseReferrals } from "@/lib/referrals";
  * gera a devolução ao cliente = D e o lucro = F − D − comissão − ...).
  */
 export const intermediationSchema = z.object({
-  customerId: z.string().min(1, "Selecione o cliente (comprador)"),
+  // No refinanciamento o cliente é o próprio proprietário e é resolvido/criado no
+  // servidor a partir dos dados do proprietário — por isso é opcional aqui e a
+  // obrigatoriedade (fora do refinanciamento) é validada em código.
+  customerId: z.string().optional(),
   saleDate: z.string().min(1),
   // Proprietário do documento (VENDEDOR do contrato)
   ownerName: z.string().min(1, "Informe o proprietário do documento (vendedor)"),
@@ -100,11 +103,53 @@ async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: stri
 }
 
 /**
+ * Resolve o cliente (comprador/financiado) da operação.
+ * - Fora do refinanciamento: exige o `customerId` selecionado.
+ * - No refinanciamento: o cliente é o próprio proprietário. Reaproveita um
+ *   cliente já cadastrado (mesmo CPF/CNPJ ou nome) ou o cadastra a partir dos
+ *   dados do proprietário, para que o Cliente replique o proprietário.
+ */
+async function resolveIntermediationCustomerId(d: IntermediationData): Promise<string> {
+  const selected = d.customerId?.trim();
+  if (!d.refinancing) {
+    if (!selected) throw new Error("Selecione o cliente (comprador).");
+    return selected;
+  }
+  if (selected) return selected;
+
+  const document = d.ownerDocument?.trim() || null;
+  const name = d.ownerName.trim();
+  if (document) {
+    const byDoc = await prisma.customer.findFirst({ where: { document }, select: { id: true } });
+    if (byDoc) return byDoc.id;
+  }
+  const byName = await prisma.customer.findFirst({ where: { name }, select: { id: true } });
+  if (byName) return byName.id;
+
+  const created = await prisma.customer.create({
+    data: {
+      name,
+      document,
+      phone: d.ownerPhone?.trim() || null,
+      address: d.ownerAddress?.trim() || null,
+    },
+    select: { id: true },
+  });
+  return created.id;
+}
+
+/**
 /** Monta os campos da PreSale/venda a partir dos dados do formulário. */
-function buildPreSaleData(d: IntermediationData, F: number, D: number, sellerName: string | null) {
+function buildPreSaleData(
+  d: IntermediationData,
+  customerId: string,
+  F: number,
+  D: number,
+  sellerName: string | null,
+) {
   return {
     saleType: "FINANCIAMENTO_TERCEIROS" as const,
-    customerId: d.customerId,
+    customerId,
     saleDate: parseDateInput(d.saleDate),
     // Refinanciamento: a loja não vende o carro (totalAmount 0); só o retorno é receita.
     totalAmount: d.refinancing ? 0 : Math.round((F - D) * 100) / 100,
@@ -161,6 +206,7 @@ function buildVehicleData(d: IntermediationData, F: number) {
  */
 export async function createIntermediationPreSale(d: IntermediationData): Promise<string> {
   const { F, D, sellerName } = await validateAndPrepare(d);
+  const customerId = await resolveIntermediationCustomerId(d);
 
   const vehicle = await createIntermediationVehicle({
     ...buildVehicleData(d, F),
@@ -169,7 +215,11 @@ export async function createIntermediationPreSale(d: IntermediationData): Promis
   });
 
   const pre = await prisma.preSale.create({
-    data: { ...buildPreSaleData(d, F, D, sellerName), vehicleId: vehicle.id, status: "ABERTA" },
+    data: {
+      ...buildPreSaleData(d, customerId, F, D, sellerName),
+      vehicleId: vehicle.id,
+      status: "ABERTA",
+    },
   });
   return pre.id;
 }
@@ -190,11 +240,12 @@ export async function updateIntermediationPreSale(
     throw new Error("Só é possível editar enquanto a pré-venda está em aberto.");
   }
   const { F, D, sellerName } = await validateAndPrepare(d, pre.vehicleId);
+  const customerId = await resolveIntermediationCustomerId(d);
 
   await prisma.vehicle.update({ where: { id: pre.vehicleId }, data: buildVehicleData(d, F) });
   await prisma.preSale.update({
     where: { id: pre.id },
-    data: buildPreSaleData(d, F, D, sellerName),
+    data: buildPreSaleData(d, customerId, F, D, sellerName),
   });
   return pre.id;
 }
