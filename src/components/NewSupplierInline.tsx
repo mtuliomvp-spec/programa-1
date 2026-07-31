@@ -15,7 +15,12 @@ export default function NewSupplierInline({
   onCreated,
   initial,
 }: {
-  onCreated: (name: string, id: string, customerId?: string) => void;
+  onCreated: (
+    name: string,
+    id: string,
+    customerId?: string,
+    details?: { document: string; phone: string; email: string; address: string },
+  ) => void;
   initial?: { name?: string; document?: string; phone?: string; email?: string; address?: string };
 }) {
   const [data, setData] = useState({
@@ -86,7 +91,12 @@ export default function NewSupplierInline({
         setMsg({ tone: "err", text: result.error });
         return;
       }
-      onCreated(result.name, result.id, result.customerId);
+      onCreated(result.name, result.id, result.customerId, {
+        document: data.document,
+        phone: data.phone,
+        email: data.email,
+        address: data.address,
+      });
     });
   }
 

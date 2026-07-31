@@ -8,6 +8,7 @@ import NewSupplierInline from "@/components/NewSupplierInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
+import { findPersonByDocument } from "@/app/person-lookup";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { createIntermediationPreSaleAction } from "./actions";
@@ -166,6 +167,25 @@ export default function IntermediationForm({
     setOwnerMsg({ tone: "ok", text: `Proprietário preenchido com o cliente ${c.name}.` });
   }
 
+  // Ao sair do CPF/CNPJ, reaproveita um cadastro já existente (cliente OU
+  // fornecedor): traz nome/telefone/endereço para os campos ainda vazios, para
+  // que o proprietário fique completo na operação e no contrato.
+  function handleOwnerDocBlur() {
+    const doc = readField("ownerDocument");
+    if (!doc) return;
+    startOwnerLookup(async () => {
+      const r = await findPersonByDocument(doc);
+      if (!r.found) return;
+      if (!readField("ownerName")) {
+        setField("ownerName", r.data.name);
+        setOwnerNameLive(r.data.name);
+      }
+      if (!readField("ownerPhone")) setField("ownerPhone", r.data.phone);
+      if (!readField("ownerAddress")) setField("ownerAddress", r.data.address);
+      setOwnerMsg({ tone: "ok", text: `Cadastro encontrado (${r.source}): dados trazidos.` });
+    });
+  }
+
   // Proprietário pessoa jurídica: busca nome/telefone/endereço pelo CNPJ.
   function handleOwnerCnpjLookup() {
     const doc = readField("ownerDocument");
@@ -290,7 +310,7 @@ export default function IntermediationForm({
           </Field>
           <Field label="CPF/CNPJ">
             <div className="flex flex-wrap gap-2">
-              <Input name="ownerDocument" defaultValue={initial?.ownerDocument ?? ""} placeholder="CPF ou CNPJ" className="max-w-[200px]" />
+              <Input name="ownerDocument" defaultValue={initial?.ownerDocument ?? ""} onBlur={handleOwnerDocBlur} placeholder="CPF ou CNPJ" className="max-w-[200px]" />
               <Button
                 type="button"
                 variant="secondary"
@@ -353,8 +373,14 @@ export default function IntermediationForm({
           {newSupplier ? (
             <NewSupplierInline
               initial={supplierPrefill}
-              onCreated={(name, _id, customerId) => {
+              onCreated={(name, _id, customerId, details) => {
                 setField("ownerName", name);
+                setOwnerNameLive(name);
+                // Traz de volta os dados completos do fornecedor para o proprietário,
+                // para que sejam salvos na operação e saiam no contrato.
+                setField("ownerDocument", details?.document);
+                setField("ownerPhone", details?.phone);
+                setField("ownerAddress", details?.address);
                 if (refinancing && customerId) {
                   setCustomerList((prev) =>
                     prev.some((x) => x.id === customerId) ? prev : [...prev, { id: customerId, name }],
