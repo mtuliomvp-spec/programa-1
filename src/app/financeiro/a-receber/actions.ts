@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { markReceivableReceived, markReceivablePending, createManualReceivable, receiveReceivable } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -43,6 +44,41 @@ export async function markPendingAction(id: string) {
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/");
+}
+
+/**
+ * Exclui um título A RECEBER. Espelha o Contas a pagar: bloqueia títulos já
+ * RECEBIDOS (reverter antes) e os que vêm de outra operação (venda/peça/
+ * recorrência — ajustar na origem). Remove também eventual movimentação de
+ * capital vinculada. Excluir um PENDENTE não mexe no caixa.
+ */
+export async function deleteReceivableAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const r = await prisma.receivable.findUnique({
+    where: { id },
+    select: { status: true, saleId: true, partSaleId: true, recurringId: true },
+  });
+  if (!r) return { ok: false, error: "Título não encontrado." };
+  if (r.status === "RECEBIDO") {
+    return { ok: false, error: "Título já recebido. Use Reverter antes de excluir." };
+  }
+  if (r.saleId || r.partSaleId || r.recurringId) {
+    return { ok: false, error: "Este título vem de outra operação (venda/peça/recorrência). Ajuste na origem." };
+  }
+  await prisma.$transaction([
+    prisma.capitalTransaction.deleteMany({ where: { receivableId: id } }),
+    prisma.receivable.delete({ where: { id } }),
+  ]);
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: true };
 }
 
 const manualSchema = z.object({

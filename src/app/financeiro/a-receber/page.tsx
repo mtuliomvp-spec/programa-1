@@ -9,6 +9,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
 import { userCan } from "@/lib/guards";
 import ReceivableRowActions from "./ReceivableRowActions";
+import DeleteReceivableButton from "./DeleteReceivableButton";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,10 @@ export default async function ContasAReceberPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const canReceber = await userCan("financeiro", "receber");
+  const [canReceber, canManage] = await Promise.all([
+    userCan("financeiro", "receber"),
+    userCan("financeiro", "criar"),
+  ]);
   await ensureRecurringGenerated();
 
   const [receivables, accounts] = await Promise.all([
@@ -124,7 +128,12 @@ export default async function ContasAReceberPage({
                     <Badge tone={statusTone[r.effective]}>{statusLabelMap[r.effective]}</Badge>
                   </Td>
                   <Td>
-                    <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} canReceber={canReceber} />
+                    <div className="flex items-center justify-end gap-3">
+                      <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} canReceber={canReceber} />
+                      {canManage && r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId && !r.recurringId ? (
+                        <DeleteReceivableButton id={r.id} />
+                      ) : null}
+                    </div>
                   </Td>
                 </Tr>
               ))}
