@@ -25,28 +25,40 @@ export default function NewRequestForm({
   const [parcelado, setParcelado] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [preparing, setPreparing] = useState(false);
+  // Trava síncrona contra envio duplicado: um `pending`/`preparing` de state pode
+  // estar "velho" no closure em toques rápidos no celular, deixando passar 2 envios.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     if (state.success) formRef.current?.reset();
   }, [state.success]);
 
+  // Libera a trava quando o envio termina (pending volta a false).
+  useEffect(() => {
+    if (!pending) submittingRef.current = false;
+  }, [pending]);
+
   // Se houver anexo e for imagem, redimensiona no navegador antes de enviar
   // (evita travar em fotos grandes). PDFs/documentos passam sem alteração.
   async function handleSend() {
-    if (pending || preparing) return; // evita envio duplicado (duplo clique)
-    const form = formRef.current;
-    if (!form) return;
-    const fd = new FormData(form);
-    const file = fd.get("file");
-    if (file instanceof File && file.size > 0) {
-      setPreparing(true);
-      try {
-        fd.set("file", await resizeImageToJpeg(file));
-      } finally {
-        setPreparing(false);
+    if (submittingRef.current) return; // evita envio duplicado (duplo toque)
+    submittingRef.current = true;
+    setPreparing(true);
+    try {
+      const form = formRef.current;
+      if (!form) {
+        submittingRef.current = false;
+        return;
       }
+      const fd = new FormData(form);
+      const file = fd.get("file");
+      if (file instanceof File && file.size > 0) {
+        fd.set("file", await resizeImageToJpeg(file));
+      }
+      formAction(fd);
+    } finally {
+      setPreparing(false);
     }
-    formAction(fd);
   }
 
   return (
@@ -156,7 +168,6 @@ export default function NewRequestForm({
           type="file"
           name="file"
           accept="image/*,.pdf,.doc,.docx"
-          capture="environment"
           className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
         />
       </Field>

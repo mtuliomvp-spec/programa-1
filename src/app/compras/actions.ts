@@ -265,6 +265,23 @@ export async function updateRequestAction(
     revalidatePath("/financeiro/a-pagar");
   }
 
+  // Anexo opcional na edição (foto, PDF…): grava um novo anexo vinculado.
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Arquivo muito grande (máximo 15 MB)." };
+    const data = new Uint8Array(await file.arrayBuffer());
+    await prisma.purchaseRequestAttachment.create({
+      data: {
+        purchaseRequestId: updated.id,
+        description: "Anexo",
+        filename: file.name || "anexo",
+        mimeType: file.type || "application/octet-stream",
+        size: data.byteLength,
+        data,
+      },
+    });
+  }
+
   revalidatePath("/compras");
   revalidatePath(`/compras/${d.id}`);
   redirect(`/compras/${d.id}`);
