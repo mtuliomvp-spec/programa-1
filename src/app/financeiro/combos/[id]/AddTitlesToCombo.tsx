@@ -66,10 +66,14 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
     if (beneficiario && r.beneficiaryName !== beneficiario) return false;
     if (veiculo && r.vehicleLabel !== veiculo) return false;
     if (nq) {
+      // Inclui o valor em várias formas para achar com ou sem ponto de milhar:
+      // "R$ 2.000,00", "2000", "2000.00" e "2000,00".
+      const valor = `${formatCurrency(r.amount)} ${r.amount} ${r.amount.toFixed(2)} ${r.amount.toFixed(2).replace(".", ",")}`;
       const hay = normalizeSearch(
-        `${r.description} ${r.supplierName} ${r.beneficiaryName} ${r.vehicleLabel} ${formatCurrency(r.amount)} ${formatDate(r.dueDate)}`,
+        `${r.description} ${r.supplierName} ${r.beneficiaryName} ${r.vehicleLabel} ${valor} ${formatDate(r.dueDate)}`,
       );
-      if (!hay.includes(nq)) return false;
+      // Também compara a query sem ponto de milhar (ex.: "2.000" → "2000").
+      if (!hay.includes(nq) && !hay.includes(nq.replace(/\./g, ""))) return false;
     }
     return true;
   });
