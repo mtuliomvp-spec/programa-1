@@ -3,6 +3,7 @@
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import BankInput from "@/components/BankInput";
+import MoneyInput from "@/components/MoneyInput";
 import NewCustomerInline from "@/components/NewCustomerInline";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
@@ -522,26 +523,20 @@ export default function IntermediationForm({
             <Input name="saleDate" type="date" required defaultValue={initial?.saleDate ?? toDateInputValue(new Date())} />
           </Field>
           <Field label="Valor do financiamento (F)" required>
-            <Input
+            <MoneyInput
               name="financingAmount"
-              type="number"
-              step="0.01"
-              min={0}
               required
-              value={financing || ""}
-              onChange={(e) => setFinancing(Number(e.target.value) || 0)}
+              defaultValue={initial?.financingAmount ?? null}
+              onValueChange={setFinancing}
               placeholder="Valor liberado pelo banco"
             />
           </Field>
           {!refinancing ? (
             <Field label="Devolução de financiamento (ao cliente)">
-              <Input
+              <MoneyInput
                 name="refundAmount"
-                type="number"
-                step="0.01"
-                min={0}
-                value={refund || ""}
-                onChange={(e) => setRefund(Number(e.target.value) || 0)}
+                defaultValue={initial?.refundAmount ?? null}
+                onValueChange={setRefund}
                 placeholder="Quanto será devolvido ao cliente"
               />
             </Field>
@@ -550,13 +545,10 @@ export default function IntermediationForm({
             <Input name="installmentsInfoCount" type="number" min={1} required defaultValue={initial?.installmentsInfoCount ?? ""} placeholder="Ex.: 48" />
           </Field>
           <Field label="Valor da parcela (R$)" required>
-            <Input
+            <MoneyInput
               name="installmentsInfoAmount"
-              type="number"
-              step="0.01"
-              min={0.01}
               required
-              defaultValue={initial?.installmentsInfoAmount ?? ""}
+              defaultValue={initial?.installmentsInfoAmount ?? null}
               placeholder="Valor de cada parcela"
             />
           </Field>
@@ -658,13 +650,10 @@ export default function IntermediationForm({
             </Select>
           </Field>
           <Field label="Comissão do vendedor (R$)">
-            <Input
+            <MoneyInput
               name="commissionAmount"
-              type="number"
-              step="0.01"
-              min={0}
-              value={commission || ""}
-              onChange={(e) => setCommission(Number(e.target.value) || 0)}
+              defaultValue={initial?.commissionAmount ?? null}
+              onValueChange={setCommission}
               placeholder="0,00 — opcional"
             />
           </Field>
@@ -682,16 +671,14 @@ export default function IntermediationForm({
             Transferência cobrada
           </label>
           {transferCharged ? (
-            <Input
-              type="number"
-              step="0.01"
-              min={0}
-              name="transferAmount"
-              value={transferAmount || ""}
-              onChange={(e) => setTransferAmount(Number(e.target.value) || 0)}
-              placeholder="Valor da transferência (R$)"
-              className="mt-2"
-            />
+            <div className="mt-2">
+              <MoneyInput
+                name="transferAmount"
+                defaultValue={initial?.transferAmount ?? null}
+                onValueChange={setTransferAmount}
+                placeholder="Valor da transferência (R$)"
+              />
+            </div>
           ) : null}
         </Field>
         {referrals.map((row, i) => (
