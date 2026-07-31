@@ -105,6 +105,8 @@ export default function IntermediationForm({
     address?: string;
   }>({});
   const [ownerPickId, setOwnerPickId] = useState("");
+  // Nome do proprietário "ao vivo", para replicar no campo Cliente no refinanciamento.
+  const [ownerNameLive, setOwnerNameLive] = useState(initial?.ownerName ?? "");
   const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
@@ -156,6 +158,7 @@ export default function IntermediationForm({
     const c = customerList.find((x) => x.id === id);
     if (!c) return;
     setField("ownerName", c.name);
+    setOwnerNameLive(c.name);
     setField("ownerDocument", c.document ?? undefined);
     setField("ownerPhone", c.phone ?? undefined);
     setField("ownerAddress", c.address ?? undefined);
@@ -177,9 +180,11 @@ export default function IntermediationForm({
         setOwnerMsg({ tone: "err", text: r.error });
         return;
       }
-      setField("ownerName", r.data.name || r.data.fantasia);
+      const nome = r.data.name || r.data.fantasia;
+      setField("ownerName", nome);
       setField("ownerPhone", r.data.phone);
       setField("ownerAddress", r.data.address);
+      if (nome) setOwnerNameLive(nome);
       setOwnerMsg({ tone: "ok", text: `Dados encontrados: ${r.data.name ?? ""}. Confira e complete.` });
     });
   }
@@ -273,7 +278,13 @@ export default function IntermediationForm({
         ) : null}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Nome do proprietário" required>
-            <Input name="ownerName" required defaultValue={initial?.ownerName ?? ""} placeholder="Quem é o dono do veículo/documento" />
+            <Input
+              name="ownerName"
+              required
+              defaultValue={initial?.ownerName ?? ""}
+              onChange={(e) => setOwnerNameLive(e.target.value)}
+              placeholder="Quem é o dono do veículo/documento"
+            />
           </Field>
           <Field label="CPF/CNPJ">
             <div className="flex flex-wrap gap-2">
@@ -421,59 +432,60 @@ export default function IntermediationForm({
         </label>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Cliente (comprador/financiado)" required>
-            <Select
-              name="customerId"
-              required
-              value={customerId}
-              onChange={(e) => setCustomerId(e.target.value)}
-            >
-              <option value="" disabled>
-                Selecione o cliente
-              </option>
-              {customerList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
-            <button
-              type="button"
-              onClick={() => {
-                setCustomerPrefill(
-                  refinancing
-                    ? {
-                        name: readField("ownerName"),
-                        document: readField("ownerDocument"),
-                        phone: readField("ownerPhone"),
-                        address: readField("ownerAddress"),
-                      }
-                    : {},
-                );
-                setNewCustomer((v) => !v);
-              }}
-              className="mt-1 text-sm font-medium text-blue-600 hover:underline"
-            >
-              {newCustomer ? "Fechar cadastro" : "➕ Cadastrar cliente"}
-            </button>
             {refinancing ? (
-              <p className="mt-1 text-xs text-slate-500">
-                No refinanciamento o cliente é o próprio proprietário. Use
-                &quot;Cadastrar cliente&quot; para registrá-lo (já vem preenchido com os dados do
-                proprietário) e selecioná-lo.
-              </p>
-            ) : null}
-            {newCustomer ? (
-              <NewCustomerInline
-                initial={customerPrefill}
-                onCreated={(c) => {
-                  setCustomerList((prev) =>
-                    prev.some((x) => x.id === c.id) ? prev : [...prev, c],
-                  );
-                  setCustomerId(c.id);
-                  setNewCustomer(false);
-                }}
-              />
-            ) : null}
+              <>
+                <Input
+                  value={ownerNameLive}
+                  readOnly
+                  placeholder="Preencha o proprietário acima"
+                  className="bg-slate-50 text-slate-700"
+                />
+                <p className="mt-1 text-xs text-slate-500">
+                  No refinanciamento o cliente é o próprio proprietário. O nome acima replica o
+                  proprietário e será cadastrado/reaproveitado como cliente ao gerar a pré-venda.
+                </p>
+              </>
+            ) : (
+              <>
+                <Select
+                  name="customerId"
+                  required
+                  value={customerId}
+                  onChange={(e) => setCustomerId(e.target.value)}
+                >
+                  <option value="" disabled>
+                    Selecione o cliente
+                  </option>
+                  {customerList.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name}
+                    </option>
+                  ))}
+                </Select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomerPrefill({});
+                    setNewCustomer((v) => !v);
+                  }}
+                  className="mt-1 text-sm font-medium text-blue-600 hover:underline"
+                >
+                  {newCustomer ? "Fechar cadastro" : "➕ Cadastrar cliente"}
+                </button>
+                {newCustomer ? (
+                  <NewCustomerInline
+                    initial={customerPrefill}
+                    onCreated={(c) => {
+                      setCustomerList((prev) =>
+                        prev.some((x) => x.id === c.id) ? prev : [...prev, c],
+                      );
+                      setCustomerId(c.id);
+                      setNewCustomer(false);
+                    }}
+                  />
+                ) : null}
+              </>
+            )}
           </Field>
           <Field label="Data" required>
             <Input name="saleDate" type="date" required defaultValue={initial?.saleDate ?? toDateInputValue(new Date())} />
