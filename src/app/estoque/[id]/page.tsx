@@ -77,6 +77,30 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     const key = Math.round(c.amount * 100);
     amountCount.set(key, (amountCount.get(key) ?? 0) + 1);
   }
+  // Recomendação dentro do par duplicado: quando o grupo tem um custo de
+  // solicitação de compra ("Compra NNNN/AAAA…") E um lançamento manual, a
+  // solicitação é a raiz formal (trilha/anexos) → manter a compra, excluir o
+  // manual. Se o grupo é só manual ou só compra, fica o aviso genérico.
+  const isCompraCost = (c: { description: string }) => /^Compra \d{4}\/\d{4}/.test(c.description);
+  const dupAdvice = new Map<string, "excluir" | "manter">();
+  {
+    const groups = new Map<number, typeof vehicle.costs>();
+    for (const c of vehicle.costs) {
+      const key = Math.round(c.amount * 100);
+      const arr = groups.get(key) ?? [];
+      arr.push(c);
+      groups.set(key, arr);
+    }
+    for (const group of groups.values()) {
+      if (group.length < 2) continue;
+      const compras = group.filter((c) => isCompraCost(c));
+      const manuais = group.filter((c) => !isCompraCost(c));
+      if (compras.length > 0 && manuais.length > 0) {
+        for (const c of compras) dupAdvice.set(c.id, "manter");
+        for (const c of manuais) dupAdvice.set(c.id, "excluir");
+      }
+    }
+  }
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
@@ -247,7 +271,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 duplicateSuspect: (amountCount.get(Math.round(c.amount * 100)) ?? 0) > 1,
                 // Órfão: custo gerado por solicitação de compra ("Compra NNNN/AAAA…")
                 // cuja solicitação/título foram excluídos na raiz (payable sumiu).
-                orphan: !c.payable && /^Compra \d{4}\/\d{4}/.test(c.description),
+                orphan: !c.payable && isCompraCost(c),
+                dupAdvice: dupAdvice.get(c.id) ?? null,
               }))}
             />
             {vehicle.status !== "VENDIDO" && canDebitos ? (
