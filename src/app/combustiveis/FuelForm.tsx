@@ -125,10 +125,7 @@ export default function FuelForm({
       <Field label="Posto">
         <Input name="station" placeholder="Nome do posto" />
       </Field>
-      <label className="flex items-center gap-2 text-sm text-slate-700">
-        <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
-        Já paguei no ato (senão, entra como conta a pagar)
-      </label>
+      <p className="text-xs text-slate-500">O abastecimento entra como conta a pagar; a baixa é dada no Financeiro.</p>
       <Button type="submit" disabled={pending || liters <= 0} className="w-full">
         {pending ? "Registrando..." : "Registrar abastecimento"}
       </Button>
