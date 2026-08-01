@@ -430,6 +430,11 @@ model Vehicle {
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)
+  // Anúncio: destaque promocional (tanque cheio, transferência grátis, brinde…).
+  adPromo          String?
+  // Anúncio: campos OCULTOS (preco/ano/km/cor/combustivel/cambio/versao).
+  // Vazio = mostra tudo (todos pré-selecionados).
+  adHiddenFields   String[]      @default([])
   // Veículo de terceiro numa operação de financiamento de terceiros: NÃO é
   // patrimônio da loja — fica fora do estoque, da vitrine e dos relatórios.
   intermediation   Boolean       @default(false)

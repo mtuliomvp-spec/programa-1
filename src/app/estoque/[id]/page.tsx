@@ -12,6 +12,7 @@ import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
+import AdSettings from "./AdSettings";
 import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
@@ -479,6 +480,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                     Ver o anúncio que o QR abre
                   </Link>
                 </div>
+                {canEditar || canPublicar ? (
+                  <AdSettings vehicleId={vehicle.id} promo={vehicle.adPromo} hiddenFields={vehicle.adHiddenFields} />
+                ) : null}
               </div>
             </Card>
           ) : null}

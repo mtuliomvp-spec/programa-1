@@ -20,6 +20,9 @@ export type ShowroomVehicle = {
   transmission: string | null;
   salePrice: number;
   photoIds: string[];
+  // Anúncio: destaque promocional + campos ocultos (vazio = mostra tudo).
+  adPromo: string | null;
+  adHiddenFields: string[];
 };
 
 export async function getShowroomVehicles(): Promise<ShowroomVehicle[]> {
@@ -39,6 +42,8 @@ export async function getShowroomVehicles(): Promise<ShowroomVehicle[]> {
         fuel: true,
         transmission: true,
         salePrice: true,
+        adPromo: true,
+        adHiddenFields: true,
         attachments: {
           where: { kind: "FOTO_VEICULO" },
           orderBy: { createdAt: "asc" },
