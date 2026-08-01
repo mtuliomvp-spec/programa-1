@@ -87,6 +87,36 @@ export async function closeCashbox(userName: string | null): Promise<void> {
     where: { id: session.id },
     data: { closedAt: new Date(), closedBy: userName || null },
   });
+  // Arquiva a posição patrimonial do dia (snapshot versionado) para o Boletim de
+  // Caixa. Import dinâmico evita ciclo de dependência com patrimonial/books-health.
+  try {
+    const [{ getPatrimonialStats }, { getBooksHealth }] = await Promise.all([
+      import("@/lib/patrimonial"),
+      import("@/lib/books-health"),
+    ]);
+    const [stats, health] = await Promise.all([getPatrimonialStats(), getBooksHealth()]);
+    const prev = await prisma.dashboardSnapshot.findFirst({
+      where: { referenceDate: session.workDate },
+      orderBy: { version: "desc" },
+      select: { version: true },
+    });
+    await prisma.dashboardSnapshot.create({
+      data: {
+        referenceDate: session.workDate,
+        version: (prev?.version ?? 0) + 1,
+        archivedBy: userName || null,
+        data: {
+          ...stats,
+          equacao: health.check2.equacao,
+          lucroPrejuizo: health.check2.lucroPrejuizo,
+          check1Ok: health.check1.ok,
+          check2Ok: health.check2.ok,
+        },
+      },
+    });
+  } catch {
+    // Não bloquear o fechamento se o snapshot falhar (o caixa já fechou acima).
+  }
 }
 
 /**
