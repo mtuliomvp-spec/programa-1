@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireAction, userCan } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
+import DeleteComboButton from "./DeleteComboButton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewComboForm from "./NewComboForm";
@@ -17,6 +19,7 @@ const statusInfo = {
 export default async function CombosPage() {
   await requireAction("combos", "visualizar");
   const canManage = await userCan("combos", "criar");
+  const isAdmin = (await getSessionUser())?.role === "ADMIN";
   const combos = await prisma.paymentCombo.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     include: { user: { select: { name: true } }, payables: { select: { amount: true } } },
@@ -71,7 +74,12 @@ export default async function CombosPage() {
                     <Td className="text-right tabular-nums">{c.payables.length}</Td>
                     <Td className="text-right tabular-nums">{formatCurrency(total)}</Td>
                     <Td>
-                      <Badge tone={info.tone}>{info.label}</Badge>
+                      <div className="flex items-center gap-3">
+                        <Badge tone={info.tone}>{info.label}</Badge>
+                        {isAdmin && c.status === "CANCELADO" ? (
+                          <DeleteComboButton comboId={c.id} comboName={c.name} />
+                        ) : null}
+                      </div>
                     </Td>
                   </Tr>
                 );

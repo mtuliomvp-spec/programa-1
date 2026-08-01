@@ -96,6 +96,23 @@ export async function requestComboAction(comboId: string): Promise<Result> {
   return { ok: true };
 }
 
+/** Exclui um combo CANCELADO — só administrador. */
+export async function deleteComboAction(comboId: string): Promise<Result> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Sessão expirada." };
+  if (user.role !== "ADMIN") return { ok: false, error: "Apenas administrador pode excluir combos." };
+  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status !== "CANCELADO") return { ok: false, error: "Só é possível excluir combos cancelados." };
+  await prisma.$transaction([
+    // Garantia: solta qualquer título ainda vinculado antes de apagar.
+    prisma.payable.updateMany({ where: { paymentComboId: comboId }, data: { paymentComboId: null } }),
+    prisma.paymentCombo.delete({ where: { id: comboId } }),
+  ]);
+  revalidate();
+  return { ok: true };
+}
+
 /** Liga/desliga o pagamento integral (não abater o saldo devedor do beneficiário). */
 export async function setComboPayFullAction(comboId: string, value: boolean): Promise<Result> {
   try {
