@@ -23,6 +23,9 @@ type Cost = {
   // Custo de solicitação de compra cuja solicitação/título foram excluídos na
   // raiz: ficou órfão no veículo e deve ser excluído.
   orphan?: boolean;
+  // Recomendação no par duplicado (manual × solicitação de compra vivos):
+  // "excluir" = este é o manual duplicado; "manter" = este veio da solicitação.
+  dupAdvice?: "excluir" | "manter" | null;
 };
 
 export default function VehicleCosts({
@@ -96,6 +99,20 @@ export default function VehicleCosts({
                         title="A solicitação de compra que gerou este custo foi excluída e o título não existe mais. Exclua ESTE custo — o lançamento correto é o outro de mesmo valor."
                       >
                         🗑️ Órfão — excluir este
+                      </span>
+                    ) : c.dupAdvice === "excluir" ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white"
+                        title="Duplicado do título da solicitação de compra de mesmo valor. Exclua ESTE (lançamento manual) e mantenha o da solicitação, que tem a trilha/anexos da compra."
+                      >
+                        🗑️ Duplicado — excluir este
+                      </span>
+                    ) : c.dupAdvice === "manter" ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700"
+                        title="Este veio da solicitação de compra (raiz formal, com trilha e anexos). Mantenha este e exclua o lançamento manual duplicado de mesmo valor."
+                      >
+                        ✔ Manter este (da solicitação)
                       </span>
                     ) : c.duplicateSuspect ? (
                       <span
