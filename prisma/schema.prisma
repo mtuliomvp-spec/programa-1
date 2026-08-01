@@ -905,6 +905,18 @@ model CashboxSession {
   @@map("cashbox_sessions")
 }
 
+// Preço por litro pré-determinado de cada combustível (tela Combustíveis):
+// o operador digita o VALOR abastecido e o sistema calcula os litros.
+model FuelPrice {
+  id            String   @id @default(cuid())
+  fuelType      String   @unique
+  pricePerLiter Float
+  updatedAt     DateTime @updatedAt
+  createdAt     DateTime @default(now())
+
+  @@map("fuel_prices")
+}
+
 // Snapshot da posição patrimonial arquivado no FECHAMENTO do caixa, para o
 // Boletim de Caixa (prova de auditoria). Cada fechamento insere uma nova linha
 // (version = maior+1) preservando o rastro; o boletim lê a última versão da data.
