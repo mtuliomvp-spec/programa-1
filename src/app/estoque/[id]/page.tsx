@@ -33,7 +33,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     include: {
       supplier: true,
       payables: { orderBy: { dueDate: "asc" } },
-      costs: { include: { payable: { select: { status: true, dueDate: true } } }, orderBy: { date: "asc" } },
+      costs: { include: { payable: { select: { id: true, status: true, dueDate: true } } }, orderBy: { date: "asc" } },
       sale: { include: { customer: true, receivables: true } },
       attachments: {
         select: {
@@ -57,7 +57,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -67,7 +67,16 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("vendas", "prevenda"),
       userCan("estoque", "comunicacao"),
       userCan("estoque", "crlv"),
+      userCan("financeiro", "visualizar"),
     ]);
+
+  // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
+  // custo manual + título gerado por solicitação de compra para o mesmo gasto).
+  const amountCount = new Map<number, number>();
+  for (const c of vehicle.costs) {
+    const key = Math.round(c.amount * 100);
+    amountCount.set(key, (amountCount.get(key) ?? 0) + 1);
+  }
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
@@ -222,6 +231,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               vehicleId={vehicle.id}
               sold={vehicle.status === "VENDIDO"}
               canManage={canCustos}
+              canOpenPayable={canOpenPayable}
               costs={vehicle.costs.map((c) => ({
                 id: c.id,
                 description: c.description,
@@ -229,9 +239,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 amount: c.amount,
                 date: c.date,
                 postSale: c.postSale,
+                notes: c.notes,
+                payableId: c.payable?.id ?? null,
                 payableStatus: c.payable
                   ? effectivePayableStatus(c.payable.status, c.payable.dueDate)
                   : null,
+                duplicateSuspect: (amountCount.get(Math.round(c.amount * 100)) ?? 0) > 1,
               }))}
             />
             {vehicle.status !== "VENDIDO" && canDebitos ? (

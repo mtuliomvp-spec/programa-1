@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
 import { addVehicleCostAction, deleteVehicleCostAction, type CostFormState } from "../actions";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
@@ -14,7 +15,11 @@ type Cost = {
   amount: number;
   date: Date;
   postSale?: boolean;
+  notes?: string | null;
+  payableId?: string | null;
   payableStatus?: "PENDENTE" | "PAGO" | "ATRASADO" | null;
+  // Outro custo deste veículo tem o MESMO valor — possível lançamento em dobro.
+  duplicateSuspect?: boolean;
 };
 
 export default function VehicleCosts({
@@ -22,13 +27,16 @@ export default function VehicleCosts({
   costs,
   sold,
   canManage = true,
+  canOpenPayable = false,
 }: {
   vehicleId: string;
   costs: Cost[];
   sold: boolean;
   canManage?: boolean;
+  canOpenPayable?: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [expanded, setExpanded] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState<CostFormState, FormData>(
     async (prev, formData) => {
       const result = await addVehicleCostAction(prev, formData);
@@ -49,39 +57,78 @@ export default function VehicleCosts({
       ) : (
         <ul className="divide-y divide-slate-100">
           {costs.map((c) => (
-            <li key={c.id} className="flex items-center justify-between gap-3 px-5 py-3">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800">{c.description}</p>
-                <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
-                  {formatDate(c.date)}
-                  <Badge>{VEHICLE_COST_CATEGORY_LABEL[c.category]}</Badge>
-                  {c.postSale ? <Badge tone="danger">Pós-venda</Badge> : null}
-                  {c.payableStatus === "PENDENTE" || c.payableStatus === "ATRASADO" ? (
-                    <Badge tone={c.payableStatus === "ATRASADO" ? "danger" : "warning"}>
-                      {c.payableStatus === "ATRASADO" ? "Pagamento atrasado" : "A pagar"}
-                    </Badge>
+            <li key={c.id} className="px-5 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  {c.payableId && canOpenPayable ? (
+                    <Link
+                      href={`/financeiro/a-pagar/${c.payableId}/ordem`}
+                      className="block truncate text-sm font-medium text-blue-700 hover:underline"
+                      title="Abrir os detalhes do título (ordem de pagamento)"
+                    >
+                      {c.description}
+                    </Link>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setExpanded((v) => (v === c.id ? null : c.id))}
+                      className="block max-w-full truncate text-left text-sm font-medium text-slate-800 hover:text-blue-700 hover:underline"
+                      title="Ver detalhes do custo"
+                    >
+                      {c.description}
+                    </button>
+                  )}
+                  <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                    {formatDate(c.date)}
+                    <Badge>{VEHICLE_COST_CATEGORY_LABEL[c.category]}</Badge>
+                    {c.postSale ? <Badge tone="danger">Pós-venda</Badge> : null}
+                    {c.payableStatus === "PENDENTE" || c.payableStatus === "ATRASADO" ? (
+                      <Badge tone={c.payableStatus === "ATRASADO" ? "danger" : "warning"}>
+                        {c.payableStatus === "ATRASADO" ? "Pagamento atrasado" : "A pagar"}
+                      </Badge>
+                    ) : null}
+                    {c.duplicateSuspect ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700"
+                        title="Outro custo deste veículo tem o mesmo valor — confira se não foi lançado em dobro (custo manual + solicitação de compra)."
+                      >
+                        ⚠️ Possível duplicado
+                      </span>
+                    ) : null}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-3">
+                  <span className="text-sm font-semibold text-slate-900">
+                    {formatCurrency(c.amount)}
+                  </span>
+                  {(!sold || c.postSale) && canManage ? (
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => {
+                        if (confirm("Excluir este custo? A conta a pagar vinculada também será removida.")) {
+                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
+                        }
+                      }}
+                      className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
+                    >
+                      Excluir
+                    </button>
                   ) : null}
-                </p>
+                </div>
               </div>
-              <div className="flex shrink-0 items-center gap-3">
-                <span className="text-sm font-semibold text-slate-900">
-                  {formatCurrency(c.amount)}
-                </span>
-                {(!sold || c.postSale) && canManage ? (
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() => {
-                      if (confirm("Excluir este custo? A conta a pagar vinculada também será removida.")) {
-                        startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                      }
-                    }}
-                    className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-                  >
-                    Excluir
-                  </button>
-                ) : null}
-              </div>
+              {expanded === c.id ? (
+                <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                  <p><strong>Descrição:</strong> {c.description}</p>
+                  <p><strong>Data:</strong> {formatDate(c.date)} · <strong>Categoria:</strong> {VEHICLE_COST_CATEGORY_LABEL[c.category]} · <strong>Valor:</strong> {formatCurrency(c.amount)}</p>
+                  {c.notes ? <p><strong>Observações:</strong> {c.notes}</p> : null}
+                  <p className="text-slate-400">
+                    {c.payableId
+                      ? "Custo com conta a pagar vinculada."
+                      : "Custo manual, sem título vinculado (pago no ato)."}
+                  </p>
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>
