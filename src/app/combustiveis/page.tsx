@@ -5,6 +5,7 @@ import { Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thea
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import FuelForm from "./FuelForm";
+import FuelPricesCard from "./FuelPricesCard";
 import DeleteFuelButton from "./DeleteFuelButton";
 
 export const dynamic = "force-dynamic";
@@ -20,13 +21,16 @@ export default async function CombustiveisPage({
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
 
-  const [allEntries, vehicles] = await Promise.all([
+  const [allEntries, vehicles, fuelPrices] = await Promise.all([
     prisma.fuelEntry.findMany({ orderBy: { date: "desc" }, take: 100 }),
     prisma.vehicle.findMany({
       orderBy: { createdAt: "desc" },
-      select: { id: true, brand: true, model: true, plate: true },
+      select: { id: true, brand: true, model: true, plate: true, fuel: true },
     }),
+    prisma.fuelPrice.findMany(),
   ]);
+  // Mapa combustível → preço por litro pré-determinado (calcula litros no form).
+  const priceMap = Object.fromEntries(fuelPrices.map((p) => [p.fuelType, p.pricePerLiter]));
 
   const entries = allEntries.filter(
     (e) =>
@@ -129,12 +133,21 @@ export default async function CombustiveisPage({
         </Card>
 
         {canManage ? (
-          <Card className="h-fit print:hidden">
-            <CardHeader title="Novo abastecimento" />
-            <div className="p-5">
-              <FuelForm vehicles={vehicles} />
-            </div>
-          </Card>
+          <div className="space-y-4">
+            <Card className="h-fit print:hidden">
+              <CardHeader title="Novo abastecimento" />
+              <div className="p-5">
+                <FuelForm vehicles={vehicles} prices={priceMap} />
+              </div>
+            </Card>
+            <Card className="h-fit print:hidden">
+              <CardHeader
+                title="Preços por litro"
+                description="Pré-determinados por combustível — usados para calcular os litros a partir do valor"
+              />
+              <FuelPricesCard prices={priceMap} />
+            </Card>
+          </div>
         ) : null}
       </div>
     </div>
