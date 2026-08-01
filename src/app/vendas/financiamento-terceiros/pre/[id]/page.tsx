@@ -6,6 +6,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { computeReturn } from "@/lib/retorno";
 import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
+import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
 
@@ -165,6 +166,16 @@ export default async function IntermediationPreSalePage({
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
+
+      {vehicle ? (
+        <Card className="mb-4">
+          <CardHeader
+            title="Foto do cliente (antifraude)"
+            description="Registre o comprador com data/hora e localização — prova contra alegação de fraude. Fica no prontuário do veículo."
+          />
+          <ClientPhotoCapture vehicleId={vehicle.id} />
+        </Card>
+      ) : null}
     </div>
   );
 }
