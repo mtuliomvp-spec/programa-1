@@ -25,6 +25,7 @@ const bankSchema = {
   bankAccount: z.string().optional(),
   bankAccountType: z.string().optional(),
   pixKey: z.string().optional(),
+  pixKeyType: z.string().optional(),
 };
 
 const identitySchema = z.object({
@@ -94,6 +95,7 @@ function bankData(d: Record<string, string | undefined>) {
     bankAccount: d.bankAccount?.trim() || null,
     bankAccountType: d.bankAccountType?.trim() || null,
     pixKey: d.pixKey?.trim() || null,
+    pixKeyType: d.pixKeyType?.trim() || null,
   };
 }
 

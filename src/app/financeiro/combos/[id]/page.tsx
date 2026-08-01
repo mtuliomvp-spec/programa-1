@@ -39,7 +39,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   const combo = await prisma.paymentCombo.findUnique({
     where: { id },
     include: {
-      user: { select: { name: true, document: true, phone: true, email: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true } },
+      user: { select: { name: true, document: true, phone: true, email: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true, pixKeyType: true } },
       account: { select: { name: true } },
       payables: {
         orderBy: { dueDate: "asc" },
@@ -158,7 +158,14 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                 <Row label="Agência" value={bene?.bankAgency || "—"} />
                 <Row label="Conta" value={bene?.bankAccount || "—"} />
                 <Row label="Tipo" value={bankType || "—"} />
-                <Row label="Chave PIX" value={bene?.pixKey || "—"} />
+                <Row
+                  label={
+                    bene?.pixKeyType
+                      ? `Chave PIX (${{ cpf: "CPF", cnpj: "CNPJ", telefone: "Telefone", email: "E-mail", aleatoria: "Aleatória" }[bene.pixKeyType] || bene.pixKeyType})`
+                      : "Chave PIX"
+                  }
+                  value={bene?.pixKey || "—"}
+                />
               </>
             ) : (
               <p className="py-1.5 text-sm text-amber-700">

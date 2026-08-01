@@ -57,7 +57,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     where: { id },
     include: {
       supplier: true,
-      beneficiaryUser: { select: { id: true, name: true, email: true, document: true, phone: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true } },
+      beneficiaryUser: { select: { id: true, name: true, email: true, document: true, phone: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true, pixKeyType: true } },
       costCenter: { select: { name: true } },
       account: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true } },
@@ -101,6 +101,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
         bankAccount: src.bankAccount,
         bankAccountType: src.bankAccountType,
         pixKey: src.pixKey,
+        pixKeyType: "pixKeyType" in src ? (src.pixKeyType as string | null) : null,
       }
     : null;
 
@@ -147,13 +148,21 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     beneKind === "usuario"
       ? "Não cadastrados — informe na ficha do usuário (Usuários)."
       : "Não cadastrados — informe na ficha do fornecedor.";
+  const pixTypeLabel: Record<string, string> = {
+    cpf: "CPF",
+    cnpj: "CNPJ",
+    telefone: "Telefone",
+    email: "E-mail",
+    aleatoria: "Aleatória",
+  };
+  const pixLabel = bene?.pixKeyType ? `Chave PIX (${pixTypeLabel[bene.pixKeyType] || bene.pixKeyType})` : "Chave PIX";
   const pagamentoRows: [string, string][] = hasBankData
     ? [
         ["Banco", bene!.bankName || "—"],
         ["Agência", bene!.bankAgency || "—"],
         ["Conta", bene!.bankAccount || "—"],
         ["Tipo", bankType || "—"],
-        ["Chave PIX", bene!.pixKey || "—"],
+        [pixLabel, bene!.pixKey || "—"],
       ]
     : [["Dados bancários", naoCadMsg]];
 
@@ -221,7 +230,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
 
         <Section title="Dados para pagamento">
           {hasBankData ? (
-            pagamentoRows.map(([label, value]) => <Row key={label} label={label} value={value} strong={label === "Chave PIX" && !!bene?.pixKey} />)
+            pagamentoRows.map(([label, value]) => <Row key={label} label={label} value={value} strong={label.startsWith("Chave PIX") && !!bene?.pixKey} />)
           ) : (
             <p className="py-1.5 text-sm text-amber-700">
               Dados bancários não cadastrados.{" "}
