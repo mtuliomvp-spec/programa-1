@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewUserForm from "./NewUserForm";
 import UserRowActions from "./UserRowActions";
+import AccessCodesCard from "./AccessCodesCard";
 import type { UserBank } from "./UserBankFields";
 
 export const dynamic = "force-dynamic";
@@ -56,7 +57,7 @@ export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
 
-  const [users, profiles, beneficiaries] = await Promise.all([
+  const [users, profiles, beneficiaries, accessCodes] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "asc" },
       include: {
@@ -70,7 +71,16 @@ export default async function UsuariosPage() {
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    prisma.accessCode.findMany({ orderBy: { createdAt: "desc" }, take: 50 }),
   ]);
+  const fmtDateTime = (d: Date) => d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const codesAvailable = accessCodes
+    .filter((c) => !c.usedAt)
+    .map((c) => ({ id: c.id, code: c.code, createdBy: c.createdBy, createdAt: fmtDateTime(c.createdAt), usedByEmail: null, usedAt: null }));
+  const codesUsed = accessCodes
+    .filter((c) => c.usedAt)
+    .slice(0, 8)
+    .map((c) => ({ id: c.id, code: c.code, createdBy: c.createdBy, createdAt: fmtDateTime(c.createdAt), usedByEmail: c.usedByEmail, usedAt: c.usedAt ? fmtDateTime(c.usedAt) : null }));
   const pendingUsers = users.filter((u) => u.pending);
   const regularUsers = users.filter((u) => !u.pending);
 
@@ -81,6 +91,14 @@ export default async function UsuariosPage() {
         description="Quem pode acessar o sistema — administradores gerenciam usuários; operadores usam o restante"
         action={<LinkButton href="/usuarios/perfis" variant="secondary">Perfis de acesso</LinkButton>}
       />
+
+      <Card className="mb-4">
+        <CardHeader
+          title="🔑 Códigos de primeiro acesso"
+          description="Gere um código e informe à pessoa — sem um código válido, o 'Cadastrar primeiro acesso' da página pública não prossegue"
+        />
+        <AccessCodesCard available={codesAvailable} used={codesUsed} />
+      </Card>
 
       {pendingUsers.length > 0 ? (
         <Card className="mb-4 ring-2 ring-amber-300">
