@@ -85,19 +85,24 @@ export default async function LoginPage({
           celular.
         </p>
         <div className="mx-auto mt-8 flex max-w-md flex-col gap-3">
-          <a
-            href="#entrar"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-base font-semibold text-white shadow-md hover:bg-blue-600"
-          >
-            🔒 Entrar no sistema
-          </a>
-          <Link
-            href="/vitrine"
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-100"
-          >
-            🚗 Ver veículos à venda
-          </Link>
-          <p className="text-sm text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
+          <div>
+            <a
+              href="#entrar"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-base font-semibold text-white shadow-md hover:bg-blue-600"
+            >
+              🔒 Entrar no sistema
+            </a>
+            <p className="mt-1 text-xs text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
+          </div>
+          <div>
+            <Link
+              href="/vitrine"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              🚗 Ver veículos à venda
+            </Link>
+            <p className="mt-1 text-xs text-emerald-600">Aberto ao público — conheça nosso estoque</p>
+          </div>
         </div>
 
         {/* Onde estamos: endereço da loja com atalhos de navegação, logo no topo */}
@@ -168,7 +173,7 @@ export default async function LoginPage({
           <p className="mb-5 mt-1 text-sm text-slate-500">
             {isSetup
               ? "Primeiro acesso: crie o usuário dono do sistema. Só você poderá cadastrar outros usuários."
-              : "Use seu e-mail e senha cadastrados."}
+              : "Acesso restrito à equipe da MVP Veículos — use seu e-mail e senha cadastrados."}
           </p>
           <LoginForm isSetup={isSetup} next={params.next} />
         </div>
