@@ -83,6 +83,15 @@ export const MODULES: ModuleConfig[] = [
     ],
   },
   {
+    key: "combos",
+    label: "Combos de pagamento",
+    acoes: [
+      { acao: "visualizar", label: "Ver combos" },
+      { acao: "criar", label: "Montar combo (adicionar títulos / solicitar)" },
+      { acao: "aprovar", label: "Aprovar e pagar combo" },
+    ],
+  },
+  {
     key: "administrativo",
     label: "Administrativo (folha, capital, combustíveis)",
     acoes: [

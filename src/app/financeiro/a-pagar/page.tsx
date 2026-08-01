@@ -32,9 +32,10 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo } = await searchParams;
   const q = (qParam || "").trim();
-  const [canPagar, canManage] = await Promise.all([
+  const [canPagar, canManage, canCombo] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
+    userCan("combos", "criar"),
   ]);
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
@@ -272,7 +273,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} cashboxDate={cashboxDate} openCombos={openCombos} />
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
           </>
         )}
       </Card>

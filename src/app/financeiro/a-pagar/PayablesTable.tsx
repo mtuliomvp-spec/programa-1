@@ -42,6 +42,7 @@ export default function PayablesTable({
   accounts,
   canPagar = true,
   canManage = false,
+  canCombo = false,
   cashboxDate = null,
   openCombos = [],
 }: {
@@ -49,6 +50,7 @@ export default function PayablesTable({
   accounts: Account[];
   canPagar?: boolean;
   canManage?: boolean;
+  canCombo?: boolean;
   cashboxDate?: string | null;
   openCombos?: { id: string; name: string }[];
 }) {
@@ -317,7 +319,7 @@ export default function PayablesTable({
                 </button>
               </>
             ) : null}
-            {canManage && openCombos.length > 0 ? (
+            {canCombo && openCombos.length > 0 ? (
               <label className="flex flex-col gap-1 text-xs text-slate-500">
                 Adicionar ao combo
                 <span className="flex items-center gap-2">
