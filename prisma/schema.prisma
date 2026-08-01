@@ -901,6 +901,22 @@ model CashboxSession {
   @@map("cashbox_sessions")
 }
 
+// Snapshot da posição patrimonial arquivado no FECHAMENTO do caixa, para o
+// Boletim de Caixa (prova de auditoria). Cada fechamento insere uma nova linha
+// (version = maior+1) preservando o rastro; o boletim lê a última versão da data.
+model DashboardSnapshot {
+  id            String   @id @default(cuid())
+  referenceDate DateTime // dia de trabalho do caixa fechado
+  data          Json     // PatrimonialStats + { equacao, lucroPrejuizo, check1Ok, check2Ok }
+  version       Int      @default(1)
+  archivedBy    String?
+  archivedAt    DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  @@index([referenceDate])
+  @@map("dashboard_snapshots")
+}
+
 // Tipo da categoria de lançamento: despesa (Contas a pagar/saída no caixa) ou
 // receita (Contas a receber/recorrência a receber).
 enum CategoriaKind {
