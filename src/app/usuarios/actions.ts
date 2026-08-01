@@ -289,3 +289,38 @@ export async function resetPasswordAction(
   revalidatePath("/usuarios");
   return { success: "Senha alterada." };
 }
+
+/** Gera um código de liberação de primeiro acesso (uso único). */
+export async function generateAccessCodeAction(): Promise<{ ok: boolean; code?: string; error?: string }> {
+  let admin;
+  try {
+    admin = await requireAdmin();
+  } catch {
+    return { ok: false, error: "Apenas administradores geram códigos." };
+  }
+  // 6 caracteres sem ambíguos (sem 0/O, 1/I/L).
+  const alphabet = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join("");
+    try {
+      await prisma.accessCode.create({ data: { code, createdBy: admin.name || admin.email } });
+      revalidatePath("/usuarios");
+      return { ok: true, code };
+    } catch {
+      // colisão de código único: tenta outro
+    }
+  }
+  return { ok: false, error: "Não foi possível gerar o código. Tente novamente." };
+}
+
+/** Exclui um código de liberação ainda não usado. */
+export async function deleteAccessCodeAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, error: "Apenas administradores." };
+  }
+  await prisma.accessCode.deleteMany({ where: { id, usedAt: null } });
+  revalidatePath("/usuarios");
+  return { ok: true };
+}

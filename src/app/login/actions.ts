@@ -108,6 +108,7 @@ const signupSchema = z.object({
   name: z.string().min(1, "Informe seu nome"),
   email: z.string().email("Informe um e-mail válido"),
   password: z.string().min(6, "A senha precisa ter pelo menos 6 caracteres"),
+  accessCode: z.string().min(1, "Informe o código de liberação"),
 });
 
 export type SignupFormState = { error?: string; success?: string };
@@ -127,16 +128,38 @@ export async function signupAction(
   const existing = await prisma.user.findUnique({ where: { email } });
   if (existing) return { error: "Já existe um cadastro com esse e-mail. Tente entrar ou use o esqueci a senha." };
 
-  const created = await prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email,
-      passwordHash: hashPassword(parsed.data.password),
-      role: "OPERADOR",
-      pending: true,
-      permissions: [],
-    },
+  // Código de liberação (gerado pelo administrador, uso único): sem um código
+  // válido o cadastro nem entra na fila de aprovação.
+  const codeInput = parsed.data.accessCode.trim().toUpperCase();
+  const accessCode = await prisma.accessCode.findUnique({ where: { code: codeInput } });
+  if (!accessCode || accessCode.usedAt) {
+    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador da MVP Veículos." };
+  }
+
+  const created = await prisma.$transaction(async (tx) => {
+    // Consumo atômico: se outro cadastro usou o código neste meio-tempo, falha.
+    const consumed = await tx.accessCode.updateMany({
+      where: { id: accessCode.id, usedAt: null },
+      data: { usedByEmail: email, usedAt: new Date() },
+    });
+    if (consumed.count === 0) throw new Error("CODE_USED");
+    return tx.user.create({
+      data: {
+        name: parsed.data.name,
+        email,
+        passwordHash: hashPassword(parsed.data.password),
+        role: "OPERADOR",
+        pending: true,
+        permissions: [],
+      },
+    });
+  }).catch((e) => {
+    if (e instanceof Error && e.message === "CODE_USED") return null;
+    throw e;
   });
+  if (!created) {
+    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador da MVP Veículos." };
+  }
   await syncUserSupplier(created.id);
   return {
     success:

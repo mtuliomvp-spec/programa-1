@@ -905,6 +905,20 @@ model CashboxSession {
   @@map("cashbox_sessions")
 }
 
+// Código de liberação do primeiro acesso: gerado pelo administrador e informado
+// à pessoa; sem um código válido o "Cadastrar primeiro acesso" não prossegue.
+// Uso único (usedByEmail/usedAt marcam o consumo).
+model AccessCode {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  createdBy   String?
+  usedByEmail String?
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("access_codes")
+}
+
 // Preço por litro pré-determinado de cada combustível (tela Combustíveis):
 // o operador digita o VALOR abastecido e o sistema calcula os litros.
 model FuelPrice {

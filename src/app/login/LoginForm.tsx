@@ -76,6 +76,18 @@ export default function LoginForm({ isSetup, next }: { isSetup: boolean; next?: 
               <Field label="Crie uma senha (mín. 6 caracteres)" required>
                 <Input name="password" type="password" required minLength={6} />
               </Field>
+              <Field label="Código de liberação" required>
+                <Input
+                  name="accessCode"
+                  required
+                  placeholder="Ex: K7M2QP"
+                  className="uppercase tracking-widest"
+                  autoComplete="off"
+                />
+              </Field>
+              <p className="-mt-2 text-xs text-slate-400">
+                Peça o código ao administrador da MVP Veículos antes de se cadastrar — sem ele o cadastro não prossegue.
+              </p>
               <Button type="submit" disabled={signupPending} className="w-full">
                 {signupPending ? "Enviando..." : "Cadastrar meu acesso"}
               </Button>
