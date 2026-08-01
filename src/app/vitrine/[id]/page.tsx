@@ -20,11 +20,13 @@ export async function generateMetadata({
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
   const base = await getBaseUrl();
+  const showPrice = !v.adHiddenFields.includes("preco");
+  const precoTitle = showPrice ? ` — ${formatCurrency(v.salePrice)}` : "";
   return {
-    title: `${titulo} — ${formatCurrency(v.salePrice)} | ${nome}`,
-    description: `${titulo} à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}. ${formatCurrency(v.salePrice)}. Fale com a equipe pelo WhatsApp.`,
+    title: `${titulo}${precoTitle} | ${nome}`,
+    description: `${titulo} à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}.${showPrice ? ` ${formatCurrency(v.salePrice)}.` : ""} Fale com a equipe pelo WhatsApp.`,
     openGraph: v.photoIds[0]
-      ? { images: [`${base}/vitrine/foto/${v.photoIds[0]}`], title: `${titulo} — ${formatCurrency(v.salePrice)}` }
+      ? { images: [`${base}/vitrine/foto/${v.photoIds[0]}`], title: `${titulo}${precoTitle}` }
       : undefined,
   };
 }
@@ -45,9 +47,14 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
 
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
+  // Campos ocultos do anúncio (gerenciados na ficha; vazio = mostra tudo).
+  const hidden = new Set(v.adHiddenFields);
+  const showPrice = !hidden.has("preco");
   const zap = whatsappLink(
     company?.phone,
-    `Olá! Tenho interesse no ${titulo} anunciado por ${formatCurrency(v.salePrice)} no site da ${nome}.`,
+    showPrice
+      ? `Olá! Tenho interesse no ${titulo} anunciado por ${formatCurrency(v.salePrice)} no site da ${nome}.`
+      : `Olá! Tenho interesse no ${titulo} anunciado no site da ${nome}.`,
   );
 
   return (
@@ -83,11 +90,21 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           </div>
         )}
 
+        {/* Destaque promocional do anúncio (tanque cheio, transferência, brinde…) */}
+        {v.adPromo ? (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+            <span className="text-3xl">🎁</span>
+            <p className="text-base font-bold text-emerald-800">{v.adPromo}</p>
+          </div>
+        ) : null}
+
         {/* Preço + contato */}
         <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">Preço</p>
-            <p className="text-3xl font-black text-slate-900">{formatCurrency(v.salePrice)}</p>
+            <p className="text-3xl font-black text-slate-900">
+              {showPrice ? formatCurrency(v.salePrice) : "Consulte"}
+            </p>
           </div>
           {zap ? (
             <a
@@ -105,14 +122,14 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           )}
         </div>
 
-        {/* Ficha */}
+        {/* Ficha (só os campos habilitados no anúncio) */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <Spec label="Ano" value={`${v.manufactureYear}/${v.modelYear}`} />
-          <Spec label="KM" value={`${v.km.toLocaleString("pt-BR")} km`} />
-          {v.color ? <Spec label="Cor" value={v.color} /> : null}
-          {v.fuel ? <Spec label="Combustível" value={v.fuel} /> : null}
-          {v.transmission ? <Spec label="Câmbio" value={v.transmission} /> : null}
-          {v.version ? <Spec label="Versão" value={v.version} /> : null}
+          {!hidden.has("ano") ? <Spec label="Ano" value={`${v.manufactureYear}/${v.modelYear}`} /> : null}
+          {!hidden.has("km") ? <Spec label="KM" value={`${v.km.toLocaleString("pt-BR")} km`} /> : null}
+          {!hidden.has("cor") && v.color ? <Spec label="Cor" value={v.color} /> : null}
+          {!hidden.has("combustivel") && v.fuel ? <Spec label="Combustível" value={v.fuel} /> : null}
+          {!hidden.has("cambio") && v.transmission ? <Spec label="Câmbio" value={v.transmission} /> : null}
+          {!hidden.has("versao") && v.version ? <Spec label="Versão" value={v.version} /> : null}
         </div>
 
         <footer className="mt-10 border-t border-slate-200 pt-6 pb-8 text-center text-xs text-slate-400">

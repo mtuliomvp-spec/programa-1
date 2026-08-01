@@ -608,3 +608,32 @@ export async function deleteVehicleAction(id: string) {
   revalidatePath("/");
   redirect("/estoque");
 }
+
+/**
+ * Configura o ANÚNCIO do veículo (QR do para-brisa / vitrine): destaque
+ * promocional e quais dados aparecem (lista de campos ocultos; vazio = tudo).
+ */
+export async function updateAdSettingsAction(
+  vehicleId: string,
+  promo: string,
+  hiddenFields: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "publicar"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const allowed = new Set(["preco", "ano", "km", "cor", "combustivel", "cambio", "versao"]);
+  const hidden = hiddenFields.filter((f) => allowed.has(f));
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: { adPromo: promo.trim().slice(0, 200) || null, adHiddenFields: hidden },
+  });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath(`/vitrine/${vehicleId}`);
+  revalidatePath("/vitrine");
+  return { ok: true };
+}
