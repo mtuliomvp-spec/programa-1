@@ -11,7 +11,7 @@ const statusInfo = {
   ABERTO: { label: "Aberto", tone: "info" as const },
   SOLICITADO: { label: "Aguardando pagamento", tone: "warning" as const },
   PAGO: { label: "Pago", tone: "success" as const },
-  CANCELADO: { label: "Cancelado", tone: "default" as const },
+  CANCELADO: { label: "Cancelado", tone: "danger" as const },
 };
 
 export default async function CombosPage() {
@@ -59,7 +59,10 @@ export default async function CombosPage() {
                 return (
                   <Tr key={c.id}>
                     <Td className="font-medium text-slate-900">
-                      <Link href={`/financeiro/combos/${c.id}`} className="text-blue-700 hover:underline">
+                      <Link
+                        href={`/financeiro/combos/${c.id}`}
+                        className={`text-blue-700 hover:underline ${c.status === "CANCELADO" ? "text-slate-400 line-through" : ""}`}
+                      >
                         {c.name}
                       </Link>
                       <span className="block text-xs font-normal text-slate-400">criado em {formatDate(c.createdAt)}</span>
