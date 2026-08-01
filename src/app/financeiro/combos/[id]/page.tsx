@@ -4,6 +4,7 @@ import { requireAction, userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
 import { getCompany } from "@/lib/company";
+import { freeCapitalOf } from "@/lib/investments";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
@@ -59,6 +60,22 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   const total = combo.payables.reduce((s, p) => s + p.amount, 0);
   const info = statusInfo[combo.status];
   const bene = combo.user;
+
+  // Abatimento do saldo devedor de capital do beneficiário (mesmo mecanismo da
+  // comissão): se pago, usa o valor gravado; senão calcula o débito livre ao vivo.
+  let abatimento = combo.status === "PAGO" ? combo.capitalAbatement : 0;
+  if (combo.status !== "PAGO" && combo.status !== "CANCELADO" && combo.userId) {
+    const beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { userId: combo.userId },
+      select: { id: true },
+    });
+    if (beneficiary) {
+      const free = await freeCapitalOf(beneficiary.id);
+      const debt = Math.max(0, Math.round(-free * 100) / 100);
+      abatimento = Math.min(total, debt);
+    }
+  }
+  const liquido = Math.round((total - abatimento) * 100) / 100;
   const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
   const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
 
@@ -174,10 +191,34 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             )}
           </section>
 
-          <div className="mb-2 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-            <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Total a pagar</span>
-            <span className="text-2xl font-black text-slate-900">{formatCurrency(total)}</span>
-          </div>
+          {abatimento > 0.005 ? (
+            <div className="mb-2 rounded-lg bg-slate-50 px-4 py-3">
+              <div className="flex items-center justify-between py-0.5 text-sm text-slate-600">
+                <span>Total dos títulos</span>
+                <span className="tabular-nums">{formatCurrency(total)}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5 text-sm text-amber-700">
+                <span>
+                  {combo.status === "PAGO" ? "Abatido no saldo devedor de capital" : `Débito de capital (livre) de ${bene?.name || "beneficiário"}`}
+                </span>
+                <span className="tabular-nums">− {formatCurrency(abatimento)}</span>
+              </div>
+              <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-2">
+                <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {combo.status === "PAGO" ? "Líquido pago" : "Líquido a pagar"}
+                </span>
+                <span className="text-2xl font-black text-slate-900">{formatCurrency(liquido)}</span>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                Parte do total cobre o saldo devedor de capital do beneficiário (vira aporte); só a diferença sai em dinheiro.
+              </p>
+            </div>
+          ) : (
+            <div className="mb-2 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
+              <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Total a pagar</span>
+              <span className="text-2xl font-black text-slate-900">{formatCurrency(total)}</span>
+            </div>
+          )}
           {combo.status === "PAGO" ? (
             <p className="text-sm text-slate-500">
               Pago em {combo.paidAt ? formatDate(combo.paidAt) : "—"}
