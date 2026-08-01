@@ -72,16 +72,24 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
   // custo manual + título gerado por solicitação de compra para o mesmo gasto).
-  const amountCount = new Map<number, number>();
-  for (const c of vehicle.costs) {
-    const key = Math.round(c.amount * 100);
-    amountCount.set(key, (amountCount.get(key) ?? 0) + 1);
-  }
-  // Recomendação dentro do par duplicado: quando o grupo tem um custo de
-  // solicitação de compra ("Compra NNNN/AAAA…") E um lançamento manual, a
-  // solicitação é a raiz formal (trilha/anexos) → manter a compra, excluir o
-  // manual. Se o grupo é só manual ou só compra, fica o aviso genérico.
+  // Exceção: PARCELAS DA MESMA SÉRIE têm o mesmo valor por natureza ("Parcela
+  // 1/2" e "2/2" do mesmo parcelamento) e não se acusam entre si.
   const isCompraCost = (c: { description: string }) => /^Compra \d{4}\/\d{4}/.test(c.description);
+  const parcelOf = (desc: string): { series: string; idx: number } | null => {
+    let m = desc.match(/^(.*)[-–]\s*Parcela\s*(\d+)\/(\d+)\s*$/i);
+    if (m) return { series: m[1].trim().toLowerCase(), idx: Number(m[2]) };
+    m = desc.match(/^(.*)\(parc\.\s*(\d+)\/(\d+)\)\s*$/i);
+    if (m) return { series: m[1].trim().toLowerCase(), idx: Number(m[2]) };
+    return null;
+  };
+  // Irmãs do mesmo parcelamento (mesma série, parcelas diferentes) não conflitam.
+  const conflicts = (a: { description: string }, b: { description: string }) => {
+    const pa = parcelOf(a.description);
+    const pb = parcelOf(b.description);
+    if (pa && pb && pa.series === pb.series && pa.idx !== pb.idx) return false;
+    return true;
+  };
+  const duplicateIds = new Set<string>();
   const dupAdvice = new Map<string, "excluir" | "manter">();
   {
     const groups = new Map<number, typeof vehicle.costs>();
@@ -93,8 +101,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     }
     for (const group of groups.values()) {
       if (group.length < 2) continue;
-      const compras = group.filter((c) => isCompraCost(c));
-      const manuais = group.filter((c) => !isCompraCost(c));
+      const conflicted = group.filter((c) => group.some((o) => o.id !== c.id && conflicts(c, o)));
+      for (const c of conflicted) duplicateIds.add(c.id);
+      // Recomendação dentro do par em conflito: a solicitação de compra é a raiz
+      // formal (trilha/anexos) → manter a compra, excluir o lançamento manual.
+      const compras = conflicted.filter((c) => isCompraCost(c));
+      const manuais = conflicted.filter((c) => !isCompraCost(c));
       if (compras.length > 0 && manuais.length > 0) {
         for (const c of compras) dupAdvice.set(c.id, "manter");
         for (const c of manuais) dupAdvice.set(c.id, "excluir");
@@ -268,7 +280,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 payableStatus: c.payable
                   ? effectivePayableStatus(c.payable.status, c.payable.dueDate)
                   : null,
-                duplicateSuspect: (amountCount.get(Math.round(c.amount * 100)) ?? 0) > 1,
+                duplicateSuspect: duplicateIds.has(c.id),
                 // Órfão: custo gerado por solicitação de compra ("Compra NNNN/AAAA…")
                 // cuja solicitação/título foram excluídos na raiz (payable sumiu).
                 orphan: !c.payable && isCompraCost(c),
