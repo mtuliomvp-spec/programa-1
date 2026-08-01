@@ -63,19 +63,24 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
 
   // Abatimento do saldo devedor de capital do beneficiário (mesmo mecanismo da
   // comissão): se pago, usa o valor gravado; senão calcula o débito livre ao vivo.
+  // `debtTotal` = saldo devedor TOTAL (livre) do beneficiário — informativo, pode
+  // ser maior que o abatido neste combo.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
   let abatimento = combo.status === "PAGO" ? combo.capitalAbatement : 0;
-  if (combo.status !== "PAGO" && combo.status !== "CANCELADO" && combo.userId) {
+  let debtTotal = 0;
+  if (combo.userId && combo.status !== "CANCELADO") {
     const beneficiary = await prisma.capitalBeneficiary.findUnique({
       where: { userId: combo.userId },
       select: { id: true },
     });
     if (beneficiary) {
       const free = await freeCapitalOf(beneficiary.id);
-      const debt = Math.max(0, Math.round(-free * 100) / 100);
-      abatimento = Math.min(total, debt);
+      debtTotal = Math.max(0, round2(-free));
+      if (combo.status !== "PAGO") abatimento = Math.min(total, debtTotal);
     }
   }
-  const liquido = Math.round((total - abatimento) * 100) / 100;
+  const liquido = round2(total - abatimento);
+  const restante = round2(Math.max(0, debtTotal - abatimento));
   const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
   const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
 
@@ -191,27 +196,42 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             )}
           </section>
 
-          {abatimento > 0.005 ? (
+          {abatimento > 0.005 || debtTotal > 0.005 ? (
             <div className="mb-2 rounded-lg bg-slate-50 px-4 py-3">
               <div className="flex items-center justify-between py-0.5 text-sm text-slate-600">
                 <span>Total dos títulos</span>
                 <span className="tabular-nums">{formatCurrency(total)}</span>
               </div>
-              <div className="flex items-center justify-between py-0.5 text-sm text-amber-700">
-                <span>
-                  {combo.status === "PAGO" ? "Abatido no saldo devedor de capital" : `Débito de capital (livre) de ${bene?.name || "beneficiário"}`}
-                </span>
-                <span className="tabular-nums">− {formatCurrency(abatimento)}</span>
-              </div>
+              {debtTotal > 0.005 ? (
+                <div className="flex items-center justify-between py-0.5 text-sm text-rose-700">
+                  <span>
+                    Saldo devedor de capital (livre){bene?.name ? ` de ${bene.name}` : ""}
+                    {combo.status === "PAGO" ? " (em aberto)" : ""}
+                  </span>
+                  <span className="tabular-nums font-semibold">− {formatCurrency(debtTotal)}</span>
+                </div>
+              ) : null}
+              {abatimento > 0.005 ? (
+                <div className="flex items-center justify-between py-0.5 text-sm text-amber-700">
+                  <span>{combo.status === "PAGO" ? "Abatido neste combo" : "A abater neste combo"}</span>
+                  <span className="tabular-nums">− {formatCurrency(abatimento)}</span>
+                </div>
+              ) : null}
               <div className="mt-1 flex items-center justify-between border-t border-slate-200 pt-2">
                 <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                   {combo.status === "PAGO" ? "Líquido pago" : "Líquido a pagar"}
                 </span>
                 <span className="text-2xl font-black text-slate-900">{formatCurrency(liquido)}</span>
               </div>
-              <p className="mt-1 text-xs text-slate-400">
-                Parte do total cobre o saldo devedor de capital do beneficiário (vira aporte); só a diferença sai em dinheiro.
-              </p>
+              {restante > 0.005 && combo.status !== "PAGO" ? (
+                <p className="mt-1 text-xs text-rose-500">
+                  Este combo cobre {formatCurrency(abatimento)} do saldo devedor; restam {formatCurrency(restante)} para um próximo combo/comissão.
+                </p>
+              ) : (
+                <p className="mt-1 text-xs text-slate-400">
+                  Parte do total cobre o saldo devedor de capital do beneficiário (vira aporte); só a diferença sai em dinheiro.
+                </p>
+              )}
             </div>
           ) : (
             <div className="mb-2 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
