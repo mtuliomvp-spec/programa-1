@@ -43,6 +43,9 @@ export default function VehicleCosts({
 }) {
   const [showForm, setShowForm] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Confirmação in-app (o window.confirm nativo é suprimido em navegadores de
+  // celular/in-app, deixando o Excluir "morto").
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [state, formAction, pending] = useActionState<CostFormState, FormData>(
     async (prev, formData) => {
       const result = await addVehicleCostAction(prev, formData);
@@ -132,11 +135,7 @@ export default function VehicleCosts({
                     <button
                       type="button"
                       disabled={deleting}
-                      onClick={() => {
-                        if (confirm("Excluir este custo? A conta a pagar vinculada também será removida.")) {
-                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                        }
-                      }}
+                      onClick={() => setConfirmingId((v) => (v === c.id ? null : c.id))}
                       className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
                     >
                       Excluir
@@ -144,6 +143,32 @@ export default function VehicleCosts({
                   ) : null}
                 </div>
               </div>
+              {confirmingId === c.id ? (
+                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                  <span className="text-xs text-rose-700">
+                    Excluir este custo? A conta a pagar vinculada também será removida.
+                  </span>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => {
+                      setConfirmingId(null);
+                      startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
+                    }}
+                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+                  >
+                    {deleting ? "Excluindo..." : "Sim, excluir"}
+                  </button>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => setConfirmingId(null)}
+                    className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    Voltar
+                  </button>
+                </div>
+              ) : null}
               {expanded === c.id ? (
                 <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
                   <p><strong>Descrição:</strong> {c.description}</p>
