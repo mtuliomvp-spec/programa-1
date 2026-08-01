@@ -17,7 +17,7 @@ const statusInfo = {
   ABERTO: { label: "Aberto", tone: "info" as const },
   SOLICITADO: { label: "Aguardando pagamento", tone: "warning" as const },
   PAGO: { label: "Pago", tone: "success" as const },
-  CANCELADO: { label: "Cancelado", tone: "default" as const },
+  CANCELADO: { label: "Cancelado", tone: "danger" as const },
 };
 const accountTypeLabel: Record<string, string> = { corrente: "Corrente", poupanca: "Poupança" };
 
@@ -109,6 +109,16 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
               </>
             }
           />
+
+          {combo.status === "CANCELADO" ? (
+            <div className="mb-4 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
+              <span className="text-2xl">⛔</span>
+              <div>
+                <p className="text-sm font-bold uppercase tracking-wide text-rose-700">Combo cancelado</p>
+                <p className="text-sm text-rose-600">Este combo foi cancelado — os títulos voltaram soltos para o Contas a pagar.</p>
+              </div>
+            </div>
+          ) : null}
 
           <section className="mb-4">
             <h2 className="mb-1 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Beneficiário</h2>
