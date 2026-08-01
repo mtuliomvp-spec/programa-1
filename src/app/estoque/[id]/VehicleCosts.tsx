@@ -20,6 +20,9 @@ type Cost = {
   payableStatus?: "PENDENTE" | "PAGO" | "ATRASADO" | null;
   // Outro custo deste veículo tem o MESMO valor — possível lançamento em dobro.
   duplicateSuspect?: boolean;
+  // Custo de solicitação de compra cuja solicitação/título foram excluídos na
+  // raiz: ficou órfão no veículo e deve ser excluído.
+  orphan?: boolean;
 };
 
 export default function VehicleCosts({
@@ -87,7 +90,14 @@ export default function VehicleCosts({
                         {c.payableStatus === "ATRASADO" ? "Pagamento atrasado" : "A pagar"}
                       </Badge>
                     ) : null}
-                    {c.duplicateSuspect ? (
+                    {c.orphan ? (
+                      <span
+                        className="inline-flex items-center rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white"
+                        title="A solicitação de compra que gerou este custo foi excluída e o título não existe mais. Exclua ESTE custo — o lançamento correto é o outro de mesmo valor."
+                      >
+                        🗑️ Órfão — excluir este
+                      </span>
+                    ) : c.duplicateSuspect ? (
                       <span
                         className="inline-flex items-center rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-semibold text-rose-700"
                         title="Outro custo deste veículo tem o mesmo valor — confira se não foi lançado em dobro (custo manual + solicitação de compra)."
@@ -122,11 +132,18 @@ export default function VehicleCosts({
                   <p><strong>Descrição:</strong> {c.description}</p>
                   <p><strong>Data:</strong> {formatDate(c.date)} · <strong>Categoria:</strong> {VEHICLE_COST_CATEGORY_LABEL[c.category]} · <strong>Valor:</strong> {formatCurrency(c.amount)}</p>
                   {c.notes ? <p><strong>Observações:</strong> {c.notes}</p> : null}
-                  <p className="text-slate-400">
-                    {c.payableId
-                      ? "Custo com conta a pagar vinculada."
-                      : "Custo manual, sem título vinculado (pago no ato)."}
-                  </p>
+                  {c.orphan ? (
+                    <p className="font-semibold text-rose-600">
+                      A solicitação de compra que gerou este custo foi excluída — o título não existe mais. Este custo
+                      ficou órfão e deve ser excluído (use o botão Excluir).
+                    </p>
+                  ) : (
+                    <p className="text-slate-400">
+                      {c.payableId
+                        ? "Custo com conta a pagar vinculada."
+                        : "Custo manual, sem título vinculado (pago no ato)."}
+                    </p>
+                  )}
                 </div>
               ) : null}
             </li>

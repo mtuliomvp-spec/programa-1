@@ -245,6 +245,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   ? effectivePayableStatus(c.payable.status, c.payable.dueDate)
                   : null,
                 duplicateSuspect: (amountCount.get(Math.round(c.amount * 100)) ?? 0) > 1,
+                // Órfão: custo gerado por solicitação de compra ("Compra NNNN/AAAA…")
+                // cuja solicitação/título foram excluídos na raiz (payable sumiu).
+                orphan: !c.payable && /^Compra \d{4}\/\d{4}/.test(c.description),
               }))}
             />
             {vehicle.status !== "VENDIDO" && canDebitos ? (
