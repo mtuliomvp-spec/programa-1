@@ -26,12 +26,22 @@ export default function ComboActions({
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  // Confirmação in-app (o window.confirm nativo é suprimido em vários navegadores
+  // de celular/in-app, o que travava as ações — "como se não tivesse clicado").
+  const [confirming, setConfirming] = useState<{ key: "request" | "pay" | "cancel"; msg: string } | null>(null);
 
-  function run(fn: () => Promise<{ ok: boolean; error?: string }>, confirmMsg?: string) {
-    if (confirmMsg && !confirm(confirmMsg)) return;
+  function confirmYes() {
+    const key = confirming?.key;
+    setConfirming(null);
+    if (!key) return;
     setMsg(null);
     start(async () => {
-      const r = await fn();
+      const r =
+        key === "request"
+          ? await requestComboAction(comboId)
+          : key === "pay"
+            ? await payComboAction(comboId, accountId)
+            : await cancelComboAction(comboId);
       if (!r.ok) {
         setMsg(r.error || "Não foi possível concluir.");
         return;
@@ -52,8 +62,8 @@ export default function ComboActions({
       {showRequest ? (
         <button
           type="button"
-          disabled={pending}
-          onClick={() => run(() => requestComboAction(comboId), "Encerrar o combo e solicitar o pagamento do total?")}
+          disabled={pending || confirming !== null}
+          onClick={() => setConfirming({ key: "request", msg: "Encerrar o combo e solicitar o pagamento do total?" })}
           className="h-9 rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
         >
           Solicitar pagamento
@@ -75,8 +85,8 @@ export default function ComboActions({
           </select>
           <button
             type="button"
-            disabled={pending || !accountId}
-            onClick={() => run(() => payComboAction(comboId, accountId), "Pagar todos os títulos do combo agora?")}
+            disabled={pending || !accountId || confirming !== null}
+            onClick={() => setConfirming({ key: "pay", msg: "Pagar todos os títulos do combo agora?" })}
             className="h-9 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
           >
             {pending ? "Pagando..." : "Pagar combo"}
@@ -90,13 +100,40 @@ export default function ComboActions({
       {showCancel ? (
         <button
           type="button"
-          disabled={pending}
-          onClick={() => run(() => cancelComboAction(comboId), "Cancelar o combo? Os títulos voltam soltos para o Contas a pagar.")}
+          disabled={pending || confirming !== null}
+          onClick={() =>
+            setConfirming({ key: "cancel", msg: "Cancelar o combo? Os títulos voltam soltos para o Contas a pagar." })
+          }
           className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
         >
           Cancelar combo
         </button>
       ) : null}
+
+      {confirming ? (
+        <div className="w-full rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+          <p className="mb-2 text-sm text-slate-700">{confirming.msg}</p>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              disabled={pending}
+              onClick={confirmYes}
+              className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {pending ? "Processando..." : "Confirmar"}
+            </button>
+            <button
+              type="button"
+              disabled={pending}
+              onClick={() => setConfirming(null)}
+              className="h-9 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-white disabled:opacity-50"
+            >
+              Voltar
+            </button>
+          </div>
+        </div>
+      ) : null}
+
       {msg ? <p className="w-full text-sm text-rose-600">{msg}</p> : null}
     </div>
   );
