@@ -12,7 +12,7 @@ import {
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { assertCan, canUseFormLookup } from "@/lib/guards";
+import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 
 const advanceSchema = z.object({
@@ -541,7 +541,13 @@ export async function uploadClientPhotoAction(
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("estoque", "editar");
+    // Também vale para o fluxo de vendas/financiamento de terceiros (vendedor
+    // fotografa o cliente na negociação, sem precisar de estoque.editar).
+    await assertCanAny([
+      ["estoque", "editar"],
+      ["vendas", "prevenda"],
+      ["vendas", "registrar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }

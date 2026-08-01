@@ -5,6 +5,7 @@ import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { cancelIntermediationAction } from "../actions";
+import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
 
@@ -124,6 +125,14 @@ export default async function FinanciamentoTerceirosDetailPage({
         <div className="p-5">
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Foto do cliente (antifraude)"
+          description="Registre o comprador com data/hora e localização — prova contra alegação de fraude. Fica no prontuário do veículo."
+        />
+        <ClientPhotoCapture vehicleId={sale.vehicle.id} />
       </Card>
 
       {canCancel && !canceled ? (
