@@ -25,6 +25,18 @@ export async function requireAction(moduleKey: ModuleKey, action: string) {
 }
 
 /**
+ * Como `requireAction`, mas passa se o usuário tiver QUALQUER uma das
+ * ações da lista (ex.: editar título permitido a `financeiro.criar` OU
+ * `combos.criar`). Manda para "/" se não tiver nenhuma.
+ */
+export async function requireActionAny(pairs: [ModuleKey, string][]) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  if (!pairs.some(([m, a]) => can(user, m, a))) redirect("/");
+  return user;
+}
+
+/**
  * Garante uma AÇÃO específica dentro de um módulo (ex.: vendas.registrar).
  * Lança Error com mensagem amigável — para usar em server actions dentro de
  * try/catch (não redireciona). Admin passa sempre.
@@ -38,6 +50,23 @@ export async function assertCan(moduleKey: ModuleKey, action: string) {
     if ((await getSystemLock()).locked) throw new Error(MAINTENANCE_MESSAGE);
   }
   if (!can(user, moduleKey, action)) {
+    throw new Error("Você não tem permissão para esta ação.");
+  }
+  return user;
+}
+
+/**
+ * Como `assertCan`, mas passa se o usuário tiver QUALQUER uma das ações da lista.
+ * Lança (não redireciona) — para server actions dentro de try/catch.
+ */
+export async function assertCanAny(pairs: [ModuleKey, string][]) {
+  const user = await getSessionUser();
+  if (!user) throw new Error("Sessão expirada. Faça login novamente.");
+  if (user.role !== "ADMIN") {
+    const { getSystemLock, MAINTENANCE_MESSAGE } = await import("@/lib/system-lock");
+    if ((await getSystemLock()).locked) throw new Error(MAINTENANCE_MESSAGE);
+  }
+  if (!pairs.some(([m, a]) => can(user, m, a))) {
     throw new Error("Você não tem permissão para esta ação.");
   }
   return user;

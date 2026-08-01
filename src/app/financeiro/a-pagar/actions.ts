@@ -7,7 +7,7 @@ import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
-import { assertCan } from "@/lib/guards";
+import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
@@ -456,7 +456,10 @@ export async function updatePayableAction(
   formData: FormData,
 ): Promise<EditPayableState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["combos", "criar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -498,7 +501,9 @@ export async function updatePayableAction(
   revalidatePath("/estoque");
   revalidatePath("/capital");
   revalidatePath("/");
-  redirect("/financeiro/a-pagar");
+  // Volta para a origem (ex.: o combo), se for caminho interno do financeiro.
+  const rt = String(formData.get("returnTo") || "");
+  redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
 }
 
 export type DeletePayablesResult = { ok: boolean; deleted: number; skipped: number; error?: string };
