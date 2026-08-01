@@ -11,6 +11,7 @@ import CompanyDocHeader from "@/components/CompanyDocHeader";
 import PrintButton from "@/components/PrintButton";
 import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
+import PayFullToggle from "./PayFullToggle";
 
 export const dynamic = "force-dynamic";
 
@@ -76,11 +77,15 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
     if (beneficiary) {
       const free = await freeCapitalOf(beneficiary.id);
       debtTotal = Math.max(0, round2(-free));
-      if (combo.status !== "PAGO") abatimento = Math.min(total, debtTotal);
+      // "Valor integral" (payFull) não abate; senão abate até o total.
+      if (combo.status !== "PAGO") abatimento = combo.payFull ? 0 : Math.min(total, debtTotal);
     }
   }
   const liquido = round2(total - abatimento);
   const restante = round2(Math.max(0, debtTotal - abatimento));
+  // Mostra o toggle "valor integral" quando há débito e o combo ainda pode mudar.
+  const showPayFullToggle =
+    debtTotal > 0.005 && (combo.status === "ABERTO" || combo.status === "SOLICITADO") && (canManage || canPagar);
   const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
   const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
 
@@ -196,6 +201,10 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             )}
           </section>
 
+          {showPayFullToggle ? (
+            <PayFullToggle comboId={combo.id} payFull={combo.payFull} beneficiaryName={bene?.name} />
+          ) : null}
+
           {abatimento > 0.005 || debtTotal > 0.005 ? (
             <div className="mb-2 rounded-lg bg-slate-50 px-4 py-3">
               <div className="flex items-center justify-between py-0.5 text-sm text-slate-600">
@@ -223,7 +232,11 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                 </span>
                 <span className="text-2xl font-black text-slate-900">{formatCurrency(liquido)}</span>
               </div>
-              {restante > 0.005 && combo.status !== "PAGO" ? (
+              {combo.payFull && debtTotal > 0.005 ? (
+                <p className="mt-1 text-xs text-blue-600">
+                  Valor integral — o saldo devedor de capital do beneficiário <strong>não será abatido</strong> neste combo.
+                </p>
+              ) : restante > 0.005 && combo.status !== "PAGO" ? (
                 <p className="mt-1 text-xs text-rose-500">
                   Este combo cobre {formatCurrency(abatimento)} do saldo devedor; restam {formatCurrency(restante)} para um próximo combo/comissão.
                 </p>

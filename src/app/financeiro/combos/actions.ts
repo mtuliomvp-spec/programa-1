@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { assertCan } from "@/lib/guards";
+import { assertCan, assertCanAny } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
 import { markPayablePaid } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
@@ -96,6 +96,26 @@ export async function requestComboAction(comboId: string): Promise<Result> {
   return { ok: true };
 }
 
+/** Liga/desliga o pagamento integral (não abater o saldo devedor do beneficiário). */
+export async function setComboPayFullAction(comboId: string, value: boolean): Promise<Result> {
+  try {
+    await assertCanAny([
+      ["combos", "criar"],
+      ["combos", "aprovar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status === "PAGO" || combo.status === "CANCELADO") {
+    return { ok: false, error: "Combo já finalizado — não é possível alterar." };
+  }
+  await prisma.paymentCombo.update({ where: { id: comboId }, data: { payFull: value } });
+  revalidate(comboId);
+  return { ok: true };
+}
+
 /** Paga o combo: quita todos os títulos de uma vez na conta escolhida. */
 export async function payComboAction(comboId: string, accountId: string): Promise<Result> {
   try {
@@ -118,6 +138,7 @@ export async function payComboAction(comboId: string, accountId: string): Promis
       status: true,
       name: true,
       userId: true,
+      payFull: true,
       payables: { where: { status: { not: "PAGO" } }, select: { id: true, amount: true } },
     },
   });
@@ -127,10 +148,11 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   // Beneficiário do combo (quem o montou) com saldo LIVRE de capital negativo:
   // parte do total cobre esse débito como APORTE (igual à comissão do vendedor);
   // o resto sai em dinheiro. Fica equação-neutra (aporte na mesma conta).
+  // Se o combo estiver marcado como "valor integral" (payFull), não abate.
   const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
   let abate = 0;
   let beneficiary: { id: string; name: string } | null = null;
-  if (combo.userId) {
+  if (combo.userId && !combo.payFull) {
     beneficiary = await prisma.capitalBeneficiary.findUnique({
       where: { userId: combo.userId },
       select: { id: true, name: true },
