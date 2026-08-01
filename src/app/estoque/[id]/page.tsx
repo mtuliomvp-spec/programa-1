@@ -82,12 +82,24 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     if (m) return { series: m[1].trim().toLowerCase(), idx: Number(m[2]) };
     return null;
   };
-  // Irmãs do mesmo parcelamento (mesma série, parcelas diferentes) não conflitam.
-  const conflicts = (a: { description: string }, b: { description: string }) => {
+  // Regras de conflito (valor igual NÃO basta — gastos diferentes coincidem de
+  // valor o tempo todo). Um par de mesmo valor só é suspeito quando:
+  //  a) as descrições são idênticas (mesmo gasto lançado duas vezes); ou
+  //  b) é o padrão do lançamento em dobro: um manual × um título de solicitação
+  //     de compra, com datas próximas (até 3 dias).
+  // Parcelas irmãs do mesmo parcelamento nunca conflitam.
+  const normDesc = (desc: string) => {
+    const p = parcelOf(desc);
+    return (p ? p.series : desc).trim().toLowerCase();
+  };
+  const conflicts = (a: { description: string; date: Date }, b: { description: string; date: Date }) => {
     const pa = parcelOf(a.description);
     const pb = parcelOf(b.description);
     if (pa && pb && pa.series === pb.series && pa.idx !== pb.idx) return false;
-    return true;
+    if (normDesc(a.description) === normDesc(b.description)) return true;
+    if (isCompraCost(a) === isCompraCost(b)) return false; // mesma origem, descrições diferentes: legítimo
+    const days = Math.abs(a.date.getTime() - b.date.getTime()) / 86400000;
+    return days <= 3;
   };
   const duplicateIds = new Set<string>();
   const dupAdvice = new Map<string, "excluir" | "manter">();
