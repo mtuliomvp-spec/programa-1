@@ -32,12 +32,14 @@ export default function EditPayableForm({
   vehicles,
   beneficiaries,
   categories,
+  returnTo,
 }: {
   payable: Payable;
   suppliers: Supplier[];
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
   categories: string[];
+  returnTo?: string;
 }) {
   const [state, formAction, pending] = useActionState(updatePayableAction, {} as EditPayableState);
   const [flow, setFlow] = useState(payable.structuralKey || "ADMINISTRATIVO");
@@ -45,6 +47,7 @@ export default function EditPayableForm({
   return (
     <form action={formAction} className="space-y-3">
       <input type="hidden" name="id" value={payable.id} />
+      {returnTo ? <input type="hidden" name="returnTo" value={returnTo} /> : null}
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
 
       <Field label="Descrição" required>

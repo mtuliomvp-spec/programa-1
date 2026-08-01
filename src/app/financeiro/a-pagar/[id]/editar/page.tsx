@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireAction } from "@/lib/guards";
+import { requireActionAny } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
@@ -20,11 +20,19 @@ const categoryLabelByEnum: Record<string, string> = {
 
 export default async function EditarPayablePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
 }) {
-  await requireAction("financeiro", "criar");
+  await requireActionAny([
+    ["financeiro", "criar"],
+    ["combos", "criar"],
+  ]);
   const { id } = await params;
+  const { returnTo } = await searchParams;
+  // Destino seguro de retorno (só caminhos internos do financeiro).
+  const safeReturn = returnTo && returnTo.startsWith("/financeiro/") ? returnTo : "/financeiro/a-pagar";
 
   const payable = await prisma.payable.findUnique({
     where: { id },
@@ -32,7 +40,7 @@ export default async function EditarPayablePage({
   });
   if (!payable) notFound();
   // Título pago não é editável (reverter antes); os demais podem.
-  if (payable.status === "PAGO") redirect("/financeiro/a-pagar");
+  if (payable.status === "PAGO") redirect(safeReturn);
 
   const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -66,7 +74,7 @@ export default async function EditarPayablePage({
       <PageHeader
         title={`Editar título ${String(payable.orderNumber).padStart(4, "0")}`}
         action={
-          <LinkButton href="/financeiro/a-pagar" variant="secondary">
+          <LinkButton href={safeReturn} variant="secondary">
             ← Voltar
           </LinkButton>
         }
@@ -92,6 +100,7 @@ export default async function EditarPayablePage({
             vehicles={vehicles}
             beneficiaries={beneficiaries}
             categories={categories}
+            returnTo={safeReturn}
           />
         </div>
       </Card>

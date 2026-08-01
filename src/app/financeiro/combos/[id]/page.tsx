@@ -154,7 +154,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                       <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
                       {combo.status === "ABERTO" && canManage ? (
                         <Td className="text-right">
-                          <RemoveFromCombo payableId={p.id} />
+                          <RemoveFromCombo payableId={p.id} comboId={combo.id} />
                         </Td>
                       ) : null}
                     </Tr>

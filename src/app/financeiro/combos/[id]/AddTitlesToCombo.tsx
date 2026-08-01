@@ -135,7 +135,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
               </span>
               <span className="tabular-nums text-slate-700">{formatCurrency(r.amount)}</span>
               <Link
-                href={`/financeiro/a-pagar/${r.id}/editar`}
+                href={`/financeiro/a-pagar/${r.id}/editar?returnTo=${encodeURIComponent(`/financeiro/combos/${comboId}`)}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="shrink-0 text-xs font-medium text-blue-700 hover:underline"
@@ -167,13 +167,13 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   );
 }
 
-export function RemoveFromCombo({ payableId }: { payableId: string }) {
+export function RemoveFromCombo({ payableId, comboId }: { payableId: string; comboId: string }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   return (
     <span className="inline-flex items-center gap-3 print:hidden">
       <Link
-        href={`/financeiro/a-pagar/${payableId}/editar`}
+        href={`/financeiro/a-pagar/${payableId}/editar?returnTo=${encodeURIComponent(`/financeiro/combos/${comboId}`)}`}
         target="_blank"
         rel="noopener noreferrer"
         className="text-xs font-medium text-blue-700 hover:underline"
