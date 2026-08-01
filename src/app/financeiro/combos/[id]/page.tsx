@@ -31,7 +31,7 @@ function Row({ label, value }: { label: string; value: string }) {
 }
 
 export default async function ComboBorderoPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireAction("financeiro", "criar");
+  await requireAction("combos", "visualizar");
   const { id } = await params;
 
   const combo = await prisma.paymentCombo.findUnique({
@@ -47,11 +47,12 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   });
   if (!combo) notFound();
 
-  const [company, accounts, cashbox, canPagar] = await Promise.all([
+  const [company, accounts, cashbox, canPagar, canManage] = await Promise.all([
     getCompany(),
     getActiveAccounts(),
     getCashboxState(),
-    userCan("financeiro", "pagar"),
+    userCan("combos", "aprovar"),
+    userCan("combos", "criar"),
   ]);
   const cashboxDate = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
@@ -141,7 +142,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                     <Th>Fornecedor</Th>
                     <Th>Vencimento</Th>
                     <Th className="text-right">Valor</Th>
-                    {combo.status === "ABERTO" ? <Th /> : null}
+                    {combo.status === "ABERTO" && canManage ? <Th /> : null}
                   </Tr>
                 </Thead>
                 <tbody>
@@ -151,7 +152,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                       <Td className="text-slate-600">{p.supplier?.name || p.beneficiaryUser?.name || "—"}</Td>
                       <Td className="whitespace-nowrap text-slate-600">{formatDate(p.dueDate)}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
-                      {combo.status === "ABERTO" ? (
+                      {combo.status === "ABERTO" && canManage ? (
                         <Td className="text-right">
                           <RemoveFromCombo payableId={p.id} />
                         </Td>
@@ -180,11 +181,12 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           status={combo.status}
           accounts={accounts}
           canPagar={canPagar}
+          canManage={canManage}
           cashboxDate={cashboxDate}
         />
       </Card>
 
-      {combo.status === "ABERTO" ? (
+      {combo.status === "ABERTO" && canManage ? (
         <Card className="mt-4 print:hidden">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="text-base font-semibold text-slate-900">Adicionar títulos</h2>

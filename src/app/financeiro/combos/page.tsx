@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { requireAction } from "@/lib/guards";
+import { requireAction, userCan } from "@/lib/guards";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewComboForm from "./NewComboForm";
@@ -15,7 +15,8 @@ const statusInfo = {
 };
 
 export default async function CombosPage() {
-  await requireAction("financeiro", "criar");
+  await requireAction("combos", "visualizar");
+  const canManage = await userCan("combos", "criar");
   const combos = await prisma.paymentCombo.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     include: { user: { select: { name: true } }, payables: { select: { amount: true } } },
@@ -28,11 +29,13 @@ export default async function CombosPage() {
         description="Junte vários títulos a pagar num combo e quite todos de uma vez, com um borderô."
       />
 
-      <Card className="mb-4">
-        <div className="p-4">
-          <NewComboForm />
-        </div>
-      </Card>
+      {canManage ? (
+        <Card className="mb-4">
+          <div className="p-4">
+            <NewComboForm />
+          </div>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Combos" description="Abertos e solicitados aparecem primeiro" />

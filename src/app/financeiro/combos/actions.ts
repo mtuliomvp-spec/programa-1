@@ -23,7 +23,7 @@ function revalidate(comboId?: string) {
 /** Cria um combo ABERTO cujo beneficiário é o usuário logado. */
 export async function createComboAction(name: string): Promise<{ ok: boolean; id?: string; error?: string }> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -38,7 +38,7 @@ export async function createComboAction(name: string): Promise<{ ok: boolean; id
 /** Joga títulos (não pagos e sem combo) para dentro de um combo ABERTO. */
 export async function addPayablesToComboAction(comboId: string, ids: string[]): Promise<{ ok: boolean; added: number; error?: string }> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, added: 0, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -57,7 +57,7 @@ export async function addPayablesToComboAction(comboId: string, ids: string[]): 
 /** Tira um título do combo (só enquanto ABERTO). */
 export async function removePayableFromComboAction(payableId: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -75,7 +75,7 @@ export async function removePayableFromComboAction(payableId: string): Promise<R
 /** Encerra o combo: ABERTO → SOLICITADO (gera o total/borderô a pagar). */
 export async function requestComboAction(comboId: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -94,7 +94,7 @@ export async function requestComboAction(comboId: string): Promise<Result> {
 /** Paga o combo: quita todos os títulos de uma vez na conta escolhida. */
 export async function payComboAction(comboId: string, accountId: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "pagar");
+    await assertCan("combos", "aprovar");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -128,7 +128,7 @@ export async function payComboAction(comboId: string, accountId: string): Promis
 /** Cancela o combo (não pago): solta os títulos de volta e marca CANCELADO. */
 export async function cancelComboAction(comboId: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }

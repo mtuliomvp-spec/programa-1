@@ -12,12 +12,14 @@ export default function ComboActions({
   status,
   accounts,
   canPagar,
+  canManage,
   cashboxDate,
 }: {
   comboId: string;
   status: Status;
   accounts: Account[];
   canPagar: boolean;
+  canManage: boolean;
   cashboxDate: string | null;
 }) {
   const router = useRouter();
@@ -40,9 +42,14 @@ export default function ComboActions({
 
   if (status === "PAGO" || status === "CANCELADO") return null;
 
+  const showRequest = status === "ABERTO" && canManage;
+  const showPay = status === "SOLICITADO" && canPagar;
+  const showCancel = canManage;
+  if (!showRequest && !showPay && !showCancel) return null;
+
   return (
     <div className="print:hidden flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
-      {status === "ABERTO" ? (
+      {showRequest ? (
         <button
           type="button"
           disabled={pending}
@@ -53,7 +60,7 @@ export default function ComboActions({
         </button>
       ) : null}
 
-      {status === "SOLICITADO" && canPagar ? (
+      {showPay ? (
         <>
           <select
             value={accountId}
@@ -80,14 +87,16 @@ export default function ComboActions({
         </>
       ) : null}
 
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => run(() => cancelComboAction(comboId), "Cancelar o combo? Os títulos voltam soltos para o Contas a pagar.")}
-        className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
-      >
-        Cancelar combo
-      </button>
+      {showCancel ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => run(() => cancelComboAction(comboId), "Cancelar o combo? Os títulos voltam soltos para o Contas a pagar.")}
+          className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+        >
+          Cancelar combo
+        </button>
+      ) : null}
       {msg ? <p className="w-full text-sm text-rose-600">{msg}</p> : null}
     </div>
   );
