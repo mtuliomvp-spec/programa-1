@@ -820,6 +820,8 @@ model PaymentCombo {
   // Se true, paga o valor INTEGRAL ao beneficiário mesmo com saldo devedor
   // (não abate o capital). Default false = abate como de costume.
   payFull     Boolean     @default(false)
+  // Forma de recebimento escolhida pelo solicitante: "conta" | "pix".
+  payoutMethod String?
   // Conta que pagou o combo (na baixa).
   accountId   String?
   account     FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)

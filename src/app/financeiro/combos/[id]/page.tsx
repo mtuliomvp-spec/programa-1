@@ -12,6 +12,7 @@ import PrintButton from "@/components/PrintButton";
 import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
 import PayFullToggle from "./PayFullToggle";
+import PayoutMethodPicker from "./PayoutMethodPicker";
 
 export const dynamic = "force-dynamic";
 
@@ -154,24 +155,46 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             <Row label="Telefone" value={bene?.phone || "—"} />
             {hasBankData ? (
               <>
-                <Row label="Banco" value={bene?.bankName || "—"} />
-                <Row label="Agência" value={bene?.bankAgency || "—"} />
-                <Row label="Conta" value={bene?.bankAccount || "—"} />
-                <Row label="Tipo" value={bankType || "—"} />
-                <Row
-                  label={
-                    bene?.pixKeyType
-                      ? `Chave PIX (${{ cpf: "CPF", cnpj: "CNPJ", telefone: "Telefone", email: "E-mail", aleatoria: "Aleatória" }[bene.pixKeyType] || bene.pixKeyType})`
-                      : "Chave PIX"
-                  }
-                  value={bene?.pixKey || "—"}
-                />
+                {combo.payoutMethod !== "pix" ? (
+                  <>
+                    <Row label="Banco" value={bene?.bankName || "—"} />
+                    <Row label="Agência" value={bene?.bankAgency || "—"} />
+                    <Row label="Conta" value={bene?.bankAccount || "—"} />
+                    <Row label="Tipo" value={bankType || "—"} />
+                  </>
+                ) : null}
+                {combo.payoutMethod !== "conta" ? (
+                  <Row
+                    label={
+                      bene?.pixKeyType
+                        ? `Chave PIX (${{ cpf: "CPF", cnpj: "CNPJ", telefone: "Telefone", email: "E-mail", aleatoria: "Aleatória" }[bene.pixKeyType] || bene.pixKeyType})`
+                        : "Chave PIX"
+                    }
+                    value={bene?.pixKey || "—"}
+                  />
+                ) : null}
               </>
             ) : (
               <p className="py-1.5 text-sm text-amber-700">
                 Dados bancários não cadastrados — informe na ficha do usuário (Usuários).
               </p>
             )}
+            {combo.payoutMethod ? (
+              <div className="mt-1 flex justify-between gap-4 border-t border-slate-100 py-1.5 text-sm">
+                <span className="shrink-0 font-semibold text-slate-600">Forma de recebimento</span>
+                <span className="text-right font-bold text-slate-900">
+                  {combo.payoutMethod === "pix" ? "⚡ PIX" : "🏦 Transferência para a conta cadastrada"}
+                </span>
+              </div>
+            ) : null}
+            {(combo.status === "ABERTO" || combo.status === "SOLICITADO") && (canManage || canPagar) ? (
+              <PayoutMethodPicker
+                comboId={combo.id}
+                method={combo.payoutMethod}
+                hasPix={Boolean(bene?.pixKey)}
+                hasConta={Boolean(bene?.bankName || bene?.bankAccount)}
+              />
+            ) : null}
           </section>
 
           <section className="mb-4">
