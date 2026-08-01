@@ -15,6 +15,10 @@ import ClientPhotoCapture from "./ClientPhotoCapture";
 import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
+import QRCode from "qrcode";
+import { getBaseUrl } from "@/lib/base-url";
+import { getCompany } from "@/lib/company";
+import PrintButton from "@/components/PrintButton";
 import { effectivePayableStatus } from "@/lib/status";
 import { daysBetween } from "@/lib/reports";
 
@@ -128,6 +132,13 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
+
+  // QR Code do para-brisa: aponta para o anúncio público (/vitrine/[id]) —
+  // tudo que ele mostra é gerenciado na ficha (preço, fotos, dados, publicar).
+  const [company, qrDataUrl] = await Promise.all([
+    getCompany(),
+    getBaseUrl().then((base) => QRCode.toDataURL(`${base}/vitrine/${vehicle.id}`, { margin: 1, width: 480 })),
+  ]);
 
   // Pré-venda em aberto: enquanto existir, não oferecer "Vender veículo" (levaria
   // a um beco sem saída para outro cliente). Direciona para a pré-venda existente.
@@ -426,6 +437,52 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         </div>
 
         <div className="space-y-4">
+          {inStock ? (
+            <Card>
+              <CardHeader
+                title="QR Code do para-brisa"
+                description="Imprima e cole no vidro: o cliente escaneia e vê o anúncio sempre atualizado"
+              />
+              <div className="p-5">
+                {!vehicle.published ? (
+                  <p className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                    O veículo ainda não está publicado na vitrine — use <strong>Postar na vitrine</strong> (nas fotos)
+                    para o QR mostrar as informações. O QR impresso continua o mesmo.
+                  </p>
+                ) : null}
+                <div id="qr-parabrisa" className="rounded-xl border-2 border-slate-900 bg-white p-5 text-center">
+                  {company.logoDataUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={company.logoDataUrl} alt="" className="mx-auto h-10 w-auto" />
+                  ) : (
+                    <p className="text-lg font-black text-slate-900">{company.nomeFantasia}</p>
+                  )}
+                  <p className="mt-2 text-base font-bold text-slate-900">
+                    {vehicle.brand} {vehicle.model}
+                    {vehicle.version ? ` ${vehicle.version}` : ""} · {vehicle.modelYear}
+                  </p>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={qrDataUrl} alt="QR Code do anúncio do veículo" className="mx-auto mt-3 h-52 w-52" />
+                  <p className="mt-3 text-sm font-bold text-slate-900">
+                    📱 Aponte a câmera e veja preço, fotos e informações
+                  </p>
+                  {company.phone ? <p className="mt-1 text-xs text-slate-500">📞 {company.phone}</p> : null}
+                </div>
+                <div className="mt-3 flex items-center gap-2">
+                  <PrintButton title={`QR para-brisa ${vehicle.plate}`} rootSelector="#qr-parabrisa" />
+                  <Link
+                    href={`/vitrine/${vehicle.id}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-blue-700 hover:underline"
+                  >
+                    Ver o anúncio que o QR abre
+                  </Link>
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
           {vehicle.status !== "VENDIDO" && canEditar ? (
             <Card>
               <CardHeader title="Situação no estoque" />
