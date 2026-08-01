@@ -113,6 +113,27 @@ export async function deleteComboAction(comboId: string): Promise<Result> {
   return { ok: true };
 }
 
+/** Define como o beneficiário quer receber: conta cadastrada ou PIX. */
+export async function setComboPayoutMethodAction(comboId: string, method: "conta" | "pix"): Promise<Result> {
+  try {
+    await assertCanAny([
+      ["combos", "criar"],
+      ["combos", "aprovar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (method !== "conta" && method !== "pix") return { ok: false, error: "Forma inválida." };
+  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status === "PAGO" || combo.status === "CANCELADO") {
+    return { ok: false, error: "Combo já finalizado — não é possível alterar." };
+  }
+  await prisma.paymentCombo.update({ where: { id: comboId }, data: { payoutMethod: method } });
+  revalidate(comboId);
+  return { ok: true };
+}
+
 /** Liga/desliga o pagamento integral (não abater o saldo devedor do beneficiário). */
 export async function setComboPayFullAction(comboId: string, value: boolean): Promise<Result> {
   try {
