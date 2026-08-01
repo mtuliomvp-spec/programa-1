@@ -50,6 +50,7 @@ export default async function ContasAPagarPage({
         account: { select: { name: true } },
         beneficiaryUser: { select: { id: true, name: true } },
         capitalBeneficiary: { select: { id: true, name: true } },
+        paymentCombo: { select: { id: true, name: true, status: true, user: { select: { name: true } } } },
         _count: { select: { attachments: true } },
         purchaseRequest: { select: { _count: { select: { attachments: true } } } },
       },
@@ -146,6 +147,15 @@ export default async function ContasAPagarPage({
     status: p.status,
     accountName: p.account?.name ?? null,
     recurring: Boolean(p.recurringId),
+    // Combo de pagamento: sinaliza que alguém montou/solicitou o pagamento.
+    combo: p.paymentCombo
+      ? {
+          id: p.paymentCombo.id,
+          name: p.paymentCombo.name,
+          status: p.paymentCombo.status,
+          userName: p.paymentCombo.user?.name ?? null,
+        }
+      : null,
     // Editável: qualquer título ainda não pago (pagos: reverter antes).
     editable: p.effective !== "PAGO",
     // Tem anexo no próprio título ou na solicitação de compra que o gerou.
