@@ -812,6 +812,9 @@ model PaymentCombo {
   user        User?       @relation("UserPaymentCombos", fields: [userId], references: [id], onDelete: SetNull)
   requestedAt DateTime?
   paidAt      DateTime?
+  // Quanto do total foi abatido no saldo devedor de capital do beneficiário
+  // (vira aporte na baixa); o restante saiu em dinheiro. 0 = sem abatimento.
+  capitalAbatement Float  @default(0)
   // Conta que pagou o combo (na baixa).
   accountId   String?
   account     FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)

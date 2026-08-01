@@ -8,6 +8,10 @@ import { markPayablePaid } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
+import { freeCapitalOf } from "@/lib/investments";
+import { structuralCenterId } from "@/lib/structural";
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
 
 type Result = { ok: boolean; error?: string };
 
@@ -17,6 +21,7 @@ function revalidate(comboId?: string) {
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/capital");
   revalidatePath("/");
 }
 
@@ -109,17 +114,73 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   }
   const combo = await prisma.paymentCombo.findUnique({
     where: { id: comboId },
-    select: { status: true, payables: { where: { status: { not: "PAGO" } }, select: { id: true } } },
+    select: {
+      status: true,
+      name: true,
+      userId: true,
+      payables: { where: { status: { not: "PAGO" } }, select: { id: true, amount: true } },
+    },
   });
   if (!combo) return { ok: false, error: "Combo não encontrado." };
   if (combo.status !== "SOLICITADO") return { ok: false, error: "Solicite o pagamento do combo antes de pagá-lo." };
 
+  // Beneficiário do combo (quem o montou) com saldo LIVRE de capital negativo:
+  // parte do total cobre esse débito como APORTE (igual à comissão do vendedor);
+  // o resto sai em dinheiro. Fica equação-neutra (aporte na mesma conta).
+  const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
+  let abate = 0;
+  let beneficiary: { id: string; name: string } | null = null;
+  if (combo.userId) {
+    beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { userId: combo.userId },
+      select: { id: true, name: true },
+    });
+    if (beneficiary) {
+      const free = await freeCapitalOf(beneficiary.id);
+      const debt = Math.max(0, round2(-free));
+      abate = round2(Math.min(total, debt));
+    }
+  }
+
+  // 1) Quita todos os títulos do combo na conta escolhida.
   for (const p of combo.payables) {
     await markPayablePaid(p.id, date, accountId);
   }
+
+  // 2) Abate o saldo devedor do beneficiário: aporte na mesma conta (o par
+  //    recebível↔capital é neutro e o DRE exclui o aporte pelo receivableId).
+  if (abate > 0.005 && beneficiary) {
+    const capitalCenterId = await structuralCenterId("CAPITAL");
+    await prisma.$transaction(async (tx) => {
+      const receivable = await tx.receivable.create({
+        data: {
+          costCenterId: capitalCenterId,
+          description: `Aporte p/ abater saldo devedor de capital (combo ${combo.name}) - ${beneficiary!.name}`,
+          category: "OUTROS",
+          amount: abate,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId,
+          capitalBeneficiaryId: beneficiary!.id,
+        },
+      });
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId: beneficiary!.id,
+          kind: "APORTE",
+          amount: abate,
+          date,
+          description: `Abatido do saldo devedor pelo combo ${combo.name}`,
+          receivableId: receivable.id,
+        },
+      });
+    });
+  }
+
   await prisma.paymentCombo.update({
     where: { id: comboId },
-    data: { status: "PAGO", paidAt: date, accountId },
+    data: { status: "PAGO", paidAt: date, accountId, capitalAbatement: abate },
   });
   revalidate(comboId);
   return { ok: true };
