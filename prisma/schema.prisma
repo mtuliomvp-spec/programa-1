@@ -815,6 +815,9 @@ model PaymentCombo {
   // Quanto do total foi abatido no saldo devedor de capital do beneficiário
   // (vira aporte na baixa); o restante saiu em dinheiro. 0 = sem abatimento.
   capitalAbatement Float  @default(0)
+  // Se true, paga o valor INTEGRAL ao beneficiário mesmo com saldo devedor
+  // (não abate o capital). Default false = abate como de costume.
+  payFull     Boolean     @default(false)
   // Conta que pagou o combo (na baixa).
   accountId   String?
   account     FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
