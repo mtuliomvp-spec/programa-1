@@ -26,6 +26,8 @@ export type PayableRow = {
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
   recurring: boolean;
+  // Combo de pagamento em que o título está (montado/solicitado por um usuário).
+  combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
   // Manual e não pago: pode editar/excluir direto por aqui.
   editable: boolean;
   // Tem anexo (NF/comprovante) no título ou na solicitação de origem.
@@ -212,6 +214,16 @@ export default function PayablesTable({
                   ) : null}
                   {p.documentNumber ? (
                     <p className="mt-0.5 text-[11px] font-normal text-slate-400">Doc. {p.documentNumber}</p>
+                  ) : null}
+                  {p.combo ? (
+                    <Link
+                      href={`/financeiro/combos/${p.combo.id}`}
+                      className="mt-1 flex w-fit items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-200"
+                      title={`${p.combo.status === "SOLICITADO" ? "Pagamento solicitado" : "No combo (em montagem)"}${p.combo.userName ? ` por ${p.combo.userName}` : ""} — combo "${p.combo.name}"`}
+                    >
+                      🧺 {p.combo.status === "SOLICITADO" ? "Pagamento solicitado" : "Em combo"}
+                      {p.combo.userName ? ` · ${p.combo.userName}` : ""}
+                    </Link>
                   ) : null}
                 </Td>
                 <Td>{p.categoryLabel}</Td>
