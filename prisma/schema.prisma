@@ -312,6 +312,8 @@ model User {
   bankAccount      String?
   bankAccountType  String?
   pixKey           String?
+  // Tipo da chave PIX: cpf | cnpj | telefone | email | aleatoria.
+  pixKeyType       String?
   commissionPayables Payable[] @relation("PayableBeneficiary")
   sales            Sale[]    @relation("SaleSeller")
   preSales         PreSale[] @relation("PreSaleSeller")

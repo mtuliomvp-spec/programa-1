@@ -42,11 +42,13 @@ function bankOf(u: UserBank): UserBank {
   return {
     document: u.document,
     phone: u.phone,
+    email: u.email,
     bankName: u.bankName,
     bankAgency: u.bankAgency,
     bankAccount: u.bankAccount,
     bankAccountType: u.bankAccountType,
     pixKey: u.pixKey,
+    pixKeyType: u.pixKeyType,
   };
 }
 
