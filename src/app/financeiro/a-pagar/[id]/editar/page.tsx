@@ -15,6 +15,7 @@ const categoryLabelByEnum: Record<string, string> = {
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 };
 

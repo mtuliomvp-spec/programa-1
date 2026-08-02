@@ -23,6 +23,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
       tradeInVehicle: true,
       customer: true,
       receivables: { orderBy: { installmentNumber: "asc" } },
+      ownerRefundBeneficiary: { select: { name: true } },
     },
   });
 
@@ -53,6 +54,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             <LinkButton href={`/vendas/${sale.id}/contrato`} variant="secondary">
               📝 Contrato de venda
             </LinkButton>
+            {sale.vehicle.consigned ? (
+              <LinkButton href={`/estoque/${sale.vehicleId}/contrato`} variant="secondary">
+                📝 Contrato de compra (consignante)
+              </LinkButton>
+            ) : null}
             {sale.tradeInVehicle ? (
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca
@@ -118,9 +124,21 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      {sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || (sale.transferCharged && sale.transferAmount > 0) || sale.returnCommissionAmount > 0 || sale.viaPaidTraffic || sale.notes ? (
+      {sale.consigned || sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || (sale.transferCharged && sale.transferAmount > 0) || sale.returnCommissionAmount > 0 || sale.viaPaidTraffic || sale.notes ? (
         <div className="mt-4">
           <Card className="p-5 text-sm text-slate-600">
+            {sale.consigned ? (
+              <p>
+                <span className="font-medium text-slate-800">Devolução ao proprietário:</span>{" "}
+                {formatCurrency(sale.ownerRefundAmount)}{" "}
+                <span className="text-slate-400">
+                  —{" "}
+                  {sale.ownerRefundToCapital
+                    ? `aporte de capital${sale.ownerRefundBeneficiary?.name ? ` de ${sale.ownerRefundBeneficiary.name}` : ""}`
+                    : "conta a pagar ao proprietário"}
+                </span>
+              </p>
+            ) : null}
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}
             {sale.commissionAmount > 0 ? (
               <p className="mt-1">

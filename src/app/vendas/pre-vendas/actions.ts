@@ -71,6 +71,8 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     installmentsInfoCount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoCount ?? null : null,
     installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
     notes: d.notes || null,
+    ownerRefundToCapital: Boolean(d.ownerRefundToCapital),
+    ownerRefundBeneficiaryId: d.ownerRefundToCapital ? d.ownerRefundBeneficiaryId || null : null,
     buyerBankName: d.buyerBankName || null,
     buyerBankAgency: d.buyerBankAgency || null,
     buyerBankAccount: d.buyerBankAccount || null,
@@ -143,6 +145,8 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
     installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
     notes: pre.notes ?? undefined,
+    ownerRefundToCapital: pre.ownerRefundToCapital,
+    ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
     buyerBankName: pre.buyerBankName ?? undefined,
     buyerBankAgency: pre.buyerBankAgency ?? undefined,
     buyerBankAccount: pre.buyerBankAccount ?? undefined,
@@ -193,6 +197,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/contas");
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect(`/vendas/${saleId}`);
 }

@@ -17,12 +17,18 @@ type Vehicle = {
   model: string;
   plate: string;
   salePrice: number;
+  // Consignado: o carro é de terceiro; há um valor a devolver ao proprietário
+  // (supplier) apurado no fechamento da venda.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
+  supplier?: { name: string } | null;
   // Marca opcional exibida no seletor quando o veículo já tem pré-venda aberta.
   preSaleTag?: string;
 };
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
+type Beneficiary = { id: string; name: string };
 
 export type SaleFormInitial = {
   vehicleId?: string;
@@ -46,6 +52,8 @@ export type SaleFormInitial = {
   installmentsInfoCount?: number;
   installmentsInfoAmount?: number;
   notes?: string;
+  ownerRefundToCapital?: boolean;
+  ownerRefundBeneficiaryId?: string;
   buyerBankName?: string;
   buyerBankAgency?: string;
   buyerBankAccount?: string;
@@ -106,6 +114,7 @@ export default function SaleForm({
   customers,
   financers,
   users = [],
+  beneficiaries = [],
   advances = {},
   preselectedVehicleId,
   currentUserId,
@@ -116,6 +125,7 @@ export default function SaleForm({
   customers: Customer[];
   financers: Financer[];
   users?: UserOption[];
+  beneficiaries?: Beneficiary[];
   advances?: Record<string, number>;
   preselectedVehicleId?: string;
   currentUserId?: string;
@@ -147,6 +157,16 @@ export default function SaleForm({
   );
 
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
+  // Consignado: destino do valor a devolver ao proprietário (pagar ao dono vs
+  // aportar no capital de um beneficiário). O valor em si vem do veículo.
+  const isConsigned = Boolean(selectedVehicle?.consigned);
+  const ownerRefundAmount = selectedVehicle?.ownerRefundAmount ?? 0;
+  const [ownerRefundToCapital, setOwnerRefundToCapital] = useState<boolean>(
+    Boolean(initial?.ownerRefundToCapital),
+  );
+  const [ownerRefundBeneficiaryId, setOwnerRefundBeneficiaryId] = useState<string>(
+    initial?.ownerRefundBeneficiaryId || "",
+  );
   const [totalAmount, setTotalAmount] = useState<string>(
     initial?.totalAmount != null ? String(initial.totalAmount) : selectedVehicle ? String(selectedVehicle.salePrice) : "",
   );
@@ -896,6 +916,55 @@ export default function SaleForm({
           </p>
         )}
       </div>
+
+      {isConsigned ? (
+        <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+          <p className="text-sm font-medium text-slate-700">Devolução ao proprietário (consignado)</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Este veículo é consignado{selectedVehicle?.supplier?.name ? ` de ${selectedVehicle.supplier.name}` : ""}.
+            Valor a devolver ao proprietário:{" "}
+            <strong className="tabular-nums">{formatCurrency(ownerRefundAmount)}</strong>.
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="ownerRefundToCapital"
+              value="true"
+              checked={ownerRefundToCapital}
+              onChange={(e) => setOwnerRefundToCapital(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Aplicar no capital de um beneficiário (em vez de pagar o proprietário)
+          </label>
+          {ownerRefundToCapital ? (
+            <div className="mt-3">
+              <Field label="Beneficiário do capital" required>
+                <Select
+                  name="ownerRefundBeneficiaryId"
+                  value={ownerRefundBeneficiaryId}
+                  onChange={(e) => setOwnerRefundBeneficiaryId(e.target.value)}
+                >
+                  <option value="">Selecione o beneficiário</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                O valor a devolver vira um <strong>aporte de capital</strong> do beneficiário (o
+                dinheiro fica na empresa) — não é pago ao proprietário nem sai do caixa.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">
+              Ao registrar a venda, o valor a devolver vira uma <strong>conta a pagar</strong> ao
+              proprietário (categoria Devolução ao proprietário).
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" rows={3} defaultValue={initial?.notes || ""} />

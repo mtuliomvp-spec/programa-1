@@ -42,6 +42,8 @@ export default async function NovaVendaPage({
         installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
         installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
         notes: pre.notes ?? undefined,
+        ownerRefundToCapital: pre.ownerRefundToCapital,
+        ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
         buyerBankName: pre.buyerBankName ?? undefined,
         buyerBankAgency: pre.buyerBankAgency ?? undefined,
         buyerBankAccount: pre.buyerBankAccount ?? undefined,
@@ -67,11 +69,20 @@ export default async function NovaVendaPage({
       };
     }
   }
-  const [vehicles, customers, financers, users] = await Promise.all([
+  const [vehicles, customers, financers, users, beneficiaries] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
       orderBy: { createdAt: "desc" },
-      select: { id: true, brand: true, model: true, plate: true, salePrice: true },
+      select: {
+        id: true,
+        brand: true,
+        model: true,
+        plate: true,
+        salePrice: true,
+        consigned: true,
+        ownerRefundAmount: true,
+        supplier: { select: { name: true } },
+      },
     }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.financialAccount.findMany({
@@ -80,6 +91,12 @@ export default async function NovaVendaPage({
       select: { id: true, name: true, returnTaxPercent: true, sellerReturnPercent: true },
     }),
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Todos os beneficiários do capital (destino opcional da devolução do consignado).
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
 
   // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
@@ -122,6 +139,7 @@ export default async function NovaVendaPage({
             customers={customers}
             financers={financers}
             users={users}
+            beneficiaries={beneficiaries}
             advances={advances}
             preselectedVehicleId={vehicleId}
             currentUserId={user?.id}

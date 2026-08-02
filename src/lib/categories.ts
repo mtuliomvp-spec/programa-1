@@ -20,6 +20,7 @@ export const CATEGORIA_PAGAR_LABEL: Record<CategoriaPagar, string> = {
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 };
 

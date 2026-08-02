@@ -33,6 +33,8 @@ type VehicleData = {
   transmission: string | null;
   purchasePrice: number;
   salePrice: number;
+  consigned?: boolean;
+  ownerRefundAmount?: number;
   entryDate: Date;
   notes: string | null;
   supplierId: string | null;
@@ -64,6 +66,7 @@ export default function VehicleForm({
     Boolean((vehicle?.payoffAmount ?? 0) > 0 || (vehicle?.debtsAmount ?? 0) > 0),
   );
   const [negociado, setNegociado] = useState<number>(vehicle?.purchasePrice ?? 0);
+  const [consigned, setConsigned] = useState<boolean>(Boolean(vehicle?.consigned));
   const [payoff, setPayoff] = useState<number>(vehicle?.payoffAmount ?? 0);
   const [debts, setDebts] = useState<number>(vehicle?.debtsAmount ?? 0);
   const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
@@ -376,29 +379,71 @@ export default function VehicleForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Preço de compra (valor negociado)" required>
-          <Input
-            type="number"
-            step="0.01"
-            min={0}
-            name="purchasePrice"
-            defaultValue={vehicle?.purchasePrice}
-            onChange={(e) => setNegociado(Number(e.target.value) || 0)}
-            required
+      <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            name="consigned"
+            checked={consigned}
+            onChange={(e) => setConsigned(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
           />
-        </Field>
+          Veículo consignado (de terceiro)
+        </label>
+        {consigned ? (
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Valor a devolver ao proprietário (R$)" required>
+              <Input
+                type="number"
+                step="0.01"
+                min={0}
+                name="ownerRefundAmount"
+                defaultValue={vehicle?.ownerRefundAmount || ""}
+                placeholder="0,00"
+                required
+              />
+            </Field>
+            <p className="self-center text-xs text-slate-500">
+              O carro não é patrimônio da loja (custo de compra 0). Selecione o{" "}
+              <strong>proprietário</strong> abaixo como fornecedor. O valor a devolver vira uma
+              conta a pagar ao dono (ou um aporte de capital) só quando o carro for vendido.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">
+            Marque quando o veículo pertence a um terceiro e a loja só o vende por consignação —
+            gera dois contratos de compra e venda e o valor a devolver ao dono no fechamento.
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {consigned ? (
+          <input type="hidden" name="purchasePrice" value="0" />
+        ) : (
+          <Field label="Preço de compra (valor negociado)" required>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              name="purchasePrice"
+              defaultValue={vehicle?.purchasePrice}
+              onChange={(e) => setNegociado(Number(e.target.value) || 0)}
+              required
+            />
+          </Field>
+        )}
         <Field label="Preço de venda (anúncio)" required>
           <Input type="number" step="0.01" min={0} name="salePrice" defaultValue={vehicle?.salePrice} required />
         </Field>
         <div>
-          <Field label="Fornecedor de origem">
+          <Field label={consigned ? "Proprietário (consignante)" : "Fornecedor de origem"} required={consigned}>
             <Select
               name="supplierId"
               value={supplierId}
               onChange={(e) => setSupplierId(e.target.value)}
             >
-              <option value="">Sem fornecedor / particular</option>
+              <option value="">{consigned ? "Selecione o proprietário" : "Sem fornecedor / particular"}</option>
               {supplierList.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -486,6 +531,7 @@ export default function VehicleForm({
         </div>
       ) : null}
 
+      {!consigned ? (
       <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
@@ -547,7 +593,9 @@ export default function VehicleForm({
           </p>
         )}
       </div>
+      ) : null}
 
+      {!consigned ? (
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <p className="mb-3 text-sm font-medium text-slate-700">
           Forma de aquisição {repasse ? "(do líquido ao vendedor)" : "(como o veículo será pago)"}
@@ -617,6 +665,7 @@ export default function VehicleForm({
           </p>
         ) : null}
       </div>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" defaultValue={vehicle?.notes || ""} rows={3} />

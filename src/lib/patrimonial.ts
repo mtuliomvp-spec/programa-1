@@ -25,6 +25,7 @@ export type PatrimonialStats = {
   veiculosAReceber: number;
   sinaisRecebidos: number;
   devolucoesClientes: number;
+  devolucoesProprietario: number;
   veiculosAPagarPosVenda: number;
   pecasAPagar: number;
   comissoesAPagar: number;
@@ -76,6 +77,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let titulosVencidosCount = 0;
   let titulosVencidosValor = 0;
   let devolucoesClientes = 0;
+  let devolucoesProprietario = 0;
   let veiculosAPagarPosVenda = 0;
   let pecasAPagar = 0;
   let comissoesAPagar = 0;
@@ -116,6 +118,14 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       // caixa e o efeito já está refletido — não conta duas vezes).
       if (p.category === "DEVOLUCAO_CLIENTE") {
         devolucoesClientes += p.amount;
+      }
+      // Devolução ao proprietário do consignado ainda não paga: o dinheiro da
+      // venda está no caixa mas é do dono do carro, então entra subtraindo
+      // (quando for paga, sai do caixa e o efeito já está refletido — não conta
+      // duas vezes). No destino "aporte de capital" não existe este título: lá o
+      // valor já entra subtraindo via saldoCapital (aporte do beneficiário).
+      if (p.category === "DEVOLUCAO_PROPRIETARIO") {
+        devolucoesProprietario += p.amount;
       }
       // Comissão do vendedor de uma venda: custo direto da venda já realizada.
       // Entra subtraindo enquanto pendente (competência), casando com a
@@ -187,6 +197,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     consorcios -
     sinaisRecebidos -
     devolucoesClientes -
+    devolucoesProprietario -
     veiculosAPagarPosVenda -
     pecasAPagar -
     comissoesAPagar -
@@ -200,6 +211,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     veiculosAReceber,
     sinaisRecebidos,
     devolucoesClientes,
+    devolucoesProprietario,
     veiculosAPagarPosVenda,
     pecasAPagar,
     comissoesAPagar,

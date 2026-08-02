@@ -76,6 +76,12 @@ export async function createVehicleWithPayable(input: {
   // pagar em aberto nem sai dinheiro do caixa).
   liquidoSettledByTrade?: boolean;
   tradeNote?: string | null;
+  // Consignado: o veículo é de um terceiro (o consignante = supplier). Fica no
+  // estoque/vitrine como um carro normal, mas com purchasePrice 0 (não é
+  // patrimônio comprado). `ownerRefundAmount` é o valor a devolver ao dono,
+  // apurado só no fechamento da venda (não gera conta a pagar na entrada).
+  consigned?: boolean;
+  ownerRefundAmount?: number;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   // Troca: o líquido é "pago" pelo carro recebido — passa pelo Banco Neutro
@@ -115,6 +121,8 @@ export async function createVehicleWithPayable(input: {
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100),
       },
     });
 
@@ -664,6 +672,15 @@ export async function registerVehicleSale(input: {
   tradeInAmount?: number;
   tradeInLabel?: string | null;
   tradeInVehicleId?: string | null;
+  // Consignado: o veículo era de um terceiro (o consignante = supplier do
+  // veículo). No fechamento a loja deve `ownerRefundAmount` ao dono. Se
+  // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário
+  // (sem sair do caixa — o dinheiro da venda fica na empresa como capital);
+  // senão vira conta a pagar (DEVOLUCAO_PROPRIETARIO) ao proprietário.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
+  ownerRefundToCapital?: boolean;
+  ownerRefundBeneficiaryId?: string | null;
 }) {
   const defaultAccountId = await getDefaultAccountId();
   // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
@@ -678,6 +695,10 @@ export async function registerVehicleSale(input: {
   const transferCharged = Boolean(input.transferCharged);
   const transferAmount = transferCharged
     ? Math.max(0, Math.round((input.transferAmount ?? 0) * 100) / 100)
+    : 0;
+  // Consignado: valor a devolver ao proprietário, normalizado.
+  const ownerRefund = input.consigned
+    ? Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100)
     : 0;
   const adminCenterId =
     commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0 || input.takeReturnCommission
@@ -702,6 +723,9 @@ export async function registerVehicleSale(input: {
     if (canceladas.length > 0) {
       const ids = canceladas.map((s) => s.id);
       await tx.receivable.deleteMany({ where: { saleId: { in: ids } } });
+      // Aporte de consignado gerado por uma venda cancelada deste veículo: remove
+      // o resíduo antes de recriar a venda (senão ficaria um aporte órfão).
+      await tx.capitalTransaction.deleteMany({ where: { saleId: { in: ids } } });
       await tx.sale.deleteMany({ where: { id: { in: ids } } });
     }
 
@@ -745,6 +769,11 @@ export async function registerVehicleSale(input: {
         installmentsInfoAmount: input.installmentsInfoAmount ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: input.consigned ? ownerRefund : 0,
+        ownerRefundToCapital: Boolean(input.consigned && input.ownerRefundToCapital),
+        ownerRefundBeneficiaryId:
+          input.consigned && input.ownerRefundToCapital ? input.ownerRefundBeneficiaryId || null : null,
       },
     });
 
@@ -1042,6 +1071,44 @@ export async function registerVehicleSale(input: {
       });
     }
 
+    // Consignado: valor a devolver ao proprietário (dono do carro de terceiro),
+    // reconhecido por inteiro no fechamento da venda. Dois destinos:
+    // - Aporte no capital: o valor fica na empresa como capital do beneficiário
+    //   escolhido (aporte PURO, sem recebível — o caixa já entrou pela venda).
+    // - Pagar ao dono: vira conta a pagar (DEVOLUCAO_PROPRIETARIO), vinculada ao
+    //   veículo, espelhando a mecânica da devolução ao cliente.
+    if (input.consigned && ownerRefund > 0) {
+      if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: input.ownerRefundBeneficiaryId,
+            kind: "APORTE",
+            amount: ownerRefund,
+            date: input.saleDate,
+            saleId: sale.id,
+            description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          },
+        });
+      } else {
+        const owner = vehicle.supplierId
+          ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
+          : null;
+        await tx.payable.create({
+          data: {
+            description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
+            category: "DEVOLUCAO_PROPRIETARIO",
+            amount: ownerRefund,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            supplierId: vehicle.supplierId || null,
+            costCenterId: veiculosCenterId,
+            notes: "Valor devido ao consignante pela venda do veículo consignado.",
+          },
+        });
+      }
+    }
+
     return sale;
   });
 }
@@ -1087,6 +1154,14 @@ export async function cancelVehicleSale(saleId: string) {
     // 2c) Comissão do vendedor gerada por esta venda: apagar o título (se já foi
     //     pago, o dinheiro volta ao caixa).
     await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
+
+    // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
+    //     apaga a conta a pagar (se já quitada, o dinheiro volta ao caixa). Se
+    //     foi aplicada no capital, apaga o aporte (baixa o saldo de capital).
+    await tx.payable.deleteMany({
+      where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
+    });
+    await tx.capitalTransaction.deleteMany({ where: { saleId } });
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.

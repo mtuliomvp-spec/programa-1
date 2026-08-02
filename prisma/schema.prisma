@@ -44,6 +44,9 @@ enum CategoriaPagar {
   SALARIO
   COMBUSTIVEL
   DEVOLUCAO_CLIENTE
+  // Valor a devolver ao proprietário de um veículo consignado, apurado no
+  // fechamento da venda ao comprador (a loja vendeu o carro de um terceiro).
+  DEVOLUCAO_PROPRIETARIO
   OUTROS
 }
 
@@ -438,6 +441,13 @@ model Vehicle {
   // Veículo de terceiro numa operação de financiamento de terceiros: NÃO é
   // patrimônio da loja — fica fora do estoque, da vitrine e dos relatórios.
   intermediation   Boolean       @default(false)
+  // Veículo CONSIGNADO: pertence a um terceiro (o consignante = supplier), mas
+  // fica no estoque/vitrine e é vendido como um veículo normal. purchasePrice
+  // fica 0 (não é patrimônio comprado); a loja deve ao dono `ownerRefundAmount`
+  // quando o carro é vendido (vira conta DEVOLUCAO_PROPRIETARIO ou aporte de
+  // capital, apurado no fechamento da venda).
+  consigned        Boolean       @default(false)
+  ownerRefundAmount Float        @default(0)
   entryDate        DateTime      @default(now())
   photoUrl         String?
   notes            String?
@@ -610,6 +620,10 @@ model PreSale {
   takeReturnCommission Boolean     @default(false)
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic    Boolean        @default(false)
+  // Consignado: destino da devolução ao proprietário escolhido na negociação. O
+  // valor em si é re-derivado do veículo na conversão em venda.
+  ownerRefundToCapital     Boolean  @default(false)
+  ownerRefundBeneficiaryId String?
   // Token público para a verificação da ficha via QR Code (página /verificar).
   publicToken       String         @unique @default(uuid())
   status            StatusPreVenda @default(ABERTA)
@@ -644,6 +658,15 @@ model Sale {
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
   installmentsInfoCount  Int?
   installmentsInfoAmount Float?
+  // Consignado: o veículo era de um terceiro. `ownerRefundAmount` (cópia travada
+  // do veículo no fechamento) é o valor devido ao proprietário. Se
+  // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário
+  // escolhido (sem sair do caixa); senão vira conta a pagar ao dono.
+  consigned              Boolean   @default(false)
+  ownerRefundAmount      Float     @default(0)
+  ownerRefundToCapital   Boolean   @default(false)
+  ownerRefundBeneficiaryId String?
+  ownerRefundBeneficiary CapitalBeneficiary? @relation("SaleOwnerRefund", fields: [ownerRefundBeneficiaryId], references: [id])
   vehicleId         String         @unique
   vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
   tradeInVehicleId  String?        @unique
@@ -693,6 +716,9 @@ model Sale {
   status            StatusVenda    @default(CONCLUIDA)
   receivables       Receivable[]
   payables          Payable[]
+  // Aportes de capital gerados por esta venda (devolução do consignado aplicada
+  // no capital de um beneficiário).
+  capitalRefunds    CapitalTransaction[] @relation("SaleCapitalRefund")
   createdAt         DateTime       @default(now())
 
   @@map("sales")
@@ -1001,6 +1027,9 @@ model CapitalBeneficiary {
   payables     Payable[]
   receivables  Receivable[]
   recurringEntries RecurringEntry[]
+  // Vendas de consignados cuja devolução ao proprietário foi aplicada no capital
+  // deste beneficiário (aporte).
+  ownerRefundSales Sale[]           @relation("SaleOwnerRefund")
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 
@@ -1044,6 +1073,10 @@ model CapitalTransaction {
   description   String?
   payableId     String?
   receivableId  String?
+  // Aporte gerado por uma venda de consignado (devolução ao proprietário aplicada
+  // no capital): permite estornar o aporte ao cancelar a venda.
+  saleId        String?
+  sale          Sale?              @relation("SaleCapitalRefund", fields: [saleId], references: [id], onDelete: SetNull)
   // Gerada pelo fechamento mensal (zeragem do L/P e pró-labore): permite o
   // estorno completo ao reabrir o mês.
   monthlyClosingId String?

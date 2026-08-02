@@ -145,7 +145,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, s) =>
         sum +
         s.vehicle.purchasePrice +
-        s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0),
+        s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+        // Consignado: o valor devolvido ao proprietário é custo da venda (o carro
+        // não é patrimônio comprado, então purchasePrice é 0). Reconhecido por
+        // competência aqui — o destino (conta a pagar ou aporte) não muda o custo.
+        (s.ownerRefundAmount || 0),
       0,
     );
     const custoPecas = monthPartSales.reduce(
@@ -341,9 +345,12 @@ export async function getProfitLossStatement(
 
   for (const s of sales) {
     // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
+    // Consignado: o valor devolvido ao proprietário é custo da venda (o carro
+    // não é patrimônio comprado) — reconhecido por competência na margem.
     const custo =
       s.vehicle.purchasePrice +
-      s.vehicle.costs.filter((x) => !x.postSale).reduce((c, x) => c + x.amount, 0);
+      s.vehicle.costs.filter((x) => !x.postSale).reduce((c, x) => c + x.amount, 0) +
+      (s.ownerRefundAmount || 0);
     const margem = s.totalAmount - custo;
     receitaVeiculos += s.totalAmount;
     custoVeiculos += custo;
@@ -354,10 +361,14 @@ export async function getProfitLossStatement(
       kind: "VEICULO",
       description: isIntermediacao
         ? `Financiamento de terceiros — ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`
-        : `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        : s.consigned
+          ? `Venda (consignado) ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`
+          : `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
       detail: isIntermediacao
         ? `lucro bruto: financiamento ${fmt(s.financingAmount)} − devolução ${fmt(s.refundAmount)} (comissões e demais despesas saem em linhas próprias)`
-        : `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
+        : s.consigned
+          ? `lucro bruto: venda ${fmt(s.totalAmount)} − devolução ao proprietário ${fmt(s.ownerRefundAmount)}${s.vehicle.costs.some((x) => !x.postSale) ? " − custos" : ""} (comissões e demais despesas da venda saem em linhas próprias)`
+          : `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
       value: margem,
     });
     // Comissão do vendedor: custo direto da venda, reconhecido por competência
@@ -586,7 +597,9 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
 
   return sales.map((s) => {
     const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
-    const totalCost = s.vehicle.purchasePrice + extraCosts;
+    // Consignado: a devolução ao proprietário é custo da venda (o carro não é
+    // patrimônio comprado, então purchasePrice é 0).
+    const totalCost = s.vehicle.purchasePrice + extraCosts + (s.ownerRefundAmount || 0);
     const profit = s.totalAmount - totalCost;
     // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
     // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
@@ -756,6 +769,7 @@ export const PAYABLE_CATEGORY_LABEL: Record<CategoriaPagar, string> = {
   SALARIO: "Salários",
   COMBUSTIVEL: "Combustíveis",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 };
 
@@ -827,7 +841,10 @@ export async function getPerformanceStats() {
 
   const profitThisMonth = monthSales.reduce((sum, s) => {
     const cost =
-      s.vehicle.purchasePrice + s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0);
+      s.vehicle.purchasePrice +
+      s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+      // Consignado: devolução ao proprietário é custo da venda.
+      (s.ownerRefundAmount || 0);
     return sum + (s.totalAmount - cost);
   }, 0);
 

@@ -139,7 +139,7 @@ type RequestForEspelho = {
   estimatedAmount: number | null;
   dueDate: Date | null;
   documentNumber: string | null;
-  category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS";
+  category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS";
   categoryLabel: string | null;
   installmentsCount: number;
   installmentPeriod: string | null;

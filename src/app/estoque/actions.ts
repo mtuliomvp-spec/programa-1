@@ -81,6 +81,11 @@ const vehicleSchema = z.object({
   transmission: z.string().optional(),
   purchasePrice: z.coerce.number().min(0),
   salePrice: z.coerce.number().min(0),
+  // Consignado: o carro é de um terceiro (o consignante = fornecedor). Não é
+  // patrimônio comprado (purchasePrice fica 0); a loja deve `ownerRefundAmount`
+  // ao dono quando o carro é vendido.
+  consigned: z.coerce.boolean().optional(),
+  ownerRefundAmount: z.coerce.number().min(0).optional(),
   entryDate: z.string().min(1),
   notes: z.string().optional(),
   supplierId: z.string().optional(),
@@ -129,6 +134,19 @@ export async function createVehicleAction(
     };
   }
 
+  // Consignado: o veículo é de um terceiro. Exige o consignante (fornecedor) e o
+  // valor a devolver; não é patrimônio comprado, então purchasePrice fica 0 (sem
+  // conta de compra — a devolução ao dono só é apurada quando o carro é vendido).
+  const consigned = Boolean(data.consigned);
+  if (consigned) {
+    if (!data.supplierId) {
+      return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
+    }
+    if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
+      return { error: "Para um veículo consignado, informe o valor a devolver ao proprietário." };
+    }
+  }
+
   try {
     const vehicle = await createVehicleWithPayable({
       brand: data.brand,
@@ -143,20 +161,22 @@ export async function createVehicleAction(
       km: data.km,
       fuel: data.fuel || null,
       transmission: data.transmission || null,
-      purchasePrice: data.purchasePrice,
+      purchasePrice: consigned ? 0 : data.purchasePrice,
       salePrice: data.salePrice,
       entryDate: parseDateInput(data.entryDate),
       notes: data.notes || null,
       supplierId: data.supplierId || null,
       alreadyPaid: false,
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
-      acquisitionType: data.acquisitionType ?? "A_VISTA",
-      downPayment: data.downPayment ?? 0,
-      installmentsCount: data.installmentsCount ?? 1,
-      financerName: data.financerName || null,
-      payoffAmount: data.payoffAmount ?? 0,
-      payoffTo: data.payoffTo || null,
-      debtsAmount: data.debtsAmount ?? 0,
+      acquisitionType: consigned ? "A_VISTA" : data.acquisitionType ?? "A_VISTA",
+      downPayment: consigned ? 0 : data.downPayment ?? 0,
+      installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
+      financerName: consigned ? null : data.financerName || null,
+      payoffAmount: consigned ? 0 : data.payoffAmount ?? 0,
+      payoffTo: consigned ? null : data.payoffTo || null,
+      debtsAmount: consigned ? 0 : data.debtsAmount ?? 0,
+      consigned,
+      ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
     revalidatePath("/estoque");
     revalidatePath("/financeiro/a-pagar");
@@ -198,6 +218,16 @@ export async function updateVehicleAction(
     return { error: "Já existe outro veículo ativo no estoque com essa placa." };
   }
 
+  const consigned = Boolean(data.consigned);
+  if (consigned) {
+    if (!data.supplierId) {
+      return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
+    }
+    if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
+      return { error: "Para um veículo consignado, informe o valor a devolver ao proprietário." };
+    }
+  }
+
   try {
     await prisma.vehicle.update({
       where: { id: data.id },
@@ -214,18 +244,20 @@ export async function updateVehicleAction(
         km: data.km,
         fuel: data.fuel || null,
         transmission: data.transmission || null,
-        purchasePrice: data.purchasePrice,
+        purchasePrice: consigned ? 0 : data.purchasePrice,
         salePrice: data.salePrice,
-        acquisitionType: data.acquisitionType ?? "A_VISTA",
-        downPayment: data.downPayment ?? 0,
-        installmentsCount: data.installmentsCount ?? 1,
-        financerName: data.financerName || null,
-        payoffAmount: data.payoffAmount ?? 0,
-        payoffTo: data.payoffTo || null,
-        debtsAmount: data.debtsAmount ?? 0,
+        acquisitionType: consigned ? "A_VISTA" : data.acquisitionType ?? "A_VISTA",
+        downPayment: consigned ? 0 : data.downPayment ?? 0,
+        installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
+        financerName: consigned ? null : data.financerName || null,
+        payoffAmount: consigned ? 0 : data.payoffAmount ?? 0,
+        payoffTo: consigned ? null : data.payoffTo || null,
+        debtsAmount: consigned ? 0 : data.debtsAmount ?? 0,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,
+        consigned,
+        ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
       },
     });
 

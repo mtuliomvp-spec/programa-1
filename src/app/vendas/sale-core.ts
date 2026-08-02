@@ -60,6 +60,11 @@ export const saleSchema = z.object({
     .optional()
     .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
+  // Consignado: destino do valor a devolver ao proprietário. Por padrão vira
+  // conta a pagar ao dono; se `ownerRefundToCapital`, vira aporte no capital do
+  // beneficiário escolhido (o valor em si vem do veículo, travado no servidor).
+  ownerRefundToCapital: z.coerce.boolean().optional(),
+  ownerRefundBeneficiaryId: z.string().optional(),
   // Dados bancários do comprador — usados quando há devolução ao cliente (as
   // entradas superam o preço); constam no contrato para o pagamento.
   buyerBankName: z.string().optional(),
@@ -177,6 +182,31 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     financerName = acc?.name ?? null;
   }
 
+  // Consignado: o valor a devolver ao proprietário é travado a partir do veículo
+  // (não do formulário). Se o destino for o capital, exige um beneficiário válido.
+  const sellVehicleConsign = await prisma.vehicle.findUnique({
+    where: { id: d.vehicleId },
+    select: { consigned: true, ownerRefundAmount: true },
+  });
+  const consigned = Boolean(sellVehicleConsign?.consigned);
+  const ownerRefundAmount = consigned ? sellVehicleConsign?.ownerRefundAmount ?? 0 : 0;
+  const ownerRefundToCapital = consigned && Boolean(d.ownerRefundToCapital);
+  let ownerRefundBeneficiaryId: string | null = null;
+  if (ownerRefundToCapital && ownerRefundAmount > 0) {
+    const beneficiaryId = (d.ownerRefundBeneficiaryId || "").trim();
+    if (!beneficiaryId) {
+      throw new Error("Para aplicar a devolução no capital, selecione o beneficiário.");
+    }
+    const beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { id: beneficiaryId },
+      select: { id: true },
+    });
+    if (!beneficiary) {
+      throw new Error("Beneficiário do capital não encontrado.");
+    }
+    ownerRefundBeneficiaryId = beneficiary.id;
+  }
+
   let tradeInAmount = 0;
   let tradeInLabel: string | null = null;
   let tradeInVehicleId: string | null = null;
@@ -278,6 +308,10 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       tradeInAmount,
       tradeInLabel,
       tradeInVehicleId,
+      consigned,
+      ownerRefundAmount,
+      ownerRefundToCapital,
+      ownerRefundBeneficiaryId,
     });
     return sale.id;
   } catch (err) {

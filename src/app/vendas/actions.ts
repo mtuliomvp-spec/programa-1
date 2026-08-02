@@ -59,6 +59,7 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
   revalidatePath("/estoque");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect(`/vendas/${saleId}`);
 }
@@ -72,6 +73,8 @@ export async function cancelSaleAction(id: string) {
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/financiamentos");
   revalidatePath("/financeiro/a-pagar");
+  // Consignado com devolução aplicada no capital: atualiza a visão do capital.
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect(`/vendas/${id}`);
 }
