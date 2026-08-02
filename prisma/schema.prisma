@@ -1167,6 +1167,20 @@ model RecurringEntry {
   @@map("recurring_entries")
 }
 
+// Proteção contra força bruta nas portas públicas (login, código de
+// liberação, esqueci a senha): uma linha por chave (e-mail ou IP) com a
+// contagem de falhas na janela e o bloqueio temporário quando estoura.
+model LoginThrottle {
+  id          String    @id @default(cuid())
+  key         String    @unique
+  attempts    Int       @default(0)
+  firstAt     DateTime  @default(now())
+  lockedUntil DateTime?
+  updatedAt   DateTime  @updatedAt
+
+  @@map("login_throttles")
+}
+
 // Parâmetros da empresa (linha única): dados usados nos documentos
 // impressos (ordem de compra, contrato, venda) e na marca do sistema.
 model CompanySettings {

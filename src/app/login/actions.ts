@@ -8,6 +8,17 @@ import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 import { syncUserSupplier } from "@/lib/user-supplier-link";
+import {
+  clientIp,
+  lockedUntil,
+  registerFailure,
+  clearThrottle,
+  minutesLeft,
+  LOGIN_EMAIL_POLICY,
+  LOGIN_IP_POLICY,
+  ACCESS_CODE_POLICY,
+  FORGOT_POLICY,
+} from "@/lib/rate-limit";
 
 async function baseUrl(): Promise<string> {
   if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
@@ -31,11 +42,34 @@ export async function loginAction(
 ): Promise<LoginFormState> {
   const parsed = loginSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
-  const { email, password } = parsed.data;
+  const { password } = parsed.data;
+  const email = parsed.data.email.toLowerCase().trim();
 
-  const user = await prisma.user.findUnique({ where: { email: email.toLowerCase().trim() } });
-  if (!user || !user.active) {
+  // Limite de tentativas (força bruta): travado por e-mail ou por IP, a senha
+  // nem chega a ser conferida.
+  const emailKey = `login:${email}`;
+  const ipKey = `login-ip:${await clientIp()}`;
+  const activeLock = (await lockedUntil(emailKey)) || (await lockedUntil(ipKey));
+  if (activeLock) {
+    return {
+      error: `Muitas tentativas de login. Aguarde ${minutesLeft(activeLock)} min e tente novamente.`,
+    };
+  }
+  const failed = async (): Promise<LoginFormState> => {
+    const lockEmail = await registerFailure(emailKey, LOGIN_EMAIL_POLICY);
+    const lockIp = await registerFailure(ipKey, LOGIN_IP_POLICY);
+    const lock = lockEmail && lockIp ? (lockEmail > lockIp ? lockEmail : lockIp) : lockEmail || lockIp;
+    if (lock) {
+      return {
+        error: `Muitas tentativas de login. Aguarde ${minutesLeft(lock)} min e tente novamente.`,
+      };
+    }
     return { error: "E-mail ou senha incorretos." };
+  };
+
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user || !user.active) {
+    return failed();
   }
   if (user.pending) {
     return {
@@ -60,9 +94,10 @@ export async function loginAction(
     authorized = admins.some((admin) => matches(admin.passwordHash));
   }
   if (!authorized) {
-    return { error: "E-mail ou senha incorretos." };
+    return failed();
   }
 
+  await clearThrottle(emailKey);
   await setSessionCookie(user);
   const next = parsed.data.next && parsed.data.next.startsWith("/") ? parsed.data.next : "/";
   redirect(next);
@@ -129,10 +164,18 @@ export async function signupAction(
   if (existing) return { error: "Já existe um cadastro com esse e-mail. Tente entrar ou use o esqueci a senha." };
 
   // Código de liberação (gerado pelo administrador, uso único): sem um código
-  // válido o cadastro nem entra na fila de aprovação.
+  // válido o cadastro nem entra na fila de aprovação. Limite de chutes por IP.
+  const codeKey = `codigo-ip:${await clientIp()}`;
+  const codeLock = await lockedUntil(codeKey);
+  if (codeLock) {
+    return {
+      error: `Muitas tentativas de código. Aguarde ${minutesLeft(codeLock)} min e tente novamente.`,
+    };
+  }
   const codeInput = parsed.data.accessCode.trim().toUpperCase();
   const accessCode = await prisma.accessCode.findUnique({ where: { code: codeInput } });
   if (!accessCode || accessCode.usedAt) {
+    await registerFailure(codeKey, ACCESS_CODE_POLICY);
     return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador da MVP Veículos." };
   }
 
@@ -183,7 +226,13 @@ export async function forgotPasswordAction(
   const user = await prisma.user.findUnique({ where: { email } });
   const emailOn = isEmailConfigured();
 
-  if (user && user.active && !user.pending) {
+  // Limite por e-mail: acima de 3 pedidos em 15 min, responde a mesma mensagem
+  // de sucesso sem enviar nada (não revela cadastros nem vira spam).
+  const forgotKey = `esqueci:${email}`;
+  const forgotLocked = (await lockedUntil(forgotKey)) !== null;
+  if (!forgotLocked) await registerFailure(forgotKey, FORGOT_POLICY);
+
+  if (!forgotLocked && user && user.active && !user.pending) {
     if (emailOn) {
       // link de redefinição com token de uso único (1 hora)
       const token = randomBytes(32).toString("base64url");
