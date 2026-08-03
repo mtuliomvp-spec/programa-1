@@ -62,7 +62,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -73,6 +73,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "comunicacao"),
       userCan("estoque", "crlv"),
       userCan("financeiro", "visualizar"),
+      userCan("vendas", "foto"),
     ]);
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
@@ -451,7 +452,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
           </Card>
 
-          {canEditar ? (
+          {canEditar || canFoto ? (
             <Card>
               <CardHeader
                 title="Foto do cliente (antifraude)"

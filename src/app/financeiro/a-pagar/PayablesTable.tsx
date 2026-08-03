@@ -46,6 +46,7 @@ export default function PayablesTable({
   accounts,
   canPagar = true,
   canManage = false,
+  canEdit,
   canCombo = false,
   cashboxDate = null,
   openCombos = [],
@@ -54,10 +55,14 @@ export default function PayablesTable({
   accounts: Account[];
   canPagar?: boolean;
   canManage?: boolean;
+  // Link "Editar" da linha (permissão granular financeiro.editar); sem a prop,
+  // vale o mesmo que canManage.
+  canEdit?: boolean;
   canCombo?: boolean;
   cashboxDate?: string | null;
   openCombos?: { id: string; name: string }[];
 }) {
+  const showEdit = canEdit ?? canManage;
   const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
@@ -241,7 +246,7 @@ export default function PayablesTable({
                 </Td>
                 <Td>
                   <div className="flex items-center justify-end gap-3">
-                    {p.editable && canManage ? (
+                    {p.editable && showEdit ? (
                       <Link
                         href={`/financeiro/a-pagar/${p.id}/editar`}
                         className="text-sm font-medium text-blue-700 hover:underline"

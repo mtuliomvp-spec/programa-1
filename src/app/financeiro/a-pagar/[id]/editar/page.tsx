@@ -28,6 +28,7 @@ export default async function EditarPayablePage({
 }) {
   await requireActionAny([
     ["financeiro", "criar"],
+    ["financeiro", "editar"],
     ["combos", "criar"],
   ]);
   const { id } = await params;

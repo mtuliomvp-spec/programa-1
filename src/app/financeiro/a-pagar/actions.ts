@@ -494,6 +494,7 @@ export async function updatePayableAction(
   try {
     await assertCanAny([
       ["financeiro", "criar"],
+      ["financeiro", "editar"],
       ["combos", "criar"],
     ]);
   } catch (e) {
