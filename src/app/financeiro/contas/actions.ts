@@ -67,6 +67,8 @@ const accountSchema = z.object({
   isDefault: z.coerce.boolean().optional(),
   isInvestment: z.coerce.boolean().optional(),
   returnTaxPercent: z.coerce.number().min(0).max(100).default(0),
+  // Titular verdadeiro da conta (sócio/beneficiário do capital). Vazio = MVP.
+  ownerBeneficiaryId: z.string().optional(),
 });
 
 export async function createAccountAction(
@@ -103,11 +105,40 @@ export async function createAccountAction(
         isDefault,
         isInvestment,
         returnTaxPercent: data.type === "FINANCEIRA" && !isInvestment ? data.returnTaxPercent : 0,
+        // Aplicação é inerentemente multi-sócio (razão própria) — sem titular único.
+        ownerBeneficiaryId: !isInvestment && data.ownerBeneficiaryId ? data.ownerBeneficiaryId : null,
       },
     });
   });
   revalidatePath("/financeiro/contas");
   return {};
+}
+
+/**
+ * Define/troca o titular verdadeiro de uma conta já cadastrada (sócio dono da
+ * conta, que opera como se fosse da MVP). Nulo = conta da própria empresa.
+ * Informativo — não altera saldos nem a equação patrimonial.
+ */
+export async function setAccountOwnerAction(
+  id: string,
+  beneficiaryId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (beneficiaryId) {
+    const b = await prisma.capitalBeneficiary.findUnique({ where: { id: beneficiaryId }, select: { id: true } });
+    if (!b) return { ok: false, error: "Beneficiário não encontrado." };
+  }
+  await prisma.financialAccount.update({
+    where: { id },
+    data: { ownerBeneficiaryId: beneficiaryId || null },
+  });
+  revalidatePath("/financeiro/contas");
+  revalidatePath(`/financeiro/contas/${id}`);
+  return { ok: true };
 }
 
 /**

@@ -162,6 +162,12 @@ model FinancialAccount {
   // Conta de Aplicação (investimento dos sócios): o saldo é sempre distribuído
   // entre os beneficiários do capital via InvestmentAllocation.
   isInvestment   Boolean           @default(false)
+  // Titular VERDADEIRO da conta: algumas contas cadastradas são de um sócio
+  // (beneficiário do capital) e operam como se fossem da MVP. Nulo = conta da
+  // própria empresa. Informativo — identifica o dono nas telas, sem alterar a
+  // contabilidade/equação patrimonial.
+  ownerBeneficiaryId String?
+  ownerBeneficiary   CapitalBeneficiary? @relation("AccountOwner", fields: [ownerBeneficiaryId], references: [id])
   notes          String?
   payables       Payable[]
   receivables    Receivable[]
@@ -1035,6 +1041,8 @@ model CapitalBeneficiary {
   // Vendas de consignados cuja devolução ao proprietário foi aplicada no capital
   // deste beneficiário (aporte).
   ownerRefundSales Sale[]           @relation("SaleOwnerRefund")
+  // Contas financeiras cujo titular verdadeiro é este beneficiário (sócio).
+  ownedAccounts    FinancialAccount[] @relation("AccountOwner")
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 
