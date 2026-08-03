@@ -173,7 +173,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     : [[], [], []];
 
   const extraCosts = vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
-  const totalCost = vehicle.purchasePrice + extraCosts;
+  // Consignado: o custo do negócio é o valor acertado com o proprietário (o carro
+  // não é comprado, purchasePrice 0). Os custos adicionais entram igual ao próprio.
+  const consignedCost = vehicle.consigned ? vehicle.ownerRefundAmount : 0;
+  const totalCost = vehicle.purchasePrice + consignedCost + extraCosts;
   const sold = vehicle.status === "VENDIDO" && vehicle.sale?.status === "CONCLUIDA";
   const margin = sold && vehicle.sale
     ? vehicle.sale.totalAmount - totalCost
@@ -279,7 +282,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               description={sold ? "Lucro real desta venda" : "Projeção com base no preço anunciado"}
             />
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
-              <InfoItem label="Preço de compra" value={formatCurrency(vehicle.purchasePrice)} />
+              <InfoItem
+                label={vehicle.consigned ? "Valor acertado (proprietário)" : "Preço de compra"}
+                value={formatCurrency(vehicle.consigned ? vehicle.ownerRefundAmount : vehicle.purchasePrice)}
+              />
               <InfoItem label="Custos adicionais" value={formatCurrency(extraCosts)} />
               <InfoItem label="Custo total" value={formatCurrency(totalCost)} />
               <InfoItem
