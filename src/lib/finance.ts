@@ -1124,6 +1124,10 @@ export async function registerVehicleSale(input: {
       // Líquido ao proprietário = valor acertado − quitação − débitos.
       const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
       if (liquido > 0) {
+        // Nome do proprietário (consignante) para constar nos documentos.
+        const owner = vehicle.supplierId
+          ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
+          : null;
         if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
           await tx.capitalTransaction.create({
             data: {
@@ -1132,13 +1136,10 @@ export async function registerVehicleSale(input: {
               amount: liquido,
               date: input.saleDate,
               saleId: sale.id,
-              description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+              description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})${owner?.name ? ` — proprietário ${owner.name}` : ""}`,
             },
           });
         } else {
-          const owner = vehicle.supplierId
-            ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
-            : null;
           await tx.payable.create({
             data: {
               description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
