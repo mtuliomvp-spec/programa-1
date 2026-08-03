@@ -9,6 +9,10 @@ export type AcquisitionInfo = {
   payoffAmount?: number;
   payoffTo?: string | null;
   debtsAmount?: number;
+  // Consignado: o carro é de terceiro (purchasePrice 0). O "valor negociado" do
+  // documento é o valor acertado com o proprietário; o líquido sai desse valor.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
 };
 
 export const ACQUISITION_LABEL: Record<AcquisitionInfo["acquisitionType"], string> = {
@@ -30,11 +34,14 @@ export function describeAcquisition(v: AcquisitionInfo): {
   const payoff = v.payoffAmount ?? 0;
   const debts = v.debtsAmount ?? 0;
   const repasse = payoff > 0 || debts > 0;
-  const liquido = Math.max(0, Math.round((v.purchasePrice - payoff - debts) * 100) / 100);
+  // Consignado: a base do negócio é o valor acertado com o proprietário (o carro
+  // não é patrimônio comprado, então purchasePrice é 0).
+  const negociado = v.consigned ? v.ownerRefundAmount ?? 0 : v.purchasePrice;
+  const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
 
   const linhas: { label: string; value: string }[] = [
-    { label: "Forma de pagamento", value: forma },
-    { label: "Valor negociado", value: formatCurrency(v.purchasePrice) },
+    { label: "Forma de pagamento", value: v.consigned ? "Consignação (pago na venda)" : forma },
+    { label: v.consigned ? "Valor acertado" : "Valor negociado", value: formatCurrency(negociado) },
   ];
 
   // Repasse/troca: mostra a decomposição em credores.
@@ -48,7 +55,10 @@ export function describeAcquisition(v: AcquisitionInfo): {
     if (debts > 0) {
       linhas.push({ label: "Débitos do veículo", value: `− ${formatCurrency(debts)}` });
     }
-    linhas.push({ label: "Líquido ao vendedor", value: formatCurrency(liquido) });
+    linhas.push({
+      label: v.consigned ? "Líquido ao proprietário" : "Líquido ao vendedor",
+      value: formatCurrency(liquido),
+    });
   }
 
   if (v.acquisitionType !== "A_VISTA") {
