@@ -114,13 +114,24 @@ export default async function AccountStatementPage({
     );
   }
 
-  type Mov = { id: string; date: Date; description: string; who: string; kind: "entrada" | "saida"; amount: number };
+  type Mov = {
+    id: string;
+    date: Date;
+    description: string;
+    who: string;
+    // Beneficiário do capital do título (saque/aporte) — exibido junto ao "quem"
+    // quando o título tem fornecedor/cliente E movimenta o capital de alguém.
+    capitalName: string | null;
+    kind: "entrada" | "saida";
+    amount: number;
+  };
   const movements: Mov[] = [
     ...received.map((r) => ({
       id: `r-${r.id}`,
       date: r.receivedDate ?? r.dueDate,
       description: r.description,
       who: r.customer?.name || r.capitalBeneficiary?.name || "-",
+      capitalName: r.capitalBeneficiary?.name ?? null,
       kind: "entrada" as const,
       amount: r.amount,
     })),
@@ -129,6 +140,7 @@ export default async function AccountStatementPage({
       date: p.paymentDate ?? p.dueDate,
       description: p.description,
       who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
+      capitalName: p.capitalBeneficiary?.name ?? null,
       kind: "saida" as const,
       amount: p.amount,
     })),
@@ -139,6 +151,7 @@ export default async function AccountStatementPage({
         date: t.date,
         description: t.description || `Transferência ${t.from.name} → ${t.to.name}`,
         who: isIn ? t.from.name : t.to.name,
+        capitalName: null,
         kind: (isIn ? "entrada" : "saida") as "entrada" | "saida",
         amount: t.amount,
       };
@@ -158,7 +171,7 @@ export default async function AccountStatementPage({
   const rows = filtering
     ? allRows.filter(
         (m) =>
-          matchesSearch(q, formatDate(m.date), m.description, m.who, m.amount, formatCurrency(m.amount)) &&
+          matchesSearch(q, formatDate(m.date), m.description, m.who, m.capitalName, m.amount, formatCurrency(m.amount)) &&
           inDateRange(m.date, de, ate) &&
           inValueRange(m.amount, min, max) &&
           (!tipoFilter || (tipoFilter === "ENTRADA" ? m.kind === "entrada" : m.kind === "saida")),
@@ -289,7 +302,14 @@ export default async function AccountStatementPage({
                     {m.description}
                     {m.id.startsWith("t-") ? <Badge tone="default">Transferência</Badge> : null}
                   </Td>
-                  <Td>{m.who}</Td>
+                  <Td>
+                    {m.who}
+                    {m.capitalName && m.capitalName !== m.who ? (
+                      <span className="block text-xs text-violet-700">
+                        💰 {m.kind === "saida" ? "Saque do capital" : "Aporte no capital"}: {m.capitalName}
+                      </span>
+                    ) : null}
+                  </Td>
                   <Td className="text-right tabular-nums text-emerald-600">
                     {m.kind === "entrada" ? formatCurrency(m.amount) : ""}
                   </Td>
