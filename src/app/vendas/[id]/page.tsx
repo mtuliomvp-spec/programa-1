@@ -130,13 +130,27 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             {sale.consigned ? (
               <p>
                 <span className="font-medium text-slate-800">Devolução ao proprietário:</span>{" "}
-                {formatCurrency(sale.ownerRefundAmount)}{" "}
-                <span className="text-slate-400">
-                  —{" "}
-                  {sale.ownerRefundToCapital
+                {(() => {
+                  const payoff = sale.vehicle.payoffAmount || 0;
+                  const debts = sale.vehicle.debtsAmount || 0;
+                  const liquido = Math.max(0, sale.ownerRefundAmount - payoff - debts);
+                  const destino = sale.ownerRefundToCapital
                     ? `aporte de capital${sale.ownerRefundBeneficiary?.name ? ` de ${sale.ownerRefundBeneficiary.name}` : ""}`
-                    : "conta a pagar ao proprietário"}
-                </span>
+                    : "conta a pagar ao proprietário";
+                  return (
+                    <>
+                      {formatCurrency(liquido)}{" "}
+                      <span className="text-slate-400">— líquido ({destino})</span>
+                      {payoff > 0 || debts > 0 ? (
+                        <span className="text-slate-400">
+                          {" "}· acertado {formatCurrency(sale.ownerRefundAmount)}
+                          {payoff > 0 ? `, quitação ${formatCurrency(payoff)}` : ""}
+                          {debts > 0 ? `, débitos ${formatCurrency(debts)}` : ""} (repasse aos credores)
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                })()}
               </p>
             ) : null}
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}

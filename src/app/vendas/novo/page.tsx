@@ -81,6 +81,8 @@ export default async function NovaVendaPage({
         salePrice: true,
         consigned: true,
         ownerRefundAmount: true,
+        payoffAmount: true,
+        debtsAmount: true,
         supplier: { select: { name: true } },
       },
     }),

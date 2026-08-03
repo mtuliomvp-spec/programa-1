@@ -67,9 +67,12 @@ export default function VehicleForm({
   );
   const [negociado, setNegociado] = useState<number>(vehicle?.purchasePrice ?? 0);
   const [consigned, setConsigned] = useState<boolean>(Boolean(vehicle?.consigned));
+  const [ownerRefund, setOwnerRefund] = useState<number>(vehicle?.ownerRefundAmount ?? 0);
   const [payoff, setPayoff] = useState<number>(vehicle?.payoffAmount ?? 0);
   const [debts, setDebts] = useState<number>(vehicle?.debtsAmount ?? 0);
   const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
+  // Consignado: líquido a devolver ao proprietário = acertado − quitação − débitos.
+  const consignedLiquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -391,23 +394,60 @@ export default function VehicleForm({
           Veículo consignado (de terceiro)
         </label>
         {consigned ? (
-          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Valor a devolver ao proprietário (R$)" required>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                name="ownerRefundAmount"
-                defaultValue={vehicle?.ownerRefundAmount || ""}
-                placeholder="0,00"
-                required
-              />
-            </Field>
-            <p className="self-center text-xs text-slate-500">
-              O carro não é patrimônio da loja (custo de compra 0). Selecione o{" "}
-              <strong>proprietário</strong> abaixo como fornecedor. O valor a devolver vira uma
-              conta a pagar ao dono (ou um aporte de capital) só quando o carro for vendido.
-            </p>
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Valor acertado com o proprietário (R$)" required>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="ownerRefundAmount"
+                  value={ownerRefund || ""}
+                  onChange={(e) => setOwnerRefund(Number(e.target.value) || 0)}
+                  placeholder="0,00"
+                  required
+                />
+              </Field>
+              <Field label="Quitação de financiamento (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="payoffAmount"
+                  value={payoff || ""}
+                  onChange={(e) => setPayoff(Number(e.target.value) || 0)}
+                  placeholder="0,00 (se houver)"
+                />
+              </Field>
+              <Field label="Banco / financeira da quitação">
+                <BankInput name="payoffTo" defaultValue={vehicle?.payoffTo || ""} placeholder="Ex.: Banco XPTO" />
+              </Field>
+              <Field label="Débitos do veículo (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="debtsAmount"
+                  value={debts || ""}
+                  onChange={(e) => setDebts(Number(e.target.value) || 0)}
+                  placeholder="IPVA, multas, licenciamento"
+                />
+              </Field>
+            </div>
+            <div className="rounded-lg border border-violet-300 bg-white p-3 text-sm">
+              <p className="text-slate-600">
+                Valor acertado <strong>{formatCurrency(ownerRefund)}</strong> − quitação{" "}
+                <strong>{formatCurrency(payoff)}</strong> − débitos{" "}
+                <strong>{formatCurrency(debts)}</strong> ={" "}
+                <strong className="text-emerald-700">líquido ao proprietário {formatCurrency(consignedLiquido)}</strong>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                O carro não é patrimônio da loja (custo de compra 0). Selecione o{" "}
+                <strong>proprietário</strong> abaixo como fornecedor. Ao vender, a loja paga a
+                quitação (ao banco) e os débitos (aos órgãos) e o <strong>líquido</strong> vira
+                conta a pagar ao dono (ou aporte de capital).
+              </p>
+            </div>
           </div>
         ) : (
           <p className="mt-1 text-xs text-slate-500">

@@ -137,13 +137,40 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           <div>
             <p className="font-bold">Cláusula 2ª — Do preço e da forma de pagamento</p>
             {isConsigned ? (
-              <p>
-                O(A) VENDEDOR(A) entrega o veículo em <strong>consignação</strong> para venda pela
-                COMPRADORA. O valor certo e ajustado a ser repassado ao(à) VENDEDOR(A) é de{" "}
-                <strong>{formatCurrency(preco)}</strong>, devido e pagável{" "}
-                <strong>quando da venda do veículo a terceiro</strong> pela COMPRADORA, deduzidos os
-                encargos e a remuneração da intermediação eventualmente ajustados entre as partes.
-              </p>
+              <>
+                <p>
+                  O(A) VENDEDOR(A) entrega o veículo em <strong>consignação</strong> para venda pela
+                  COMPRADORA. O valor certo e ajustado entre as partes é de{" "}
+                  <strong>{formatCurrency(preco)}</strong>, devido e pagável{" "}
+                  <strong>quando da venda do veículo a terceiro</strong> pela COMPRADORA.
+                </p>
+                {vehicle.payoffAmount > 0 || vehicle.debtsAmount > 0 ? (
+                  <p className="mt-1">
+                    Do valor acertado, a COMPRADORA reterá e quitará diretamente:{" "}
+                    {vehicle.payoffAmount > 0 ? (
+                      <>
+                        o saldo devedor do financiamento de{" "}
+                        <strong>{formatCurrency(vehicle.payoffAmount)}</strong>
+                        {vehicle.payoffTo ? ` junto a ${vehicle.payoffTo}` : ""}
+                      </>
+                    ) : null}
+                    {vehicle.payoffAmount > 0 && vehicle.debtsAmount > 0 ? " e " : ""}
+                    {vehicle.debtsAmount > 0 ? (
+                      <>
+                        os débitos do veículo (IPVA, licenciamento e multas) de{" "}
+                        <strong>{formatCurrency(vehicle.debtsAmount)}</strong>
+                      </>
+                    ) : null}
+                    , cabendo ao(à) VENDEDOR(A) receber o valor líquido de{" "}
+                    <strong>
+                      {formatCurrency(
+                        Math.max(0, preco - vehicle.payoffAmount - vehicle.debtsAmount),
+                      )}
+                    </strong>
+                    .
+                  </p>
+                ) : null}
+              </>
             ) : (
               <p>
                 O preço certo e ajustado é de <strong>{formatCurrency(preco)}</strong>,

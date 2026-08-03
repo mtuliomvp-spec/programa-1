@@ -306,6 +306,10 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: vehicleId } });
+    // Consignado: não tem contas de compra de entrada (purchasePrice 0). A
+    // quitação/débitos do consignado são criadas no FECHAMENTO da venda (repasse)
+    // — não devem ser recriadas/apagadas ao editar o veículo.
+    if (vehicle.consigned) return;
     const purchasePayables = await tx.payable.findMany({
       where: { vehicleId, category: "COMPRA_VEICULO" },
     });
@@ -726,6 +730,13 @@ export async function registerVehicleSale(input: {
       // Aporte de consignado gerado por uma venda cancelada deste veículo: remove
       // o resíduo antes de recriar a venda (senão ficaria um aporte órfão).
       await tx.capitalTransaction.deleteMany({ where: { saleId: { in: ids } } });
+      // Consignado: quitação/débitos (repasse) da venda cancelada só existem por
+      // causa dela — remove antes de recriar para não duplicar no revender.
+      if (vehicle.consigned) {
+        await tx.payable.deleteMany({
+          where: { vehicleId: input.vehicleId, category: "COMPRA_VEICULO" },
+        });
+      }
       await tx.sale.deleteMany({ where: { id: { in: ids } } });
     }
 
@@ -1071,41 +1082,77 @@ export async function registerVehicleSale(input: {
       });
     }
 
-    // Consignado: valor a devolver ao proprietário (dono do carro de terceiro),
-    // reconhecido por inteiro no fechamento da venda. Dois destinos:
-    // - Aporte no capital: o valor fica na empresa como capital do beneficiário
-    //   escolhido (aporte PURO, sem recebível — o caixa já entrou pela venda).
-    // - Pagar ao dono: vira conta a pagar (DEVOLUCAO_PROPRIETARIO), vinculada ao
-    //   veículo, espelhando a mecânica da devolução ao cliente.
+    // Consignado: o valor ACERTADO com o proprietário (bruto) é o custo do
+    // negócio, reconhecido por inteiro no fechamento da venda. Ele se divide em:
+    // - Quitação do financiamento e débitos do veículo (repasse): a loja paga
+    //   direto ao banco/órgãos — contas a pagar COMPRA_VEICULO, iguais às da
+    //   compra de estoque (entram no passivo pós-venda da equação patrimonial).
+    // - Líquido ao proprietário = acertado − quitação − débitos. Dois destinos:
+    //   * Aporte no capital do beneficiário (aporte PURO, sem recebível — o caixa
+    //     já entrou pela venda); ou
+    //   * Pagar ao dono → conta a pagar (DEVOLUCAO_PROPRIETARIO).
     if (input.consigned && ownerRefund > 0) {
-      if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
-        await tx.capitalTransaction.create({
-          data: {
-            beneficiaryId: input.ownerRefundBeneficiaryId,
-            kind: "APORTE",
-            amount: ownerRefund,
-            date: input.saleDate,
-            saleId: sale.id,
-            description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-          },
-        });
-      } else {
-        const owner = vehicle.supplierId
-          ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
-          : null;
+      const payoff = Math.max(0, Math.round((vehicle.payoffAmount ?? 0) * 100) / 100);
+      const debts = Math.max(0, Math.round((vehicle.debtsAmount ?? 0) * 100) / 100);
+      const repasseLabel = `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
+      if (payoff > 0) {
         await tx.payable.create({
           data: {
-            description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
-            category: "DEVOLUCAO_PROPRIETARIO",
-            amount: ownerRefund,
+            description: `Quitação do financiamento ${repasseLabel}${vehicle.payoffTo ? ` (${vehicle.payoffTo})` : ""}`,
+            category: "COMPRA_VEICULO",
+            amount: payoff,
             dueDate: input.saleDate,
             status: "PENDENTE",
             vehicleId: input.vehicleId,
-            supplierId: vehicle.supplierId || null,
             costCenterId: veiculosCenterId,
-            notes: "Valor devido ao consignante pela venda do veículo consignado.",
           },
         });
+      }
+      if (debts > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Débitos do veículo (repasse) ${repasseLabel}`,
+            category: "COMPRA_VEICULO",
+            amount: debts,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+          },
+        });
+      }
+      // Líquido ao proprietário = valor acertado − quitação − débitos.
+      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
+      if (liquido > 0) {
+        if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
+          await tx.capitalTransaction.create({
+            data: {
+              beneficiaryId: input.ownerRefundBeneficiaryId,
+              kind: "APORTE",
+              amount: liquido,
+              date: input.saleDate,
+              saleId: sale.id,
+              description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+            },
+          });
+        } else {
+          const owner = vehicle.supplierId
+            ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
+            : null;
+          await tx.payable.create({
+            data: {
+              description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
+              category: "DEVOLUCAO_PROPRIETARIO",
+              amount: liquido,
+              dueDate: input.saleDate,
+              status: "PENDENTE",
+              vehicleId: input.vehicleId,
+              supplierId: vehicle.supplierId || null,
+              costCenterId: veiculosCenterId,
+              notes: "Valor líquido devido ao consignante pela venda do veículo consignado.",
+            },
+          });
+        }
       }
     }
 
@@ -1158,10 +1205,19 @@ export async function cancelVehicleSale(saleId: string) {
     // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
     //     apaga a conta a pagar (se já quitada, o dinheiro volta ao caixa). Se
     //     foi aplicada no capital, apaga o aporte (baixa o saldo de capital).
+    //     A quitação/débitos (repasse COMPRA_VEICULO) do consignado também são
+    //     criadas no fechamento — só existem por causa da venda, então são
+    //     revertidas junto (num veículo de estoque a compra é da entrada e NÃO
+    //     se apaga aqui; por isso a limpeza é condicionada ao consignado).
     await tx.payable.deleteMany({
       where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
     });
     await tx.capitalTransaction.deleteMany({ where: { saleId } });
+    if (sale.consigned) {
+      await tx.payable.deleteMany({
+        where: { vehicleId: sale.vehicleId, category: "COMPRA_VEICULO" },
+      });
+    }
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.

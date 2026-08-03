@@ -143,7 +143,10 @@ export async function createVehicleAction(
       return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
     }
     if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
-      return { error: "Para um veículo consignado, informe o valor a devolver ao proprietário." };
+      return { error: "Para um veículo consignado, informe o valor acertado com o proprietário." };
+    }
+    if ((data.payoffAmount ?? 0) + (data.debtsAmount ?? 0) > data.ownerRefundAmount) {
+      return { error: "A quitação e os débitos não podem passar do valor acertado com o proprietário." };
     }
   }
 
@@ -172,9 +175,11 @@ export async function createVehicleAction(
       downPayment: consigned ? 0 : data.downPayment ?? 0,
       installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
       financerName: consigned ? null : data.financerName || null,
-      payoffAmount: consigned ? 0 : data.payoffAmount ?? 0,
-      payoffTo: consigned ? null : data.payoffTo || null,
-      debtsAmount: consigned ? 0 : data.debtsAmount ?? 0,
+      // Consignado: quitação/débitos são descontados do valor acertado com o dono
+      // e viram repasse (contas a pagar aos credores) no fechamento da venda.
+      payoffAmount: data.payoffAmount ?? 0,
+      payoffTo: data.payoffTo || null,
+      debtsAmount: data.debtsAmount ?? 0,
       consigned,
       ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
@@ -224,7 +229,10 @@ export async function updateVehicleAction(
       return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
     }
     if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
-      return { error: "Para um veículo consignado, informe o valor a devolver ao proprietário." };
+      return { error: "Para um veículo consignado, informe o valor acertado com o proprietário." };
+    }
+    if ((data.payoffAmount ?? 0) + (data.debtsAmount ?? 0) > data.ownerRefundAmount) {
+      return { error: "A quitação e os débitos não podem passar do valor acertado com o proprietário." };
     }
   }
 
@@ -250,9 +258,9 @@ export async function updateVehicleAction(
         downPayment: consigned ? 0 : data.downPayment ?? 0,
         installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
         financerName: consigned ? null : data.financerName || null,
-        payoffAmount: consigned ? 0 : data.payoffAmount ?? 0,
-        payoffTo: consigned ? null : data.payoffTo || null,
-        debtsAmount: consigned ? 0 : data.debtsAmount ?? 0,
+        payoffAmount: data.payoffAmount ?? 0,
+        payoffTo: data.payoffTo || null,
+        debtsAmount: data.debtsAmount ?? 0,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,

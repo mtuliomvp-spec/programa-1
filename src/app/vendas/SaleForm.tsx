@@ -17,10 +17,12 @@ type Vehicle = {
   model: string;
   plate: string;
   salePrice: number;
-  // Consignado: o carro é de terceiro; há um valor a devolver ao proprietário
-  // (supplier) apurado no fechamento da venda.
+  // Consignado: o carro é de terceiro; há um valor acertado com o proprietário
+  // (supplier), do qual se descontam quitação/débitos, apurado no fechamento.
   consigned?: boolean;
   ownerRefundAmount?: number;
+  payoffAmount?: number;
+  debtsAmount?: number;
   supplier?: { name: string } | null;
   // Marca opcional exibida no seletor quando o veículo já tem pré-venda aberta.
   preSaleTag?: string;
@@ -161,6 +163,9 @@ export default function SaleForm({
   // aportar no capital de um beneficiário). O valor em si vem do veículo.
   const isConsigned = Boolean(selectedVehicle?.consigned);
   const ownerRefundAmount = selectedVehicle?.ownerRefundAmount ?? 0;
+  const ownerPayoff = selectedVehicle?.payoffAmount ?? 0;
+  const ownerDebts = selectedVehicle?.debtsAmount ?? 0;
+  const ownerRefundLiquido = Math.max(0, Math.round((ownerRefundAmount - ownerPayoff - ownerDebts) * 100) / 100);
   const [ownerRefundToCapital, setOwnerRefundToCapital] = useState<boolean>(
     Boolean(initial?.ownerRefundToCapital),
   );
@@ -922,8 +927,19 @@ export default function SaleForm({
           <p className="text-sm font-medium text-slate-700">Devolução ao proprietário (consignado)</p>
           <p className="mt-1 text-sm text-slate-600">
             Este veículo é consignado{selectedVehicle?.supplier?.name ? ` de ${selectedVehicle.supplier.name}` : ""}.
-            Valor a devolver ao proprietário:{" "}
-            <strong className="tabular-nums">{formatCurrency(ownerRefundAmount)}</strong>.
+            Valor acertado:{" "}
+            <strong className="tabular-nums">{formatCurrency(ownerRefundAmount)}</strong>
+            {ownerPayoff > 0 || ownerDebts > 0 ? (
+              <>
+                {" "}− quitação <strong className="tabular-nums">{formatCurrency(ownerPayoff)}</strong>
+                {" "}− débitos <strong className="tabular-nums">{formatCurrency(ownerDebts)}</strong>
+                {" = "}
+              </>
+            ) : (
+              " → "
+            )}
+            líquido ao proprietário{" "}
+            <strong className="tabular-nums text-emerald-700">{formatCurrency(ownerRefundLiquido)}</strong>.
           </p>
           <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
             <input
@@ -953,14 +969,16 @@ export default function SaleForm({
                 </Select>
               </Field>
               <p className="mt-1 text-xs text-slate-500">
-                O valor a devolver vira um <strong>aporte de capital</strong> do beneficiário (o
-                dinheiro fica na empresa) — não é pago ao proprietário nem sai do caixa.
+                O <strong>líquido</strong> vira um <strong>aporte de capital</strong> do beneficiário
+                (o dinheiro fica na empresa) — não é pago ao proprietário nem sai do caixa. A
+                quitação e os débitos continuam sendo pagos aos credores.
               </p>
             </div>
           ) : (
             <p className="mt-1 text-xs text-slate-500">
-              Ao registrar a venda, o valor a devolver vira uma <strong>conta a pagar</strong> ao
-              proprietário (categoria Devolução ao proprietário).
+              Ao registrar a venda, o <strong>líquido</strong> vira uma <strong>conta a pagar</strong>{" "}
+              ao proprietário (categoria Devolução ao proprietário); a quitação e os débitos viram
+              contas a pagar aos credores.
             </p>
           )}
         </div>
