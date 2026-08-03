@@ -34,6 +34,8 @@ export type PayableRow = {
   hasAttachment: boolean;
   // Comissão de vendedor vinculado a beneficiário: permite acertar o capital na baixa.
   commissionExcess: { beneficiaryName: string; free: number; capital: number } | null;
+  // Comissão de vendedor SEM beneficiário do capital vinculado: mostra uma dica.
+  commissionSellerUnlinked: boolean;
 };
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
@@ -266,6 +268,13 @@ export default function PayablesTable({
                         capital={p.commissionExcess.capital}
                         cashboxDate={cashboxDate}
                       />
+                    ) : selectable && canPagar && p.commissionSellerUnlinked ? (
+                      <span
+                        className="cursor-help text-xs text-slate-400"
+                        title={`Para aplicar a comissão no capital, vincule ${p.beneficiaryName ?? "o vendedor"} a um beneficiário do capital (módulo Capital → beneficiário → vincular ao usuário).`}
+                      >
+                        ⓘ capital
+                      </span>
                     ) : null}
                   </div>
                 </Td>

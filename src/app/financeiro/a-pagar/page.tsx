@@ -22,6 +22,7 @@ const categoryLabel = {
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 } as const;
 
@@ -164,6 +165,10 @@ export default async function ContasAPagarPage({
       p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
         ? excessByUser.get(p.beneficiaryUserId)!
         : null,
+    // Comissão de um vendedor que NÃO está vinculado a um beneficiário do capital:
+    // a opção "aplicar no capital" não aparece — mostramos uma dica de como habilitar.
+    commissionSellerUnlinked:
+      p.category === "COMISSAO" && !!p.beneficiaryUserId && !excessByUser.has(p.beneficiaryUserId),
   }));
 
   // Busca livre pelos campos exibidos (nº, descrição, categoria, fornecedor,

@@ -53,7 +53,6 @@ export default function CommissionPayButton({
   const excedente = diff < 0 ? Math.round(-diff * 100) / 100 : 0;
   const abate = diff > 0 ? diff : 0;
   const passaDoLivre = excedente > 0 && excedente > free;
-  const abatePassaDivida = abate > 0 && abate > debt + 0.005;
 
   function pay() {
     setMsg(null);
@@ -107,6 +106,13 @@ export default function CommissionPayButton({
           className="mt-0.5 h-8 w-full rounded-lg border border-slate-300 px-2 text-sm"
         />
       </label>
+      <button
+        type="button"
+        onClick={() => setPayout("0,00")}
+        className="text-xs font-medium text-blue-700 hover:underline"
+      >
+        Aplicar tudo no capital
+      </button>
       <label className="block text-xs font-medium text-slate-600">
         Conta
         <select
@@ -125,15 +131,9 @@ export default function CommissionPayButton({
         Data do pagamento: <strong>{cashboxDate ? `${cashboxDate} (caixa)` : "—"}</strong>
       </p>
       {abate > 0 ? (
-        <p className={`text-xs ${abatePassaDivida ? "text-amber-700" : "text-slate-500"}`}>
-          {abatePassaDivida ? (
-            <>⚠ Não é possível abater mais que o saldo devedor ({formatCurrency(debt)}).</>
-          ) : (
-            <>
-              <strong>{formatCurrency(abate)}</strong> abatem o saldo devedor de {beneficiaryName}{" "}
-              (viram aporte e zeram a dívida).
-            </>
-          )}
+        <p className="text-xs text-slate-500">
+          <strong>{formatCurrency(abate)}</strong> viram aporte no capital de {beneficiaryName}
+          {debt > 0 ? ` (cobre o saldo devedor de ${formatCurrency(debt)})` : ""}.
         </p>
       ) : null}
       {excedente > 0 ? (
@@ -145,7 +145,7 @@ export default function CommissionPayButton({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={pending || abatePassaDivida}
+          disabled={pending}
           onClick={pay}
           className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
         >

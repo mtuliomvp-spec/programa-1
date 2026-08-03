@@ -12,7 +12,6 @@ import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
 import { getNeutralAccountId } from "@/lib/accounts";
-import { capitalBalanceOf } from "@/lib/investments";
 import { resolveDespesaCategory } from "@/lib/categories";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -129,67 +128,79 @@ export async function settleCommissionAction(
     return done();
   }
 
-  // Abatimento: paga menos que a comissão → a diferença cobre o saldo devedor
-  // do vendedor como APORTE (via Banco Neutro, sem tocar o caixa real).
+  // Aplicar no capital: paga menos que a comissão → a diferença vira APORTE no
+  // capital do vendedor (via Banco Neutro, sem tocar o caixa real). Vale com ou
+  // sem saldo devedor — o vendedor pode deixar a comissão (inteira ou parte)
+  // como capital.
   if (diff > 0.005 && beneficiary) {
     const abate = diff;
-    const capital = await capitalBalanceOf(beneficiary.id);
-    const debt = Math.max(0, round2(-capital));
-    if (debt <= 0.005) {
-      return {
-        ok: false,
-        error: `${beneficiary.name} não tem saldo devedor de capital a cobrir. Pague a comissão pelo valor cheio.`,
-      };
-    }
-    if (round2(abate - debt) > 0.005) {
-      return {
-        ok: false,
-        error: `Não é possível abater mais que o saldo devedor (${brl(debt)}). O mínimo a pagar ao vendedor é ${brl(round2(comissao - debt))}.`,
-      };
-    }
     const [capitalCenterId, neutralAccountId] = await Promise.all([
       structuralCenterId("CAPITAL"),
       getNeutralAccountId(),
     ]);
-    // Observação explicando, na Ordem de pagamento, por que o título foi pago a
-    // menor: a comissão bruta, o quanto foi abatido no capital devedor e o líquido.
-    const breakdownNote = `Comissão bruta ${brl(comissao)}. Abatido ${brl(abate)} no saldo de capital devedor de ${beneficiary.name}. Líquido pago ao vendedor ${brl(payout)}.`;
+    // Quando NÃO se paga nada ao vendedor (payout 0 = tudo no capital), não faz
+    // sentido gerar uma linha de comissão de R$ 0 "líquido ao vendedor": o
+    // próprio título vira o "aplicado no capital". Só divide em duas linhas
+    // quando há um líquido de fato pago em dinheiro (payout > 0).
+    const applyAll = payout <= 0.005;
+    // Observação na Ordem de pagamento: a comissão bruta, o quanto foi aplicado
+    // no capital e (quando houver) o líquido pago ao vendedor.
+    const breakdownNote = applyAll
+      ? `Comissão bruta ${brl(comissao)}. Aplicado ${brl(abate)} no capital de ${beneficiary.name}.`
+      : `Comissão bruta ${brl(comissao)}. Aplicado ${brl(abate)} no capital de ${beneficiary.name}. Líquido pago ao vendedor ${brl(payout)}.`;
     const liquidoNotes = [payable.notes?.trim() || null, breakdownNote].filter(Boolean).join(" — ");
     await prisma.$transaction(async (tx) => {
-      // 1) O próprio título da comissão vira o líquido pago ao vendedor (conta real).
-      await tx.payable.update({
-        where: { id: payableId },
-        data: {
-          amount: payout,
-          status: "PAGO",
-          paymentDate: date,
-          accountId,
-          description: `${payable.description} (líquido ao vendedor)`,
-          notes: liquidoNotes,
-        },
-      });
-      // 2) Parte abatida: comissão PAGA no Banco Neutro (não passa pelo caixa real).
-      await tx.payable.create({
-        data: {
-          costCenterId: payable.costCenterId,
-          description: `${payable.description} (abatido no saldo de capital)`,
-          category: "COMISSAO",
-          amount: abate,
-          dueDate: date,
-          paymentDate: date,
-          status: "PAGO",
-          accountId: neutralAccountId,
-          saleId: payable.saleId,
-          beneficiaryUserId: payable.beneficiaryUserId,
-        },
-      });
-      // 3) Aporte do vendedor cobrindo a dívida: Receivable RECEBIDO no Banco
-      //    Neutro (centro Capital) + CapitalTransaction APORTE. O par com o
-      //    payable acima zera o Banco Neutro; o aporte zera o saldo devedor.
+      if (applyAll) {
+        // 1) Tudo no capital: o próprio título vira o "aplicado no capital",
+        //    PAGO no Banco Neutro (não toca o caixa real). Sem linha de R$ 0.
+        await tx.payable.update({
+          where: { id: payableId },
+          data: {
+            amount: abate,
+            status: "PAGO",
+            paymentDate: date,
+            accountId: neutralAccountId,
+            description: `${payable.description} (aplicado no capital)`,
+            notes: liquidoNotes,
+          },
+        });
+      } else {
+        // 1) O próprio título da comissão vira o líquido pago ao vendedor (conta real).
+        await tx.payable.update({
+          where: { id: payableId },
+          data: {
+            amount: payout,
+            status: "PAGO",
+            paymentDate: date,
+            accountId,
+            description: `${payable.description} (líquido ao vendedor)`,
+            notes: liquidoNotes,
+          },
+        });
+        // 2) Parte aplicada no capital: comissão PAGA no Banco Neutro (não passa
+        //    pelo caixa real).
+        await tx.payable.create({
+          data: {
+            costCenterId: payable.costCenterId,
+            description: `${payable.description} (aplicado no capital)`,
+            category: "COMISSAO",
+            amount: abate,
+            dueDate: date,
+            paymentDate: date,
+            status: "PAGO",
+            accountId: neutralAccountId,
+            saleId: payable.saleId,
+            beneficiaryUserId: payable.beneficiaryUserId,
+          },
+        });
+      }
+      // 3) Aporte do vendedor: Receivable RECEBIDO no Banco Neutro (centro
+      //    Capital) + CapitalTransaction APORTE. O par com o payable acima zera o
+      //    Banco Neutro; o aporte eleva o capital do vendedor.
       const receivable = await tx.receivable.create({
         data: {
           costCenterId: capitalCenterId,
-          description: `Aporte p/ abater saldo de capital (comissão) - ${beneficiary!.name}`,
+          description: `Aporte de comissão no capital - ${beneficiary!.name}`,
           category: "OUTROS",
           amount: abate,
           dueDate: date,
@@ -205,7 +216,7 @@ export async function settleCommissionAction(
           kind: "APORTE",
           amount: abate,
           date,
-          description: `Abatido do saldo devedor pela ${payable.description}`,
+          description: `Aporte da ${payable.description}`,
           receivableId: receivable.id,
         },
       });

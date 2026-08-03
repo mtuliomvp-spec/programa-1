@@ -76,6 +76,12 @@ export async function createVehicleWithPayable(input: {
   // pagar em aberto nem sai dinheiro do caixa).
   liquidoSettledByTrade?: boolean;
   tradeNote?: string | null;
+  // Consignado: o veículo é de um terceiro (o consignante = supplier). Fica no
+  // estoque/vitrine como um carro normal, mas com purchasePrice 0 (não é
+  // patrimônio comprado). `ownerRefundAmount` é o valor a devolver ao dono,
+  // apurado só no fechamento da venda (não gera conta a pagar na entrada).
+  consigned?: boolean;
+  ownerRefundAmount?: number;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   // Troca: o líquido é "pago" pelo carro recebido — passa pelo Banco Neutro
@@ -115,6 +121,8 @@ export async function createVehicleWithPayable(input: {
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100),
       },
     });
 
@@ -298,6 +306,10 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: vehicleId } });
+    // Consignado: não tem contas de compra de entrada (purchasePrice 0). A
+    // quitação/débitos do consignado são criadas no FECHAMENTO da venda (repasse)
+    // — não devem ser recriadas/apagadas ao editar o veículo.
+    if (vehicle.consigned) return;
     const purchasePayables = await tx.payable.findMany({
       where: { vehicleId, category: "COMPRA_VEICULO" },
     });
@@ -664,6 +676,18 @@ export async function registerVehicleSale(input: {
   tradeInAmount?: number;
   tradeInLabel?: string | null;
   tradeInVehicleId?: string | null;
+  // Consignado: o veículo era de um terceiro (o consignante = supplier do
+  // veículo). No fechamento a loja deve `ownerRefundAmount` ao dono. Se
+  // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário
+  // (sem sair do caixa — o dinheiro da venda fica na empresa como capital);
+  // senão vira conta a pagar (DEVOLUCAO_PROPRIETARIO) ao proprietário.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
+  ownerRefundToCapital?: boolean;
+  ownerRefundBeneficiaryId?: string | null;
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de virar conta
+  // a pagar — só quando o vendedor (sellerId) é beneficiário do capital.
+  commissionToCapital?: boolean;
 }) {
   const defaultAccountId = await getDefaultAccountId();
   // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
@@ -678,6 +702,10 @@ export async function registerVehicleSale(input: {
   const transferCharged = Boolean(input.transferCharged);
   const transferAmount = transferCharged
     ? Math.max(0, Math.round((input.transferAmount ?? 0) * 100) / 100)
+    : 0;
+  // Consignado: valor a devolver ao proprietário, normalizado.
+  const ownerRefund = input.consigned
+    ? Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100)
     : 0;
   const adminCenterId =
     commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0 || input.takeReturnCommission
@@ -702,6 +730,16 @@ export async function registerVehicleSale(input: {
     if (canceladas.length > 0) {
       const ids = canceladas.map((s) => s.id);
       await tx.receivable.deleteMany({ where: { saleId: { in: ids } } });
+      // Aporte de consignado gerado por uma venda cancelada deste veículo: remove
+      // o resíduo antes de recriar a venda (senão ficaria um aporte órfão).
+      await tx.capitalTransaction.deleteMany({ where: { saleId: { in: ids } } });
+      // Consignado: quitação/débitos (repasse) da venda cancelada só existem por
+      // causa dela — remove antes de recriar para não duplicar no revender.
+      if (vehicle.consigned) {
+        await tx.payable.deleteMany({
+          where: { vehicleId: input.vehicleId, category: "COMPRA_VEICULO" },
+        });
+      }
       await tx.sale.deleteMany({ where: { id: { in: ids } } });
     }
 
@@ -745,6 +783,12 @@ export async function registerVehicleSale(input: {
         installmentsInfoAmount: input.installmentsInfoAmount ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: input.consigned ? ownerRefund : 0,
+        ownerRefundToCapital: Boolean(input.consigned && input.ownerRefundToCapital),
+        ownerRefundBeneficiaryId:
+          input.consigned && input.ownerRefundToCapital ? input.ownerRefundBeneficiaryId || null : null,
+        commissionToCapital: Boolean(input.commissionToCapital),
       },
     });
 
@@ -753,22 +797,48 @@ export async function registerVehicleSale(input: {
       data: { status: "VENDIDO" },
     });
 
+    // Comissão no capital: quando a flag está ligada e o vendedor é beneficiário
+    // do capital, a comissão do vendedor (e a do retorno) vira APORTE no capital
+    // dele em vez de conta a pagar. Sem beneficiário vinculado → conta a pagar.
+    const commissionBeneficiary =
+      input.commissionToCapital && input.sellerId
+        ? await tx.capitalBeneficiary.findUnique({
+            where: { userId: input.sellerId },
+            select: { id: true },
+          })
+        : null;
+
     // Comissão do vendedor: conta a pagar avulsa (categoria Comissão, centro
     // Administrativo), vinculada à venda. NÃO é custo do veículo (vehicleId
     // nulo) — é despesa de venda, entra no resultado quando for paga.
+    // Quando aplicada no capital, vira APORTE puro (sem conta a pagar); o custo
+    // continua reconhecido na DRE por competência (sale.commissionAmount).
     if (commission > 0 && adminCenterId) {
-      await tx.payable.create({
-        data: {
-          description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-          category: "COMISSAO",
-          amount: commission,
-          dueDate: input.saleDate,
-          status: "PENDENTE",
-          costCenterId: adminCenterId,
-          saleId: sale.id,
-          beneficiaryUserId: input.sellerId || null,
-        },
-      });
+      if (commissionBeneficiary) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: commissionBeneficiary.id,
+            kind: "APORTE",
+            amount: commission,
+            date: input.saleDate,
+            saleId: sale.id,
+            description: `Aporte — comissão de venda${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          },
+        });
+      } else {
+        await tx.payable.create({
+          data: {
+            description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+            category: "COMISSAO",
+            amount: commission,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            costCenterId: adminCenterId,
+            saleId: sale.id,
+            beneficiaryUserId: input.sellerId || null,
+          },
+        });
+      }
     }
 
     // Indicações de venda: mesma mecânica da comissão do vendedor (Comissão,
@@ -982,18 +1052,33 @@ export async function registerVehicleSale(input: {
             if (input.takeReturnCommission && sellerPct > 0 && adminCenterId) {
               const returnCommission = Math.round(net * (sellerPct / 100) * 100) / 100;
               if (returnCommission > 0) {
-                await tx.payable.create({
-                  data: {
-                    description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-                    category: "COMISSAO",
-                    amount: returnCommission,
-                    dueDate: input.saleDate,
-                    status: "PENDENTE",
-                    costCenterId: adminCenterId,
-                    saleId: sale.id,
-                    beneficiaryUserId: input.sellerId || null,
-                  },
-                });
+                // Igual à comissão de venda: no capital vira APORTE puro; senão
+                // conta a pagar. Custo reconhecido na DRE por competência.
+                if (commissionBeneficiary) {
+                  await tx.capitalTransaction.create({
+                    data: {
+                      beneficiaryId: commissionBeneficiary.id,
+                      kind: "APORTE",
+                      amount: returnCommission,
+                      date: input.saleDate,
+                      saleId: sale.id,
+                      description: `Aporte — comissão do retorno${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                    },
+                  });
+                } else {
+                  await tx.payable.create({
+                    data: {
+                      description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                      category: "COMISSAO",
+                      amount: returnCommission,
+                      dueDate: input.saleDate,
+                      status: "PENDENTE",
+                      costCenterId: adminCenterId,
+                      saleId: sale.id,
+                      beneficiaryUserId: input.sellerId || null,
+                    },
+                  });
+                }
                 await tx.sale.update({
                   where: { id: sale.id },
                   data: { returnCommissionAmount: returnCommission },
@@ -1042,6 +1127,81 @@ export async function registerVehicleSale(input: {
       });
     }
 
+    // Consignado: o valor ACERTADO com o proprietário (bruto) é o custo do
+    // negócio, reconhecido por inteiro no fechamento da venda. Ele se divide em:
+    // - Quitação do financiamento e débitos do veículo (repasse): a loja paga
+    //   direto ao banco/órgãos — contas a pagar COMPRA_VEICULO, iguais às da
+    //   compra de estoque (entram no passivo pós-venda da equação patrimonial).
+    // - Líquido ao proprietário = acertado − quitação − débitos. Dois destinos:
+    //   * Aporte no capital do beneficiário (aporte PURO, sem recebível — o caixa
+    //     já entrou pela venda); ou
+    //   * Pagar ao dono → conta a pagar (DEVOLUCAO_PROPRIETARIO).
+    if (input.consigned && ownerRefund > 0) {
+      const payoff = Math.max(0, Math.round((vehicle.payoffAmount ?? 0) * 100) / 100);
+      const debts = Math.max(0, Math.round((vehicle.debtsAmount ?? 0) * 100) / 100);
+      const repasseLabel = `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
+      if (payoff > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Quitação do financiamento ${repasseLabel}${vehicle.payoffTo ? ` (${vehicle.payoffTo})` : ""}`,
+            category: "COMPRA_VEICULO",
+            amount: payoff,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+          },
+        });
+      }
+      if (debts > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Débitos do veículo (repasse) ${repasseLabel}`,
+            category: "COMPRA_VEICULO",
+            amount: debts,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+          },
+        });
+      }
+      // Líquido ao proprietário = valor acertado − quitação − débitos.
+      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
+      if (liquido > 0) {
+        // Nome do proprietário (consignante) para constar nos documentos.
+        const owner = vehicle.supplierId
+          ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
+          : null;
+        if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
+          await tx.capitalTransaction.create({
+            data: {
+              beneficiaryId: input.ownerRefundBeneficiaryId,
+              kind: "APORTE",
+              amount: liquido,
+              date: input.saleDate,
+              saleId: sale.id,
+              description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})${owner?.name ? ` — proprietário ${owner.name}` : ""}`,
+            },
+          });
+        } else {
+          await tx.payable.create({
+            data: {
+              description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
+              category: "DEVOLUCAO_PROPRIETARIO",
+              amount: liquido,
+              dueDate: input.saleDate,
+              status: "PENDENTE",
+              vehicleId: input.vehicleId,
+              supplierId: vehicle.supplierId || null,
+              costCenterId: veiculosCenterId,
+              notes: "Valor líquido devido ao consignante pela venda do veículo consignado.",
+            },
+          });
+        }
+      }
+    }
+
     return sale;
   });
 }
@@ -1087,6 +1247,23 @@ export async function cancelVehicleSale(saleId: string) {
     // 2c) Comissão do vendedor gerada por esta venda: apagar o título (se já foi
     //     pago, o dinheiro volta ao caixa).
     await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
+
+    // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
+    //     apaga a conta a pagar (se já quitada, o dinheiro volta ao caixa). Se
+    //     foi aplicada no capital, apaga o aporte (baixa o saldo de capital).
+    //     A quitação/débitos (repasse COMPRA_VEICULO) do consignado também são
+    //     criadas no fechamento — só existem por causa da venda, então são
+    //     revertidas junto (num veículo de estoque a compra é da entrada e NÃO
+    //     se apaga aqui; por isso a limpeza é condicionada ao consignado).
+    await tx.payable.deleteMany({
+      where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
+    });
+    await tx.capitalTransaction.deleteMany({ where: { saleId } });
+    if (sale.consigned) {
+      await tx.payable.deleteMany({
+        where: { vehicleId: sale.vehicleId, category: "COMPRA_VEICULO" },
+      });
+    }
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.

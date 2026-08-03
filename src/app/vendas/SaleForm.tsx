@@ -10,6 +10,7 @@ import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
+import NewCustomerInline from "@/components/NewCustomerInline";
 
 type Vehicle = {
   id: string;
@@ -17,12 +18,20 @@ type Vehicle = {
   model: string;
   plate: string;
   salePrice: number;
+  // Consignado: o carro é de terceiro; há um valor acertado com o proprietário
+  // (supplier), do qual se descontam quitação/débitos, apurado no fechamento.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
+  payoffAmount?: number;
+  debtsAmount?: number;
+  supplier?: { name: string } | null;
   // Marca opcional exibida no seletor quando o veículo já tem pré-venda aberta.
   preSaleTag?: string;
 };
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
+type Beneficiary = { id: string; name: string };
 
 export type SaleFormInitial = {
   vehicleId?: string;
@@ -46,6 +55,9 @@ export type SaleFormInitial = {
   installmentsInfoCount?: number;
   installmentsInfoAmount?: number;
   notes?: string;
+  ownerRefundToCapital?: boolean;
+  ownerRefundBeneficiaryId?: string;
+  commissionToCapital?: boolean;
   buyerBankName?: string;
   buyerBankAgency?: string;
   buyerBankAccount?: string;
@@ -106,6 +118,8 @@ export default function SaleForm({
   customers,
   financers,
   users = [],
+  beneficiaries = [],
+  sellersWithCapital = [],
   advances = {},
   preselectedVehicleId,
   currentUserId,
@@ -116,6 +130,8 @@ export default function SaleForm({
   customers: Customer[];
   financers: Financer[];
   users?: UserOption[];
+  beneficiaries?: Beneficiary[];
+  sellersWithCapital?: string[];
   advances?: Record<string, number>;
   preselectedVehicleId?: string;
   currentUserId?: string;
@@ -126,7 +142,10 @@ export default function SaleForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
   const [customerId, setCustomerId] = useState(initial?.customerId || "");
-  const customerName = customers.find((c) => c.id === customerId)?.name ?? "";
+  // Lista de clientes editável: permite cadastrar um novo cliente sem sair da tela.
+  const [customerList, setCustomerList] = useState<Customer[]>(customers);
+  const [newCustomer, setNewCustomer] = useState(false);
+  const customerName = customerList.find((c) => c.id === customerId)?.name ?? "";
 
   // Aviso em tempo real: veículo já pré-vendido para OUTRO cliente. Checa assim
   // que veículo + cliente estão escolhidos, sem esperar o envio.
@@ -147,6 +166,26 @@ export default function SaleForm({
   );
 
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
+  // Consignado: destino do valor a devolver ao proprietário (pagar ao dono vs
+  // aportar no capital de um beneficiário). O valor em si vem do veículo.
+  const isConsigned = Boolean(selectedVehicle?.consigned);
+  const ownerRefundAmount = selectedVehicle?.ownerRefundAmount ?? 0;
+  const ownerPayoff = selectedVehicle?.payoffAmount ?? 0;
+  const ownerDebts = selectedVehicle?.debtsAmount ?? 0;
+  const ownerRefundLiquido = Math.max(0, Math.round((ownerRefundAmount - ownerPayoff - ownerDebts) * 100) / 100);
+  const [ownerRefundToCapital, setOwnerRefundToCapital] = useState<boolean>(
+    Boolean(initial?.ownerRefundToCapital),
+  );
+  const [ownerRefundBeneficiaryId, setOwnerRefundBeneficiaryId] = useState<string>(
+    initial?.ownerRefundBeneficiaryId || "",
+  );
+  // Vendedor selecionado (controlado) para decidir se oferece aplicar a comissão
+  // no capital dele (só quando o vendedor é beneficiário do capital).
+  const [sellerId, setSellerId] = useState(initial?.sellerId ?? currentUserId ?? "");
+  const [commissionToCapital, setCommissionToCapital] = useState<boolean>(
+    Boolean(initial?.commissionToCapital),
+  );
+  const sellerHasCapital = !!sellerId && sellersWithCapital.includes(sellerId);
   const [totalAmount, setTotalAmount] = useState<string>(
     initial?.totalAmount != null ? String(initial.totalAmount) : selectedVehicle ? String(selectedVehicle.salePrice) : "",
   );
@@ -338,16 +377,27 @@ export default function SaleForm({
             onChange={(e) => setCustomerId(e.target.value)}
           >
             <option value="">Selecione um cliente</option>
-            {customers.map((c) => (
+            {customerList.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </Select>
-          {customers.length === 0 ? (
-            <p className="mt-1 text-xs text-amber-600">
-              Nenhum cliente cadastrado. <a href="/clientes/novo" className="underline">Cadastrar cliente</a>
-            </p>
+          <button
+            type="button"
+            onClick={() => setNewCustomer((v) => !v)}
+            className="mt-1.5 text-sm font-medium text-blue-700 hover:underline"
+          >
+            {newCustomer ? "✕ Cancelar novo cliente" : "+ Cadastrar novo cliente"}
+          </button>
+          {newCustomer ? (
+            <NewCustomerInline
+              onCreated={(c) => {
+                setCustomerList((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
+                setCustomerId(c.id);
+                setNewCustomer(false);
+              }}
+            />
           ) : null}
         </Field>
         <Field label="Data da venda" required>
@@ -365,7 +415,7 @@ export default function SaleForm({
           />
         </Field>
         <Field label="Vendedor">
-          <Select name="sellerId" defaultValue={initial?.sellerId ?? currentUserId ?? ""}>
+          <Select name="sellerId" value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
             <option value="">— selecione —</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
@@ -383,6 +433,19 @@ export default function SaleForm({
             defaultValue={initial?.commissionAmount ? String(initial.commissionAmount) : ""}
             placeholder="0,00 — opcional"
           />
+          {sellerHasCapital ? (
+            <label className="mt-1.5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                name="commissionToCapital"
+                value="true"
+                checked={commissionToCapital}
+                onChange={(e) => setCommissionToCapital(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Aplicar a comissão no capital do vendedor (aporte, em vez de pagar)
+            </label>
+          ) : null}
         </Field>
         <Field label="Transferência (DETRAN)">
           <label className="flex items-center gap-2 text-sm text-slate-700">
@@ -896,6 +959,68 @@ export default function SaleForm({
           </p>
         )}
       </div>
+
+      {isConsigned ? (
+        <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+          <p className="text-sm font-medium text-slate-700">Devolução ao proprietário (consignado)</p>
+          <p className="mt-1 text-sm text-slate-600">
+            Este veículo é consignado{selectedVehicle?.supplier?.name ? ` de ${selectedVehicle.supplier.name}` : ""}.
+            Valor acertado:{" "}
+            <strong className="tabular-nums">{formatCurrency(ownerRefundAmount)}</strong>
+            {ownerPayoff > 0 || ownerDebts > 0 ? (
+              <>
+                {" "}− quitação <strong className="tabular-nums">{formatCurrency(ownerPayoff)}</strong>
+                {" "}− débitos <strong className="tabular-nums">{formatCurrency(ownerDebts)}</strong>
+                {" = "}
+              </>
+            ) : (
+              " → "
+            )}
+            líquido ao proprietário{" "}
+            <strong className="tabular-nums text-emerald-700">{formatCurrency(ownerRefundLiquido)}</strong>.
+          </p>
+          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="ownerRefundToCapital"
+              value="true"
+              checked={ownerRefundToCapital}
+              onChange={(e) => setOwnerRefundToCapital(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Aplicar no capital de um beneficiário (em vez de pagar o proprietário)
+          </label>
+          {ownerRefundToCapital ? (
+            <div className="mt-3">
+              <Field label="Beneficiário do capital" required>
+                <Select
+                  name="ownerRefundBeneficiaryId"
+                  value={ownerRefundBeneficiaryId}
+                  onChange={(e) => setOwnerRefundBeneficiaryId(e.target.value)}
+                >
+                  <option value="">Selecione o beneficiário</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}
+                    </option>
+                  ))}
+                </Select>
+              </Field>
+              <p className="mt-1 text-xs text-slate-500">
+                O <strong>líquido</strong> vira um <strong>aporte de capital</strong> do beneficiário
+                (o dinheiro fica na empresa) — não é pago ao proprietário nem sai do caixa. A
+                quitação e os débitos continuam sendo pagos aos credores.
+              </p>
+            </div>
+          ) : (
+            <p className="mt-1 text-xs text-slate-500">
+              Ao registrar a venda, o <strong>líquido</strong> vira uma <strong>conta a pagar</strong>{" "}
+              ao proprietário (categoria Devolução ao proprietário); a quitação e os débitos viram
+              contas a pagar aos credores.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" rows={3} defaultValue={initial?.notes || ""} />

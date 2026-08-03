@@ -58,7 +58,7 @@ export async function createRecurringAction(
   }
   // No fluxo Capital a categoria não é despesa/receita — usa OUTROS, sem rótulo.
   // Fora dele, resolve o rótulo escolhido/digitado para enum + nome canônico.
-  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS" | null = null;
+  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
   let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
   let categoryLabel: string | null = null;
   if (data.kind === "PAGAR") {
@@ -146,7 +146,7 @@ export async function updateRecurringAction(
   if (!isCapital && !label) {
     return { error: "Informe a categoria." };
   }
-  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS" | null = null;
+  let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
   let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
   let categoryLabel: string | null = null;
   if (data.kind === "PAGAR") {
