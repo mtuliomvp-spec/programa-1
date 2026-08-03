@@ -11,6 +11,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
 import { userCan } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
+import SolicitedCombosCard, { type SolicitedCombo } from "./SolicitedCombosCard";
 
 export const dynamic = "force-dynamic";
 
@@ -32,10 +33,11 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo } = await searchParams;
   const q = (qParam || "").trim();
-  const [canPagar, canManage, canCombo] = await Promise.all([
+  const [canPagar, canManage, canCombo, canPayCombo] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
     userCan("combos", "criar"),
+    userCan("combos", "aprovar"),
   ]);
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
@@ -70,6 +72,27 @@ export default async function ContasAPagarPage({
 
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
 
+  // Combos SOLICITADOS viram pagamento ÚNICO: seus títulos pendentes saem da
+  // tabela individual e aparecem agrupados no card próprio, com baixa única.
+  const inSolicitedCombo = (p: (typeof withStatus)[number]) =>
+    p.paymentCombo?.status === "SOLICITADO" && p.effective !== "PAGO";
+  const solicitedComboMap = new Map<string, SolicitedCombo>();
+  for (const p of withStatus) {
+    if (!inSolicitedCombo(p)) continue;
+    const combo = p.paymentCombo!;
+    const entry = solicitedComboMap.get(combo.id) ?? {
+      id: combo.id,
+      name: combo.name,
+      userName: combo.user?.name ?? null,
+      count: 0,
+      total: 0,
+    };
+    entry.count += 1;
+    entry.total = Math.round((entry.total + p.amount) * 100) / 100;
+    solicitedComboMap.set(combo.id, entry);
+  }
+  const solicitedCombos = Array.from(solicitedComboMap.values());
+
   // Opções distintas presentes nos títulos, para os filtros separados.
   const supplierOptions = Array.from(
     new Map(payables.filter((p) => p.supplier).map((p) => [p.supplier!.id, p.supplier!.name])).entries(),
@@ -95,6 +118,7 @@ export default async function ContasAPagarPage({
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 
   const filtered = withStatus.filter((p) => {
+    if (inSolicitedCombo(p)) return false;
     if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) return false;
     if (fornecedor && p.supplierId !== fornecedor) return false;
     if (veiculo && p.vehicleId !== veiculo) return false;
@@ -272,6 +296,15 @@ export default async function ContasAPagarPage({
           </>
         }
       />
+
+      {statusFilter !== "PAGO" ? (
+        <SolicitedCombosCard
+          combos={solicitedCombos}
+          accounts={accounts}
+          canPay={canPayCombo}
+          cashboxDate={cashboxDate}
+        />
+      ) : null}
 
       <Card>
         {tableRows.length === 0 ? (
