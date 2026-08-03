@@ -34,12 +34,15 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo } = await searchParams;
   const q = (qParam || "").trim();
-  const [canPagar, canManage, canCombo, canPayCombo] = await Promise.all([
+  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
     userCan("combos", "criar"),
     userCan("combos", "aprovar"),
+    userCan("financeiro", "editar"),
   ]);
+  // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
+  const canEdit = canManage || canEditOnly;
   await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
 
@@ -324,7 +327,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
           </>
         )}
       </Card>

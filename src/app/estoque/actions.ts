@@ -587,6 +587,7 @@ export async function uploadClientPhotoAction(
       ["estoque", "editar"],
       ["vendas", "prevenda"],
       ["vendas", "registrar"],
+      ["vendas", "foto"],
     ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };

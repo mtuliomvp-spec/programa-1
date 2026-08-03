@@ -45,6 +45,7 @@ export const MODULES: ModuleConfig[] = [
       { acao: "prevenda", label: "Criar/editar pré-venda" },
       { acao: "registrar", label: "Registrar venda (efetivar)" },
       { acao: "cancelar", label: "Cancelar venda" },
+      { acao: "foto", label: "Foto do cliente (antifraude)" },
     ],
   },
   {
@@ -74,6 +75,7 @@ export const MODULES: ModuleConfig[] = [
     acoes: [
       VER,
       { acao: "criar", label: "Lançar conta a pagar/receber" },
+      { acao: "editar", label: "Editar títulos lançados" },
       { acao: "pagar", label: "Registrar pagamento (baixa)" },
       { acao: "receber", label: "Registrar recebimento (baixa)" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
