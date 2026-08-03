@@ -44,6 +44,7 @@ export default async function NovaVendaPage({
         notes: pre.notes ?? undefined,
         ownerRefundToCapital: pre.ownerRefundToCapital,
         ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
+        commissionToCapital: pre.commissionToCapital,
         buyerBankName: pre.buyerBankName ?? undefined,
         buyerBankAgency: pre.buyerBankAgency ?? undefined,
         buyerBankAccount: pre.buyerBankAccount ?? undefined,
@@ -95,12 +96,19 @@ export default async function NovaVendaPage({
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     // Todos os beneficiários do capital (destino opcional da devolução do
     // consignado). Mesma lista da tela de Capital: qualquer beneficiário, a
-    // empresa primeiro.
+    // empresa primeiro. `userId` identifica quais são vendedores do sistema
+    // (para oferecer aplicar a comissão no capital do vendedor).
     prisma.capitalBeneficiary.findMany({
       orderBy: [{ isCompany: "desc" }, { name: "asc" }],
-      select: { id: true, name: true },
+      select: { id: true, name: true, userId: true },
     }),
   ]);
+
+  // Vendedores (usuários) vinculados a um beneficiário do capital: só para eles
+  // a opção "aplicar comissão no capital" faz sentido.
+  const sellersWithCapital = beneficiaries
+    .map((b) => b.userId)
+    .filter((id): id is string => !!id);
 
   // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
   const advanceRows = await prisma.receivable.groupBy({
@@ -143,6 +151,7 @@ export default async function NovaVendaPage({
             financers={financers}
             users={users}
             beneficiaries={beneficiaries}
+            sellersWithCapital={sellersWithCapital}
             advances={advances}
             preselectedVehicleId={vehicleId}
             currentUserId={user?.id}

@@ -57,6 +57,7 @@ export type SaleFormInitial = {
   notes?: string;
   ownerRefundToCapital?: boolean;
   ownerRefundBeneficiaryId?: string;
+  commissionToCapital?: boolean;
   buyerBankName?: string;
   buyerBankAgency?: string;
   buyerBankAccount?: string;
@@ -118,6 +119,7 @@ export default function SaleForm({
   financers,
   users = [],
   beneficiaries = [],
+  sellersWithCapital = [],
   advances = {},
   preselectedVehicleId,
   currentUserId,
@@ -129,6 +131,7 @@ export default function SaleForm({
   financers: Financer[];
   users?: UserOption[];
   beneficiaries?: Beneficiary[];
+  sellersWithCapital?: string[];
   advances?: Record<string, number>;
   preselectedVehicleId?: string;
   currentUserId?: string;
@@ -176,6 +179,13 @@ export default function SaleForm({
   const [ownerRefundBeneficiaryId, setOwnerRefundBeneficiaryId] = useState<string>(
     initial?.ownerRefundBeneficiaryId || "",
   );
+  // Vendedor selecionado (controlado) para decidir se oferece aplicar a comissão
+  // no capital dele (só quando o vendedor é beneficiário do capital).
+  const [sellerId, setSellerId] = useState(initial?.sellerId ?? currentUserId ?? "");
+  const [commissionToCapital, setCommissionToCapital] = useState<boolean>(
+    Boolean(initial?.commissionToCapital),
+  );
+  const sellerHasCapital = !!sellerId && sellersWithCapital.includes(sellerId);
   const [totalAmount, setTotalAmount] = useState<string>(
     initial?.totalAmount != null ? String(initial.totalAmount) : selectedVehicle ? String(selectedVehicle.salePrice) : "",
   );
@@ -405,7 +415,7 @@ export default function SaleForm({
           />
         </Field>
         <Field label="Vendedor">
-          <Select name="sellerId" defaultValue={initial?.sellerId ?? currentUserId ?? ""}>
+          <Select name="sellerId" value={sellerId} onChange={(e) => setSellerId(e.target.value)}>
             <option value="">— selecione —</option>
             {users.map((u) => (
               <option key={u.id} value={u.id}>
@@ -423,6 +433,19 @@ export default function SaleForm({
             defaultValue={initial?.commissionAmount ? String(initial.commissionAmount) : ""}
             placeholder="0,00 — opcional"
           />
+          {sellerHasCapital ? (
+            <label className="mt-1.5 flex items-center gap-2 text-sm text-slate-700">
+              <input
+                type="checkbox"
+                name="commissionToCapital"
+                value="true"
+                checked={commissionToCapital}
+                onChange={(e) => setCommissionToCapital(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300"
+              />
+              Aplicar a comissão no capital do vendedor (aporte, em vez de pagar)
+            </label>
+          ) : null}
         </Field>
         <Field label="Transferência (DETRAN)">
           <label className="flex items-center gap-2 text-sm text-slate-700">

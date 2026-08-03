@@ -624,6 +624,8 @@ model PreSale {
   // valor em si é re-derivado do veículo na conversão em venda.
   ownerRefundToCapital     Boolean  @default(false)
   ownerRefundBeneficiaryId String?
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga.
+  commissionToCapital      Boolean  @default(false)
   // Token público para a verificação da ficha via QR Code (página /verificar).
   publicToken       String         @unique @default(uuid())
   status            StatusPreVenda @default(ABERTA)
@@ -667,6 +669,9 @@ model Sale {
   ownerRefundToCapital   Boolean   @default(false)
   ownerRefundBeneficiaryId String?
   ownerRefundBeneficiary CapitalBeneficiary? @relation("SaleOwnerRefund", fields: [ownerRefundBeneficiaryId], references: [id])
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga em
+  // dinheiro — só quando o vendedor é beneficiário do capital.
+  commissionToCapital    Boolean   @default(false)
   vehicleId         String         @unique
   vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
   tradeInVehicleId  String?        @unique

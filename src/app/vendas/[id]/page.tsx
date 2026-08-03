@@ -157,7 +157,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             {sale.commissionAmount > 0 ? (
               <p className="mt-1">
                 <span className="font-medium text-slate-800">Comissão do vendedor:</span> {formatCurrency(sale.commissionAmount)}{" "}
-                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+                <span className="text-slate-400">
+                  {sale.commissionToCapital
+                    ? "— aplicada no capital do vendedor (aporte)"
+                    : "— lançada em Contas a pagar (Comissão)"}
+                </span>
               </p>
             ) : null}
             {sale.transferCharged && sale.transferAmount > 0 ? (
@@ -169,7 +173,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             {sale.returnCommissionAmount > 0 ? (
               <p className="mt-1">
                 <span className="font-medium text-slate-800">Comissão do retorno:</span> {formatCurrency(sale.returnCommissionAmount)}{" "}
-                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+                <span className="text-slate-400">
+                  {sale.commissionToCapital
+                    ? "— aplicada no capital do vendedor (aporte)"
+                    : "— lançada em Contas a pagar (Comissão)"}
+                </span>
               </p>
             ) : null}
             {referrals.map((r, i) => (

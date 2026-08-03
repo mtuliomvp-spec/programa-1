@@ -65,6 +65,9 @@ export const saleSchema = z.object({
   // beneficiário escolhido (o valor em si vem do veículo, travado no servidor).
   ownerRefundToCapital: z.coerce.boolean().optional(),
   ownerRefundBeneficiaryId: z.string().optional(),
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga —
+  // só surte efeito se o vendedor for beneficiário do capital (resolvido no motor).
+  commissionToCapital: z.coerce.boolean().optional(),
   // Dados bancários do comprador — usados quando há devolução ao cliente (as
   // entradas superam o preço); constam no contrato para o pagamento.
   buyerBankName: z.string().optional(),
@@ -312,6 +315,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       ownerRefundAmount,
       ownerRefundToCapital,
       ownerRefundBeneficiaryId,
+      commissionToCapital: Boolean(d.commissionToCapital),
     });
     return sale.id;
   } catch (err) {

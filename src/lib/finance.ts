@@ -685,6 +685,9 @@ export async function registerVehicleSale(input: {
   ownerRefundAmount?: number;
   ownerRefundToCapital?: boolean;
   ownerRefundBeneficiaryId?: string | null;
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de virar conta
+  // a pagar — só quando o vendedor (sellerId) é beneficiário do capital.
+  commissionToCapital?: boolean;
 }) {
   const defaultAccountId = await getDefaultAccountId();
   // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
@@ -785,6 +788,7 @@ export async function registerVehicleSale(input: {
         ownerRefundToCapital: Boolean(input.consigned && input.ownerRefundToCapital),
         ownerRefundBeneficiaryId:
           input.consigned && input.ownerRefundToCapital ? input.ownerRefundBeneficiaryId || null : null,
+        commissionToCapital: Boolean(input.commissionToCapital),
       },
     });
 
@@ -793,22 +797,48 @@ export async function registerVehicleSale(input: {
       data: { status: "VENDIDO" },
     });
 
+    // Comissão no capital: quando a flag está ligada e o vendedor é beneficiário
+    // do capital, a comissão do vendedor (e a do retorno) vira APORTE no capital
+    // dele em vez de conta a pagar. Sem beneficiário vinculado → conta a pagar.
+    const commissionBeneficiary =
+      input.commissionToCapital && input.sellerId
+        ? await tx.capitalBeneficiary.findUnique({
+            where: { userId: input.sellerId },
+            select: { id: true },
+          })
+        : null;
+
     // Comissão do vendedor: conta a pagar avulsa (categoria Comissão, centro
     // Administrativo), vinculada à venda. NÃO é custo do veículo (vehicleId
     // nulo) — é despesa de venda, entra no resultado quando for paga.
+    // Quando aplicada no capital, vira APORTE puro (sem conta a pagar); o custo
+    // continua reconhecido na DRE por competência (sale.commissionAmount).
     if (commission > 0 && adminCenterId) {
-      await tx.payable.create({
-        data: {
-          description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-          category: "COMISSAO",
-          amount: commission,
-          dueDate: input.saleDate,
-          status: "PENDENTE",
-          costCenterId: adminCenterId,
-          saleId: sale.id,
-          beneficiaryUserId: input.sellerId || null,
-        },
-      });
+      if (commissionBeneficiary) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: commissionBeneficiary.id,
+            kind: "APORTE",
+            amount: commission,
+            date: input.saleDate,
+            saleId: sale.id,
+            description: `Aporte — comissão de venda${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          },
+        });
+      } else {
+        await tx.payable.create({
+          data: {
+            description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+            category: "COMISSAO",
+            amount: commission,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            costCenterId: adminCenterId,
+            saleId: sale.id,
+            beneficiaryUserId: input.sellerId || null,
+          },
+        });
+      }
     }
 
     // Indicações de venda: mesma mecânica da comissão do vendedor (Comissão,
@@ -1022,18 +1052,33 @@ export async function registerVehicleSale(input: {
             if (input.takeReturnCommission && sellerPct > 0 && adminCenterId) {
               const returnCommission = Math.round(net * (sellerPct / 100) * 100) / 100;
               if (returnCommission > 0) {
-                await tx.payable.create({
-                  data: {
-                    description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-                    category: "COMISSAO",
-                    amount: returnCommission,
-                    dueDate: input.saleDate,
-                    status: "PENDENTE",
-                    costCenterId: adminCenterId,
-                    saleId: sale.id,
-                    beneficiaryUserId: input.sellerId || null,
-                  },
-                });
+                // Igual à comissão de venda: no capital vira APORTE puro; senão
+                // conta a pagar. Custo reconhecido na DRE por competência.
+                if (commissionBeneficiary) {
+                  await tx.capitalTransaction.create({
+                    data: {
+                      beneficiaryId: commissionBeneficiary.id,
+                      kind: "APORTE",
+                      amount: returnCommission,
+                      date: input.saleDate,
+                      saleId: sale.id,
+                      description: `Aporte — comissão do retorno${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                    },
+                  });
+                } else {
+                  await tx.payable.create({
+                    data: {
+                      description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                      category: "COMISSAO",
+                      amount: returnCommission,
+                      dueDate: input.saleDate,
+                      status: "PENDENTE",
+                      costCenterId: adminCenterId,
+                      saleId: sale.id,
+                      beneficiaryUserId: input.sellerId || null,
+                    },
+                  });
+                }
                 await tx.sale.update({
                   where: { id: sale.id },
                   data: { returnCommissionAmount: returnCommission },
