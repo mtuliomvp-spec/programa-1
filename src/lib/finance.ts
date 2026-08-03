@@ -1245,7 +1245,10 @@ export async function cancelVehicleSale(saleId: string) {
     });
 
     // 2c) Comissão do vendedor gerada por esta venda: apagar o título (se já foi
-    //     pago, o dinheiro volta ao caixa).
+    //     pago, o dinheiro volta ao caixa). Se a comissão foi "aplicada no
+    //     capital" (Pagar comissão), o título PAGO no Banco Neutro também tem
+    //     saleId e cai aqui; o recebível do aporte (par no Banco Neutro) cai no
+    //     passo 2 e a movimentação de capital no passo 2d — o trio some junto.
     await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
 
     // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
