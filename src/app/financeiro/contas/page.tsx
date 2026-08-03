@@ -25,7 +25,7 @@ export default async function ContasPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
-  const [accounts, transfers, health, cashbox, cashboxHistory] = await Promise.all([
+  const [accounts, transfers, health, cashbox, cashboxHistory, owners, beneficiaries] = await Promise.all([
     getAccountsWithBalances(),
     prisma.accountTransfer.findMany({
       include: { from: { select: { name: true } }, to: { select: { name: true } } },
@@ -35,7 +35,18 @@ export default async function ContasPage({
     getBooksHealth(),
     getCashboxState(),
     prisma.cashboxSession.findMany({ orderBy: { openedAt: "desc" }, take: 30 }),
+    // Titular verdadeiro de cada conta (quando é de um sócio, não da MVP).
+    prisma.financialAccount.findMany({
+      where: { ownerBeneficiaryId: { not: null } },
+      select: { id: true, ownerBeneficiary: { select: { name: true } } },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { isCompany: false },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
+  const ownerByAccount = new Map(owners.map((o) => [o.id, o.ownerBeneficiary?.name ?? null]));
 
   const canContas = await userCan("financeiro", "contas");
   const active = accounts.filter((a) => a.active);
@@ -56,6 +67,9 @@ export default async function ContasPage({
             {a.isInvestment ? "📈" : a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
             <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
+            {ownerByAccount.get(a.id) ? (
+              <Badge tone="warning">👤 Titular: {ownerByAccount.get(a.id)}</Badge>
+            ) : null}
             {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
             <span className="text-xs font-normal text-blue-600 group-hover:underline">
               {a.isInvestment ? "abrir / creditar →" : "ver extrato →"}
@@ -195,7 +209,7 @@ export default async function ContasPage({
             <Card>
               <CardHeader title="Nova conta" />
               <div className="p-5">
-                <AccountForm />
+                <AccountForm beneficiaries={beneficiaries} />
               </div>
             </Card>
             {active.filter((a) => !a.isInvestment).length >= 2 ? (

@@ -9,6 +9,7 @@ import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Sel
 import { userCan } from "@/lib/guards";
 import PrintButton from "@/components/PrintButton";
 import AccountFinancerSettings from "./AccountFinancerSettings";
+import AccountOwnerSetting from "./AccountOwnerSetting";
 import InvestmentPanel from "./InvestmentPanel";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,10 @@ export default async function AccountStatementPage({
     Boolean(q) || Boolean(tipoFilter) || Boolean(de) || Boolean(ate) || Boolean(min?.trim()) || Boolean(max?.trim());
 
   const [account, balances, paid, received, transfers] = await Promise.all([
-    prisma.financialAccount.findUnique({ where: { id } }),
+    prisma.financialAccount.findUnique({
+      where: { id },
+      include: { ownerBeneficiary: { select: { name: true } } },
+    }),
     getAccountsWithBalances(),
     prisma.payable.findMany({
       where: { accountId: id, status: "PAGO" },
@@ -165,7 +169,7 @@ export default async function AccountStatementPage({
                 .filter(Boolean)
                 .join(" · ")
             : ""
-        }`}
+        }${account.ownerBeneficiary ? ` · 👤 Titular: ${account.ownerBeneficiary.name}` : ""}`}
         action={
           <div className="flex flex-wrap gap-2 print:hidden">
             <LinkButton href="/financeiro/contas" variant="secondary">
@@ -175,6 +179,18 @@ export default async function AccountStatementPage({
           </div>
         }
       />
+
+      {canContas ? (
+        <AccountOwnerSetting
+          id={account.id}
+          initialOwnerId={account.ownerBeneficiaryId}
+          beneficiaries={await prisma.capitalBeneficiary.findMany({
+            where: { isCompany: false },
+            orderBy: { name: "asc" },
+            select: { id: true, name: true },
+          })}
+        />
+      ) : null}
 
       {account.type === "FINANCEIRA" && canContas ? (
         <AccountFinancerSettings
