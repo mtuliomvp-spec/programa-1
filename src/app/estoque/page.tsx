@@ -215,6 +215,7 @@ export default async function EstoquePage({
                     </div>
                     <div className="flex shrink-0 flex-col items-end gap-1">
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                      {v.consigned ? <Badge tone="info">🏷️ Consignado</Badge> : null}
                       {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
                         <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
                       ) : null}
@@ -316,6 +317,11 @@ export default async function EstoquePage({
                     </Td>
                     <Td>
                       <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+                      {v.consigned ? (
+                        <span className="mt-1 block">
+                          <Badge tone="info">🏷️ Consignado</Badge>
+                        </span>
+                      ) : null}
                       {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
                         <span className="mt-1 block">
                           <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>

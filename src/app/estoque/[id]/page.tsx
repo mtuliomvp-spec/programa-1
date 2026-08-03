@@ -233,7 +233,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           <Card>
             <CardHeader
               title="Dados do veículo"
-              action={<Badge tone={statusTone[vehicle.status]}>{statusLabel[vehicle.status]}</Badge>}
+              action={
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {vehicle.consigned ? <Badge tone="info">🏷️ Consignado</Badge> : null}
+                  <Badge tone={statusTone[vehicle.status]}>{statusLabel[vehicle.status]}</Badge>
+                </div>
+              }
             />
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
               <InfoItem label="Versão" value={vehicle.version || "-"} />
@@ -244,7 +249,21 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <InfoItem label="Chassi" value={vehicle.chassi || "-"} />
               <InfoItem label="RENAVAM" value={vehicle.renavam || "-"} />
               <InfoItem label="Data de entrada" value={formatDate(vehicle.entryDate)} />
-              <InfoItem label="Fornecedor" value={vehicle.supplier?.name || "-"} />
+              <InfoItem
+                label={vehicle.consigned ? "Proprietário (consignante)" : "Fornecedor"}
+                value={vehicle.supplier?.name || "-"}
+              />
+              {vehicle.consigned ? (
+                <InfoItem
+                  label="Valor acertado c/ proprietário"
+                  value={
+                    formatCurrency(vehicle.ownerRefundAmount) +
+                    (vehicle.payoffAmount > 0 || vehicle.debtsAmount > 0
+                      ? ` (líquido ${formatCurrency(Math.max(0, vehicle.ownerRefundAmount - vehicle.payoffAmount - vehicle.debtsAmount))})`
+                      : "")
+                  }
+                />
+              ) : null}
               <InfoItem
                 label={sold ? "Dias até vender" : "Dias em estoque"}
                 value={`${daysInStock} dia(s)`}
