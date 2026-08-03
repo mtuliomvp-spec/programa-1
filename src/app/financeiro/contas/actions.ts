@@ -105,8 +105,9 @@ export async function createAccountAction(
         isDefault,
         isInvestment,
         returnTaxPercent: data.type === "FINANCEIRA" && !isInvestment ? data.returnTaxPercent : 0,
-        // Aplicação é inerentemente multi-sócio (razão própria) — sem titular único.
-        ownerBeneficiaryId: !isInvestment && data.ownerBeneficiaryId ? data.ownerBeneficiaryId : null,
+        // Titular verdadeiro vale para qualquer conta — inclusive Aplicação (a
+        // conta no banco pode ser de um sócio; o rateio interno é outra coisa).
+        ownerBeneficiaryId: data.ownerBeneficiaryId || null,
       },
     });
   });
