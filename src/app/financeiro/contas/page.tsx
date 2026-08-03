@@ -218,6 +218,7 @@ export default async function ContasPage({
                 <div className="p-5">
                   <TransferForm
                     accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                    cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
                   />
                 </div>
               </Card>

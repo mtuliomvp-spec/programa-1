@@ -3,11 +3,16 @@
 import { useActionState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { createTransferAction, type ContaFormState } from "./actions";
-import { toDateInputValue } from "@/lib/format";
 
 type Option = { id: string; name: string };
 
-export default function TransferForm({ accounts }: { accounts: Option[] }) {
+export default function TransferForm({
+  accounts,
+  cashboxDate = null,
+}: {
+  accounts: Option[];
+  cashboxDate?: string | null;
+}) {
   const [state, formAction, pending] = useActionState(createTransferAction, {} as ContaFormState);
 
   return (
@@ -31,14 +36,12 @@ export default function TransferForm({ accounts }: { accounts: Option[] }) {
           ))}
         </Select>
       </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Valor (R$)" required>
-          <Input name="amount" type="number" step="0.01" min={0.01} required />
-        </Field>
-        <Field label="Data" required>
-          <Input name="date" type="date" defaultValue={toDateInputValue(new Date())} required />
-        </Field>
-      </div>
+      <Field label="Valor (R$)" required>
+        <Input name="amount" type="number" step="0.01" min={0.01} required />
+      </Field>
+      <p className="text-xs text-slate-500">
+        Data da transferência: <strong>{cashboxDate ? `${cashboxDate} (data do caixa)` : "data do caixa aberto"}</strong>
+      </p>
       <Field label="Descrição">
         <Input name="description" placeholder="Ex: depósito do caixa no banco" />
       </Field>

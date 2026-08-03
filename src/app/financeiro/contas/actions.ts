@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
@@ -195,7 +195,6 @@ const transferSchema = z.object({
   fromId: z.string().min(1, "Escolha a conta de origem"),
   toId: z.string().min(1, "Escolha a conta de destino"),
   amount: z.coerce.number().positive("Informe um valor maior que zero"),
-  date: z.string().min(1),
   description: z.string().optional(),
 });
 
@@ -224,8 +223,10 @@ export async function createTransferAction(
         "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).",
     };
   }
+  // A transferência segue a data de trabalho do caixa aberto (como as baixas).
+  const date = await getCashboxWorkDate();
   try {
-    await assertMonthOpen(parseDateInput(data.date));
+    await assertMonthOpen(date);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -235,7 +236,7 @@ export async function createTransferAction(
       fromId: data.fromId,
       toId: data.toId,
       amount: data.amount,
-      date: parseDateInput(data.date),
+      date,
       description: data.description || null,
     },
   });
