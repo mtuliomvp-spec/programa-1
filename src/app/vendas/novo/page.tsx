@@ -93,10 +93,11 @@ export default async function NovaVendaPage({
       select: { id: true, name: true, returnTaxPercent: true, sellerReturnPercent: true },
     }),
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
-    // Todos os beneficiários do capital (destino opcional da devolução do consignado).
+    // Todos os beneficiários do capital (destino opcional da devolução do
+    // consignado). Mesma lista da tela de Capital: qualquer beneficiário, a
+    // empresa primeiro.
     prisma.capitalBeneficiary.findMany({
-      where: { active: true },
-      orderBy: { name: "asc" },
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
       select: { id: true, name: true },
     }),
   ]);
