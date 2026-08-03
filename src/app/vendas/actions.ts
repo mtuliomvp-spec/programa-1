@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { cancelVehicleSale } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
@@ -66,7 +67,24 @@ export async function createSaleAction(_prev: SaleFormState, formData: FormData)
 
 export async function cancelSaleAction(id: string) {
   await assertCan("vendas", "cancelar");
+  // Antes de cancelar: a venda estava concluída? Qual pré-venda a gerou?
+  const before = await prisma.sale.findUnique({ where: { id }, select: { status: true } });
+  const pre = await prisma.preSale.findFirst({
+    where: { convertedSaleId: id, status: "CONVERTIDA" },
+    select: { id: true },
+  });
   await cancelVehicleSale(id);
+  // Cancelamento de uma venda concluída: reabre a pré-venda que a gerou (volta a
+  // ABERTA) para ajustar e registrar de novo sem redigitar a negociação. No modo
+  // "corrigir resíduos" (venda já cancelada) nada é reaberto.
+  let reopenedPreSaleId: string | null = null;
+  if (before?.status === "CONCLUIDA" && pre) {
+    await prisma.preSale.update({
+      where: { id: pre.id },
+      data: { status: "ABERTA", convertedSaleId: null },
+    });
+    reopenedPreSaleId = pre.id;
+  }
   revalidatePath("/vendas");
   revalidatePath("/estoque");
   revalidatePath("/financeiro/a-receber");
@@ -76,5 +94,9 @@ export async function cancelSaleAction(id: string) {
   // Consignado com devolução aplicada no capital: atualiza a visão do capital.
   revalidatePath("/capital");
   revalidatePath("/");
+  if (reopenedPreSaleId) {
+    revalidatePath(`/vendas/pre-vendas/${reopenedPreSaleId}`);
+    redirect(`/vendas/pre-vendas/${reopenedPreSaleId}?reaberta=1`);
+  }
   redirect(`/vendas/${id}`);
 }

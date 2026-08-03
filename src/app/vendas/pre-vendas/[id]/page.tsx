@@ -51,10 +51,10 @@ export default async function PreVendaFichaPage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ erro?: string }>;
+  searchParams: Promise<{ erro?: string; reaberta?: string }>;
 }) {
   const { id } = await params;
-  const { erro } = await searchParams;
+  const { erro, reaberta } = await searchParams;
   const pre = await prisma.preSale.findUnique({ where: { id } });
   if (!pre) notFound();
 
@@ -115,6 +115,14 @@ export default async function PreVendaFichaPage({
           canPreSale={await userCan("vendas", "prevenda")}
         />
       </div>
+
+      {reaberta ? (
+        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800 print:hidden">
+          A venda foi <strong>cancelada</strong> e esta <strong>pré-venda foi reaberta</strong>. Os
+          lançamentos foram revertidos e o veículo voltou ao estoque — ajuste o que precisar e clique
+          em <strong>Registrar venda</strong> para efetivar de novo.
+        </div>
+      ) : null}
 
       {erro ? (
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700 print:hidden">
