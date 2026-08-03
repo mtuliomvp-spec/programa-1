@@ -59,7 +59,7 @@ export default async function AccountStatementPage({
 
   // Conta de Aplicação: mostra a razão do capital por sócio + operações.
   if (account.isInvestment) {
-    const [applied, recon, beneficiaries, sourceAccounts] = await Promise.all([
+    const [applied, recon, beneficiaries, sourceAccounts, ownerOptions] = await Promise.all([
       appliedByBeneficiary(id),
       reconcileInvestmentAccount(id),
       prisma.capitalBeneficiary.findMany({
@@ -68,19 +68,33 @@ export default async function AccountStatementPage({
         select: { id: true, name: true },
       }),
       getSelectableAccounts(),
+      prisma.capitalBeneficiary.findMany({
+        where: { isCompany: false },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
     ]);
     const allocated = await totalApplied(id);
     return (
       <div>
         <PageHeader
           title={account.name}
-          description="Conta de Aplicação — investimento dos sócios"
+          description={`Conta de Aplicação — investimento dos sócios${
+            account.ownerBeneficiary ? ` · 👤 Titular: ${account.ownerBeneficiary.name}` : ""
+          }`}
           action={
             <LinkButton href="/financeiro/contas" variant="secondary">
               ← Contas
             </LinkButton>
           }
         />
+        {canContas ? (
+          <AccountOwnerSetting
+            id={account.id}
+            initialOwnerId={account.ownerBeneficiaryId}
+            beneficiaries={ownerOptions}
+          />
+        ) : null}
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
           <StatCard label="Saldo aplicado" value={formatCurrency(recon.balance)} tone="positive" />
           <StatCard label="Sócios com dinheiro aqui" value={String(applied.length)} />

@@ -71,7 +71,7 @@ export default function AccountForm({ beneficiaries = [] }: { beneficiaries?: Be
       <Field label="Número da conta">
         <Input name="accountNumber" placeholder="00000-0" />
       </Field>
-      {!isInvestment && beneficiaries.length > 0 ? (
+      {beneficiaries.length > 0 ? (
         <Field label="Titular da conta">
           <Select name="ownerBeneficiaryId" defaultValue="">
             <option value="">MVP Veículos (empresa)</option>
