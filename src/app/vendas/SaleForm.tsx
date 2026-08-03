@@ -10,6 +10,7 @@ import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
+import NewCustomerInline from "@/components/NewCustomerInline";
 
 type Vehicle = {
   id: string;
@@ -138,7 +139,10 @@ export default function SaleForm({
   const formRef = useRef<HTMLFormElement>(null);
   const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
   const [customerId, setCustomerId] = useState(initial?.customerId || "");
-  const customerName = customers.find((c) => c.id === customerId)?.name ?? "";
+  // Lista de clientes editável: permite cadastrar um novo cliente sem sair da tela.
+  const [customerList, setCustomerList] = useState<Customer[]>(customers);
+  const [newCustomer, setNewCustomer] = useState(false);
+  const customerName = customerList.find((c) => c.id === customerId)?.name ?? "";
 
   // Aviso em tempo real: veículo já pré-vendido para OUTRO cliente. Checa assim
   // que veículo + cliente estão escolhidos, sem esperar o envio.
@@ -363,16 +367,27 @@ export default function SaleForm({
             onChange={(e) => setCustomerId(e.target.value)}
           >
             <option value="">Selecione um cliente</option>
-            {customers.map((c) => (
+            {customerList.map((c) => (
               <option key={c.id} value={c.id}>
                 {c.name}
               </option>
             ))}
           </Select>
-          {customers.length === 0 ? (
-            <p className="mt-1 text-xs text-amber-600">
-              Nenhum cliente cadastrado. <a href="/clientes/novo" className="underline">Cadastrar cliente</a>
-            </p>
+          <button
+            type="button"
+            onClick={() => setNewCustomer((v) => !v)}
+            className="mt-1.5 text-sm font-medium text-blue-700 hover:underline"
+          >
+            {newCustomer ? "✕ Cancelar novo cliente" : "+ Cadastrar novo cliente"}
+          </button>
+          {newCustomer ? (
+            <NewCustomerInline
+              onCreated={(c) => {
+                setCustomerList((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
+                setCustomerId(c.id);
+                setNewCustomer(false);
+              }}
+            />
           ) : null}
         </Field>
         <Field label="Data da venda" required>
