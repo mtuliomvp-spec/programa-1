@@ -219,7 +219,10 @@ export async function settleCommissionAction(
       }
       // 3) Aporte do vendedor: Receivable RECEBIDO no Banco Neutro (centro
       //    Capital) + CapitalTransaction APORTE. O par com o payable acima zera o
-      //    Banco Neutro; o aporte eleva o capital do vendedor.
+      //    Banco Neutro; o aporte eleva o capital do vendedor. Ambos carregam o
+      //    saleId da comissão: se a venda for cancelada, cancelVehicleSale apaga
+      //    o par inteiro (senão o recebível ficaria órfão no Banco Neutro,
+      //    divergindo o Check 1).
       const receivable = await tx.receivable.create({
         data: {
           costCenterId: capitalCenterId,
@@ -231,6 +234,7 @@ export async function settleCommissionAction(
           status: "RECEBIDO",
           accountId: neutralAccountId,
           capitalBeneficiaryId: beneficiary!.id,
+          saleId: payable.saleId,
         },
       });
       await tx.capitalTransaction.create({
@@ -241,6 +245,7 @@ export async function settleCommissionAction(
           date,
           description: `Aporte da ${payable.description}`,
           receivableId: receivable.id,
+          saleId: payable.saleId,
         },
       });
     });

@@ -1086,8 +1086,8 @@ model CapitalTransaction {
   description   String?
   payableId     String?
   receivableId  String?
-  // Aporte gerado por uma venda de consignado (devolução ao proprietário aplicada
-  // no capital): permite estornar o aporte ao cancelar a venda.
+  // Aporte gerado por uma venda (devolução ao proprietário do consignado ou
+  // comissão aplicada no capital): permite estornar ao cancelar a venda.
   saleId        String?
   sale          Sale?              @relation("SaleCapitalRefund", fields: [saleId], references: [id], onDelete: SetNull)
   // Gerada pelo fechamento mensal (zeragem do L/P e pró-labore): permite o
