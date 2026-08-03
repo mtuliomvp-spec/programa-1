@@ -23,6 +23,24 @@ function parseAmountInput(v: string): number {
 }
 
 /**
+ * Título dentro de combo SOLICITADO não pode ser baixado individualmente: o
+ * combo é um pagamento único (quitado inteiro pelo borderô ou pelo card no
+ * Contas a pagar). Lança erro citando o primeiro título travado.
+ */
+async function assertNotInSolicitedCombo(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const locked = await prisma.payable.findFirst({
+    where: { id: { in: ids }, paymentCombo: { status: "SOLICITADO" } },
+    select: { description: true, paymentCombo: { select: { name: true } } },
+  });
+  if (locked) {
+    throw new Error(
+      `O título "${locked.description}" está no combo "${locked.paymentCombo?.name}" aguardando pagamento — o combo é pago de uma vez só, pelo borderô ou pelo card de combos no Contas a pagar.`,
+    );
+  }
+}
+
+/**
  * Baixa a comissão de um vendedor informando o VALOR PAGO A ELE (líquido em
  * dinheiro). A diferença em relação à comissão é acertada no capital do
  * beneficiário vinculado ao vendedor:
@@ -48,6 +66,11 @@ export async function settleCommissionAction(
     return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
   }
   if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
+  try {
+    await assertNotInSolicitedCombo([payableId]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Título em combo solicitado." };
+  }
   // A baixa usa sempre a data de trabalho do caixa aberto.
   const date = await getCashboxWorkDate();
   try {
@@ -233,6 +256,7 @@ export async function markPaidAction(id: string, accountId?: string) {
   await assertCan("financeiro", "pagar");
   await assertBooksBalanced();
   await assertCashboxOpen();
+  await assertNotInSolicitedCombo([id]);
   await markPayablePaid(id, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -262,6 +286,7 @@ export async function payBatchAction(
   const date = await getCashboxWorkDate();
   try {
     await assertMonthOpen(date);
+    await assertNotInSolicitedCombo(ids);
   } catch (e) {
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
   }
