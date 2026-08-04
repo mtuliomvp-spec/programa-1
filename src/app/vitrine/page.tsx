@@ -12,7 +12,8 @@ import {
   isNewArrival,
 } from "./shared";
 import ShareButton from "./ShareButton";
-import { PublicFooter, FloatingWhatsApp } from "./PublicChrome";
+import ThemeToggle from "./ThemeToggle";
+import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
 
 export const dynamic = "force-dynamic";
 
@@ -41,8 +42,8 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
       href={href}
       className={
         active
-          ? "inline-flex h-8 shrink-0 items-center rounded-full bg-slate-900 px-3.5 text-xs font-semibold text-white"
-          : "inline-flex h-8 shrink-0 items-center rounded-full border border-slate-300 bg-white px-3.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+          ? "inline-flex h-8 shrink-0 items-center rounded-full bg-slate-900 px-3.5 text-xs font-semibold text-white dark:bg-white dark:text-slate-900"
+          : "inline-flex h-8 shrink-0 items-center rounded-full border border-slate-300 bg-white px-3.5 text-xs font-medium text-slate-600 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300 dark:hover:bg-slate-800"
       }
     >
       {children}
@@ -125,9 +126,10 @@ export default async function VitrinePage({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <ThemeScript />
       {/* Cabeçalho público */}
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3">
           <div className="flex min-w-0 items-center gap-2.5">
             {company?.logoDataUrl ? (
@@ -135,11 +137,12 @@ export default async function VitrinePage({
               <img src={company.logoDataUrl} alt="" className="h-9 w-auto" />
             ) : null}
             <div className="min-w-0">
-              <p className="truncate text-base font-black tracking-tight text-slate-900">{nome}</p>
-              <p className="text-[11px] text-slate-500">Seminovos selecionados</p>
+              <p className="truncate text-base font-black tracking-tight text-slate-900 dark:text-white">{nome}</p>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">Seminovos selecionados</p>
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <ThemeToggle />
             {zapGeral ? (
               <a
                 href={zapGeral}
@@ -177,8 +180,8 @@ export default async function VitrinePage({
       <main className="mx-auto max-w-6xl px-4 py-6">
         <div className="flex flex-wrap items-end justify-between gap-2">
           <div>
-            <h2 className="text-2xl font-bold text-slate-900">Veículos à venda</h2>
-            <p className="mt-1 text-sm text-slate-500">
+            <h2 className="text-2xl font-bold text-slate-900 dark:text-white">Veículos à venda</h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
               {vehicles.length} veículo(s) disponíveis — fale com a equipe pelo WhatsApp.
             </p>
           </div>
@@ -192,11 +195,11 @@ export default async function VitrinePage({
             name="q"
             defaultValue={q}
             placeholder="Buscar por marca, modelo, ano, cor..."
-            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400"
+            className="h-11 w-full rounded-lg border border-slate-300 bg-white px-3.5 text-sm text-slate-900 placeholder:text-slate-400 dark:border-slate-700 dark:bg-slate-900 dark:text-white dark:placeholder:text-slate-500"
           />
           <button
             type="submit"
-            className="h-11 shrink-0 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-700"
+            className="h-11 shrink-0 rounded-lg bg-slate-900 px-4 text-sm font-medium text-white hover:bg-slate-700 dark:bg-white dark:text-slate-900 dark:hover:bg-slate-200"
           >
             Buscar
           </button>
@@ -221,7 +224,7 @@ export default async function VitrinePage({
               {f.label}
             </Chip>
           ))}
-          <span className="mx-1 hidden w-px shrink-0 bg-slate-200 sm:block" />
+          <span className="mx-1 hidden w-px shrink-0 bg-slate-200 sm:block dark:bg-slate-700" />
           <Chip href={buildHref({ ordem: ordem === "menor" ? null : "menor" })} active={ordem === "menor"}>
             ↓ Menor preço
           </Chip>
@@ -231,7 +234,7 @@ export default async function VitrinePage({
         </div>
 
         {vehicles.length === 0 ? (
-          <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500">
+          <div className="mt-10 rounded-2xl border border-slate-200 bg-white p-10 text-center text-slate-500 dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
             {q || marca || faixa
               ? "Nenhum veículo encontrado para os filtros escolhidos."
               : "Nenhum veículo anunciado no momento — volte em breve!"}
@@ -249,7 +252,7 @@ export default async function VitrinePage({
                   : `Olá! Tenho interesse no ${titulo} anunciado no site da ${nome}.`,
               );
               return (
-                <div key={v.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                <div key={v.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
                   <div className="relative">
                     <Link href={`/vitrine/${v.id}`} className="block">
                       {v.photoIds[0] ? (
@@ -261,7 +264,7 @@ export default async function VitrinePage({
                           className="aspect-[4/3] w-full object-cover"
                         />
                       ) : (
-                        <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-100 text-5xl">
+                        <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-100 text-5xl dark:bg-slate-800">
                           🚗
                         </div>
                       )}
@@ -299,8 +302,8 @@ export default async function VitrinePage({
                   </div>
                   <div className="p-4">
                     <Link href={`/vitrine/${v.id}`} className="block">
-                      <p className="truncate font-semibold text-slate-900">{displayName(v.brand, v.model)}</p>
-                      <p className="mt-0.5 truncate text-xs text-slate-500">
+                      <p className="truncate font-semibold text-slate-900 dark:text-white">{displayName(v.brand, v.model)}</p>
+                      <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                         {[
                           v.version ? displayName(v.version) : null,
                           `${v.manufactureYear}/${v.modelYear}`,
@@ -310,14 +313,14 @@ export default async function VitrinePage({
                           .filter(Boolean)
                           .join(" · ")}
                       </p>
-                      <p className="mt-2 text-xl font-black text-slate-900">
+                      <p className="mt-2 text-xl font-black text-slate-900 dark:text-white">
                         {showPrice ? formatCurrency(v.salePrice) : "Consulte"}
                       </p>
                     </Link>
                     <div className="mt-3 flex gap-2">
                       <Link
                         href={`/vitrine/${v.id}`}
-                        className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100"
+                        className="inline-flex h-9 flex-1 items-center justify-center rounded-lg border border-slate-300 bg-white text-sm font-medium text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
                       >
                         Ver detalhes
                       </Link>
@@ -341,9 +344,9 @@ export default async function VitrinePage({
 
         {/* Segunda porta de negócio: consignação */}
         {zapVender ? (
-          <section className="mt-10 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-7 text-center">
-            <h2 className="text-xl font-bold text-emerald-900">Quer vender seu carro?</h2>
-            <p className="mx-auto mt-1 max-w-xl text-sm text-emerald-800">
+          <section className="mt-10 rounded-2xl border border-emerald-200 bg-emerald-50 px-6 py-7 text-center dark:border-emerald-900 dark:bg-emerald-950/40">
+            <h2 className="text-xl font-bold text-emerald-900 dark:text-emerald-200">Quer vender seu carro?</h2>
+            <p className="mx-auto mt-1 max-w-xl text-sm text-emerald-800 dark:text-emerald-300">
               Deixe seu veículo conosco: a {nome} cuida do anúncio, das visitas e de toda a burocracia
               da venda. Você só se preocupa em receber.
             </p>
