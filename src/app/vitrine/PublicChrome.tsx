@@ -1,6 +1,17 @@
 import type { CompanySettings } from "@prisma/client";
 
-/** Peças compartilhadas das páginas públicas da vitrine (rodapé + zap flutuante). */
+/** Peças compartilhadas das páginas públicas da vitrine (tema, rodapé, zap flutuante). */
+
+/**
+ * Aplica o tema ANTES da pintura (evita o "pisca" claro→escuro): usa a escolha
+ * salva pelo ThemeToggle ou, sem escolha, o tema do aparelho. Só entra nas
+ * páginas públicas da vitrine — o sistema interno continua sempre claro.
+ */
+export function ThemeScript() {
+  const code =
+    '(function(){try{var t=localStorage.getItem("mvp-vitrine-theme");var d=t?t==="dark":matchMedia("(prefers-color-scheme: dark)").matches;document.documentElement.classList.toggle("dark",d);}catch(e){}})();';
+  return <script dangerouslySetInnerHTML={{ __html: code }} />;
+}
 
 function instagramUrl(v: string): string {
   const clean = v.trim().replace(/^@/, "");
@@ -27,15 +38,15 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
   const telDigits = (company?.phone || "").replace(/\D/g, "");
 
   const navBtn =
-    "inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50";
+    "inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700";
 
   return (
-    <footer className="mt-10 border-t border-slate-200 pt-8 pb-24 text-center">
+    <footer className="mt-10 border-t border-slate-200 pt-8 pb-24 text-center dark:border-slate-800">
       {/* Onde estamos: endereço + atalhos de navegação (Google Maps/Waze/Apple) */}
       {endereco ? (
         <div className="mb-6">
-          <h2 className="text-lg font-bold text-slate-900">📍 Onde estamos</h2>
-          <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{endereco}</p>
+          <h2 className="text-lg font-bold text-slate-900 dark:text-white">📍 Onde estamos</h2>
+          <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{endereco}</p>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <a
               href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
@@ -65,8 +76,8 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
         </div>
       ) : null}
 
-      <div className="space-y-1.5 text-xs text-slate-500">
-        <p className="font-semibold text-slate-700">{nome} · Desde 2001 — Fazendo mais por você!</p>
+      <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
+        <p className="font-semibold text-slate-700 dark:text-slate-300">{nome} · Desde 2001 — Fazendo mais por você!</p>
         <p className="flex items-center justify-center gap-3">
           {company?.phone && telDigits.length >= 10 ? (
             <a href={`tel:+55${telDigits}`} className="hover:underline">

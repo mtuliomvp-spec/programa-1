@@ -14,7 +14,8 @@ import {
 } from "../shared";
 import VitrineGallery from "./VitrineGallery";
 import ShareButton from "../ShareButton";
-import { PublicFooter, FloatingWhatsApp } from "../PublicChrome";
+import ThemeToggle from "../ThemeToggle";
+import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +43,9 @@ export async function generateMetadata({
 
 function Spec({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-slate-50 px-3 py-2">
-      <p className="text-[11px] uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="text-sm font-medium text-slate-800">{value}</p>
+    <div className="rounded-lg bg-slate-50 px-3 py-2 dark:bg-slate-800">
+      <p className="text-[11px] uppercase tracking-wide text-slate-400 dark:text-slate-500">{label}</p>
+      <p className="text-sm font-medium text-slate-800 dark:text-slate-200">{value}</p>
     </div>
   );
 }
@@ -73,19 +74,21 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
   );
 
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <ThemeScript />
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
-          <Link href="/vitrine" className="text-sm font-medium text-slate-700 hover:underline">
+          <Link href="/vitrine" className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-300">
             ← Todos os veículos
           </Link>
           {/* Sem botão "Entrar" na vitrine pública: a equipe acessa direto por /login. */}
+          <ThemeToggle />
         </div>
       </header>
 
       <main className="mx-auto max-w-4xl px-4 py-6">
-        <h1 className="text-2xl font-bold text-slate-900">{displayName(v.brand, v.model)}</h1>
-        <p className="mt-0.5 text-sm text-slate-500">
+        <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{displayName(v.brand, v.model)}</h1>
+        <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
           {[v.version ? displayName(v.version) : null, `${v.manufactureYear}/${v.modelYear}`]
             .filter(Boolean)
             .join(" · ")}
@@ -95,24 +98,24 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
         {v.photoIds.length > 0 ? (
           <VitrineGallery photoIds={v.photoIds} title={titulo} />
         ) : (
-          <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-2xl bg-slate-100 text-6xl">
+          <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-2xl bg-slate-100 text-6xl dark:bg-slate-800">
             🚗
           </div>
         )}
 
         {/* Destaque promocional do anúncio (tanque cheio, transferência, brinde…) */}
         {v.adPromo ? (
-          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
+          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4 dark:border-emerald-900 dark:bg-emerald-950/40">
             <span className="text-3xl">🎁</span>
-            <p className="text-base font-bold text-emerald-800">{v.adPromo}</p>
+            <p className="text-base font-bold text-emerald-800 dark:text-emerald-200">{v.adPromo}</p>
           </div>
         ) : null}
 
         {/* Preço + contato */}
-        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
           <div>
             <p className="text-xs uppercase tracking-wide text-slate-400">Preço</p>
-            <p className="text-3xl font-black text-slate-900">
+            <p className="text-3xl font-black text-slate-900 dark:text-white">
               {showPrice ? formatCurrency(v.salePrice) : "Consulte"}
             </p>
           </div>
@@ -127,7 +130,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
                 💬 Falar com a equipe {nome}
               </a>
             ) : (
-              <p className="text-sm text-slate-500">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
                 Contato: {company?.phone || "telefone não informado"}
               </p>
             )}
@@ -156,7 +159,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
         {/* Quem não fechou com este, vê outros na mesma faixa antes de sair */}
         {parecidos.length > 0 ? (
           <section className="mt-10">
-            <h2 className="text-lg font-bold text-slate-900">Veículos parecidos</h2>
+            <h2 className="text-lg font-bold text-slate-900 dark:text-white">Veículos parecidos</h2>
             <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
               {parecidos.map((p) => {
                 const showP = !p.adHiddenFields.includes("preco");
@@ -164,7 +167,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
                   <Link
                     key={p.id}
                     href={`/vitrine/${p.id}`}
-                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow"
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow dark:border-slate-800 dark:bg-slate-900"
                   >
                     {p.photoIds[0] ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -175,18 +178,18 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
                         className="aspect-[4/3] w-full object-cover"
                       />
                     ) : (
-                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-100 text-4xl">
+                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-100 text-4xl dark:bg-slate-800">
                         🚗
                       </div>
                     )}
                     <div className="p-3">
-                      <p className="truncate text-sm font-semibold text-slate-900">
+                      <p className="truncate text-sm font-semibold text-slate-900 dark:text-white">
                         {displayName(p.brand, p.model)}
                       </p>
-                      <p className="truncate text-xs text-slate-500">
+                      <p className="truncate text-xs text-slate-500 dark:text-slate-400">
                         {p.manufactureYear}/{p.modelYear} · {p.km.toLocaleString("pt-BR")} km
                       </p>
-                      <p className="mt-1 font-black text-slate-900">
+                      <p className="mt-1 font-black text-slate-900 dark:text-white">
                         {showP ? formatCurrency(p.salePrice) : "Consulte"}
                       </p>
                     </div>

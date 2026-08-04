@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* Modo escuro por classe (usado na vitrine pública): as variantes dark: valem
+   quando <html> tem a classe .dark — controlada pelo ThemeScript/ThemeToggle
+   (preferência do aparelho + escolha manual salva no navegador). */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #f4f5f7;
   --foreground: #16181d;
