@@ -394,21 +394,44 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             )}
           </Card>
 
+          {/* Venda vinculada: cancelada vira card de histórico (discreto e
+              claramente marcado) — o veículo voltou ao estoque. */}
           {vehicle.sale ? (
-            <Card>
-              <CardHeader title="Venda registrada" />
-              <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
-                <InfoItem label="Cliente" value={vehicle.sale.customer.name} />
-                <InfoItem label="Data da venda" value={formatDate(vehicle.sale.saleDate)} />
-                <InfoItem label="Valor total" value={formatCurrency(vehicle.sale.totalAmount)} />
-                <InfoItem label="Vendedor" value={vehicle.sale.sellerName || "-"} />
-              </div>
-              <div className="px-5 pb-5">
-                <Link href={`/vendas/${vehicle.sale.id}`} className="text-sm font-medium text-slate-900 hover:underline">
-                  Ver detalhes da venda →
-                </Link>
-              </div>
-            </Card>
+            vehicle.sale.status === "CANCELADA" ? (
+              <Card className="opacity-80">
+                <CardHeader
+                  title="Venda cancelada"
+                  description="Fica como histórico — o veículo voltou ao estoque e pode ser vendido normalmente."
+                  action={<Badge tone="danger">Cancelada</Badge>}
+                />
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
+                  <InfoItem label="Cliente" value={vehicle.sale.customer.name} />
+                  <InfoItem label="Data da venda" value={formatDate(vehicle.sale.saleDate)} />
+                  <InfoItem label="Valor total" value={formatCurrency(vehicle.sale.totalAmount)} />
+                  <InfoItem label="Vendedor" value={vehicle.sale.sellerName || "-"} />
+                </div>
+                <div className="px-5 pb-5">
+                  <Link href={`/vendas/${vehicle.sale.id}`} className="text-sm font-medium text-slate-900 hover:underline">
+                    Ver detalhes da venda cancelada →
+                  </Link>
+                </div>
+              </Card>
+            ) : (
+              <Card>
+                <CardHeader title="Venda registrada" />
+                <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
+                  <InfoItem label="Cliente" value={vehicle.sale.customer.name} />
+                  <InfoItem label="Data da venda" value={formatDate(vehicle.sale.saleDate)} />
+                  <InfoItem label="Valor total" value={formatCurrency(vehicle.sale.totalAmount)} />
+                  <InfoItem label="Vendedor" value={vehicle.sale.sellerName || "-"} />
+                </div>
+                <div className="px-5 pb-5">
+                  <Link href={`/vendas/${vehicle.sale.id}`} className="text-sm font-medium text-slate-900 hover:underline">
+                    Ver detalhes da venda →
+                  </Link>
+                </div>
+              </Card>
+            )
           ) : null}
 
           <Card>
