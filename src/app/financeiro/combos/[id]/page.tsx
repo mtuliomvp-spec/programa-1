@@ -90,10 +90,11 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
   const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
 
-  // Títulos disponíveis para adicionar (só quando ABERTO): pendentes/atrasados,
-  // não pagos e ainda sem combo.
+  // Títulos disponíveis para adicionar (enquanto o combo não foi pago):
+  // pendentes/atrasados, não pagos e ainda sem combo.
+  const comboEditavel = combo.status === "ABERTO" || combo.status === "SOLICITADO";
   const available =
-    combo.status === "ABERTO"
+    comboEditavel
       ? (
           await prisma.payable.findMany({
             where: { status: { not: "PAGO" }, paymentComboId: null },
@@ -209,7 +210,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                     <Th>Fornecedor</Th>
                     <Th>Vencimento</Th>
                     <Th className="text-right">Valor</Th>
-                    {combo.status === "ABERTO" && canManage ? <Th /> : null}
+                    {comboEditavel && canManage ? <Th /> : null}
                   </Tr>
                 </Thead>
                 <tbody>
@@ -219,7 +220,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                       <Td className="text-slate-600">{p.supplier?.name || p.beneficiaryUser?.name || "—"}</Td>
                       <Td className="whitespace-nowrap text-slate-600">{formatDate(p.dueDate)}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
-                      {combo.status === "ABERTO" && canManage ? (
+                      {comboEditavel && canManage ? (
                         <Td className="text-right">
                           <RemoveFromCombo payableId={p.id} comboId={combo.id} />
                         </Td>
@@ -300,11 +301,14 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
         />
       </Card>
 
-      {combo.status === "ABERTO" && canManage ? (
+      {comboEditavel && canManage ? (
         <Card className="mt-4 print:hidden">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="text-base font-semibold text-slate-900">Adicionar títulos</h2>
-            <p className="mt-0.5 text-sm text-slate-500">Marque os títulos a pagar que entram neste combo.</p>
+            <p className="mt-0.5 text-sm text-slate-500">
+              Marque os títulos a pagar que entram neste combo.
+              {combo.status === "SOLICITADO" ? " O total do borderô é atualizado na hora." : ""}
+            </p>
           </div>
           <div className="p-4">
             <AddTitlesToCombo comboId={combo.id} available={available} />
