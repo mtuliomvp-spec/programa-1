@@ -69,6 +69,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
               periodicidade: entry.intervalDays ? "DIAS" : "MENSAL",
               dayOfMonth: entry.dayOfMonth,
               intervalDays: entry.intervalDays,
+              anticipateToBusinessDay: entry.anticipateToBusinessDay,
               categoryLabel: entry.categoryLabel ?? enumLabel,
               supplierName: entry.supplier?.name ?? "",
               customerId: entry.customerId,
