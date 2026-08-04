@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { requestComboAction, payComboAction, cancelComboAction } from "../actions";
+import { requestComboAction, payComboAction, cancelComboAction, revertComboPaymentAction } from "../actions";
 
 type Account = { id: string; name: string };
 type Status = "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO";
@@ -28,7 +28,7 @@ export default function ComboActions({
   const [msg, setMsg] = useState<string | null>(null);
   // Confirmação in-app (o window.confirm nativo é suprimido em vários navegadores
   // de celular/in-app, o que travava as ações — "como se não tivesse clicado").
-  const [confirming, setConfirming] = useState<{ key: "request" | "pay" | "cancel"; msg: string } | null>(null);
+  const [confirming, setConfirming] = useState<{ key: "request" | "pay" | "cancel" | "revert"; msg: string } | null>(null);
 
   function confirmYes() {
     const key = confirming?.key;
@@ -41,7 +41,9 @@ export default function ComboActions({
           ? await requestComboAction(comboId)
           : key === "pay"
             ? await payComboAction(comboId, accountId)
-            : await cancelComboAction(comboId);
+            : key === "revert"
+              ? await revertComboPaymentAction(comboId)
+              : await cancelComboAction(comboId);
       if (!r.ok) {
         setMsg(r.error || "Não foi possível concluir.");
         return;
@@ -50,12 +52,13 @@ export default function ComboActions({
     });
   }
 
-  if (status === "PAGO" || status === "CANCELADO") return null;
+  if (status === "CANCELADO") return null;
 
   const showRequest = status === "ABERTO" && canManage;
   const showPay = status === "SOLICITADO" && canPagar;
-  const showCancel = canManage;
-  if (!showRequest && !showPay && !showCancel) return null;
+  const showCancel = status !== "PAGO" && canManage;
+  const showRevert = status === "PAGO" && canPagar;
+  if (!showRequest && !showPay && !showCancel && !showRevert) return null;
 
   return (
     <div className="print:hidden flex flex-wrap items-center gap-3 border-t border-slate-200 pt-4">
@@ -95,6 +98,23 @@ export default function ComboActions({
             Data: <strong>{cashboxDate ? `${cashboxDate} (caixa)` : "—"}</strong>
           </span>
         </>
+      ) : null}
+
+      {showRevert ? (
+        <button
+          type="button"
+          disabled={pending || confirming !== null}
+          onClick={() =>
+            setConfirming({
+              key: "revert",
+              msg:
+                "Reverter o pagamento do combo? Todos os títulos voltam a PENDENTE (continuam no combo), o abatimento de capital é desfeito e o combo volta para 'Solicitado' — depois de corrigir, é só pagar de novo.",
+            })
+          }
+          className="h-9 rounded-lg border border-amber-300 px-4 text-sm font-semibold text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+        >
+          {pending ? "Revertendo..." : "Reverter pagamento"}
+        </button>
       ) : null}
 
       {showCancel ? (
