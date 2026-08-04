@@ -20,6 +20,7 @@ export type RecurringInitial = {
   periodicidade: "MENSAL" | "DIAS";
   dayOfMonth: number;
   intervalDays: number | null;
+  anticipateToBusinessDay: boolean;
   categoryLabel: string | null;
   supplierName: string;
   customerId: string | null;
@@ -111,6 +112,11 @@ export default function RecurringForm({
           defaultValue={initial?.description}
           placeholder={kind === "PAGAR" ? "Ex: Aluguel do salão" : "Ex: Aluguel de sala anexa"}
         />
+        <p className="mt-1 text-xs text-slate-400">
+          Dica: escreva <code>{"{competencia}"}</code> na descrição e cada título sai com o mês de
+          competência (o mês anterior ao vencimento) — ex.: &quot;DAS — competência{" "}
+          {"{competencia}"}&quot; vira &quot;DAS — competência 05/2026&quot; no vencimento de junho.
+        </p>
       </Field>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
@@ -140,6 +146,19 @@ export default function RecurringForm({
         {periodicidade === "MENSAL" ? (
           <Field label="Dia do vencimento (1 a 31)" required>
             <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={initial?.dayOfMonth ?? 5} required />
+            <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                name="anticipateToBusinessDay"
+                value="true"
+                defaultChecked={initial?.anticipateToBusinessDay ?? false}
+                className="mt-0.5"
+              />
+              <span>
+                Antecipar para o <strong>último dia útil</strong> quando cair em fim de semana ou
+                feriado (padrão de guias de impostos: DAS, FGTS, DARF).
+              </span>
+            </label>
           </Field>
         ) : (
           <Field label="A cada quantos dias" required>

@@ -1189,6 +1189,9 @@ model RecurringEntry {
   // Quando > 0, a recorrência é "a cada N dias" (a partir de startDate). Quando
   // null, é mensal por dayOfMonth.
   intervalDays    Int?
+  // Antecipa o vencimento para o último dia útil quando o dia cai em fim de
+  // semana ou feriado nacional (padrão de guias de impostos: DAS/FGTS/DARF).
+  anticipateToBusinessDay Boolean @default(false)
   // Sócio do capital: quando o fluxo é CAPITAL, o título gerado carrega este
   // beneficiário e, ao ser baixado, lança o aporte/retirada dele.
   capitalBeneficiaryId String?

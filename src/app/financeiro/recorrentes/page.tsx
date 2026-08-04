@@ -72,6 +72,9 @@ export default async function RecorrentesPage({
         action={
           canCriar ? (
             <div className="flex flex-wrap items-center gap-2 print:hidden">
+              <LinkButton href="/financeiro/recorrentes/importar-impostos" variant="secondary">
+                ⇪ Impostos (DAS · FGTS · INSS)
+              </LinkButton>
               <GenerateNowButton />
               <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
             </div>
@@ -143,6 +146,9 @@ export default async function RecorrentesPage({
                   <Td>{e.capitalBeneficiary?.name || e.supplier?.name || e.customer?.name || "-"}</Td>
                   <Td className="text-right tabular-nums">
                     {e.intervalDays && e.intervalDays > 0 ? `a cada ${e.intervalDays} dias` : `dia ${e.dayOfMonth}`}
+                    {e.anticipateToBusinessDay ? (
+                      <span className="block text-xs font-normal text-slate-400">antecipa p/ dia útil</span>
+                    ) : null}
                   </Td>
                   <Td className="text-right tabular-nums">{formatCurrency(e.amount)}</Td>
                   <Td>
