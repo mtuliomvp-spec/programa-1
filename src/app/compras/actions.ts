@@ -268,8 +268,27 @@ export async function updateRequestAction(
   // Aprovada: regera o espelho em Contas a pagar com os valores atualizados.
   if (existing.status === "APROVADA") {
     try {
+      // Se o espelho estava dentro de um combo ainda não pago, guarda o vínculo
+      // para devolver os títulos regerados ao MESMO combo (senão a edição
+      // derrubaria a compra do borderô sem ninguém perceber).
+      const prevCombo = await prisma.payable.findFirst({
+        where: {
+          purchaseRequestId: updated.id,
+          status: { not: "PAGO" },
+          paymentCombo: { status: { in: ["ABERTO", "SOLICITADO"] } },
+        },
+        select: { paymentComboId: true },
+      });
       await clearPendingEspelho(updated.id);
       const firstPayableId = await generateEspelho(updated);
+      if (prevCombo?.paymentComboId) {
+        await prisma.payable.updateMany({
+          where: { purchaseRequestId: updated.id, status: { not: "PAGO" } },
+          data: { paymentComboId: prevCombo.paymentComboId },
+        });
+        revalidatePath("/financeiro/combos");
+        revalidatePath(`/financeiro/combos/${prevCombo.paymentComboId}`);
+      }
       await prisma.purchaseRequest.update({
         where: { id: updated.id },
         data: { finalAmount: updated.estimatedAmount, payableId: firstPayableId },

@@ -40,7 +40,8 @@ export async function createComboAction(name: string): Promise<{ ok: boolean; id
   return { ok: true, id: combo.id };
 }
 
-/** Joga títulos (não pagos e sem combo) para dentro de um combo ABERTO. */
+/** Joga títulos (não pagos e sem combo) para dentro de um combo ABERTO ou
+ * SOLICITADO (enquanto não for pago, o borderô ainda pode ser ajustado). */
 export async function addPayablesToComboAction(comboId: string, ids: string[]): Promise<{ ok: boolean; added: number; error?: string }> {
   try {
     await assertCan("combos", "criar");
@@ -50,7 +51,9 @@ export async function addPayablesToComboAction(comboId: string, ids: string[]): 
   if (!ids.length) return { ok: false, added: 0, error: "Selecione ao menos um título." };
   const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
   if (!combo) return { ok: false, added: 0, error: "Combo não encontrado." };
-  if (combo.status !== "ABERTO") return { ok: false, added: 0, error: "Este combo já foi fechado." };
+  if (combo.status !== "ABERTO" && combo.status !== "SOLICITADO") {
+    return { ok: false, added: 0, error: "Este combo já foi finalizado." };
+  }
   const res = await prisma.payable.updateMany({
     where: { id: { in: ids }, status: { not: "PAGO" }, paymentComboId: null },
     data: { paymentComboId: comboId },
@@ -59,7 +62,7 @@ export async function addPayablesToComboAction(comboId: string, ids: string[]): 
   return { ok: true, added: res.count };
 }
 
-/** Tira um título do combo (só enquanto ABERTO). */
+/** Tira um título do combo (enquanto ABERTO ou SOLICITADO — não pago). */
 export async function removePayableFromComboAction(payableId: string): Promise<Result> {
   try {
     await assertCan("combos", "criar");
@@ -71,7 +74,9 @@ export async function removePayableFromComboAction(payableId: string): Promise<R
     select: { paymentComboId: true, paymentCombo: { select: { status: true } } },
   });
   if (!p?.paymentComboId) return { ok: false, error: "Título não está em um combo." };
-  if (p.paymentCombo?.status !== "ABERTO") return { ok: false, error: "O combo já foi fechado." };
+  if (p.paymentCombo?.status !== "ABERTO" && p.paymentCombo?.status !== "SOLICITADO") {
+    return { ok: false, error: "O combo já foi finalizado." };
+  }
   await prisma.payable.update({ where: { id: payableId }, data: { paymentComboId: null } });
   revalidate(p.paymentComboId);
   return { ok: true };
