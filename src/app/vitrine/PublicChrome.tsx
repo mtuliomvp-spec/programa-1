@@ -16,41 +16,75 @@ function instagramHandle(v: string): string {
 
 export function PublicFooter({ company }: { company: CompanySettings | null }) {
   const nome = company?.nomeFantasia || "MVP Veículos";
-  const endereco = [company?.address, company?.city ? `${company.city}${company?.uf ? `/${company.uf}` : ""}` : ""]
+  // Mesmo formato de endereço da página de login (Waze/Apple acham melhor assim).
+  const endereco = [
+    company?.address,
+    company?.city ? `${company.city}${company?.uf ? ` - ${company.uf}` : ""}` : null,
+  ]
     .filter(Boolean)
-    .join(" — ");
-  const mapsUrl = endereco
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${nome} ${endereco}`)}`
-    : null;
+    .join(", ");
+  const mapsQuery = encodeURIComponent(endereco);
   const telDigits = (company?.phone || "").replace(/\D/g, "");
 
+  const navBtn =
+    "inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50";
+
   return (
-    <footer className="mt-10 space-y-1.5 border-t border-slate-200 pt-6 pb-24 text-center text-xs text-slate-500">
-      <p className="font-semibold text-slate-700">{nome} · Desde 2001 — Fazendo mais por você!</p>
-      {mapsUrl ? (
-        <p>
-          <a href={mapsUrl} target="_blank" rel="noopener noreferrer" className="hover:underline">
-            📍 {endereco} <span className="text-slate-400">(ver no mapa)</span>
-          </a>
-        </p>
+    <footer className="mt-10 border-t border-slate-200 pt-8 pb-24 text-center">
+      {/* Onde estamos: endereço + atalhos de navegação (Google Maps/Waze/Apple) */}
+      {endereco ? (
+        <div className="mb-6">
+          <h2 className="text-lg font-bold text-slate-900">📍 Onde estamos</h2>
+          <p className="mt-1.5 text-sm leading-relaxed text-slate-600">{endereco}</p>
+          <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+            <a
+              href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={navBtn}
+            >
+              🗺️ Google Maps
+            </a>
+            <a
+              href={`https://waze.com/ul?q=${mapsQuery}&navigate=yes`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={navBtn}
+            >
+              🚗 Waze
+            </a>
+            <a
+              href={`https://maps.apple.com/?q=${mapsQuery}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={navBtn}
+            >
+              🍎 Apple Maps
+            </a>
+          </div>
+        </div>
       ) : null}
-      <p className="flex items-center justify-center gap-3">
-        {company?.phone && telDigits.length >= 10 ? (
-          <a href={`tel:+55${telDigits}`} className="hover:underline">
-            📞 {company.phone}
-          </a>
-        ) : null}
-        {company?.instagram ? (
-          <a
-            href={instagramUrl(company.instagram)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:underline"
-          >
-            📷 {instagramHandle(company.instagram)}
-          </a>
-        ) : null}
-      </p>
+
+      <div className="space-y-1.5 text-xs text-slate-500">
+        <p className="font-semibold text-slate-700">{nome} · Desde 2001 — Fazendo mais por você!</p>
+        <p className="flex items-center justify-center gap-3">
+          {company?.phone && telDigits.length >= 10 ? (
+            <a href={`tel:+55${telDigits}`} className="hover:underline">
+              📞 {company.phone}
+            </a>
+          ) : null}
+          {company?.instagram ? (
+            <a
+              href={instagramUrl(company.instagram)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:underline"
+            >
+              📷 {instagramHandle(company.instagram)}
+            </a>
+          ) : null}
+        </p>
+      </div>
     </footer>
   );
 }
