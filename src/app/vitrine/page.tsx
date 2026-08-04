@@ -77,12 +77,7 @@ export default async function VitrinePage({
                 💬 WhatsApp
               </a>
             ) : null}
-            <Link
-              href="/login"
-              className="inline-flex h-9 items-center rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Entrar
-            </Link>
+            {/* Sem botão "Entrar" na vitrine pública: a equipe acessa direto por /login. */}
           </div>
         </div>
       </header>
