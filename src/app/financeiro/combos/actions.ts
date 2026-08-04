@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCan, assertCanAny } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
-import { markPayablePaid } from "@/lib/finance";
+import { markPayablePaid, markPayablePending } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
@@ -241,6 +241,81 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   await prisma.paymentCombo.update({
     where: { id: comboId },
     data: { status: "PAGO", paidAt: date, accountId, capitalAbatement: abate },
+  });
+  revalidate(comboId);
+  return { ok: true };
+}
+
+/**
+ * Reverte o pagamento de um combo PAGO: estorna todos os títulos (voltam a
+ * PENDENTE, ainda presos ao combo — a retirada de capital de cada um é
+ * desfeita e solicitações de compra concluídas voltam para Aprovada), desfaz
+ * o abatimento de saldo devedor (apaga o par recebível↔aporte) e devolve o
+ * combo para SOLICITADO — pronto para corrigir os títulos e pagar de novo.
+ */
+export async function revertComboPaymentAction(comboId: string): Promise<Result> {
+  try {
+    await assertCan("combos", "aprovar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const combo = await prisma.paymentCombo.findUnique({
+    where: { id: comboId },
+    select: {
+      status: true,
+      name: true,
+      userId: true,
+      paidAt: true,
+      capitalAbatement: true,
+      payables: { where: { status: "PAGO" }, select: { id: true } },
+    },
+  });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status !== "PAGO") return { ok: false, error: "Este combo não está pago." };
+  if (combo.paidAt) {
+    try {
+      await assertMonthOpen(combo.paidAt);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "O mês do pagamento já foi fechado." };
+    }
+  }
+
+  // Estorna título a título (mesma rotina do estorno individual: desfaz a
+  // retirada de capital e reabre a solicitação de compra vinculada).
+  for (const p of combo.payables) {
+    await markPayablePending(p.id);
+  }
+
+  // Desfaz o abatimento do saldo devedor: apaga o aporte e o recebível gerados
+  // na baixa (identificados pela descrição padrão + beneficiário + valor).
+  if (combo.capitalAbatement > 0.005 && combo.userId) {
+    const beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { userId: combo.userId },
+      select: { id: true },
+    });
+    if (beneficiary) {
+      const receivable = await prisma.receivable.findFirst({
+        where: {
+          capitalBeneficiaryId: beneficiary.id,
+          status: "RECEBIDO",
+          amount: combo.capitalAbatement,
+          description: { startsWith: `Aporte p/ abater saldo devedor de capital (combo ${combo.name})` },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+      if (receivable) {
+        await prisma.$transaction([
+          prisma.capitalTransaction.deleteMany({ where: { receivableId: receivable.id } }),
+          prisma.receivable.delete({ where: { id: receivable.id } }),
+        ]);
+      }
+    }
+  }
+
+  await prisma.paymentCombo.update({
+    where: { id: comboId },
+    data: { status: "SOLICITADO", paidAt: null, accountId: null, capitalAbatement: 0 },
   });
   revalidate(comboId);
   return { ok: true };
