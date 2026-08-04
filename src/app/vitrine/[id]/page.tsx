@@ -4,8 +4,17 @@ import { notFound } from "next/navigation";
 import { getCompany } from "@/lib/company";
 import { getBaseUrl } from "@/lib/base-url";
 import { formatCurrency } from "@/lib/format";
-import { getShowroomVehicle, whatsappLink, vehicleTitle } from "../shared";
+import {
+  getShowroomVehicle,
+  getShowroomVehicles,
+  whatsappLink,
+  vehicleTitle,
+  displayName,
+  similarVehicles,
+} from "../shared";
 import VitrineGallery from "./VitrineGallery";
+import ShareButton from "../ShareButton";
+import { PublicFooter, FloatingWhatsApp } from "../PublicChrome";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +51,17 @@ function Spec({ label, value }: { label: string; value: string }) {
 
 export default async function VitrineVeiculoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [v, company] = await Promise.all([getShowroomVehicle(id), getCompany().catch(() => null)]);
+  const [all, company, base] = await Promise.all([
+    getShowroomVehicles(),
+    getCompany().catch(() => null),
+    getBaseUrl(),
+  ]);
+  const v = all.find((x) => x.id === id);
   if (!v) notFound();
 
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
+  const parecidos = similarVehicles(all, v);
   // Campos ocultos do anúncio (gerenciados na ficha; vazio = mostra tudo).
   const hidden = new Set(v.adHiddenFields);
   const showPrice = !hidden.has("preco");
@@ -69,11 +84,11 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
       </header>
 
       <main className="mx-auto max-w-4xl px-4 py-6">
-        <h1 className="text-2xl font-bold text-slate-900">
-          {v.brand} {v.model}
-        </h1>
+        <h1 className="text-2xl font-bold text-slate-900">{displayName(v.brand, v.model)}</h1>
         <p className="mt-0.5 text-sm text-slate-500">
-          {[v.version, `${v.manufactureYear}/${v.modelYear}`].filter(Boolean).join(" · ")}
+          {[v.version ? displayName(v.version) : null, `${v.manufactureYear}/${v.modelYear}`]
+            .filter(Boolean)
+            .join(" · ")}
         </p>
 
         {/* Galeria com lightbox navegável (setas/teclado no desktop, swipe no celular) */}
@@ -101,20 +116,31 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
               {showPrice ? formatCurrency(v.salePrice) : "Consulte"}
             </p>
           </div>
-          {zap ? (
-            <a
-              href={zap}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex h-12 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700"
-            >
-              💬 Falar com a equipe {nome}
-            </a>
-          ) : (
-            <p className="text-sm text-slate-500">
-              Contato: {company?.phone || "telefone não informado"}
-            </p>
-          )}
+          <div className="flex flex-wrap items-center gap-2">
+            {zap ? (
+              <a
+                href={zap}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-12 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700"
+              >
+                💬 Falar com a equipe {nome}
+              </a>
+            ) : (
+              <p className="text-sm text-slate-500">
+                Contato: {company?.phone || "telefone não informado"}
+              </p>
+            )}
+            <ShareButton
+              title={titulo}
+              text={
+                showPrice
+                  ? `${titulo} por ${formatCurrency(v.salePrice)} na ${nome}!`
+                  : `${titulo} à venda na ${nome}!`
+              }
+              url={`${base}/vitrine/${v.id}`}
+            />
+          </div>
         </div>
 
         {/* Ficha (só os campos habilitados no anúncio) */}
@@ -127,13 +153,54 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           {!hidden.has("versao") && v.version ? <Spec label="Versão" value={v.version} /> : null}
         </div>
 
-        <footer className="mt-10 border-t border-slate-200 pt-6 pb-8 text-center text-xs text-slate-400">
-          {nome}
-          {company?.address ? ` · ${company.address}` : ""}
-          {company?.city ? ` — ${company.city}${company.uf ? `/${company.uf}` : ""}` : ""}
-          {company?.phone ? ` · ${company.phone}` : ""}
-        </footer>
+        {/* Quem não fechou com este, vê outros na mesma faixa antes de sair */}
+        {parecidos.length > 0 ? (
+          <section className="mt-10">
+            <h2 className="text-lg font-bold text-slate-900">Veículos parecidos</h2>
+            <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {parecidos.map((p) => {
+                const showP = !p.adHiddenFields.includes("preco");
+                return (
+                  <Link
+                    key={p.id}
+                    href={`/vitrine/${p.id}`}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm transition hover:shadow"
+                  >
+                    {p.photoIds[0] ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={`/vitrine/foto/${p.photoIds[0]}`}
+                        alt={vehicleTitle(p)}
+                        loading="lazy"
+                        className="aspect-[4/3] w-full object-cover"
+                      />
+                    ) : (
+                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-100 text-4xl">
+                        🚗
+                      </div>
+                    )}
+                    <div className="p-3">
+                      <p className="truncate text-sm font-semibold text-slate-900">
+                        {displayName(p.brand, p.model)}
+                      </p>
+                      <p className="truncate text-xs text-slate-500">
+                        {p.manufactureYear}/{p.modelYear} · {p.km.toLocaleString("pt-BR")} km
+                      </p>
+                      <p className="mt-1 font-black text-slate-900">
+                        {showP ? formatCurrency(p.salePrice) : "Consulte"}
+                      </p>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          </section>
+        ) : null}
+
+        <PublicFooter company={company} />
       </main>
+
+      <FloatingWhatsApp href={zap} />
     </div>
   );
 }

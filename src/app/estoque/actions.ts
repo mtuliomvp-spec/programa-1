@@ -505,7 +505,11 @@ export async function toggleVehiclePublishedAction(
     });
     if (fotos === 0) return { ok: false, error: "Anexe ao menos uma foto antes de postar." };
   }
-  await prisma.vehicle.update({ where: { id: vehicleId }, data: { published: publish } });
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    // Ao postar, marca a data (selo "Chegou agora" na vitrine nos primeiros dias).
+    data: { published: publish, ...(publish ? { publishedAt: new Date() } : {}) },
+  });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
   revalidatePath("/vitrine");

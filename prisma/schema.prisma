@@ -439,6 +439,8 @@ model Vehicle {
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)
+  // Quando foi postado na vitrine (selo "Chegou agora" nos primeiros dias).
+  publishedAt      DateTime?
   // Anúncio: destaque promocional (tanque cheio, transferência grátis, brinde…).
   adPromo          String?
   // Anúncio: campos OCULTOS (preco/ano/km/cor/combustivel/cambio/versao).
@@ -1247,6 +1249,8 @@ model CompanySettings {
   // Domínio oficial do site (ex.: https://mvpveiculos.com.br). Usado para montar
   // os links públicos: QR Codes (ficha/ordem), vitrine e sitemap do Google.
   publicUrl         String?
+  // Instagram da loja (@usuario ou URL) — aparece no rodapé da vitrine pública.
+  instagram         String?
   // Bloqueio do sistema (modo manutenção): só admins navegam; os demais veem o
   // aviso e as ações são recusadas até desbloquear.
   systemLocked      Boolean  @default(false)
