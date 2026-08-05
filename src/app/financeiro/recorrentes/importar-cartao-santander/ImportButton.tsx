@@ -32,12 +32,14 @@ export default function ImportButton() {
             <p className="font-medium">
               Recorrência {result.recurringCreated ? "criada" : "já existia"} · título{" "}
               {result.payableCreated ? "criado" : "reaproveitado"} · {result.itemsCreated}{" "}
-              lançamento(s) digitado(s).
+              lançamento(s) criado(s)
+              {result.itemsUpdated > 0 ? ` · ${result.itemsUpdated} ajustado(s) para o Capital` : ""}.
             </p>
             <p className="mt-1 text-emerald-700">
-              Os lançamentos entraram todos como <strong>Administrativo</strong>. Abra o título em
-              Contas a pagar (Editar) para ajustar o fluxo dos que forem de Veículos ou Capital —
-              ou informe ao assistente quais mudar.
+              Cada lançamento entrou no <strong>Capital do sócio indicado</strong> (Lovable/Anthropic
+              → Agrasty; cartão 9792 → Marcelo; demais → Marco Túlio). As retiradas são lançadas na
+              baixa da fatura. Para mudar algum, abra o título em Contas a pagar (Editar) — cada
+              lançamento tem o botão Editar.
             </p>
           </div>
         ) : (

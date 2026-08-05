@@ -107,6 +107,8 @@ export default async function EditarPayablePage({
                 description: i.description,
                 amount: i.amount,
                 structuralKey: i.structuralKey,
+                vehicleId: i.vehicleId,
+                capitalBeneficiaryId: i.capitalBeneficiaryId,
                 who: i.vehicle
                   ? `${i.vehicle.brand} ${i.vehicle.model} · ${i.vehicle.plate}`
                   : i.capitalBeneficiary?.name || null,

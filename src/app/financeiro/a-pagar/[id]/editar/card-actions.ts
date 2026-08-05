@@ -81,6 +81,49 @@ export async function addCardItemAction(
   return {};
 }
 
+const updateItemSchema = itemSchema.omit({ payableId: true }).extend({ itemId: z.string().min(1) });
+
+/** Edita um lançamento da fatura (descrição, valor e fluxo) e re-sincroniza tudo. */
+export async function updateCardItemAction(formData: FormData): Promise<CardItemFormState> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const parsed = updateItemSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+
+  const item = await prisma.cardInvoiceItem.findUnique({
+    where: { id: d.itemId },
+    select: { payableId: true },
+  });
+  if (!item) return { error: "Lançamento não encontrado." };
+  const guardError = await guardPayable(item.payableId);
+  if (guardError) return { error: guardError };
+
+  if (d.structuralKey === "CAPITAL" && !d.capitalBeneficiaryId) {
+    return { error: "Escolha o sócio (beneficiário) do lançamento no Capital." };
+  }
+
+  await prisma.cardInvoiceItem.update({
+    where: { id: d.itemId },
+    data: {
+      description: d.description.trim(),
+      amount: d.amount,
+      structuralKey: d.structuralKey,
+      vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+      capitalBeneficiaryId: d.structuralKey === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
+    },
+  });
+  await syncCardInvoiceDerived(item.payableId);
+  revalidateAll();
+  return {};
+}
+
 export async function deleteCardItemAction(itemId: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
