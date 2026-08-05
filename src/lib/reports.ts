@@ -94,7 +94,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         saleId: null, // comissão de venda entra por competência (abaixo)
         id: { notIn: retiradaPayableIds }, // retirada de capital não é despesa
       },
-      select: { amount: true, paymentDate: true, category: true },
+      select: { id: true, amount: true, paymentDate: true, category: true },
     }),
     // Retorno da financeira recebido no período (regime de caixa).
     prisma.receivable.findMany({
@@ -119,6 +119,24 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       select: { amount: true, receivedDate: true },
     }),
   ]);
+
+  // Fatura de cartão: a parte dos lançamentos que virou custo de veículo ou
+  // retirada de capital NÃO é despesa (o custo entra na margem do carro e o
+  // capital não é resultado) — desconta do valor do título nas despesas.
+  const cardSplits = await prisma.cardInvoiceItem.findMany({
+    where: {
+      payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } },
+      OR: [
+        { structuralKey: "VEICULOS", vehicleId: { not: null } },
+        { structuralKey: "CAPITAL", capitalBeneficiaryId: { not: null } },
+      ],
+    },
+    select: { payableId: true, amount: true },
+  });
+  const cardNonExpense = new Map<string, number>();
+  for (const it of cardSplits) {
+    cardNonExpense.set(it.payableId, (cardNonExpense.get(it.payableId) ?? 0) + it.amount);
+  }
 
   // Fechamentos mensais: o resultado do mês fechado migrou para o capital, então
   // a DRE do mês fechado desconta o valor transferido (fica ~zero).
@@ -166,7 +184,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
-      .reduce((sum, e) => sum + e.amount, 0);
+      .reduce((sum, e) => sum + e.amount - (cardNonExpense.get(e.id) ?? 0), 0);
     // Transferência (DETRAN) cobrada por competência no mês.
     const transferencias = monthSales.reduce(
       (sum, s) => sum + (s.transferCharged ? s.transferAmount : 0),
@@ -298,15 +316,24 @@ export async function getProfitLossStatement(
         category: true,
         description: true,
         categoryLabel: true,
+        cardInvoice: true,
         supplier: { select: { name: true } },
       },
     }),
-    // Custos pós-venda: também só quando o pagamento é efetuado.
+    // Custos pós-venda: também só quando o pagamento é efetuado (título próprio
+    // ou fatura de cartão que contém o lançamento).
     prisma.vehicleCost.findMany({
-      where: { postSale: true, payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
+      where: {
+        postSale: true,
+        OR: [
+          { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
+          { cardItem: { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } } },
+        ],
+      },
       include: {
         vehicle: { select: { brand: true, model: true, plate: true } },
         payable: { select: { paymentDate: true } },
+        cardItem: { select: { payable: { select: { paymentDate: true } } } },
       },
     }),
     // Outras receitas avulsas: dinheiro que entrou (RECEBIDO) sem ser venda,
@@ -335,6 +362,23 @@ export async function getProfitLossStatement(
     },
     include: { sale: { include: { vehicle: { select: { brand: true, model: true, plate: true } } } } },
   });
+
+  // Fatura de cartão: parte dos lançamentos vira custo de veículo (margem) ou
+  // retirada de capital — essa parte sai das despesas para não contar 2x.
+  const cardSplits = await prisma.cardInvoiceItem.findMany({
+    where: {
+      payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } },
+      OR: [
+        { structuralKey: "VEICULOS", vehicleId: { not: null } },
+        { structuralKey: "CAPITAL", capitalBeneficiaryId: { not: null } },
+      ],
+    },
+    select: { payableId: true, amount: true },
+  });
+  const cardNonExpense = new Map<string, number>();
+  for (const it of cardSplits) {
+    cardNonExpense.set(it.payableId, (cardNonExpense.get(it.payableId) ?? 0) + it.amount);
+  }
 
   const fmt = (n: number) =>
     n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -446,13 +490,21 @@ export async function getProfitLossStatement(
 
   for (const e of expenses) {
     const isComissao = e.category === "COMISSAO";
-    if (isComissao) comissoes += e.amount;
-    else despesas += e.amount;
+    // Fatura de cartão: só a parte "despesa" entra no resultado (o que virou
+    // custo de veículo entra na margem do carro; capital não é resultado).
+    const nonExpense = cardNonExpense.get(e.id) ?? 0;
+    const expenseValue = Math.max(0, Math.round((e.amount - nonExpense) * 100) / 100);
+    if (e.cardInvoice && expenseValue <= 0.004) continue; // fatura 100% veículos/capital
+    if (isComissao) comissoes += expenseValue;
+    else despesas += expenseValue;
     // O texto digitado pelo usuário é o principal; a categoria (e o
     // fornecedor, se houver) vai no detalhe — "Outros" sozinho não diz nada.
     const detailParts = [
       e.categoryLabel && e.categoryLabel !== e.description ? e.categoryLabel : null,
       e.supplier?.name ?? null,
+      nonExpense > 0.004
+        ? `fatura ${fmt(e.amount)} − ${fmt(nonExpense)} em custos de veículos/capital (entram em linhas próprias)`
+        : null,
     ].filter(Boolean);
     entries.push({
       id: `e-${e.id}`,
@@ -460,7 +512,7 @@ export async function getProfitLossStatement(
       kind: isComissao ? "COMISSAO" : "DESPESA",
       description: e.description || e.categoryLabel || "Despesa",
       detail: detailParts.length ? detailParts.join(" · ") : null,
-      value: -e.amount,
+      value: -expenseValue,
     });
   }
 
@@ -468,7 +520,7 @@ export async function getProfitLossStatement(
     posVenda += c.amount;
     entries.push({
       id: `pv-${c.id}`,
-      date: c.payable?.paymentDate ?? c.date,
+      date: c.payable?.paymentDate ?? c.cardItem?.payable?.paymentDate ?? c.date,
       kind: "POS_VENDA",
       description: `Pós-venda: ${c.description}`,
       detail: `${c.vehicle.brand} ${c.vehicle.model} · ${c.vehicle.plate}`,

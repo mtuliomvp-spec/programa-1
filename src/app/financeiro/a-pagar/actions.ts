@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { markPayablePaid, markPayablePending, createManualPayable, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
@@ -537,6 +538,9 @@ export async function updatePayableAction(
     vehicleId,
     capitalBeneficiaryId,
   });
+  // Fatura de cartão: o valor do título é a soma dos lançamentos — se o valor
+  // digitado divergir, a sincronização corrige (e realinha custos por item).
+  await syncCardInvoiceDerived(d.id);
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/livro-caixa");

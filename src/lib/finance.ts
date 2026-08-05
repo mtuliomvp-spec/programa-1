@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
+import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import type { StructuralKey } from "@/lib/structural-flows";
 import type {
@@ -423,6 +424,11 @@ export async function deleteVehicleCost(costId: string) {
     const cost = await tx.vehicleCost.findUniqueOrThrow({
       where: { id: costId },
     });
+    if (cost.cardItemId) {
+      throw new Error(
+        "Este custo vem de um lançamento da fatura do cartão — exclua o lançamento dentro do título da fatura.",
+      );
+    }
     await tx.vehicleCost.delete({ where: { id: costId } });
     if (cost.payableId) {
       await tx.payable.delete({ where: { id: cost.payableId } });
@@ -1552,6 +1558,8 @@ export async function markPayablePaid(id: string, paymentDate: Date, accountId?:
     data: { status: "PAGO", paymentDate, accountId: account },
   });
   await syncPayableCapital(id);
+  // Fatura de cartão: a baixa lança as retiradas dos itens CAPITAL.
+  if (updated.cardInvoice) await syncCardInvoiceDerived(id);
   if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }
@@ -1562,6 +1570,8 @@ export async function markPayablePending(id: string) {
     data: { status: "PENDENTE", paymentDate: null, accountId: null },
   });
   await syncPayableCapital(id);
+  // Fatura de cartão: o estorno desfaz as retiradas dos itens CAPITAL.
+  if (updated.cardInvoice) await syncCardInvoiceDerived(id);
   if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }

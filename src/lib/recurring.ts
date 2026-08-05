@@ -184,6 +184,8 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
             supplierId: entry.supplierId,
             capitalBeneficiaryId,
             recurringId: entry.id,
+            // Fatura de cartão: o título nasce detalhável (lançamentos dentro).
+            cardInvoice: entry.cardInvoice,
             notes: entry.notes,
           },
         });

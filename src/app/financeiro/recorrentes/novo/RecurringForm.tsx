@@ -21,6 +21,7 @@ export type RecurringInitial = {
   dayOfMonth: number;
   intervalDays: number | null;
   anticipateToBusinessDay: boolean;
+  cardInvoice: boolean;
   categoryLabel: string | null;
   supplierName: string;
   customerId: string | null;
@@ -61,6 +62,9 @@ export default function RecurringForm({
   const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
   const [supplierName, setSupplierName] = useState(initial?.supplierName ?? "");
   const [newSupplier, setNewSupplier] = useState(false);
+  // Fatura de cartão: o título gerado tem lançamentos detalháveis e o valor
+  // pode começar em 0 (a soma dos lançamentos vira o valor do título).
+  const [cardInvoice, setCardInvoice] = useState(initial?.cardInvoice ?? false);
 
   const supplierField = (label: string) => (
     <Field label={label}>
@@ -119,8 +123,27 @@ export default function RecurringForm({
         </p>
       </Field>
 
+      {kind === "PAGAR" && !isCapital ? (
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="cardInvoice"
+            value="true"
+            checked={cardInvoice}
+            onChange={(e) => setCardInvoice(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            💳 <strong>Fatura de cartão de crédito</strong> — o título do mês vira uma linha só e,
+            ao abrir, você digita os lançamentos da fatura (cada um no seu fluxo: Administrativo,
+            Veículos ou Capital). A recorrência serve para marcar o dia do pagamento; o valor do
+            título é a soma dos lançamentos.
+          </span>
+        </label>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Valor (R$)" required>
+        <Field label={cardInvoice ? "Valor estimado (R$) — pode ser 0" : "Valor (R$)"} required>
           <MoneyInput name="amount" required defaultValue={initial?.amount} />
         </Field>
         <Field label="Fluxo (obra estrutural)" required>
