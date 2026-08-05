@@ -472,6 +472,8 @@ model Vehicle {
   createdAt        DateTime      @default(now())
   updatedAt        DateTime      @updatedAt
 
+  cardItems        CardInvoiceItem[]
+
   @@map("vehicles")
 }
 
@@ -541,6 +543,10 @@ model VehicleCost {
   notes       String?
   payableId   String?               @unique
   payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  // Custo vindo de um lançamento da fatura do cartão (1:1) — apagar o item
+  // apaga o custo junto.
+  cardItemId  String?               @unique
+  cardItem    CardInvoiceItem?      @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
   // Lote da rotina de remuneração de capital sobre estoque (para estorno).
   stockInterestRunId String?
   createdAt   DateTime              @default(now())
@@ -830,6 +836,10 @@ model Payable {
   // Lançamento avulso feito direto no Livro caixa (não é um título do a-pagar).
   // Excluir um avulso no caixa apaga de vez; excluir um título estorna (volta PENDENTE).
   avulso       Boolean         @default(false)
+  // Fatura de cartão de crédito: o título é uma linha só (total da fatura) e os
+  // lançamentos individuais ficam em cardItems, cada um com seu fluxo.
+  cardInvoice  Boolean         @default(false)
+  cardItems    CardInvoiceItem[]
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
@@ -1048,6 +1058,8 @@ model CapitalBeneficiary {
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
 
+  cardItems     CardInvoiceItem[]
+
   @@map("capital_beneficiaries")
 }
 
@@ -1098,6 +1110,9 @@ model CapitalTransaction {
   monthlyClosing   MonthlyClosing? @relation(fields: [monthlyClosingId], references: [id], onDelete: SetNull)
   // Lote da rotina de remuneração de capital sobre estoque (para estorno).
   stockInterestRunId String?
+  // Retirada gerada por um lançamento CAPITAL da fatura do cartão (1:1).
+  cardItemId    String?            @unique
+  cardItem      CardInvoiceItem?   @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
   createdAt     DateTime           @default(now())
 
   @@index([stockInterestRunId])
@@ -1194,6 +1209,10 @@ model RecurringEntry {
   // Antecipa o vencimento para o último dia útil quando o dia cai em fim de
   // semana ou feriado nacional (padrão de guias de impostos: DAS/FGTS/DARF).
   anticipateToBusinessDay Boolean @default(false)
+  // Fatura de cartão de crédito: o título gerado nasce com lançamentos
+  // detalháveis (a recorrência só marca o dia do pagamento; o valor de cada
+  // mês vira a soma dos lançamentos digitados na fatura).
+  cardInvoice     Boolean @default(false)
   // Sócio do capital: quando o fluxo é CAPITAL, o título gerado carrega este
   // beneficiário e, ao ser baixado, lança o aporte/retirada dele.
   capitalBeneficiaryId String?
@@ -1265,4 +1284,27 @@ model CompanySettings {
   updatedAt         DateTime @updatedAt
 
   @@map("company_settings")
+}
+
+// Lançamento individual da fatura de cartão de crédito (dentro de um título
+// cardInvoice). Cada item aponta um fluxo: ADMINISTRATIVO (despesa comum),
+// VEICULOS (com carro → vira custo do veículo) ou CAPITAL (com sócio → vira
+// retirada na baixa do título). O valor do título é a soma dos itens.
+model CardInvoiceItem {
+  id                   String              @id @default(cuid())
+  payableId            String
+  payable              Payable             @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  description          String
+  amount               Float
+  structuralKey        String              @default("ADMINISTRATIVO")
+  vehicleId            String?
+  vehicle              Vehicle?            @relation(fields: [vehicleId], references: [id], onDelete: SetNull)
+  capitalBeneficiaryId String?
+  capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
+  createdAt            DateTime            @default(now())
+  vehicleCost          VehicleCost?
+  capitalTransaction   CapitalTransaction?
+
+  @@index([payableId])
+  @@map("card_invoice_items")
 }

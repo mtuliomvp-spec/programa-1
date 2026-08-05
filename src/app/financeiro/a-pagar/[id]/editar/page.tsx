@@ -4,6 +4,7 @@ import { requireActionAny } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
+import CardInvoiceItems from "./CardInvoiceItems";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,16 @@ export default async function EditarPayablePage({
 
   const payable = await prisma.payable.findUnique({
     where: { id },
-    include: { costCenter: { select: { key: true } } },
+    include: {
+      costCenter: { select: { key: true } },
+      cardItems: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          vehicle: { select: { brand: true, model: true, plate: true } },
+          capitalBeneficiary: { select: { name: true } },
+        },
+      },
+    },
   });
   if (!payable) notFound();
   // Título pago não é editável (reverter antes); os demais podem.
@@ -81,6 +91,33 @@ export default async function EditarPayablePage({
           </LinkButton>
         }
       />
+      {payable.cardInvoice ? (
+        <Card className="mb-4">
+          <CardHeader
+            title="💳 Lançamentos da fatura"
+            description="Digite os itens como estão na fatura do cartão — cada um no seu fluxo. O valor do título é sempre a soma dos lançamentos."
+          />
+          <div className="p-5">
+            <CardInvoiceItems
+              payableId={payable.id}
+              // Título pago nem chega aqui (redirect acima) — sempre editável.
+              editable
+              items={payable.cardItems.map((i) => ({
+                id: i.id,
+                description: i.description,
+                amount: i.amount,
+                structuralKey: i.structuralKey,
+                who: i.vehicle
+                  ? `${i.vehicle.brand} ${i.vehicle.model} · ${i.vehicle.plate}`
+                  : i.capitalBeneficiary?.name || null,
+              }))}
+              vehicles={vehicles}
+              beneficiaries={beneficiaries.map((b) => ({ id: b.id, label: b.name }))}
+            />
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader title="Dados do título" />
         <div className="p-5">

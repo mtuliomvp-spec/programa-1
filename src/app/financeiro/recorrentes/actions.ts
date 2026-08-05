@@ -13,7 +13,10 @@ import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories
 const recurringSchema = z.object({
   kind: z.enum(["PAGAR", "RECEBER"]),
   description: z.string().min(1, "Informe a descrição"),
-  amount: z.coerce.number().positive("Informe um valor maior que zero"),
+  // Fatura de cartão pode começar com 0 (o valor real vem dos lançamentos);
+  // nas demais o valor precisa ser positivo (validado após o parse).
+  amount: z.coerce.number().min(0, "Informe um valor válido"),
+  cardInvoice: z.coerce.boolean().optional(),
   structuralKey: z.enum(["VEICULOS", "ADMINISTRATIVO", "CAPITAL"]).default("ADMINISTRATIVO"),
   periodicidade: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
@@ -45,6 +48,10 @@ export async function createRecurringAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  const isCard = data.kind === "PAGAR" && Boolean(data.cardInvoice);
+  if (!isCard && data.amount <= 0) {
+    return { error: "Informe um valor maior que zero." };
+  }
   const porDias = data.periodicidade === "DIAS";
   if (porDias && !data.intervalDays) {
     return { error: "Informe de quantos em quantos dias (1 a 365)." };
@@ -94,6 +101,7 @@ export async function createRecurringAction(
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
+        cardInvoice: isCard,
         categoryPagar,
         categoryReceber,
         categoryLabel,
@@ -136,6 +144,10 @@ export async function updateRecurringAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  const isCard = data.kind === "PAGAR" && Boolean(data.cardInvoice);
+  if (!isCard && data.amount <= 0) {
+    return { error: "Informe um valor maior que zero." };
+  }
   const porDias = data.periodicidade === "DIAS";
   if (porDias && !data.intervalDays) {
     return { error: "Informe de quantos em quantos dias (1 a 365)." };
@@ -186,6 +198,7 @@ export async function updateRecurringAction(
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
+        cardInvoice: isCard,
         categoryPagar,
         categoryReceber,
         categoryLabel,

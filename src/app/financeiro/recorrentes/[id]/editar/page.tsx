@@ -70,6 +70,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
               dayOfMonth: entry.dayOfMonth,
               intervalDays: entry.intervalDays,
               anticipateToBusinessDay: entry.anticipateToBusinessDay,
+              cardInvoice: entry.cardInvoice,
               categoryLabel: entry.categoryLabel ?? enumLabel,
               supplierName: entry.supplier?.name ?? "",
               customerId: entry.customerId,
