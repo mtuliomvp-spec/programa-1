@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCanAny } from "@/lib/guards";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
+import { classifyCardCharge, resolveBeneficiaryIds } from "@/lib/card-flow";
+import { extractFaturaFromPdf } from "@/lib/fatura-ai";
 
 /**
  * Lançamentos da fatura de cartão (itens dentro de um título cardInvoice).
@@ -146,4 +148,117 @@ export async function deleteCardItemAction(itemId: string): Promise<{ ok: boolea
   await syncCardInvoiceDerived(item.payableId);
   revalidateAll();
   return { ok: true };
+}
+
+const MAX_PDF_BYTES = 15 * 1024 * 1024; // 15 MB (mesmo limite dos demais anexos)
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+export type ImportPdfResult = {
+  ok: boolean;
+  itemsCreated: number;
+  total: number;
+  faturaTotal: number;
+  warning?: string;
+  error?: string;
+};
+
+/**
+ * Importa a fatura do cartão em PDF via IA: extrai os lançamentos (IOF somado
+ * na linha, pagamentos/créditos ignorados), aplica as regras de fluxo do
+ * Capital (Lovable/Anthropic → Agrasty; cartão 9792 → Marcelo; resto → Marco
+ * Túlio), cria os itens no título e anexa o PDF. Só em título de fatura NÃO
+ * pago e ainda SEM lançamentos (para não duplicar) — depois é só revisar e
+ * editar linha a linha.
+ */
+export async function importCardInvoicePdfAction(formData: FormData): Promise<ImportPdfResult> {
+  const fail = (error: string): ImportPdfResult => ({
+    ok: false,
+    itemsCreated: 0,
+    total: 0,
+    faturaTotal: 0,
+    error,
+  });
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Sem permissão.");
+  }
+
+  const payableId = String(formData.get("payableId") || "");
+  const guardError = await guardPayable(payableId);
+  if (guardError) return fail(guardError);
+
+  const existing = await prisma.cardInvoiceItem.count({ where: { payableId } });
+  if (existing > 0) {
+    return fail(
+      "Este título já tem lançamentos. Exclua-os (ou lance manualmente) antes de importar o PDF — a importação não mistura com o que já foi digitado.",
+    );
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return fail("Anexe o PDF da fatura.");
+  if (file.size > MAX_PDF_BYTES) return fail("Arquivo muito grande (máximo 15 MB).");
+  if (!(file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf"))) {
+    return fail("Envie o arquivo PDF da fatura.");
+  }
+
+  const bytes = new Uint8Array(await file.arrayBuffer());
+  const pdfBase64 = Buffer.from(bytes).toString("base64");
+
+  let fatura;
+  try {
+    fatura = await extractFaturaFromPdf(pdfBase64);
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : "Não foi possível ler a fatura.");
+  }
+
+  const beneficiaryIds = await resolveBeneficiaryIds();
+  const rows = fatura.lancamentos
+    .map((l) => ({ ...l, valor: round2(l.valor) }))
+    .filter((l) => l.valor > 0);
+  if (rows.length === 0) return fail("Nenhum lançamento com valor válido foi encontrado no PDF.");
+
+  await prisma.cardInvoiceItem.createMany({
+    data: rows.map((l) => ({
+      payableId,
+      description: `${l.data} ${l.descricao}${l.parcela ? ` — parc. ${l.parcela}` : ""} · cartão ${
+        l.cartao_final || "?"
+      }${l.portador ? ` ${l.portador}` : ""}`,
+      amount: l.valor,
+      structuralKey: "CAPITAL",
+      capitalBeneficiaryId: beneficiaryIds[classifyCardCharge(l.descricao, l.cartao_final)],
+    })),
+  });
+
+  // Guarda o PDF junto do título (auditoria/conferência).
+  await prisma.payableAttachment.create({
+    data: {
+      payableId,
+      description: "Fatura do cartão (PDF importado via IA)",
+      filename: file.name || "fatura.pdf",
+      mimeType: "application/pdf",
+      size: bytes.byteLength,
+      data: bytes,
+    },
+  });
+
+  await syncCardInvoiceDerived(payableId);
+  revalidateAll();
+
+  const total = round2(rows.reduce((s, l) => s + l.valor, 0));
+  const faturaTotal = round2(fatura.total_a_pagar);
+  const diff = round2(Math.abs(total - faturaTotal));
+  return {
+    ok: true,
+    itemsCreated: rows.length,
+    total,
+    faturaTotal,
+    warning:
+      diff > 0.01
+        ? `A soma dos lançamentos (${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) difere do total da fatura (${faturaTotal.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) — normal quando houve pagamento parcial/saldo anterior, mas confira linha a linha antes de pagar.`
+        : undefined,
+  };
 }

@@ -5,8 +5,11 @@ import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
 import CardInvoiceItems from "./CardInvoiceItems";
+import ImportFaturaPdf from "./ImportFaturaPdf";
 
 export const dynamic = "force-dynamic";
+// A importação de fatura em PDF chama a IA e pode levar minutos.
+export const maxDuration = 300;
 
 const categoryLabelByEnum: Record<string, string> = {
   COMPRA_VEICULO: "Compra de veículo",
@@ -98,6 +101,7 @@ export default async function EditarPayablePage({
             description="Digite os itens como estão na fatura do cartão — cada um no seu fluxo. O valor do título é sempre a soma dos lançamentos."
           />
           <div className="p-5">
+            <ImportFaturaPdf payableId={payable.id} hasItems={payable.cardItems.length > 0} />
             <CardInvoiceItems
               payableId={payable.id}
               // Título pago nem chega aqui (redirect acima) — sempre editável.
