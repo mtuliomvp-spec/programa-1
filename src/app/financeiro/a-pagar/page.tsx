@@ -186,6 +186,8 @@ export default async function ContasAPagarPage({
       : null,
     // Editável: qualquer título ainda não pago (pagos: reverter antes).
     editable: p.effective !== "PAGO",
+    // Fatura de cartão: linha ganha o link do relatório de lançamentos (busca/PDF).
+    cardInvoice: p.cardInvoice,
     // Tem anexo no próprio título ou na solicitação de compra que o gerou.
     hasAttachment: p._count.attachments > 0 || (p.purchaseRequest?._count.attachments ?? 0) > 0,
     commissionExcess:

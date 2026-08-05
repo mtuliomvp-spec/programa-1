@@ -30,6 +30,8 @@ export type PayableRow = {
   combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
   // Manual e não pago: pode editar/excluir direto por aqui.
   editable: boolean;
+  // Fatura de cartão de crédito: mostra o link do relatório de lançamentos.
+  cardInvoice: boolean;
   // Tem anexo (NF/comprovante) no título ou na solicitação de origem.
   hasAttachment: boolean;
   // Comissão de vendedor vinculado a beneficiário: permite acertar o capital na baixa.
@@ -246,6 +248,15 @@ export default function PayablesTable({
                 </Td>
                 <Td>
                   <div className="flex items-center justify-end gap-3">
+                    {p.cardInvoice ? (
+                      <Link
+                        href={`/financeiro/a-pagar/${p.id}/fatura`}
+                        className="text-sm font-medium text-blue-700 hover:underline"
+                        title="Lançamentos da fatura: buscar, filtrar por sócio e gerar PDF"
+                      >
+                        Fatura
+                      </Link>
+                    ) : null}
                     {p.editable && showEdit ? (
                       <Link
                         href={`/financeiro/a-pagar/${p.id}/editar`}

@@ -99,6 +99,13 @@ export default async function EditarPayablePage({
           <CardHeader
             title="💳 Lançamentos da fatura"
             description="Digite os itens como estão na fatura do cartão — cada um no seu fluxo. O valor do título é sempre a soma dos lançamentos."
+            action={
+              payable.cardItems.length > 0 ? (
+                <LinkButton href={`/financeiro/a-pagar/${payable.id}/fatura`} variant="secondary">
+                  🔎 Filtrar / gerar PDF
+                </LinkButton>
+              ) : null
+            }
           />
           <div className="p-5">
             <ImportFaturaPdf payableId={payable.id} hasItems={payable.cardItems.length > 0} />
