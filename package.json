@@ -17,6 +17,7 @@
     "seed": "tsx prisma/seed.ts"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "@prisma/client": "^6.19.3",
     "dotenv": "^17.4.2",
     "html2canvas-pro": "^2.3.1",

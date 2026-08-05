@@ -8,12 +8,11 @@ import { resolveDespesaCategory } from "@/lib/categories";
 import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
+import { resolveBeneficiaryIds } from "@/lib/card-flow";
 import {
   FATURA_ROWS,
   rowDescription,
   rowBeneficiary,
-  BENEFICIARIES,
-  type BeneficiaryKey,
   CARTAO_NOME,
   CARTAO_FORNECEDOR,
   CARTAO_CATEGORIA,
@@ -21,28 +20,6 @@ import {
   CARTAO_PRIMEIRO_VENCIMENTO,
   CARTAO_NOTES,
 } from "./data";
-
-// Acha o beneficiário pelo nome ignorando acentos/caixa; cadastra se faltar.
-const normalize = (v: string) =>
-  v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
-
-async function resolveBeneficiaries(): Promise<Record<BeneficiaryKey, string>> {
-  const all = await prisma.capitalBeneficiary.findMany({ select: { id: true, name: true } });
-  const out = {} as Record<BeneficiaryKey, string>;
-  for (const key of Object.keys(BENEFICIARIES) as BeneficiaryKey[]) {
-    const cfg = BENEFICIARIES[key];
-    const found = all.find((b) => cfg.searchKeys.some((k) => normalize(b.name).includes(normalize(k))));
-    if (found) out[key] = found.id;
-    else {
-      const created = await prisma.capitalBeneficiary.create({
-        data: { name: cfg.createName },
-        select: { id: true },
-      });
-      out[key] = created.id;
-    }
-  }
-  return out;
-}
 
 export type ImportResult = {
   ok: boolean;
@@ -80,7 +57,7 @@ export async function importCartaoSantanderAction(): Promise<ImportResult> {
 
   const supplierId = await resolveSupplierByName(CARTAO_FORNECEDOR);
   const cat = await resolveDespesaCategory(CARTAO_CATEGORIA);
-  const beneficiaryIds = await resolveBeneficiaries();
+  const beneficiaryIds = await resolveBeneficiaryIds();
   const center = await structuralCenterId("ADMINISTRATIVO");
   const dueDate = parseDateInput(CARTAO_PRIMEIRO_VENCIMENTO);
 

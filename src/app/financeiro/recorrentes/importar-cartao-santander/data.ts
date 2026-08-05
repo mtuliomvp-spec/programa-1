@@ -102,23 +102,9 @@ export function rowDescription(r: FaturaRow): string {
  * Marcelo Matos Viana Pereira Jr; todo o resto (supermercados, parcelamentos,
  * assinaturas, cartões adicionais Gabriel e Marco Túlio Filho) → Marco Túlio.
  */
-export type BeneficiaryKey = "AGRASTY" | "MARCELO" | "MARCO";
+export { BENEFICIARIES, type BeneficiaryKey } from "@/lib/card-flow";
+import { classifyCardCharge, type BeneficiaryKey as Key } from "@/lib/card-flow";
 
-export const BENEFICIARIES: Record<
-  BeneficiaryKey,
-  { createName: string; searchKeys: string[] }
-> = {
-  AGRASTY: { createName: "Agrasty Construções", searchKeys: ["agrasty"] },
-  MARCELO: {
-    createName: "Marcelo Matos Viana Pereira Jr",
-    searchKeys: ["marcelo matos"],
-  },
-  MARCO: { createName: "Marco Tulio Marao Viana Pereira", searchKeys: ["marco tulio"] },
-};
-
-export function rowBeneficiary(r: FaturaRow): BeneficiaryKey {
-  const d = r.desc.toUpperCase();
-  if (d.startsWith("LOVABLE") || d.startsWith("ANTHROPIC")) return "AGRASTY";
-  if (r.card.startsWith("9792")) return "MARCELO";
-  return "MARCO";
+export function rowBeneficiary(r: FaturaRow): Key {
+  return classifyCardCharge(r.desc, r.card.slice(0, 4));
 }
