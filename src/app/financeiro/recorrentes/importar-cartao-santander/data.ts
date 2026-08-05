@@ -95,3 +95,30 @@ export const FATURA_ROWS: FaturaRow[] = [
 export function rowDescription(r: FaturaRow): string {
   return `${r.d} ${r.desc}${r.parcela ? ` — parc. ${r.parcela}` : ""} · cartão ${r.card}`;
 }
+
+/**
+ * Fluxo definido pelo Marco: TODA a fatura vai para o Capital, dividida por
+ * sócio — Lovable/Anthropic → Agrasty Construções; cartão da Marci (9792) →
+ * Marcelo Matos Viana Pereira Jr; todo o resto (supermercados, parcelamentos,
+ * assinaturas, cartões adicionais Gabriel e Marco Túlio Filho) → Marco Túlio.
+ */
+export type BeneficiaryKey = "AGRASTY" | "MARCELO" | "MARCO";
+
+export const BENEFICIARIES: Record<
+  BeneficiaryKey,
+  { createName: string; searchKeys: string[] }
+> = {
+  AGRASTY: { createName: "Agrasty Construções", searchKeys: ["agrasty"] },
+  MARCELO: {
+    createName: "Marcelo Matos Viana Pereira Jr",
+    searchKeys: ["marcelo matos"],
+  },
+  MARCO: { createName: "Marco Tulio Marao Viana Pereira", searchKeys: ["marco tulio"] },
+};
+
+export function rowBeneficiary(r: FaturaRow): BeneficiaryKey {
+  const d = r.desc.toUpperCase();
+  if (d.startsWith("LOVABLE") || d.startsWith("ANTHROPIC")) return "AGRASTY";
+  if (r.card.startsWith("9792")) return "MARCELO";
+  return "MARCO";
+}

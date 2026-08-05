@@ -11,6 +11,9 @@ import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import {
   FATURA_ROWS,
   rowDescription,
+  rowBeneficiary,
+  BENEFICIARIES,
+  type BeneficiaryKey,
   CARTAO_NOME,
   CARTAO_FORNECEDOR,
   CARTAO_CATEGORIA,
@@ -19,11 +22,34 @@ import {
   CARTAO_NOTES,
 } from "./data";
 
+// Acha o beneficiário pelo nome ignorando acentos/caixa; cadastra se faltar.
+const normalize = (v: string) =>
+  v.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+async function resolveBeneficiaries(): Promise<Record<BeneficiaryKey, string>> {
+  const all = await prisma.capitalBeneficiary.findMany({ select: { id: true, name: true } });
+  const out = {} as Record<BeneficiaryKey, string>;
+  for (const key of Object.keys(BENEFICIARIES) as BeneficiaryKey[]) {
+    const cfg = BENEFICIARIES[key];
+    const found = all.find((b) => cfg.searchKeys.some((k) => normalize(b.name).includes(normalize(k))));
+    if (found) out[key] = found.id;
+    else {
+      const created = await prisma.capitalBeneficiary.create({
+        data: { name: cfg.createName },
+        select: { id: true },
+      });
+      out[key] = created.id;
+    }
+  }
+  return out;
+}
+
 export type ImportResult = {
   ok: boolean;
   recurringCreated: boolean;
   payableCreated: boolean;
   itemsCreated: number;
+  itemsUpdated: number;
   error?: string;
 };
 
@@ -31,11 +57,12 @@ export type ImportResult = {
  * Cria a rotina do cartão Santander Unique Visa (final 7574):
  *  1. recorrência mensal (dia 4) marcada como fatura de cartão — só para
  *     registrar o dia do pagamento; valor-base 0;
- *  2. o título de 04/08/2026 com os 53 lançamentos transcritos da fatura
- *     (todos como ADMINISTRATIVO — os fluxos são ajustados dentro do título);
+ *  2. o título de 04/08/2026 com os 53 lançamentos transcritos da fatura, cada
+ *     um já no fluxo CAPITAL do sócio definido (Lovable/Anthropic → Agrasty
+ *     Construções; cartão 9792 → Marcelo; resto → Marco Túlio);
  *  3. valor do título sincronizado com a soma (R$ 14.870,98).
- * Idempotente: recorrência existente é reaproveitada; título do mês com
- * lançamentos já digitados não é tocado.
+ * Idempotente: recorrência/título existentes são reaproveitados; lançamentos
+ * antigos ainda em Administrativo recebem o mapeamento; os demais não mudam.
  */
 export async function importCartaoSantanderAction(): Promise<ImportResult> {
   try {
@@ -46,12 +73,14 @@ export async function importCartaoSantanderAction(): Promise<ImportResult> {
       recurringCreated: false,
       payableCreated: false,
       itemsCreated: 0,
+      itemsUpdated: 0,
       error: e instanceof Error ? e.message : "Sem permissão.",
     };
   }
 
   const supplierId = await resolveSupplierByName(CARTAO_FORNECEDOR);
   const cat = await resolveDespesaCategory(CARTAO_CATEGORIA);
+  const beneficiaryIds = await resolveBeneficiaries();
   const center = await structuralCenterId("ADMINISTRATIVO");
   const dueDate = parseDateInput(CARTAO_PRIMEIRO_VENCIMENTO);
 
@@ -115,24 +144,45 @@ export async function importCartaoSantanderAction(): Promise<ImportResult> {
     await prisma.payable.update({ where: { id: payable.id }, data: { cardInvoice: true } });
   }
 
-  // 3) Lançamentos — só se o título ainda estiver vazio (não duplica).
+  // 3) Lançamentos — cada um já no fluxo CAPITAL com o sócio definido pelo
+  //    Marco (Lovable/Anthropic → Agrasty; cartão 9792 → Marcelo; resto →
+  //    Marco Túlio). Título vazio: cria tudo. Título com lançamentos de uma
+  //    rodada anterior (Administrativo): aplica o mapeamento neles.
   let itemsCreated = 0;
+  let itemsUpdated = 0;
   if (payable._count.cardItems === 0) {
     await prisma.cardInvoiceItem.createMany({
       data: FATURA_ROWS.map((r) => ({
         payableId: payable.id,
         description: rowDescription(r),
         amount: r.amount,
-        structuralKey: "ADMINISTRATIVO",
+        structuralKey: "CAPITAL",
+        capitalBeneficiaryId: beneficiaryIds[rowBeneficiary(r)],
       })),
     });
     itemsCreated = FATURA_ROWS.length;
+  } else {
+    const byDescription = new Map(FATURA_ROWS.map((r) => [rowDescription(r), rowBeneficiary(r)]));
+    const existing = await prisma.cardInvoiceItem.findMany({
+      where: { payableId: payable.id, structuralKey: "ADMINISTRATIVO" },
+      select: { id: true, description: true },
+    });
+    for (const item of existing) {
+      const key = byDescription.get(item.description);
+      if (!key) continue;
+      await prisma.cardInvoiceItem.update({
+        where: { id: item.id },
+        data: { structuralKey: "CAPITAL", capitalBeneficiaryId: beneficiaryIds[key], vehicleId: null },
+      });
+      itemsUpdated += 1;
+    }
   }
   await syncCardInvoiceDerived(payable.id);
 
   revalidatePath("/financeiro/recorrentes");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/fornecedores");
+  revalidatePath("/capital");
   revalidatePath("/");
-  return { ok: true, recurringCreated, payableCreated, itemsCreated };
+  return { ok: true, recurringCreated, payableCreated, itemsCreated, itemsUpdated };
 }
