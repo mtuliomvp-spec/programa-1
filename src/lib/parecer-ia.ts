@@ -21,7 +21,9 @@ export type ParecerConfig = {
 };
 
 const DEFAULT_MODEL: Record<string, string> = {
-  ANTHROPIC: "claude-3-5-haiku-latest",
+  // Claude Haiku 3.5 foi desativado pela Anthropic (404) — Haiku 4.5 é o
+  // substituto direto (rápido e barato, ideal para o parecer).
+  ANTHROPIC: "claude-haiku-4-5",
   OPENAI: "gpt-4o-mini",
 };
 
