@@ -53,14 +53,14 @@ export async function createCashEntryAction(
   const isCapital = d.structuralKey === "CAPITAL";
   const supplierName = (d.supplierName || "").trim();
 
-  // Toda saída precisa de categoria; e de fornecedor (ou, no Capital, do
-  // beneficiário do capital).
+  // Toda saída precisa de categoria; e de fornecedor — exceto no Capital, onde
+  // o fornecedor é opcional (o valor pode ter sido pago ao próprio beneficiário).
   if (d.kind === "saida") {
     if (!label) return { error: "Informe a categoria do lançamento." };
     if (isCapital && !d.capitalBeneficiaryId) {
       return { error: "Escolha o beneficiário do capital." };
     }
-    if (!supplierName) {
+    if (!supplierName && !isCapital) {
       return { error: "Informe o fornecedor do lançamento." };
     }
   } else if (isCapital && !d.capitalBeneficiaryId) {
