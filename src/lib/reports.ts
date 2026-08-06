@@ -144,6 +144,14 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     select: { year: true, month: true, result: true },
   });
 
+  // Saldo inicial de contas cadastradas no período: entra como outra receita no
+  // mês do cadastro (mesma regra do extrato de Lucro/Prejuízo — o dinheiro
+  // pré-sistema é resultado acumulado, senão a DRE diverge da equação).
+  const contasComSaldoInicial = await prisma.financialAccount.findMany({
+    where: { initialBalance: { not: 0 } },
+    select: { initialBalance: true, createdAt: true },
+  });
+
   const result: DreMonth[] = [];
   for (let i = months - 1; i >= 0; i--) {
     const { start, end } = monthRange(i);
@@ -153,9 +161,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const retornos = retornoRecs
       .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
       .reduce((sum, r) => sum + r.amount, 0);
-    const outrasReceitas = outrasRecs
-      .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
-      .reduce((sum, r) => sum + r.amount, 0);
+    const outrasReceitas =
+      outrasRecs
+        .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
+        .reduce((sum, r) => sum + r.amount, 0) +
+      contasComSaldoInicial
+        .filter((a) => a.createdAt >= start && a.createdAt < end)
+        .reduce((sum, a) => sum + a.initialBalance, 0);
 
     const receitaVeiculos = monthSales.reduce((sum, s) => sum + s.totalAmount, 0);
     const receitaPecas = monthPartSales.reduce((sum, p) => sum + p.totalAmount, 0);
@@ -238,6 +250,7 @@ export type PLEntryKind =
   | "POS_VENDA"
   | "RETORNO"
   | "RECEITA"
+  | "SALDO_INICIAL"
   | "FECHAMENTO";
 
 export type PLEntry = {
@@ -259,6 +272,8 @@ export type PLStatement = {
   posVenda: number;
   retornos: number;
   outrasReceitas: number;
+  /** Saldo inicial informado no cadastro de contas financeiras (dinheiro pré-sistema). */
+  saldosIniciais: number;
   transferencias: number;
   fechamentos: number;
   lucroLiquido: number;
@@ -554,6 +569,29 @@ export async function getProfitLossStatement(
     });
   }
 
+  // Saldo inicial das contas financeiras: dinheiro que a conta já tinha quando
+  // foi cadastrada no sistema. Ele entra direto no caixa da equação patrimonial,
+  // então PRECISA aparecer aqui também — senão o farol (equação × Lucro/Prejuízo)
+  // diverge exatamente pelo valor do saldo inicial. É resultado acumulado
+  // anterior ao sistema, lançado na data do cadastro da conta.
+  let saldosIniciais = 0;
+  const contasComSaldoInicial = await prisma.financialAccount.findMany({
+    where: { initialBalance: { not: 0 } },
+    select: { id: true, name: true, initialBalance: true, createdAt: true },
+  });
+  for (const a of contasComSaldoInicial) {
+    if (a.createdAt < rangeStart || a.createdAt >= rangeEnd) continue;
+    saldosIniciais += a.initialBalance;
+    entries.push({
+      id: `si-${a.id}`,
+      date: a.createdAt,
+      kind: "SALDO_INICIAL",
+      description: `Saldo inicial da conta ${a.name}`,
+      detail: "dinheiro que a conta já tinha quando foi cadastrada no sistema",
+      value: a.initialBalance,
+    });
+  }
+
   // Fechamentos mensais: o resultado do mês fechado foi transferido para o
   // capital da empresa — entra aqui como −resultado (o mês fechado zera no
   // extrato, casando com o aporte/retirada de capital na equação patrimonial).
@@ -595,10 +633,19 @@ export async function getProfitLossStatement(
     posVenda,
     retornos,
     outrasReceitas,
+    saldosIniciais,
     transferencias,
     fechamentos,
     lucroLiquido:
-      lucroBruto - despesas - comissoes - posVenda - transferencias - fechamentos + retornos + outrasReceitas,
+      lucroBruto -
+      despesas -
+      comissoes -
+      posVenda -
+      transferencias -
+      fechamentos +
+      retornos +
+      outrasReceitas +
+      saldosIniciais,
     veiculosVendidos: sales.length,
   };
 }
