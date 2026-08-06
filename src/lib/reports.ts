@@ -889,27 +889,26 @@ export async function getExpensesByCategory(months = 12): Promise<{
   const { start } = monthRange(months - 1);
   const payables = await prisma.payable.findMany({
     where: { dueDate: { gte: start } },
-    select: { category: true, amount: true, status: true },
+    select: { category: true, categoryLabel: true, amount: true, status: true },
   });
 
-  const categories = Object.keys(PAYABLE_CATEGORY_LABEL) as CategoriaPagar[];
-  const rows: ExpenseCategoryRow[] = categories
-    .map((category) => {
-      const items = payables.filter((p) => p.category === category);
-      const paid = items
-        .filter((p) => p.status === "PAGO")
-        .reduce((sum, p) => sum + p.amount, 0);
-      const total = items.reduce((sum, p) => sum + p.amount, 0);
-      return {
-        category,
-        label: PAYABLE_CATEGORY_LABEL[category],
-        total,
-        paid,
-        pending: total - paid,
-        count: items.length,
-      };
-    })
-    .filter((r) => r.count > 0)
+  // Agrupa pelo rótulo EXIBIDO (o mesmo que aparece em Contas a pagar): as
+  // categorias criadas pela loja — "Impostos", "Documentação de veículo",
+  // "Cartão de crédito"... — ganham linha própria em vez de cair todas em
+  // "Outros". Sem rótulo, vale o nome padrão da categoria interna.
+  const byLabel = new Map<string, ExpenseCategoryRow>();
+  for (const p of payables) {
+    const label = (p.categoryLabel || "").trim() || PAYABLE_CATEGORY_LABEL[p.category];
+    const row =
+      byLabel.get(label) ??
+      { category: p.category, label, total: 0, paid: 0, pending: 0, count: 0 };
+    row.total += p.amount;
+    if (p.status === "PAGO") row.paid += p.amount;
+    row.count += 1;
+    byLabel.set(label, row);
+  }
+  const rows: ExpenseCategoryRow[] = [...byLabel.values()]
+    .map((r) => ({ ...r, pending: r.total - r.paid }))
     .sort((a, b) => b.total - a.total);
 
   return {
