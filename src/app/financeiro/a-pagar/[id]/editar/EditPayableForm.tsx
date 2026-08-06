@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
@@ -24,6 +25,8 @@ type Payable = {
   structuralKey: string;
   vehicleId: string | null;
   capitalBeneficiaryId: string | null;
+  /** Venda que gerou o título (comissão, indicação, transferência DETRAN). */
+  saleId: string | null;
 };
 
 export default function EditPayableForm({
@@ -43,6 +46,9 @@ export default function EditPayableForm({
 }) {
   const [state, formAction, pending] = useActionState(updatePayableAction, {} as EditPayableState);
   const [flow, setFlow] = useState(payable.structuralKey || "ADMINISTRATIVO");
+  // Título gerado por uma venda: destino contábil travado (o servidor também
+  // ignora esses campos — aqui só evitamos oferecer o que não vale).
+  const saleGenerated = Boolean(payable.saleId);
 
   return (
     <form action={formAction} className="space-y-3">
@@ -72,17 +78,39 @@ export default function EditPayableForm({
         </Field>
       </div>
 
-      <Field label="Fluxo (obra estrutural)">
-        <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
-          {STRUCTURAL_FLOWS.map((f) => (
-            <option key={f.key} value={f.key}>
-              {f.name}
-            </option>
-          ))}
-        </Select>
-      </Field>
+      {saleGenerated ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">🔗 Custo de uma venda</p>
+          <p className="mt-1">
+            Este título foi gerado por uma venda (comissão, indicação ou transferência do
+            veículo), então o <strong>fluxo</strong> e o <strong>veículo</strong> ficam fixos: o
+            valor já está contado como despesa daquela venda, e o carro já está ligado a ele por
+            ela. Atrelar o veículo aqui faria o mesmo gasto contar duas vezes.
+          </p>
+          <p className="mt-1">
+            Você pode ajustar normalmente o <strong>fornecedor</strong> (o despachante, por
+            exemplo), o valor, o vencimento, a categoria e as observações.
+          </p>
+          <Link
+            href={`/vendas/${payable.saleId}`}
+            className="mt-2 inline-block font-medium text-blue-700 hover:underline"
+          >
+            Ver a venda →
+          </Link>
+        </div>
+      ) : (
+        <Field label="Fluxo (obra estrutural)">
+          <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
+            {STRUCTURAL_FLOWS.map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
 
-      {flow === "VEICULOS" ? (
+      {!saleGenerated && flow === "VEICULOS" ? (
         <Field label="Veículo (opcional)">
           <Select name="vehicleId" defaultValue={payable.vehicleId || ""}>
             <option value="">Nenhum (custo geral de veículos)</option>
@@ -96,7 +124,7 @@ export default function EditPayableForm({
         </Field>
       ) : null}
 
-      {flow === "CAPITAL" ? (
+      {!saleGenerated && flow === "CAPITAL" ? (
         <Field label="Beneficiário do capital" required>
           <Select name="capitalBeneficiaryId" defaultValue={payable.capitalBeneficiaryId || ""} required>
             <option value="">Selecione o beneficiário</option>
