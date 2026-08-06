@@ -42,7 +42,7 @@ export type PatrimonialStats = {
 
 export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   const now = new Date();
-  const [accounts, payables, receivables, parts, capitalTx] = await Promise.all([
+  const [accounts, payables, receivables, parts, capitalTx, custosVendidosPendentes] = await Promise.all([
     getAccountsWithBalances(),
     prisma.payable.findMany({
       select: {
@@ -61,6 +61,24 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
     prisma.capitalTransaction.findMany({ select: { kind: true, amount: true } }),
+    // Custos de veículo JÁ VENDIDO ainda não pagos (peça/serviço a prazo,
+    // combustível, item de fatura de cartão...): o custo já saiu no resultado
+    // na data da venda (a margem soma os custos pré-venda por competência,
+    // pagos ou não), mas o dinheiro ainda não saiu do caixa. É passivo puro e
+    // entra subtraindo — espelha a quitação da compra (COMPRA_VEICULO abaixo).
+    // Custos pós-venda ficam FORA: o Lucro/Prejuízo só os reconhece quando
+    // pagos, então pendente é neutro dos dois lados.
+    prisma.vehicleCost.findMany({
+      where: {
+        postSale: false,
+        vehicle: { status: "VENDIDO" },
+        OR: [
+          { payable: { status: { in: ["PENDENTE", "ATRASADO"] } } },
+          { cardItem: { payable: { status: { in: ["PENDENTE", "ATRASADO"] } } } },
+        ],
+      },
+      select: { amount: true },
+    }),
   ]);
 
   const saldoCaixa = accounts.reduce((s, a) => s + a.balance, 0);
@@ -105,6 +123,9 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       // débitos da troca): o carro (ativo pago) já saiu da equação, mas a
       // dívida continua. Vira passivo puro e entra subtraindo — assim o lucro
       // fica correto na hora da venda e não muda quando a dívida for paga.
+      // (Os DEMAIS custos pendentes de veículo vendido — peça, serviço,
+      // combustível, cartão — entram no mesmo balde via custosVendidosPendentes,
+      // somados após este loop; COMPRA_VEICULO não tem VehicleCost, sem 2x.)
       if (
         p.category === "COMPRA_VEICULO" &&
         !!p.vehicleId &&
@@ -139,6 +160,13 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
         titulosVencidosValor += p.amount;
       }
     }
+  }
+
+  // Custos pré-venda ainda pendentes de veículos vendidos (query acima): já
+  // estão na margem do Lucro/Prejuízo, então a dívida subtrai aqui também —
+  // o farol fecha no ato da venda e não muda quando cada título for pago.
+  for (const c of custosVendidosPendentes) {
+    veiculosAPagarPosVenda += c.amount;
   }
 
   let veiculosRecebido = 0;
