@@ -78,6 +78,9 @@ export default async function RecorrentesPage({
               <LinkButton href="/financeiro/recorrentes/importar-cartao-santander" variant="secondary">
                 💳 Cartão Santander
               </LinkButton>
+              <LinkButton href="/financeiro/recorrentes/importar-plano-casf" variant="secondary">
+                🏥 Plano CASF
+              </LinkButton>
               <GenerateNowButton />
               <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
             </div>
