@@ -44,7 +44,7 @@ export default function ManualReceivableForm({
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
-        <StructuralFlowSelect />
+        <StructuralFlowSelect allowVeiculos={false} />
         <Field label="Centro de custo (obra, imóvel...)">
           <Select name="costCenterId" defaultValue="">
             <option value="">Nenhum (usa o fluxo acima)</option>

@@ -20,6 +20,7 @@ import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
+import { effectiveStructuralKey } from "@/lib/structural-flows";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -109,7 +110,9 @@ export async function createRequestAction(
         installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
         installmentDays: parsed.data.installmentDays,
         supplierId: supplierIdCreate,
-        structuralKey: flow,
+        // Sem veículo indicado, "Veículos" vira Administrativo (o gasto é da
+        // loja, não de um carro) — a solicitação já nasce no fluxo certo.
+        structuralKey: effectiveStructuralKey(flow, parsed.data.vehicleId),
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
         vehicleId: flow === "VEICULOS" ? parsed.data.vehicleId || null : null,
         capitalBeneficiaryId: flow === "CAPITAL" ? parsed.data.capitalBeneficiaryId || null : null,
@@ -259,7 +262,7 @@ export async function updateRequestAction(
       installmentPeriod: parcelado ? d.installmentPeriod : null,
       installmentDays: d.installmentDays,
       supplierId: supplierIdUpdate,
-      structuralKey: flow,
+      structuralKey: effectiveStructuralKey(flow, d.vehicleId),
       vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
     },

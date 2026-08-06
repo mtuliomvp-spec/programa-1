@@ -7,6 +7,7 @@ import { assertCanAny } from "@/lib/guards";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { classifyCardCharge, resolveBeneficiaryIds } from "@/lib/card-flow";
 import { extractFaturaFromPdf } from "@/lib/fatura-ai";
+import { effectiveStructuralKey } from "@/lib/structural-flows";
 
 /**
  * Lançamentos da fatura de cartão (itens dentro de um título cardInvoice).
@@ -73,7 +74,8 @@ export async function addCardItemAction(
       payableId: d.payableId,
       description: d.description.trim(),
       amount: d.amount,
-      structuralKey: d.structuralKey,
+      // Sem veículo indicado, "Veículos" vira Administrativo.
+      structuralKey: effectiveStructuralKey(d.structuralKey, d.vehicleId),
       vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: d.structuralKey === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
     },
@@ -116,7 +118,8 @@ export async function updateCardItemAction(formData: FormData): Promise<CardItem
     data: {
       description: d.description.trim(),
       amount: d.amount,
-      structuralKey: d.structuralKey,
+      // Sem veículo indicado, "Veículos" vira Administrativo.
+      structuralKey: effectiveStructuralKey(d.structuralKey, d.vehicleId),
       vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: d.structuralKey === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
     },

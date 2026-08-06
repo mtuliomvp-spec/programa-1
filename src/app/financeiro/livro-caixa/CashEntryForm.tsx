@@ -238,7 +238,7 @@ export default function CashEntryForm({
               onChange={(e) => setVehicleId(e.target.value)}
             >
               <option value="">
-                {kind === "entrada" ? "Nenhum (receita geral de veículos)" : "Nenhum (custo geral de veículos)"}
+                {kind === "entrada" ? "Nenhum — entra como Administrativo" : "Nenhum — entra como Administrativo"}
               </option>
               {vehicles.map((v) => (
                 <option key={v.id} value={v.id}>
