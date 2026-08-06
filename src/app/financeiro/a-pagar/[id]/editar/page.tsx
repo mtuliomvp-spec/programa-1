@@ -147,6 +147,9 @@ export default async function EditarPayablePage({
               structuralKey: flow,
               vehicleId: payable.vehicleId,
               capitalBeneficiaryId: payable.capitalBeneficiaryId,
+              // Título gerado por uma venda: o destino contábil é travado (o
+              // custo já pertence àquela venda).
+              saleId: payable.saleId,
             }}
             suppliers={suppliers}
             vehicles={vehicles}

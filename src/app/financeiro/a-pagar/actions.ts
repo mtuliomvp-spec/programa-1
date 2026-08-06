@@ -12,6 +12,7 @@ import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
+import { isStructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 
@@ -512,7 +513,7 @@ export async function updatePayableAction(
 
   const current = await prisma.payable.findUnique({
     where: { id: d.id },
-    select: { status: true, saleId: true, category: true },
+    select: { status: true, saleId: true, category: true, costCenter: { select: { key: true } } },
   });
   if (!current) return { error: "Título não encontrado." };
   if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de editar." };
@@ -520,18 +521,30 @@ export async function updatePayableAction(
   const label = (d.categoryLabel || "").trim();
   if (!label) return { error: "Informe a categoria." };
 
-  const flow = d.structuralKey || "ADMINISTRATIVO";
-  const vehicleId = flow === "VEICULOS" ? d.vehicleId || null : null;
-  const capitalBeneficiaryId = flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
-  if (flow === "CAPITAL" && !capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
+  // Título gerado por uma venda (comissão do vendedor, indicação, transferência
+  // DETRAN): o DESTINO CONTÁBIL fica travado. Esse custo já foi reconhecido no
+  // resultado na data da venda, e o carro já está ligado a ele pela própria
+  // venda. Atrelar o veículo aqui criaria um custo pós-venda no carro e o mesmo
+  // gasto contaria duas vezes; mandar para o Capital viraria retirada de sócio.
+  // Nos dois casos o farol quebraria. Descrição, valor, vencimento, fornecedor
+  // (o despachante, por exemplo) e o nome da categoria seguem livres.
+  const saleGenerated = Boolean(current.saleId);
+  const currentFlow = isStructuralKey(current.costCenter?.key)
+    ? current.costCenter.key
+    : "ADMINISTRATIVO";
+  const flow = saleGenerated ? currentFlow : d.structuralKey || "ADMINISTRATIVO";
+  const vehicleId = !saleGenerated && flow === "VEICULOS" ? d.vehicleId || null : null;
+  const capitalBeneficiaryId =
+    !saleGenerated && flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
+  if (!saleGenerated && flow === "CAPITAL" && !capitalBeneficiaryId) {
+    return { error: "Escolha o beneficiário do capital." };
+  }
 
   const cat = await resolveDespesaCategory(label);
-  // Título gerado por uma venda (comissão do vendedor, indicação, transferência
-  // DETRAN): a CATEGORIA INTERNA é o que diz à equação patrimonial que aquilo é
-  // custo daquela venda — já reconhecido no resultado na data da venda. O
-  // usuário pode trocar o nome exibido à vontade, mas a classificação interna
-  // fica travada; sem isso, renomear a categoria derrubaria o farol.
-  const category = current.saleId ? current.category : cat.category;
+  // Pelo mesmo motivo, a CATEGORIA INTERNA desses títulos fica travada: é ela
+  // que diz à equação patrimonial que aquilo é custo daquela venda. O nome
+  // exibido pode ser trocado à vontade.
+  const category = saleGenerated ? current.category : cat.category;
 
   await updateManualPayable({
     id: d.id,
