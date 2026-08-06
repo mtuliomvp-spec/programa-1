@@ -49,6 +49,9 @@ const DESPESA_DEFAULTS: { name: string; code: CategoriaPagar | null }[] = [
   { name: "Combustível", code: "COMBUSTIVEL" },
   { name: "Outros", code: "OUTROS" },
   { name: "Tráfego pago", code: null },
+  // Documentação do carro (transferência DETRAN, licenciamento, 2ª via, vistoria,
+  // despachante). É o rótulo dos títulos de transferência gerados pela venda.
+  { name: "Documentação de veículo", code: null },
 ];
 const RECEITA_DEFAULTS: { name: string; code: CategoriaReceber | null }[] = [
   { name: "Venda de veículo", code: "VENDA_VEICULO" },

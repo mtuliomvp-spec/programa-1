@@ -866,13 +866,17 @@ export async function registerVehicleSale(input: {
     }
 
     // Transferência (DETRAN) cobrada: custo da venda, mesma mecânica da comissão
-    // (Comissão, Administrativo, vencendo na data da venda). NÃO é custo do
-    // veículo (vehicleId nulo) — não mexe na margem do carro.
+    // (Administrativo, vencendo na data da venda). NÃO é custo do veículo
+    // (vehicleId nulo) — não mexe na margem do carro.
+    // A categoria interna é COMISSAO (é ela que diz à equação patrimonial que
+    // isto é custo da venda, já reconhecido no resultado por competência); o
+    // rótulo exibido é "Documentação de veículo", que descreve o gasto.
     if (transferAmount > 0 && adminCenterId) {
       await tx.payable.create({
         data: {
           description: `Transferência DETRAN — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
           category: "COMISSAO",
+          categoryLabel: "Documentação de veículo",
           amount: transferAmount,
           dueDate: input.saleDate,
           status: "PENDENTE",

@@ -123,7 +123,7 @@ export default async function DashboardPage() {
             { label: "Devolução ao cliente (a pagar)", value: pat.devolucoesClientes },
             { label: "Devolução ao proprietário (a pagar)", value: pat.devolucoesProprietario },
             { label: "A pagar de veículos vendidos", value: pat.veiculosAPagarPosVenda },
-            { label: "Comissão a pagar (vendas)", value: pat.comissoesAPagar },
+            { label: "Comissões e custos das vendas (a pagar)", value: pat.comissoesAPagar },
           ]}
           href="/estoque"
         />
@@ -156,7 +156,7 @@ export default async function DashboardPage() {
           value={pat.lucro}
           tone={pat.lucro >= 0 ? "green" : "red"}
           icon={pat.lucro >= 0 ? "📈" : "📉"}
-          formula="Caixa + Estoque de veículos (pago) + Pendente a receber de vendas + Almoxarifado + Consórcios − Sinais recebidos − Devoluções ao cliente − Devoluções ao proprietário − A pagar de veículos vendidos − Comissões a pagar − Capital"
+          formula="Caixa + Estoque de veículos (pago) + Pendente a receber de vendas + Almoxarifado + Consórcios − Sinais recebidos − Devoluções ao cliente − Devoluções ao proprietário − A pagar de veículos vendidos − Comissões e custos das vendas − Capital"
         />
       </div>
 

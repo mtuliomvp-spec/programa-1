@@ -510,7 +510,10 @@ export async function updatePayableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
 
-  const current = await prisma.payable.findUnique({ where: { id: d.id }, select: { status: true } });
+  const current = await prisma.payable.findUnique({
+    where: { id: d.id },
+    select: { status: true, saleId: true, category: true },
+  });
   if (!current) return { error: "Título não encontrado." };
   if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de editar." };
 
@@ -523,11 +526,17 @@ export async function updatePayableAction(
   if (flow === "CAPITAL" && !capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
 
   const cat = await resolveDespesaCategory(label);
+  // Título gerado por uma venda (comissão do vendedor, indicação, transferência
+  // DETRAN): a CATEGORIA INTERNA é o que diz à equação patrimonial que aquilo é
+  // custo daquela venda — já reconhecido no resultado na data da venda. O
+  // usuário pode trocar o nome exibido à vontade, mas a classificação interna
+  // fica travada; sem isso, renomear a categoria derrubaria o farol.
+  const category = current.saleId ? current.category : cat.category;
 
   await updateManualPayable({
     id: d.id,
     description: d.description,
-    category: cat.category,
+    category,
     categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
     amount: d.amount,

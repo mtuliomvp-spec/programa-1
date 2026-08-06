@@ -127,7 +127,7 @@ export async function getBooksHealth(): Promise<BooksHealth> {
     { label: "Devolução ao proprietário (a pagar)", value: -pat.devolucoesProprietario },
     { label: "A pagar de veículos vendidos", value: -pat.veiculosAPagarPosVenda },
     { label: "Peças a pagar", value: -pat.pecasAPagar },
-    { label: "Comissões a pagar", value: -pat.comissoesAPagar },
+    { label: "Comissões e custos das vendas (a pagar)", value: -pat.comissoesAPagar },
     { label: "Capital dos sócios (aportes − retiradas)", value: -pat.saldoCapital },
   ].filter((f) => Math.abs(f.value) > 0.004);
   const fontesResultado = [

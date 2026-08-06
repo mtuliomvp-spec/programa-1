@@ -148,11 +148,21 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       if (p.category === "DEVOLUCAO_PROPRIETARIO") {
         devolucoesProprietario += p.amount;
       }
-      // Comissão do vendedor de uma venda: custo direto da venda já realizada.
-      // Entra subtraindo enquanto pendente (competência), casando com a
-      // comissão reconhecida no Lucro/Prejuízo na data da venda. Ao ser paga,
-      // sai do caixa e o efeito continua o mesmo (não conta duas vezes).
-      if (p.category === "COMISSAO" && p.saleId) {
+      // Custos gerados por uma venda já realizada (comissão do vendedor,
+      // indicações, transferência DETRAN): entram subtraindo enquanto pendentes,
+      // casando com o que o Lucro/Prejuízo já reconheceu por competência na data
+      // da venda. Ao serem pagos, saem do caixa e o efeito continua o mesmo
+      // (não conta duas vezes).
+      // O que manda aqui é o VÍNCULO com a venda (saleId), não a categoria —
+      // assim renomear/reclassificar o título não desequilibra a equação.
+      // Devoluções e compra de veículo têm baldes próprios (e se ligam pelo
+      // veículo, não pela venda); ficam de fora por segurança.
+      if (
+        p.saleId &&
+        p.category !== "DEVOLUCAO_CLIENTE" &&
+        p.category !== "DEVOLUCAO_PROPRIETARIO" &&
+        p.category !== "COMPRA_VEICULO"
+      ) {
         comissoesAPagar += p.amount;
       }
       if (p.dueDate < now) {
