@@ -134,6 +134,30 @@ export default function BooksHealthChecks({ health }: { health: BooksHealth }) {
               <span>Diferença (deve ficar zero)</span>
               <span className="tabular-nums">{formatCurrency(check2.diff)}</span>
             </div>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              <div className="rounded-md border border-slate-200 bg-white p-2">
+                <p className="mb-1 font-semibold text-slate-700">Composição da equação patrimonial</p>
+                <ul className="space-y-0.5">
+                  {check2.fontesEquacao.map((f, i) => (
+                    <li key={i} className="flex justify-between gap-3">
+                      <span className="truncate">{f.label}</span>
+                      <span className="tabular-nums">{formatCurrency(f.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-white p-2">
+                <p className="mb-1 font-semibold text-slate-700">Composição do Lucro/Prejuízo</p>
+                <ul className="space-y-0.5">
+                  {check2.fontesResultado.map((f, i) => (
+                    <li key={i} className="flex justify-between gap-3">
+                      <span className="truncate">{f.label}</span>
+                      <span className="tabular-nums">{formatCurrency(f.value)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
           </div>
         ) : null}
       </div>

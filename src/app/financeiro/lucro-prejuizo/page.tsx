@@ -15,6 +15,7 @@ const kindMeta: Record<string, { label: string; tone: "info" | "success" | "warn
   POS_VENDA: { label: "Pós-venda", tone: "danger" },
   RETORNO: { label: "Retorno financ.", tone: "success" },
   RECEITA: { label: "Outra receita", tone: "success" },
+  SALDO_INICIAL: { label: "Saldo inicial", tone: "default" },
   FECHAMENTO: { label: "Fechamento", tone: "default" },
 };
 
@@ -176,6 +177,9 @@ export default async function LucroPrejuizoPage({
           ) : null}
           {s.outrasReceitas > 0 ? (
             <Row label="Outras receitas (avulsas)" value={s.outrasReceitas} kind="sub" />
+          ) : null}
+          {s.saldosIniciais !== 0 ? (
+            <Row label="Saldo inicial de contas cadastradas" value={s.saldosIniciais} kind="sub" />
           ) : null}
           <Row label={lucro ? "( = ) Lucro líquido" : "( = ) Prejuízo líquido"} value={s.lucroLiquido} kind="final" />
         </div>

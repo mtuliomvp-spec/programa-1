@@ -92,6 +92,10 @@ export default function AccountForm({ beneficiaries = [] }: { beneficiaries?: Be
           <Field label="Saldo inicial (R$)">
             <Input name="initialBalance" type="number" step="0.01" defaultValue={0} />
           </Field>
+          <p className="-mt-2 text-xs text-slate-400">
+            Dinheiro que a conta já tem hoje, de antes do sistema. Ele entra no caixa e
+            aparece no Lucro/Prejuízo como &quot;Saldo inicial&quot; na data do cadastro.
+          </p>
           <label className="flex items-center gap-2 text-sm text-slate-700">
             <input type="checkbox" name="isDefault" value="true" className="h-4 w-4 rounded border-slate-300" />
             Usar como conta padrão das baixas
