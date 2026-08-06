@@ -12,17 +12,21 @@ export default function StructuralFlowSelect({
   label = "Fluxo (obra estrutural)",
   className,
   required,
+  allowVeiculos = true,
 }: {
   name?: string;
   defaultValue?: string;
   label?: string;
   className?: string;
   required?: boolean;
+  /** Telas sem escolha de veículo passam false: sem carro, o fluxo é Administrativo. */
+  allowVeiculos?: boolean;
 }) {
+  const flows = allowVeiculos ? STRUCTURAL_FLOWS : STRUCTURAL_FLOWS.filter((f) => f.key !== "VEICULOS");
   return (
     <Field label={label} required={required}>
       <Select name={name} defaultValue={defaultValue} className={className}>
-        {STRUCTURAL_FLOWS.map((f) => (
+        {flows.map((f) => (
           <option key={f.key} value={f.key}>
             {f.name}
           </option>

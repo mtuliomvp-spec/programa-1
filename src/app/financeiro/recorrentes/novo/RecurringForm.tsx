@@ -147,8 +147,9 @@ export default function RecurringForm({
           <MoneyInput name="amount" required defaultValue={initial?.amount} />
         </Field>
         <Field label="Fluxo (obra estrutural)" required>
+          {/* Recorrência não tem veículo — sem carro, o fluxo é Administrativo. */}
           <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
-            {STRUCTURAL_FLOWS.map((f) => (
+            {STRUCTURAL_FLOWS.filter((f) => f.key !== "VEICULOS").map((f) => (
               <option key={f.key} value={f.key}>
                 {f.name}
               </option>

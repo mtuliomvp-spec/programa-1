@@ -3,7 +3,7 @@ import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
-import type { StructuralKey } from "@/lib/structural-flows";
+import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -1998,7 +1998,9 @@ export async function createExpensePayable(input: {
       ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
       : input.capitalBeneficiaryId
         ? await structuralCenterId("CAPITAL")
-        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO"));
+        : // Sem veículo indicado, "Veículos" vira Administrativo (o gasto é da
+          // loja, não de um carro).
+          await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId)));
   const paymentDate = input.paid ? input.paymentDate || input.dueDate : null;
   const accountId = input.paid ? input.accountId ?? (await getDefaultAccountId()) : null;
 
@@ -2086,7 +2088,8 @@ export async function updateManualPayable(input: {
     ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
     : input.capitalBeneficiaryId
       ? await structuralCenterId("CAPITAL")
-      : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+      : // Sem veículo indicado, "Veículos" vira Administrativo.
+        await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId));
 
   return prisma.$transaction(async (tx) => {
     const payable = await tx.payable.update({
@@ -2147,7 +2150,8 @@ export async function createCashEntry(input: {
       ? await structuralCenterId("VEICULOS")
       : input.capitalBeneficiaryId
         ? await structuralCenterId("CAPITAL")
-        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+        : // Sem veículo indicado, "Veículos" vira Administrativo.
+          await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId));
     return prisma.$transaction(async (tx) => {
       const receivable = await tx.receivable.create({
         data: {
@@ -2276,8 +2280,10 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
+      // Conta a receber manual não tem veículo — "Veículos" vira Administrativo.
       costCenterId:
-        input.costCenterId || (await structuralCenterId(input.structuralKey || "ADMINISTRATIVO")),
+        input.costCenterId ||
+        (await structuralCenterId(effectiveStructuralKey(input.structuralKey, null))),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },

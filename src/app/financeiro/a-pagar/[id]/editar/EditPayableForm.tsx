@@ -113,7 +113,7 @@ export default function EditPayableForm({
       {!saleGenerated && flow === "VEICULOS" ? (
         <Field label="Veículo (opcional)">
           <Select name="vehicleId" defaultValue={payable.vehicleId || ""}>
-            <option value="">Nenhum (custo geral de veículos)</option>
+            <option value="">Nenhum — entra como Administrativo</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
