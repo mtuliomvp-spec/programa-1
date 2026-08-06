@@ -89,17 +89,19 @@ export default function ManualPayableForm({
         <Field label="Categoria" required>
           <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
         </Field>
-        <Field label="Fornecedor" required>
+        <Field label={isCapital ? "Fornecedor (opcional)" : "Fornecedor"} required={!isCapital}>
           <SupplierInput
             name="supplierName"
             suppliers={supplierNames}
             value={supplierName}
             onValueChange={setSupplierName}
-            required
+            required={!isCapital}
           />
           <div className="mt-1 flex items-center justify-between gap-2">
             <p className="text-xs text-slate-400">
-              {isCapital ? "A quem o valor foi pago." : "Numa tarifa bancária, escolha o próprio banco."}
+              {isCapital
+                ? "A quem o valor foi pago. Deixe em branco se foi ao próprio beneficiário."
+                : "Numa tarifa bancária, escolha o próprio banco."}
             </p>
             <button
               type="button"

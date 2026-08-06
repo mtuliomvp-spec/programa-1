@@ -341,18 +341,18 @@ export default function CashEntryForm({
             <Field label="Categoria" required>
               <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
             </Field>
-            <Field label="Fornecedor" required>
+            <Field label={flow === "CAPITAL" ? "Fornecedor (opcional)" : "Fornecedor"} required={flow !== "CAPITAL"}>
               <SupplierInput
                 name="supplierName"
                 suppliers={supplierNames}
                 value={supplierName}
                 onValueChange={setSupplierName}
-                required
+                required={flow !== "CAPITAL"}
               />
               <div className="mt-1 flex items-center justify-between gap-2">
                 <p className="text-xs text-slate-400">
                   {flow === "CAPITAL"
-                    ? "A quem o valor foi pago."
+                    ? "A quem o valor foi pago. Deixe em branco se foi ao próprio beneficiário."
                     : "Numa tarifa bancária, escolha o próprio banco."}
                 </p>
                 <button

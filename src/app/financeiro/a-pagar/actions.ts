@@ -389,11 +389,11 @@ export async function createManualPayableAction(
   const isCapital = d.structuralKey === "CAPITAL";
   const supplierName = (d.supplierName || "").trim();
 
-  // Toda conta precisa de categoria; e de fornecedor (ou, no Capital, do
-  // beneficiário do capital).
+  // Toda conta precisa de categoria; e de fornecedor — exceto no Capital, onde
+  // o fornecedor é opcional (o valor pode ter sido pago ao próprio beneficiário).
   if (!label) return { error: "Informe a categoria." };
   if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
-  if (!supplierName) return { error: "Informe o fornecedor." };
+  if (!supplierName && !isCapital) return { error: "Informe o fornecedor." };
 
   // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
   const cat = await resolveDespesaCategory(label);
@@ -405,8 +405,8 @@ export async function createManualPayableAction(
   if (parcelado && count < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
-  // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
-  const supplierId = await resolveSupplierByName(supplierName);
+  // No Capital pode ficar vazio — o pagamento foi ao próprio beneficiário.
+  const supplierId = supplierName ? await resolveSupplierByName(supplierName) : null;
 
   const firstDue = parseDateInput(d.dueDate);
   const amounts = count > 1 ? splitInstallments(d.amount, count) : [d.amount];
