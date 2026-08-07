@@ -19,14 +19,9 @@ export default async function EditarReceivablePage({ params }: { params: Promise
     include: { costCenter: { select: { key: true } } },
   });
   if (!receivable) notFound();
-  // Recebido movimenta conta e resultado; e o que vem de venda/peça/recorrência
-  // se ajusta na origem — nos dois casos a tela nem abre.
-  if (
-    receivable.status === "RECEBIDO" ||
-    receivable.saleId ||
-    receivable.partSaleId ||
-    receivable.recurringId
-  ) {
+  // Recebido movimenta conta e resultado (reverta antes); o que vem de uma venda
+  // se ajusta na origem. Recorrente é editável — só o vencimento fica travado.
+  if (receivable.status === "RECEBIDO" || receivable.saleId || receivable.partSaleId) {
     redirect("/financeiro/a-receber");
   }
 
@@ -78,6 +73,8 @@ export default async function EditarReceivablePage({ params }: { params: Promise
               costCenterId: receivable.costCenter?.key ? null : receivable.costCenterId,
               structuralKey: flow,
               notes: receivable.notes,
+              // Vencimento vem da recorrência: travado para não gerar duplicata.
+              fromRecurring: Boolean(receivable.recurringId),
             }}
             customers={customers}
             costCenters={costCenters}

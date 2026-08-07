@@ -7,7 +7,7 @@ import SupplierSelect from "@/components/SupplierSelect";
 import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
-import { toDateInputValue } from "@/lib/format";
+import { formatDate, toDateInputValue } from "@/lib/format";
 import { updatePayableAction, type EditPayableState } from "../../actions";
 
 type Supplier = { id: string; name: string };
@@ -27,6 +27,8 @@ type Payable = {
   capitalBeneficiaryId: string | null;
   /** Venda que gerou o título (comissão, indicação, transferência DETRAN). */
   saleId: string | null;
+  /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
+  fromRecurring: boolean;
 };
 
 export default function EditPayableForm({
@@ -73,9 +75,23 @@ export default function EditPayableForm({
         <Field label="Valor (R$)" required>
           <MoneyInput name="amount" defaultValue={payable.amount} required />
         </Field>
-        <Field label="Vencimento" required>
-          <Input name="dueDate" type="date" required defaultValue={toDateInputValue(new Date(payable.dueDate))} />
-        </Field>
+        {payable.fromRecurring ? (
+          <Field label="Vencimento">
+            {/* Travado: mudar a data de um título recorrente faria o gerador
+                criar outro título para o dia original. */}
+            <input type="hidden" name="dueDate" value={toDateInputValue(new Date(payable.dueDate))} />
+            <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+              {formatDate(payable.dueDate)}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              A data vem da recorrência. Para mudá-la, ajuste o lançamento em Recorrentes.
+            </p>
+          </Field>
+        ) : (
+          <Field label="Vencimento" required>
+            <Input name="dueDate" type="date" required defaultValue={toDateInputValue(new Date(payable.dueDate))} />
+          </Field>
+        )}
       </div>
 
       {saleGenerated ? (

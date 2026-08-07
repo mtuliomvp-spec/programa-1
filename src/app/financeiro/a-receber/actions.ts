@@ -179,15 +179,27 @@ export async function updateReceivableAction(
 
   const current = await prisma.receivable.findUnique({
     where: { id: d.id },
-    select: { status: true, category: true, saleId: true, partSaleId: true, recurringId: true },
+    select: {
+      status: true,
+      category: true,
+      saleId: true,
+      partSaleId: true,
+      recurringId: true,
+      dueDate: true,
+    },
   });
   if (!current) return { error: "Título não encontrado." };
   if (current.status === "RECEBIDO") {
     return { error: "Título já recebido. Use Reverter antes de editar." };
   }
-  if (current.saleId || current.partSaleId || current.recurringId) {
-    return { error: "Este título vem de outra operação (venda/peça/recorrência). Ajuste na origem." };
+  if (current.saleId || current.partSaleId) {
+    return { error: "Este título vem de uma venda. Ajuste na venda de origem." };
   }
+  // Recorrente PODE ser editado (é como se ajusta o valor do mês), mas o
+  // VENCIMENTO fica com a recorrência: o gerador não duplica olhando o dia de
+  // vencimento dos títulos já criados — mudar a data aqui liberaria o dia
+  // original e faria nascer um título repetido.
+  const dueDate = current.recurringId ? current.dueDate : parseDateInput(d.dueDate);
 
   const label = (d.categoryLabel || "").trim();
   if (!label) return { error: "Informe a categoria." };
@@ -200,7 +212,7 @@ export async function updateReceivableAction(
   }
 
   try {
-    await assertMonthOpen(parseDateInput(d.dueDate));
+    await assertMonthOpen(dueDate);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -212,7 +224,7 @@ export async function updateReceivableAction(
     categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
     amount: d.amount,
-    dueDate: parseDateInput(d.dueDate),
+    dueDate,
     customerId: d.customerId || null,
     capitalBeneficiaryId,
     costCenterId: flow === "CAPITAL" ? null : d.costCenterId || null,
@@ -225,4 +237,105 @@ export async function updateReceivableAction(
   revalidatePath("/capital");
   revalidatePath("/");
   redirect("/financeiro/a-receber");
+}
+
+// ---------------------------------------------------------------------------
+// Lote: receber vários títulos de uma vez / excluir selecionados.
+// ---------------------------------------------------------------------------
+
+export type ReceiveBatchResult = { ok: boolean; received: number; error?: string };
+
+/**
+ * Baixa um ou vários títulos de uma vez pela conta escolhida, sempre pelo VALOR
+ * CHEIO e na data de trabalho do caixa aberto (recebimento parcial continua no
+ * botão "Receber" da linha). Espelha o pagamento em lote do Contas a pagar —
+ * combos não existem aqui (são exclusivos de contas a pagar).
+ */
+export async function receiveBatchAction(
+  ids: string[],
+  accountId: string,
+): Promise<ReceiveBatchResult> {
+  if (!ids.length) return { ok: false, received: 0, error: "Selecione ao menos um título." };
+  if (!accountId) return { ok: false, received: 0, error: "Escolha a conta que vai receber." };
+  try {
+    await assertCan("financeiro", "receber");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, received: 0, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, received: 0, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  let received = 0;
+  for (const id of ids) {
+    // Sequencial de propósito: cada baixa sincroniza o capital do título.
+    await markReceivableReceived(id, date, accountId);
+    received += 1;
+  }
+
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/capital");
+  revalidatePath("/");
+  return { ok: true, received };
+}
+
+export type DeleteReceivablesResult = {
+  ok: boolean;
+  deleted: number;
+  skipped: number;
+  error?: string;
+};
+
+/**
+ * Exclui vários títulos a receber de uma vez. Recebidos e os que vêm de outra
+ * operação (venda, venda de peça, recorrência) são ignorados e contam em
+ * `skipped`. Valida tudo numa consulta e apaga em lote.
+ */
+export async function deleteReceivablesAction(ids: string[]): Promise<DeleteReceivablesResult> {
+  if (!ids.length) {
+    return { ok: false, deleted: 0, skipped: 0, error: "Selecione ao menos um título." };
+  }
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return {
+      ok: false,
+      deleted: 0,
+      skipped: 0,
+      error: e instanceof Error ? e.message : "Sem permissão.",
+    };
+  }
+
+  const rows = await prisma.receivable.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, status: true, saleId: true, partSaleId: true, recurringId: true },
+  });
+  const okIds = rows
+    .filter((r) => r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId && !r.recurringId)
+    .map((r) => r.id);
+  const deleted = okIds.length;
+  const skipped = ids.length - deleted;
+
+  if (okIds.length) {
+    await prisma.$transaction([
+      // A movimentação de capital não tem cascade — sai junto com o título.
+      prisma.capitalTransaction.deleteMany({ where: { receivableId: { in: okIds } } }),
+      prisma.receivable.deleteMany({ where: { id: { in: okIds } } }),
+    ]);
+  }
+
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: deleted > 0, deleted, skipped };
 }

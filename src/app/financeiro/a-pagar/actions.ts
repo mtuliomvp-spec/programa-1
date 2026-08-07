@@ -527,7 +527,14 @@ export async function updatePayableAction(
 
   const current = await prisma.payable.findUnique({
     where: { id: d.id },
-    select: { status: true, saleId: true, category: true, costCenter: { select: { key: true } } },
+    select: {
+      status: true,
+      saleId: true,
+      recurringId: true,
+      dueDate: true,
+      category: true,
+      costCenter: { select: { key: true } },
+    },
   });
   if (!current) return { error: "Título não encontrado." };
   if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de editar." };
@@ -567,7 +574,10 @@ export async function updatePayableAction(
     categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
     amount: d.amount,
-    dueDate: parseDateInput(d.dueDate),
+    // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
+    // que já tem título — mudar a data aqui liberaria o dia original e faria
+    // nascer um título duplicado.
+    dueDate: current.recurringId ? current.dueDate : parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
     notes: d.notes?.trim() || null,
     structuralKey: flow,
