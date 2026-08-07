@@ -150,6 +150,7 @@ export default async function EditarPayablePage({
               // Título gerado por uma venda: o destino contábil é travado (o
               // custo já pertence àquela venda).
               saleId: payable.saleId,
+              fromRecurring: Boolean(payable.recurringId),
             }}
             suppliers={suppliers}
             vehicles={vehicles}
