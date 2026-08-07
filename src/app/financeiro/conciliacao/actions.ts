@@ -3,20 +3,35 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
-import { parseOfx } from "@/lib/ofx";
+import { decodeOfx, parseOfx } from "@/lib/ofx";
 import { getDefaultAccountId } from "@/lib/accounts";
-import { settleFinancing, settleReturn } from "@/lib/finance";
+import {
+  createExpensePayable,
+  markPayablePaid,
+  markReceivableReceived,
+  resolveSupplierByName,
+  settleFinancing,
+  settleReturn,
+  syncReceivableCapital,
+} from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
+import { assertBooksBalanced } from "@/lib/books-health";
+import { assertMonthOpen } from "@/lib/monthly-closing";
+import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
+import { effectiveStructuralKey, isStructuralKey } from "@/lib/structural-flows";
 
 /**
  * Conciliação bancária: importa o extrato OFX, casa cada transação do
- * banco com uma conta do sistema (pelo valor e proximidade de data) e,
- * ao confirmar, marca as contas como conciliadas — dando baixa nas que
- * ainda estavam pendentes.
+ * banco com uma (ou mais) contas do sistema e, ao confirmar, marca as contas
+ * como conciliadas — dando baixa nas que ainda estavam pendentes, sempre com
+ * a DATA DO EXTRATO e passando pelos mesmos caminhos de baixa do resto do
+ * financeiro (para o capital, a fatura de cartão e o farol continuarem certos).
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MATCH_WINDOW_DAYS = 7;
+/** Janela maior na escolha manual: o usuário sabe o que está procurando. */
+const PICK_WINDOW_DAYS = 30;
 
 export type BankTxn = {
   fitId: string;
@@ -32,12 +47,14 @@ export type MatchCandidate = {
   amount: number;
   date: string;
   settled: boolean; // já estava pago/recebido
+  who: string | null; // fornecedor (saída) ou cliente (entrada)
 };
 
 export type MatchRow = {
   txn: BankTxn;
   status: "ja_conciliado" | "casou" | "sem_match";
-  match?: MatchCandidate;
+  /** Títulos vinculados à linha do extrato (uma linha pode cobrir vários). */
+  matches: MatchCandidate[];
 };
 
 export type ReconcileResult = { rows?: MatchRow[]; error?: string };
@@ -48,6 +65,10 @@ function centsEqual(a: number, b: number) {
 
 function dayDiff(a: Date, isoB: string) {
   return Math.abs(a.getTime() - new Date(`${isoB}T12:00:00Z`).getTime()) / DAY_MS;
+}
+
+function isoDay(d: Date) {
+  return d.toISOString().slice(0, 10);
 }
 
 export async function parseAndMatchAction(formData: FormData): Promise<ReconcileResult> {
@@ -64,7 +85,9 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
     return { error: "Arquivo muito grande (máximo 5 MB)." };
   }
 
-  const content = await file.text();
+  // Bytes crus + detecção de codificação: `file.text()` assume UTF-8 e quebra
+  // os acentos dos extratos em Latin-1/Windows-1252.
+  const content = decodeOfx(await file.arrayBuffer());
   const txns = parseOfx(content);
   if (txns.length === 0) {
     return { error: "Nenhuma transação encontrada no arquivo. Confirme se é um OFX válido." };
@@ -77,6 +100,9 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
   const [payables, receivables] = await Promise.all([
     prisma.payable.findMany({
       where: { dueDate: { gte: rangeStart, lte: rangeEnd } },
+      // Ordem fixa: com dois títulos do mesmo valor no mesmo dia, o casamento
+      // automático precisa ser sempre o mesmo (o usuário confere e troca).
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
       select: {
         id: true,
         description: true,
@@ -86,10 +112,12 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
         status: true,
         reconciledAt: true,
         bankRef: true,
+        supplier: { select: { name: true } },
       },
     }),
     prisma.receivable.findMany({
       where: { dueDate: { gte: rangeStart, lte: rangeEnd } },
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
       select: {
         id: true,
         description: true,
@@ -99,6 +127,7 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
         status: true,
         reconciledAt: true,
         bankRef: true,
+        customer: { select: { name: true } },
       },
     }),
   ]);
@@ -111,7 +140,7 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
 
   for (const txn of txns.sort((a, b) => a.date.localeCompare(b.date))) {
     if (reconciledRefs.has(txn.fitId)) {
-      rows.push({ txn, status: "ja_conciliado" });
+      rows.push({ txn, status: "ja_conciliado", matches: [] });
       continue;
     }
 
@@ -133,165 +162,437 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
     const best = candidates[0];
     if (best) {
       used.add(best.c.id);
+      const who = isOut
+        ? (best.c as { supplier?: { name: string } | null }).supplier?.name
+        : (best.c as { customer?: { name: string } | null }).customer?.name;
       rows.push({
         txn,
         status: "casou",
-        match: {
-          kind: isOut ? "payable" : "receivable",
-          id: best.c.id,
-          description: best.c.description,
-          amount: best.c.amount,
-          date: best.c.dueDate.toISOString().slice(0, 10),
-          settled: best.settled,
-        },
+        matches: [
+          {
+            kind: isOut ? "payable" : "receivable",
+            id: best.c.id,
+            description: best.c.description,
+            amount: best.c.amount,
+            date: isoDay(best.c.dueDate),
+            settled: best.settled,
+            who: who ?? null,
+          },
+        ],
       });
     } else {
-      rows.push({ txn, status: "sem_match" });
+      rows.push({ txn, status: "sem_match", matches: [] });
     }
   }
 
   return { rows };
 }
 
+// ---------------------------------------------------------------------------
+// Escolher os títulos na mão (1 linha do extrato → 1 ou vários títulos).
+// ---------------------------------------------------------------------------
+
+/**
+ * Lista os títulos em aberto (ou já baixados mas ainda não conciliados) perto da
+ * data da transação, para o usuário conferir e escolher — inclusive somando
+ * VÁRIOS títulos numa única linha do banco (um Pix que pagou duas contas).
+ */
+export async function searchTitlesAction(input: {
+  kind: "payable" | "receivable";
+  date: string;
+  query?: string;
+}): Promise<{ items?: MatchCandidate[]; error?: string }> {
+  try {
+    await assertCan("financeiro", "conciliar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const ref = new Date(`${input.date}T12:00:00Z`).getTime();
+  if (!Number.isFinite(ref)) return { error: "Data inválida." };
+  const gte = new Date(ref - PICK_WINDOW_DAYS * DAY_MS);
+  const lte = new Date(ref + PICK_WINDOW_DAYS * DAY_MS);
+  const q = (input.query || "").trim();
+
+  if (input.kind === "payable") {
+    const rows = await prisma.payable.findMany({
+      where: {
+        reconciledAt: null,
+        ...(q
+          ? {
+              OR: [
+                { description: { contains: q, mode: "insensitive" } },
+                { supplier: { name: { contains: q, mode: "insensitive" } } },
+                { documentNumber: { contains: q, mode: "insensitive" } },
+              ],
+            }
+          : { dueDate: { gte, lte } }),
+      },
+      orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+      take: 100,
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        dueDate: true,
+        paymentDate: true,
+        supplier: { select: { name: true } },
+      },
+    });
+    return {
+      items: rows.map((p) => ({
+        kind: "payable" as const,
+        id: p.id,
+        description: p.description,
+        amount: p.amount,
+        date: isoDay(p.dueDate),
+        settled: Boolean(p.paymentDate),
+        who: p.supplier?.name ?? null,
+      })),
+    };
+  }
+
+  const rows = await prisma.receivable.findMany({
+    where: {
+      reconciledAt: null,
+      ...(q
+        ? {
+            OR: [
+              { description: { contains: q, mode: "insensitive" } },
+              { customer: { name: { contains: q, mode: "insensitive" } } },
+              { documentNumber: { contains: q, mode: "insensitive" } },
+            ],
+          }
+        : { dueDate: { gte, lte } }),
+    },
+    orderBy: [{ dueDate: "asc" }, { id: "asc" }],
+    take: 100,
+    select: {
+      id: true,
+      description: true,
+      amount: true,
+      dueDate: true,
+      receivedDate: true,
+      customer: { select: { name: true } },
+    },
+  });
+  return {
+    items: rows.map((r) => ({
+      kind: "receivable" as const,
+      id: r.id,
+      description: r.description,
+      amount: r.amount,
+      date: isoDay(r.dueDate),
+      settled: Boolean(r.receivedDate),
+      who: r.customer?.name ?? null,
+    })),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Confirmar a conciliação (dando baixa pelos caminhos oficiais).
+// ---------------------------------------------------------------------------
+
+export type ConfirmItem = {
+  fitId: string;
+  /** Data do extrato (yyyy-mm-dd) — é ela que vira a data da baixa. */
+  date: string;
+  /** Valor da linha do banco (com sinal). */
+  amount: number;
+  kind: "payable" | "receivable";
+  ids: string[];
+};
+
+export type ConfirmResult = { ok: boolean; done: number; error?: string };
+
+/**
+ * Marca as contas escolhidas como conciliadas e dá baixa nas pendentes.
+ *
+ * A baixa passa por `markPayablePaid` / `markReceivableReceived` (e não por um
+ * update cru): são essas funções que lançam a retirada/aporte do capital,
+ * fecham a fatura do cartão e atualizam a solicitação de compra. A data usada é
+ * sempre a do EXTRATO — é o dia em que o dinheiro andou no banco.
+ */
 export async function confirmMatchesAction(
-  matches: { kind: "payable" | "receivable"; id: string; fitId: string; date: string }[],
+  items: ConfirmItem[],
   accountId?: string,
-): Promise<{ done: number }> {
-  await assertCan("financeiro", "conciliar");
+): Promise<ConfirmResult> {
+  try {
+    await assertCan("financeiro", "conciliar");
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, done: 0, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  if (!items.length) return { ok: false, done: 0, error: "Nenhuma transação selecionada." };
+
   const account = accountId || (await getDefaultAccountId());
   let done = 0;
-  for (const m of matches.slice(0, 500)) {
-    const when = new Date(`${m.date}T12:00:00Z`);
-    if (m.kind === "payable") {
-      await prisma.payable.update({
-        where: { id: m.id },
-        data: {
-          reconciledAt: new Date(),
-          bankRef: m.fitId,
-          status: "PAGO",
-          paymentDate: { set: when },
-          accountId: account,
-        },
-      });
-    } else {
-      // Repasse do financiamento e retorno da financeira ficam RECEBIDO na conta
-      // DA FINANCEIRA (é ela quem deve à empresa). Dar baixa é transferir esse
-      // valor para a conta da empresa e marcar a venda como recebida — o que os
-      // botões "dar baixa"/"Receber retorno" fazem via settleFinancing/settleReturn.
-      // Se a conciliação só reescrevesse accountId, o dinheiro até se moveria, mas
-      // Sale.financerSettledAt/returnSettledAt não seriam setados e a tela de
-      // Financiamentos continuaria oferecendo a baixa (risco de baixa dupla).
-      // Então, quando o recebível casado é o repasse/retorno parado na conta da
-      // financeira, roteamos pela mesma função de baixa dos botões manuais.
-      const rec = await prisma.receivable.findUnique({
-        where: { id: m.id },
-        select: {
-          accountId: true,
-          category: true,
-          sale: {
-            select: {
-              id: true,
-              financerAccountId: true,
-              financedAmount: true,
-              financerSettledAt: true,
-              returnNet: true,
-              returnSettledAt: true,
-            },
-          },
-        },
-      });
-      const s = rec?.sale;
-      const naFinanceira =
-        !!s && !!account && !!s.financerAccountId && rec!.accountId === s.financerAccountId && account !== s.financerAccountId;
-      const isRepasse =
-        naFinanceira && rec!.category === "VENDA_VEICULO" && !s!.financerSettledAt && !!s!.financedAmount && s!.financedAmount > 0;
-      const isRetorno =
-        naFinanceira && rec!.category === "RETORNO_FINANCEIRA" && !s!.returnSettledAt && !!s!.returnNet && s!.returnNet > 0;
 
-      let settled = false;
-      if (isRepasse || isRetorno) {
-        try {
-          if (isRepasse) await settleFinancing(s!.id, account!, when);
-          else await settleReturn(s!.id, account!, s!.returnNet!, when);
-          // Baixa feita via transferência; o recebível continua na conta da
-          // financeira. Só registramos a marca da conciliação.
-          await prisma.receivable.update({
-            where: { id: m.id },
-            data: { reconciledAt: new Date(), bankRef: m.fitId },
+  try {
+    for (const item of items.slice(0, 500)) {
+      if (!item.ids.length) continue;
+      const when = new Date(`${item.date}T12:00:00Z`);
+      await assertMonthOpen(when);
+
+      // A soma dos títulos precisa fechar EXATO com a linha do banco — senão o
+      // extrato e o sistema passam a contar valores diferentes.
+      const total = Math.abs(item.amount);
+      const titles =
+        item.kind === "payable"
+          ? await prisma.payable.findMany({
+              where: { id: { in: item.ids } },
+              select: { id: true, amount: true, status: true, description: true },
+            })
+          : await prisma.receivable.findMany({
+              where: { id: { in: item.ids } },
+              select: { id: true, amount: true, status: true, description: true },
+            });
+      if (titles.length !== item.ids.length) {
+        return { ok: false, done, error: "Um dos títulos escolhidos não existe mais. Analise o extrato de novo." };
+      }
+      const sum = titles.reduce((s, t) => s + t.amount, 0);
+      if (!centsEqual(sum, total)) {
+        return {
+          ok: false,
+          done,
+          error: `A soma dos títulos escolhidos não bate com a linha do banco (${sum.toFixed(2)} × ${total.toFixed(2)}).`,
+        };
+      }
+
+      for (const t of titles) {
+        if (item.kind === "payable") {
+          // Já pago: não mexer na baixa original — só registrar a conciliação.
+          if (t.status !== "PAGO") await markPayablePaid(t.id, when, account);
+          await prisma.payable.update({
+            where: { id: t.id },
+            data: { reconciledAt: new Date(), bankRef: item.fitId },
           });
-          settled = true;
-        } catch {
-          // Falha na baixa específica não deve abortar o lote — cai no update comum.
-          settled = false;
+        } else {
+          await settleReceivable(t.id, t.status, when, account, item.fitId);
         }
       }
-
-      if (!settled) {
-        await prisma.receivable.update({
-          where: { id: m.id },
-          data: {
-            reconciledAt: new Date(),
-            bankRef: m.fitId,
-            status: "RECEBIDO",
-            receivedDate: { set: when },
-            accountId: account,
-          },
-        });
-      }
+      done++;
     }
-    done++;
+  } catch (e) {
+    return { ok: false, done, error: e instanceof Error ? e.message : "Não foi possível conciliar." };
   }
+
+  revalidateAll();
+  return { ok: true, done };
+}
+
+/**
+ * Repasse do financiamento e retorno da financeira ficam RECEBIDO na conta DA
+ * FINANCEIRA (é ela quem deve à empresa). Dar baixa é transferir esse valor
+ * para a conta da empresa e marcar a venda como recebida — o que os botões
+ * "dar baixa"/"Receber retorno" fazem via settleFinancing/settleReturn. Se a
+ * conciliação só reescrevesse o accountId, o dinheiro até se moveria, mas
+ * Sale.financerSettledAt/returnSettledAt não seriam setados e a tela de
+ * Financiamentos continuaria oferecendo a baixa (risco de baixa dupla).
+ */
+async function settleReceivable(
+  id: string,
+  status: string,
+  when: Date,
+  account: string | null,
+  fitId: string,
+) {
+  const rec = await prisma.receivable.findUnique({
+    where: { id },
+    select: {
+      accountId: true,
+      category: true,
+      sale: {
+        select: {
+          id: true,
+          financerAccountId: true,
+          financedAmount: true,
+          financerSettledAt: true,
+          returnNet: true,
+          returnSettledAt: true,
+        },
+      },
+    },
+  });
+  const s = rec?.sale;
+  const naFinanceira =
+    !!s &&
+    !!account &&
+    !!s.financerAccountId &&
+    rec!.accountId === s.financerAccountId &&
+    account !== s.financerAccountId;
+  const isRepasse =
+    naFinanceira &&
+    rec!.category === "VENDA_VEICULO" &&
+    !s!.financerSettledAt &&
+    !!s!.financedAmount &&
+    s!.financedAmount > 0;
+  const isRetorno =
+    naFinanceira &&
+    rec!.category === "RETORNO_FINANCEIRA" &&
+    !s!.returnSettledAt &&
+    !!s!.returnNet &&
+    s!.returnNet > 0;
+
+  if (isRepasse || isRetorno) {
+    if (isRepasse) await settleFinancing(s!.id, account!, when);
+    else await settleReturn(s!.id, account!, s!.returnNet!, when);
+    // Baixa feita via transferência; o recebível continua na conta da
+    // financeira. Só registramos a marca da conciliação.
+    await prisma.receivable.update({
+      where: { id },
+      data: { reconciledAt: new Date(), bankRef: fitId },
+    });
+    return;
+  }
+
+  if (status !== "RECEBIDO") await markReceivableReceived(id, when, account);
+  await prisma.receivable.update({
+    where: { id },
+    data: { reconciledAt: new Date(), bankRef: fitId },
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Criar o lançamento que faltava, com o formulário completo.
+// ---------------------------------------------------------------------------
+
+export type CreateFromBankInput = {
+  fitId: string;
+  /** Data do extrato (yyyy-mm-dd). */
+  date: string;
+  /** Valor da linha do banco, com sinal (negativo = saída). */
+  amount: number;
+  description: string;
+  categoryLabel: string;
+  documentNumber?: string;
+  structuralKey?: string;
+  vehicleId?: string;
+  capitalBeneficiaryId?: string;
+  costCenterId?: string;
+  /** Saída: fornecedor (cria se não existir). */
+  supplierName?: string;
+  /** Entrada: cliente já cadastrado. */
+  customerId?: string;
+  notes?: string;
+  accountId?: string;
+};
+
+/**
+ * Cria o título correspondente a uma linha do extrato que não existe no
+ * sistema — já PAGO/RECEBIDO, na data do extrato e na conta do extrato. Usa os
+ * mesmos caminhos do lançamento manual (`createExpensePayable`), então o custo
+ * do veículo e a movimentação de capital nascem junto.
+ */
+export async function createFromBankTxnAction(
+  input: CreateFromBankInput,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "conciliar");
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+
+  const when = new Date(`${input.date}T12:00:00Z`);
+  if (!Number.isFinite(when.getTime())) return { ok: false, error: "Data inválida." };
+  try {
+    await assertMonthOpen(when);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const description = (input.description || "").trim().slice(0, 180);
+  if (!description) return { ok: false, error: "Informe a descrição." };
+  const label = (input.categoryLabel || "").trim();
+  if (!label) return { ok: false, error: "Informe a categoria." };
+
+  // Clicar duas vezes (ou reimportar o mesmo arquivo) não pode duplicar.
+  const [dupPayable, dupReceivable] = await Promise.all([
+    prisma.payable.findFirst({ where: { bankRef: input.fitId }, select: { id: true } }),
+    prisma.receivable.findFirst({ where: { bankRef: input.fitId }, select: { id: true } }),
+  ]);
+  if (dupPayable || dupReceivable) {
+    return { ok: false, error: "Esta linha do extrato já foi lançada no sistema." };
+  }
+
+  const account = input.accountId || (await getDefaultAccountId());
+  const isOut = input.amount < 0;
+  const amount = Math.abs(input.amount);
+  const flow = effectiveStructuralKey(
+    isStructuralKey(input.structuralKey) ? input.structuralKey : "ADMINISTRATIVO",
+    input.vehicleId || null,
+  );
+  const capitalBeneficiaryId = flow === "CAPITAL" ? input.capitalBeneficiaryId || null : null;
+  if (flow === "CAPITAL" && !capitalBeneficiaryId) {
+    return { ok: false, error: "Escolha o beneficiário do capital." };
+  }
+  const costCenterId = flow === "CAPITAL" ? null : input.costCenterId || null;
+  const notes = [input.notes?.trim(), "Criado pela conciliação bancária"].filter(Boolean).join(" · ");
+
+  try {
+    if (isOut) {
+      const cat = await resolveDespesaCategory(label);
+      const supplierName = (input.supplierName || "").trim();
+      const supplierId = supplierName ? await resolveSupplierByName(supplierName) : null;
+      const payable = await createExpensePayable({
+        description,
+        category: cat.category,
+        categoryLabel: cat.label,
+        documentNumber: input.documentNumber?.trim() || null,
+        amount,
+        dueDate: when,
+        paid: true,
+        paymentDate: when,
+        accountId: account,
+        supplierId,
+        vehicleId: flow === "VEICULOS" ? input.vehicleId || null : null,
+        capitalBeneficiaryId,
+        costCenterId,
+        structuralKey: flow,
+        notes,
+      });
+      await prisma.payable.update({
+        where: { id: payable.id },
+        data: { reconciledAt: new Date(), bankRef: input.fitId },
+      });
+    } else {
+      const cat = await resolveReceitaCategory(label);
+      const receivable = await prisma.receivable.create({
+        data: {
+          description,
+          category: cat.category,
+          categoryLabel: cat.label,
+          documentNumber: input.documentNumber?.trim() || null,
+          amount,
+          dueDate: when,
+          receivedDate: when,
+          status: "RECEBIDO",
+          customerId: input.customerId || null,
+          capitalBeneficiaryId,
+          costCenterId: costCenterId || (await structuralCenterId(flow)),
+          accountId: account,
+          reconciledAt: new Date(),
+          bankRef: input.fitId,
+          notes,
+        },
+      });
+      // Fluxo Capital: o recebimento vira APORTE do sócio.
+      await syncReceivableCapital(receivable.id);
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível criar o lançamento." };
+  }
+
+  revalidateAll();
+  return { ok: true };
+}
+
+function revalidateAll() {
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/financiamentos");
   revalidatePath("/financeiro/contas");
+  revalidatePath("/capital");
   revalidatePath("/");
-  return { done };
-}
-
-export async function createFromBankTxnAction(
-  txn: BankTxn,
-  accountId?: string,
-): Promise<{ ok: boolean }> {
-  await assertCan("financeiro", "conciliar");
-  const account = accountId || (await getDefaultAccountId());
-  const when = new Date(`${txn.date}T12:00:00Z`);
-  if (txn.amount < 0) {
-    await prisma.payable.create({
-      data: {
-        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
-        description: txn.memo.slice(0, 180),
-        category: "OUTROS",
-        amount: Math.abs(txn.amount),
-        dueDate: when,
-        paymentDate: when,
-        status: "PAGO",
-        reconciledAt: new Date(),
-        bankRef: txn.fitId,
-        accountId: account,
-        notes: "Criado pela conciliação bancária",
-      },
-    });
-  } else {
-    await prisma.receivable.create({
-      data: {
-        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
-        description: txn.memo.slice(0, 180),
-        category: "OUTROS",
-        amount: txn.amount,
-        dueDate: when,
-        receivedDate: when,
-        status: "RECEBIDO",
-        reconciledAt: new Date(),
-        bankRef: txn.fitId,
-        accountId: account,
-        notes: "Criado pela conciliação bancária",
-      },
-    });
-  }
-  revalidatePath("/financeiro/a-pagar");
-  revalidatePath("/financeiro/a-receber");
-  revalidatePath("/financeiro/livro-caixa");
-  return { ok: true };
 }
