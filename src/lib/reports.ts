@@ -684,6 +684,77 @@ export type VehicleProfitRow = {
   daysInStock: number;
 };
 
+/** Resultado de UMA venda, na mesma conta do relatório "Lucro por veículo". */
+export type VehicleSaleResult = {
+  totalCost: number;
+  saleAmount: number;
+  /** Lucro bruto: venda − (compra + custos do veículo + devolução do consignado). */
+  grossProfit: number;
+  /** Comissão do vendedor + indicações + transferência DETRAN cobrada. */
+  saleExpenses: number;
+  /** Lucro da venda em si: bruto − despesas da venda. */
+  saleProfit: number;
+  returnAmount: number;
+  returnCommission: number;
+  /** Lucro do retorno: retorno recebido − comissão do retorno. */
+  returnNetProfit: number;
+  /** Resultado final: lucro da venda + lucro do retorno. */
+  netProfit: number;
+  marginPct: number;
+};
+
+/**
+ * Conta do resultado de uma venda. Fica aqui, pura, para o relatório "Lucro por
+ * veículo" e a ficha do veículo mostrarem SEMPRE o mesmo número.
+ */
+export function computeVehicleSaleResult(input: {
+  purchasePrice: number;
+  extraCosts: number;
+  sale: {
+    totalAmount: number;
+    ownerRefundAmount: number | null;
+    commissionAmount: number;
+    referrals: unknown;
+    transferCharged: boolean;
+    transferAmount: number;
+    returnPaidAmount: number | null;
+    returnNet: number;
+    returnCommissionAmount: number;
+  };
+}): VehicleSaleResult {
+  const s = input.sale;
+  // Consignado: a devolução ao proprietário é custo da venda (o carro não é
+  // patrimônio comprado, então purchasePrice é 0).
+  const totalCost = input.purchasePrice + input.extraCosts + (s.ownerRefundAmount || 0);
+  const grossProfit = s.totalAmount - totalCost;
+  // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
+  // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
+  // ela é despesa do RETORNO e sai do lucro do retorno (abaixo).
+  const saleExpenses =
+    s.commissionAmount +
+    parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
+    (s.transferCharged ? s.transferAmount : 0);
+  // Retorno da financeira recebido, líquido do imposto (o já pago, se
+  // liquidado, senão o programado).
+  const returnAmount = s.returnPaidAmount ?? s.returnNet;
+  const returnCommission = s.returnCommissionAmount;
+  const returnNetProfit = returnAmount - returnCommission;
+  const saleProfit = grossProfit - saleExpenses;
+  const netProfit = saleProfit + returnNetProfit;
+  return {
+    totalCost,
+    saleAmount: s.totalAmount,
+    grossProfit,
+    saleExpenses,
+    saleProfit,
+    returnAmount,
+    returnCommission,
+    returnNetProfit,
+    netProfit,
+    marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
+  };
+}
+
 export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
   // Inclui vendas próprias e financiamento de terceiros (intermediação). Na
   // intermediação o veículo tem custo 0 e a "venda" é a sobra do financiamento
@@ -696,26 +767,11 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
 
   return sales.map((s) => {
     const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
-    // Consignado: a devolução ao proprietário é custo da venda (o carro não é
-    // patrimônio comprado, então purchasePrice é 0).
-    const totalCost = s.vehicle.purchasePrice + extraCosts + (s.ownerRefundAmount || 0);
-    const profit = s.totalAmount - totalCost;
-    // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
-    // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
-    // ela é despesa do RETORNO e sai do lucro do retorno (abaixo).
-    const saleExpenses =
-      s.commissionAmount +
-      parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
-      (s.transferCharged ? s.transferAmount : 0);
-    // Retorno da financeira recebido, líquido do imposto (o já pago, se
-    // liquidado, senão o programado).
-    const returnAmount = s.returnPaidAmount ?? s.returnNet;
-    // Lucro do retorno = retorno recebido − comissão do vendedor sobre o retorno.
-    const returnCommission = s.returnCommissionAmount;
-    const returnNetProfit = returnAmount - returnCommission;
-    // Lucro líquido total: lucro da venda + lucro do retorno (mesmo total de
-    // antes — só muda a atribuição entre venda e retorno).
-    const netProfit = profit - saleExpenses + returnNetProfit;
+    const r = computeVehicleSaleResult({
+      purchasePrice: s.vehicle.purchasePrice,
+      extraCosts,
+      sale: s,
+    });
     return {
       saleId: s.id,
       vehicleId: s.vehicleId,
@@ -724,17 +780,17 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       saleDate: s.saleDate,
       purchasePrice: s.vehicle.purchasePrice,
       extraCosts,
-      totalCost,
-      saleAmount: s.totalAmount,
-      profit,
-      saleExpenses,
-      returnAmount,
-      returnCommission,
-      returnNetProfit,
-      netProfit,
+      totalCost: r.totalCost,
+      saleAmount: r.saleAmount,
+      profit: r.grossProfit,
+      saleExpenses: r.saleExpenses,
+      returnAmount: r.returnAmount,
+      returnCommission: r.returnCommission,
+      returnNetProfit: r.returnNetProfit,
+      netProfit: r.netProfit,
       viaPaidTraffic: s.viaPaidTraffic,
       isIntermediation: s.saleType === "FINANCIAMENTO_TERCEIROS",
-      marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
+      marginPct: r.marginPct,
       daysInStock: daysBetween(s.vehicle.entryDate, s.saleDate),
     };
   });

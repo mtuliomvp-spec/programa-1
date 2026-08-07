@@ -21,7 +21,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
 import PrintButton from "@/components/PrintButton";
 import { effectivePayableStatus } from "@/lib/status";
-import { daysBetween } from "@/lib/reports";
+import { computeVehicleSaleResult, daysBetween } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
 
@@ -69,7 +69,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -81,6 +81,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "crlv"),
       userCan("financeiro", "visualizar"),
       userCan("vendas", "foto"),
+      userCan("estoque", "lucro"),
     ]);
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
@@ -195,9 +196,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   const extraCosts = vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
   // Consignado: o custo do negócio é o valor acertado com o proprietário (o carro
   // não é comprado, purchasePrice 0). Os custos adicionais entram igual ao próprio.
-  const consignedCost = vehicle.consigned ? vehicle.ownerRefundAmount : 0;
-  const totalCost = vehicle.purchasePrice + consignedCost + extraCosts;
   const sold = vehicle.status === "VENDIDO" && vehicle.sale?.status === "CONCLUIDA";
+  // Vendido: vale a cópia travada na venda (é a que o relatório usa).
+  const consignedCost = sold && vehicle.sale ? vehicle.sale.ownerRefundAmount || 0 : vehicle.consigned ? vehicle.ownerRefundAmount : 0;
+  const totalCost = vehicle.purchasePrice + consignedCost + extraCosts;
   const margin = sold && vehicle.sale
     ? vehicle.sale.totalAmount - totalCost
     : vehicle.salePrice - totalCost;
@@ -205,6 +207,15 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     vehicle.entryDate,
     sold && vehicle.sale ? vehicle.sale.saleDate : new Date(),
   );
+  // Resultado da venda na mesma conta do relatório "Lucro por veículo".
+  const saleResult =
+    sold && vehicle.sale
+      ? computeVehicleSaleResult({
+          purchasePrice: vehicle.purchasePrice,
+          extraCosts,
+          sale: vehicle.sale,
+        })
+      : null;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -296,36 +307,48 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             </div>
           </Card>
 
-          <Card>
-            <CardHeader
-              title="Resultado financeiro"
-              description={sold ? "Lucro real desta venda" : "Projeção com base no preço anunciado"}
-            />
-            <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
-              <InfoItem
-                label={vehicle.consigned ? "Valor acertado (proprietário)" : "Preço de compra"}
-                value={formatCurrency(vehicle.consigned ? vehicle.ownerRefundAmount : vehicle.purchasePrice)}
+          {canLucro ? (
+            <Card>
+              <CardHeader
+                title="Resultado financeiro"
+                description={
+                  sold
+                    ? "Compra e custos do carro — as despesas da venda entram no card da venda"
+                    : "Projeção com base no preço anunciado"
+                }
               />
-              <InfoItem label="Custos adicionais" value={formatCurrency(extraCosts)} />
-              <InfoItem label="Custo total" value={formatCurrency(totalCost)} />
-              <InfoItem
-                label={sold ? "Valor de venda" : "Preço anunciado"}
-                value={formatCurrency(sold && vehicle.sale ? vehicle.sale.totalAmount : vehicle.salePrice)}
-              />
-              <InfoItem
-                label={sold ? "Lucro real" : "Margem projetada"}
-                value={formatCurrency(margin)}
-                valueClassName={margin >= 0 ? "text-emerald-600" : "text-rose-600"}
-              />
-              <InfoItem
-                label="Margem %"
-                value={`${(
-                  (margin / ((sold && vehicle.sale ? vehicle.sale.totalAmount : vehicle.salePrice) || 1)) * 100
-                ).toFixed(1)}%`}
-                valueClassName={margin >= 0 ? "text-emerald-600" : "text-rose-600"}
-              />
-            </div>
-          </Card>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
+                <InfoItem
+                  label={vehicle.consigned ? "Valor acertado (proprietário)" : "Preço de compra"}
+                  value={formatCurrency(vehicle.consigned ? consignedCost : vehicle.purchasePrice)}
+                />
+                <InfoItem label="Custos adicionais" value={formatCurrency(extraCosts)} />
+                <InfoItem label="Custo total" value={formatCurrency(totalCost)} />
+                <InfoItem
+                  label={sold ? "Valor de venda" : "Preço anunciado"}
+                  value={formatCurrency(sold && vehicle.sale ? vehicle.sale.totalAmount : vehicle.salePrice)}
+                />
+                <InfoItem
+                  label={sold ? "Lucro bruto" : "Margem projetada"}
+                  value={formatCurrency(margin)}
+                  valueClassName={margin >= 0 ? "text-emerald-600" : "text-rose-600"}
+                />
+                <InfoItem
+                  label="Margem %"
+                  value={`${(
+                    (margin / ((sold && vehicle.sale ? vehicle.sale.totalAmount : vehicle.salePrice) || 1)) * 100
+                  ).toFixed(1)}%`}
+                  valueClassName={margin >= 0 ? "text-emerald-600" : "text-rose-600"}
+                />
+              </div>
+              {sold ? (
+                <p className="px-5 pb-4 text-xs text-slate-400">
+                  Lucro bruto = valor de venda − custo total. Comissão, indicações, transferência e
+                  o retorno da financeira entram no resultado final, no card &quot;Venda registrada&quot;.
+                </p>
+              ) : null}
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader
@@ -463,10 +486,82 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   <InfoItem label="Valor total" value={formatCurrency(vehicle.sale.totalAmount)} />
                   <InfoItem label="Vendedor" value={vehicle.sale.sellerName || "-"} />
                 </div>
-                <div className="px-5 pb-5">
+
+                {canLucro && saleResult ? (
+                  <div className="mx-5 mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
+                      Resultado do veículo
+                    </p>
+
+                    <div className="mt-3 flex items-baseline justify-between gap-3">
+                      <span className="text-sm text-slate-600">Lucro da venda</span>
+                      <span
+                        className={`text-sm font-semibold tabular-nums ${
+                          saleResult.saleProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }`}
+                      >
+                        {formatCurrency(saleResult.saleProfit)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-xs text-slate-400">
+                      venda {formatCurrency(saleResult.saleAmount)} − custo do carro{" "}
+                      {formatCurrency(saleResult.totalCost)}
+                      {saleResult.saleExpenses > 0
+                        ? ` − despesas da venda ${formatCurrency(saleResult.saleExpenses)} (comissão, indicações, transferência)`
+                        : ""}
+                    </p>
+
+                    {saleResult.returnAmount !== 0 || saleResult.returnCommission !== 0 ? (
+                      <>
+                        <div className="mt-3 flex items-baseline justify-between gap-3">
+                          <span className="text-sm text-slate-600">Retorno da financeira</span>
+                          <span
+                            className={`text-sm font-semibold tabular-nums ${
+                              saleResult.returnNetProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                            }`}
+                          >
+                            {formatCurrency(saleResult.returnNetProfit)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          retorno {formatCurrency(saleResult.returnAmount)}
+                          {saleResult.returnCommission > 0
+                            ? ` − comissão sobre o retorno ${formatCurrency(saleResult.returnCommission)}`
+                            : ""}
+                        </p>
+                      </>
+                    ) : null}
+
+                    <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3">
+                      <span className="text-sm font-medium text-slate-800">
+                        {saleResult.netProfit >= 0 ? "Resultado final (lucro)" : "Resultado final (prejuízo)"}
+                      </span>
+                      <span
+                        className={`text-lg font-bold tabular-nums ${
+                          saleResult.netProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                        }`}
+                      >
+                        {formatCurrency(saleResult.netProfit)}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 text-right text-xs text-slate-400">
+                      {saleResult.marginPct.toFixed(1)}% do valor da venda
+                    </p>
+                  </div>
+                ) : null}
+
+                <div className="flex flex-wrap gap-4 px-5 pb-5">
                   <Link href={`/vendas/${vehicle.sale.id}`} className="text-sm font-medium text-slate-900 hover:underline">
                     Ver detalhes da venda →
                   </Link>
+                  {canLucro ? (
+                    <Link
+                      href="/relatorios/lucro-veiculos"
+                      className="text-sm font-medium text-blue-700 hover:underline"
+                    >
+                      Lucro por veículo (relatório) →
+                    </Link>
+                  ) : null}
                 </div>
               </Card>
             )

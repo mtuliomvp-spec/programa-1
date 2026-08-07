@@ -35,6 +35,8 @@ export const MODULES: ModuleConfig[] = [
       { acao: "publicar", label: "Postar na vitrine" },
       { acao: "comunicacao", label: "Anexar comunicação de venda / documentos" },
       { acao: "crlv", label: "Anexar CRLV" },
+      // Preço de compra, custo total, margem e o resultado da venda na ficha.
+      { acao: "lucro", label: "Ver resultado (lucro/prejuízo) do veículo" },
     ],
   },
   {
