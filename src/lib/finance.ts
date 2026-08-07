@@ -41,6 +41,17 @@ export function splitInstallments(total: number, count: number): number[] {
   );
 }
 
+/**
+ * Título que É a compra do carro (aquisição, quitação, repasse do consignado).
+ * Esse valor já está no `Vehicle.purchasePrice`, então ele NUNCA pode virar um
+ * `VehicleCost`: o custo do veículo é calculado como
+ * `purchasePrice + soma(VehicleCost)` (estoque/[id]/page.tsx e estoque/page.tsx)
+ * e o mesmo dinheiro apareceria duas vezes, estourando o custo e a margem.
+ */
+export function isVehiclePurchase(category: CategoriaPagar): boolean {
+  return category === "COMPRA_VEICULO";
+}
+
 // ---------------------------------------------------------------------------
 // Estoque de veículos -> Contas a Pagar
 // ---------------------------------------------------------------------------
@@ -2026,7 +2037,7 @@ export async function createExpensePayable(input: {
         purchaseRequestId: input.purchaseRequestId || null,
       },
     });
-    if (input.vehicleId) {
+    if (input.vehicleId && !isVehiclePurchase(input.category)) {
       await tx.vehicleCost.create({
         data: {
           vehicleId: input.vehicleId,
@@ -2175,7 +2186,8 @@ export async function createInstallmentPayables(input: {
     return input.parcels.map((p) => byDesc.get(p.description)!).filter(Boolean);
   };
 
-  if (!input.vehicleId) {
+  // Sem veículo — ou sendo a própria compra do carro, que não vira custo dele.
+  if (!input.vehicleId || isVehiclePurchase(input.category)) {
     const created = await prisma.payable.createManyAndReturn({
       data,
       select: { id: true, description: true },
@@ -2259,9 +2271,11 @@ export async function updateManualPayable(input: {
       },
     });
 
-    // Sincroniza o custo do veículo com o novo destino.
+    // Sincroniza o custo do veículo com o novo destino. O título da COMPRA do
+    // carro fica de fora (o valor já é o preço de compra do veículo) — e se um
+    // custo desses já tiver sido criado por engano, ele sai aqui.
     const existing = await tx.vehicleCost.findUnique({ where: { payableId: input.id } });
-    if (input.vehicleId) {
+    if (input.vehicleId && !isVehiclePurchase(input.category)) {
       const costData = {
         vehicleId: input.vehicleId,
         description: input.categoryLabel ? `${input.categoryLabel}: ${input.description}` : input.description,
