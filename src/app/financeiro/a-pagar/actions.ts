@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -411,24 +411,38 @@ export async function createManualPayableAction(
 
   const firstDue = parseDateInput(d.dueDate);
   const amounts = count > 1 ? splitInstallments(d.amount, count) : [d.amount];
-  for (let i = 0; i < amounts.length; i++) {
+  const dueDateOf = (i: number) =>
+    d.installmentPeriod === "DIAS" ? addDays(firstDue, i * d.installmentDays) : addMonths(firstDue, i);
+  const destino = {
+    category: cat.category,
+    categoryLabel: cat.label,
+    documentNumber: d.documentNumber?.trim() || null,
+    supplierId,
+    costCenterId: isCapital ? null : d.costCenterId || null,
+    structuralKey: d.structuralKey,
+    vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
+    notes: d.notes || null,
+  };
+
+  if (count > 1) {
+    // Parcelado: todas as parcelas de uma vez só (nascem pendentes). Criar uma a
+    // uma deixava lançamentos longos — 360 parcelas — insuportavelmente lentos.
+    await createInstallmentPayables({
+      ...destino,
+      parcels: amounts.map((amount, i) => ({
+        description: `${d.description} - Parcela ${i + 1}/${count}`,
+        amount,
+        dueDate: dueDateOf(i),
+      })),
+    });
+  } else {
     await createManualPayable({
-      description: count > 1 ? `${d.description} - Parcela ${i + 1}/${count}` : d.description,
-      category: cat.category,
-      categoryLabel: cat.label,
-      documentNumber: d.documentNumber?.trim() || null,
-      amount: amounts[i],
-      dueDate:
-        d.installmentPeriod === "DIAS"
-          ? addDays(firstDue, i * d.installmentDays)
-          : addMonths(firstDue, i),
-      supplierId,
-      costCenterId: isCapital ? null : d.costCenterId || null,
-      structuralKey: d.structuralKey,
-      vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
-      capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
-      notes: d.notes || null,
-      alreadyPaid: !parcelado && Boolean(d.alreadyPaid),
+      ...destino,
+      description: d.description,
+      amount: amounts[0],
+      dueDate: firstDue,
+      alreadyPaid: Boolean(d.alreadyPaid),
     });
   }
 
@@ -589,20 +603,24 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
     return { ok: false, deleted: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
   }
 
-  let deleted = 0;
-  let skipped = 0;
-  for (const id of ids) {
-    const p = await prisma.payable.findUnique({ where: { id }, select: ORIGIN_SELECT });
-    if (!p || originBlockReason(p)) {
-      skipped += 1;
-      continue;
-    }
+  // Valida todos de uma vez e apaga em lote: título a título, excluir dezenas de
+  // linhas levava centenas de idas ao banco (a checagem é só em memória).
+  const rows = await prisma.payable.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, ...ORIGIN_SELECT },
+  });
+  const okIds = rows.filter((p) => !originBlockReason(p)).map((p) => p.id);
+  const deleted = okIds.length;
+  const skipped = ids.length - deleted;
+
+  if (okIds.length) {
     await prisma.$transaction([
-      prisma.vehicleCost.deleteMany({ where: { payableId: id } }),
-      prisma.capitalTransaction.deleteMany({ where: { payableId: id } }),
-      prisma.payable.delete({ where: { id } }),
+      // O custo do veículo perderia o vínculo (SetNull) e a movimentação de
+      // capital não tem cascade — os dois saem junto com o título.
+      prisma.vehicleCost.deleteMany({ where: { payableId: { in: okIds } } }),
+      prisma.capitalTransaction.deleteMany({ where: { payableId: { in: okIds } } }),
+      prisma.payable.deleteMany({ where: { id: { in: okIds } } }),
     ]);
-    deleted += 1;
   }
 
   revalidatePath("/financeiro/a-pagar");

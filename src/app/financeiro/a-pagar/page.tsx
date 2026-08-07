@@ -30,9 +30,9 @@ const categoryLabel = {
 export default async function ContasAPagarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string; p?: string }>;
 }) {
-  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo } = await searchParams;
+  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
   const [canPagar, canManage, canCombo, canPayCombo, canEditOnly] = await Promise.all([
     userCan("financeiro", "pagar"),
@@ -47,12 +47,31 @@ export default async function ContasAPagarPage({
   await ensureConsortiumInstallments();
 
   const [payables, accounts, cashbox] = await Promise.all([
+    // `select` enxuto de propósito: `supplier: true`/`vehicle: true` traziam a
+    // linha inteira de cada cadastro (o veículo tem dezenas de colunas) para
+    // milhares de títulos — era o maior peso da tela.
     prisma.payable.findMany({
       orderBy: { dueDate: "asc" },
-      include: {
-        supplier: true,
-        vehicle: true,
-        part: true,
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        category: true,
+        categoryLabel: true,
+        documentNumber: true,
+        amount: true,
+        dueDate: true,
+        status: true,
+        recurringId: true,
+        saleId: true,
+        purchaseRequestId: true,
+        capitalBeneficiaryId: true,
+        beneficiaryUserId: true,
+        cardInvoice: true,
+        supplierId: true,
+        supplier: { select: { id: true, name: true } },
+        vehicleId: true,
+        vehicle: { select: { id: true, brand: true, model: true, plate: true } },
         account: { select: { name: true } },
         beneficiaryUser: { select: { id: true, name: true } },
         capitalBeneficiary: { select: { id: true, name: true } },
@@ -228,6 +247,26 @@ export default async function ContasAPagarPage({
   // estável: dentro de cada grupo mantém o vencimento crescente (ordem do findMany).
   tableRows.sort((a, b) => (a.effective === "PAGO" ? 1 : 0) - (b.effective === "PAGO" ? 1 : 0));
 
+  // Página de 100 linhas: a busca e os filtros continuam valendo sobre TODOS os
+  // títulos — só o que vai para a tela é fatiado. Sem isso, milhares de linhas
+  // eram enviadas ao navegador de uma vez (o que travava no celular).
+  const PER_PAGE = 100;
+  const totalRows = tableRows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / PER_PAGE));
+  const currentPage = Math.min(Math.max(1, Number(pParam) || 1), pageCount);
+  const pageStart = (currentPage - 1) * PER_PAGE;
+  const pageRows = tableRows.slice(pageStart, pageStart + PER_PAGE);
+  // Link de outra página preservando busca e filtros.
+  const pageHref = (n: number) => {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max, fornecedor, beneficiario, veiculo })) {
+      if (v) sp.set(k, String(v));
+    }
+    if (n > 1) sp.set("p", String(n));
+    const qs = sp.toString();
+    return qs ? `/financeiro/a-pagar?${qs}` : "/financeiro/a-pagar";
+  };
+
   return (
     <div>
       <PageHeader
@@ -262,6 +301,7 @@ export default async function ContasAPagarPage({
         ate={ate}
         min={min}
         max={max}
+        filtersKey={`${statusFilter ?? ""}|${fornecedor ?? ""}|${beneficiario ?? ""}|${veiculo ?? ""}`}
         extra={
           <>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -329,7 +369,27 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            {pageCount > 1 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 print:hidden">
+                <p className="text-xs text-slate-500">
+                  Mostrando {pageStart + 1}-{pageStart + pageRows.length} de {totalRows} título(s)
+                  {" · "}página {currentPage} de {pageCount}
+                </p>
+                <div className="flex gap-2">
+                  {currentPage > 1 ? (
+                    <LinkButton href={pageHref(currentPage - 1)} variant="secondary">
+                      ← Anterior
+                    </LinkButton>
+                  ) : null}
+                  {currentPage < pageCount ? (
+                    <LinkButton href={pageHref(currentPage + 1)} variant="secondary">
+                      Próxima →
+                    </LinkButton>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </Card>

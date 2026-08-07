@@ -172,6 +172,7 @@ export default async function EstoquePage({
         ate={ate}
         min={min}
         max={max}
+        filtersKey={`${params.status ?? ""}`}
         extra={
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status

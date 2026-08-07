@@ -844,6 +844,23 @@ model Payable {
   updatedAt    DateTime        @updatedAt
 
   @@index([paymentComboId])
+  // Índices de leitura: a lista/filtros de Contas a pagar, a DRE e as buscas por
+  // origem varriam a tabela inteira sem eles.
+  @@index([dueDate])
+  @@index([status, dueDate])
+  @@index([status, paymentDate])
+  @@index([accountId])
+  @@index([supplierId])
+  @@index([vehicleId])
+  @@index([partId])
+  @@index([saleId])
+  @@index([beneficiaryUserId])
+  @@index([capitalBeneficiaryId])
+  @@index([recurringId])
+  @@index([consortiumId])
+  @@index([employeeId])
+  @@index([purchaseRequestId])
+  @@index([documentNumber])
   @@map("payables")
 }
 
@@ -1116,6 +1133,9 @@ model CapitalTransaction {
   createdAt     DateTime           @default(now())
 
   @@index([stockInterestRunId])
+  // Toda baixa procura a movimentação pelo título/recebível vinculado.
+  @@index([payableId])
+  @@index([receivableId])
   @@map("capital_transactions")
 }
 

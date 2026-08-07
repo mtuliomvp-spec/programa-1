@@ -190,7 +190,11 @@ export default async function LucroPrejuizoPage({
           title="Extrato do resultado"
           description="Os lançamentos que geraram o lucro/prejuízo. Em veículos e peças entra só a margem (venda − custo)."
         />
-        <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+        {/* key: recria os campos ao limpar o filtro (ver ReportToolbar). */}
+        <form
+          key={`${q}|${tipoFilter}|${de ?? ""}|${ate ?? ""}|${min ?? ""}|${max ?? ""}`}
+          className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden"
+        >
           {mes ? <input type="hidden" name="mes" value={mes} /> : null}
           <div className="min-w-[200px] flex-1">
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
