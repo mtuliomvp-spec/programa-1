@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ensureRecurringGenerated } from "@/lib/recurring";
+import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectiveReceivableStatus } from "@/lib/status";
@@ -28,7 +28,7 @@ export default async function ContasAReceberPage({
     userCan("financeiro", "receber"),
     userCan("financeiro", "criar"),
   ]);
-  await ensureRecurringGenerated();
+  await ensureRecurringGeneratedForPage();
 
   const [receivables, accounts] = await Promise.all([
     prisma.receivable.findMany({

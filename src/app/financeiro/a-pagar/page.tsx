@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { ensureRecurringGenerated, ensureConsortiumInstallments } from "@/lib/recurring";
+import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
@@ -43,8 +43,7 @@ export default async function ContasAPagarPage({
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
-  await ensureRecurringGenerated();
-  await ensureConsortiumInstallments();
+  await ensureRecurringGeneratedForPage();
 
   const [payables, accounts, cashbox] = await Promise.all([
     // `select` enxuto de propósito: `supplier: true`/`vehicle: true` traziam a
