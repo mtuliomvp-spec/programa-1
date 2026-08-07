@@ -7,6 +7,7 @@ import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flo
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
+  CategoriaReceber,
   FormaPagamento,
   Prisma,
 } from "@prisma/client";
@@ -2058,6 +2059,51 @@ export async function createExpensePayable(input: {
     }
     return payable;
   });
+}
+
+/**
+ * Edita um título a receber MANUAL e ainda não recebido. Só chega aqui o que a
+ * action liberou (sem origem em venda/peça/recorrência), então não há nada a
+ * ressincronizar além do capital: se o título tiver um sócio, o aporte nasce na
+ * baixa já com o valor novo (enquanto pendente, nenhuma movimentação existe).
+ */
+export async function updateManualReceivable(input: {
+  id: string;
+  description: string;
+  category: CategoriaReceber;
+  categoryLabel?: string | null;
+  documentNumber?: string | null;
+  amount: number;
+  dueDate: Date;
+  customerId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  costCenterId?: string | null;
+  structuralKey?: StructuralKey;
+  notes?: string | null;
+}) {
+  const centerId =
+    input.costCenterId ||
+    (input.capitalBeneficiaryId
+      ? await structuralCenterId("CAPITAL")
+      : await structuralCenterId(effectiveStructuralKey(input.structuralKey, null)));
+
+  const receivable = await prisma.receivable.update({
+    where: { id: input.id },
+    data: {
+      description: input.description,
+      category: input.category,
+      categoryLabel: input.categoryLabel || null,
+      documentNumber: input.documentNumber || null,
+      amount: input.amount,
+      dueDate: input.dueDate,
+      customerId: input.customerId || null,
+      capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+      costCenterId: centerId,
+      notes: input.notes || null,
+    },
+  });
+  await syncReceivableCapital(input.id);
+  return receivable;
 }
 
 /**
