@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
@@ -24,10 +25,13 @@ export default async function ContasAReceberPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const [canReceber, canManage] = await Promise.all([
+  const [canReceber, canManage, canEditOnly] = await Promise.all([
     userCan("financeiro", "receber"),
     userCan("financeiro", "criar"),
+    userCan("financeiro", "editar"),
   ]);
+  // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
+  const canEdit = canManage || canEditOnly;
   await ensureRecurringGeneratedForPage();
 
   const [receivables, accounts] = await Promise.all([
@@ -130,6 +134,14 @@ export default async function ContasAReceberPage({
                   </Td>
                   <Td>
                     <div className="flex items-center justify-end gap-3">
+                      {canEdit && r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId && !r.recurringId ? (
+                        <Link
+                          href={`/financeiro/a-receber/${r.id}/editar`}
+                          className="text-sm font-medium text-blue-700 hover:underline"
+                        >
+                          Editar
+                        </Link>
+                      ) : null}
                       <ReceivableRowActions id={r.id} status={r.status} amount={r.amount} accounts={accounts} canReceber={canReceber} />
                       {canManage && r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId && !r.recurringId ? (
                         <DeleteReceivableButton id={r.id} />
