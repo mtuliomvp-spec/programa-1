@@ -108,6 +108,26 @@ const isStructuralKey = (v: string | null): v is "VEICULOS" | "ADMINISTRATIVO" |
   v === "VEICULOS" || v === "ADMINISTRATIVO" || v === "CAPITAL";
 
 /**
+ * Versão para as TELAS: só roda de fato uma vez a cada minuto.
+ *
+ * A geração roda ao abrir Contas a pagar/a receber como rede de segurança, mas
+ * quem cria ou edita uma recorrência já chama a geração na hora — repetir a
+ * varredura a cada troca de tela só deixava a navegação lenta. Ações continuam
+ * usando `ensureRecurringGenerated` direto (sem represa).
+ */
+let lastGenerationAt = 0;
+const GENERATION_THROTTLE_MS = 60_000;
+
+export async function ensureRecurringGeneratedForPage(): Promise<number> {
+  const now = Date.now();
+  if (now - lastGenerationAt < GENERATION_THROTTLE_MS) return 0;
+  lastGenerationAt = now;
+  const created = await ensureRecurringGenerated();
+  await ensureConsortiumInstallments();
+  return created;
+}
+
+/**
  * Gera os títulos recorrentes que vencem até `leadDays` dias à frente (padrão 15
  * — "gera 15 dias antes do vencimento"), sem duplicar. O botão "Gerar agora" usa
  * uma antecedência maior para puxar a próxima ocorrência na hora.

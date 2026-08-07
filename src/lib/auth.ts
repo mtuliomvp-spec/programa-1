@@ -1,5 +1,6 @@
 import "server-only";
 import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import type { UserRole } from "@prisma/client";
@@ -103,8 +104,15 @@ export async function clearSessionCookie() {
   store.delete(SESSION_COOKIE);
 }
 
-/** Usuário autenticado da requisição atual (valida no banco: precisa existir e estar ativo). */
-export async function getSessionUser() {
+/**
+ * Usuário autenticado da requisição atual (valida no banco: precisa existir e
+ * estar ativo).
+ *
+ * Memoizado por REQUISIÇÃO (`cache` do React): o layout, o guard da área, cada
+ * `userCan` e cada `<Can>` chamavam isto separadamente — eram 7 a 15 consultas
+ * idênticas do mesmo usuário a cada troca de tela. Agora é uma só.
+ */
+export const getSessionUser = cache(async () => {
   const store = await cookies();
   const payload = verifySessionToken(store.get(SESSION_COOKIE)?.value);
   if (!payload) return null;
@@ -122,4 +130,4 @@ export async function getSessionUser() {
   });
   if (!user || !user.active) return null;
   return user;
-}
+});
