@@ -61,6 +61,8 @@ export default async function EstoquePage({
             vehicle: { select: { brand: true, model: true, plate: true } },
           },
         },
+        // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
+        sale: { select: { saleDate: true } },
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -144,16 +146,160 @@ export default async function EstoquePage({
       inValueRange(v.salePrice, min, max),
   );
 
-  const active = rows.filter((v) => v.status !== "VENDIDO");
-  const totalValue = active.reduce((sum, v) => sum + v.salePrice, 0);
-  const totalInvested = active.reduce((sum, v) => sum + v.invested, 0);
-  const totalPaid = active.reduce((sum, v) => sum + v.paidCost, 0);
+  // A lista é do ESTOQUE: os vendidos são histórico e vão para o fim da página,
+  // depois de uma divisória, com a venda mais recente em cima.
+  const emEstoque = rows.filter((v) => v.status !== "VENDIDO");
+  const soldAt = (v: (typeof rows)[number]) => (v.sale?.saleDate ?? v.createdAt).getTime();
+  const vendidos = rows.filter((v) => v.status === "VENDIDO").sort((a, b) => soldAt(b) - soldAt(a));
+
+  const totalValue = emEstoque.reduce((sum, v) => sum + v.salePrice, 0);
+  const totalInvested = emEstoque.reduce((sum, v) => sum + v.invested, 0);
+  const totalPaid = emEstoque.reduce((sum, v) => sum + v.paidCost, 0);
+
+  type Row = (typeof rows)[number];
+
+  /** Card do celular (um por veículo). */
+  const renderCard = (v: Row) => (
+    <Link key={v.id} href={`/estoque/${v.id}`} className="block">
+      <Card className="px-4 py-3.5 transition-shadow active:shadow-md">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-slate-900">
+              {v.brand} {v.model}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+            {v.consigned ? <Badge tone="info">🏷️ Consignado</Badge> : null}
+            {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+              <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+            ) : null}
+            {v.receivedInTrade ? (
+              <span title={v.tradeOrigin ?? undefined}>
+                <Badge tone="default">🔄 Recebido em troca</Badge>
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-3 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
+            <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
+            {v.pendingCost > 0 ? (
+              <p className="text-[11px] text-slate-400">
+                total {formatCurrency(v.invested)} ·{" "}
+                <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+              </p>
+            ) : v.paidCost < v.invested ? (
+              <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
+            ) : null}
+          </div>
+          <div className="text-right">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
+            <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
+          </div>
+        </div>
+        {v.status !== "VENDIDO" ? (
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
+            </Badge>
+            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+            </Badge>
+          </div>
+        )}
+      </Card>
+    </Link>
+  );
+
+  /** Linha da tabela do computador (uma por veículo). */
+  const renderRow = (v: Row) => (
+    <Tr key={v.id}>
+      <Td className="font-medium text-slate-900">
+        {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
+      </Td>
+      <Td>{v.plate}</Td>
+      <Td>{v.color || "-"}</Td>
+      <Td>
+        {v.manufactureYear}/{v.modelYear}
+      </Td>
+      <Td>{v.km.toLocaleString("pt-BR")} km</Td>
+      <Td className="text-right tabular-nums">
+        {formatCurrency(v.paidCost)}
+        {v.pendingCost > 0 ? (
+          <span className="block text-[11px] text-slate-400">
+            total {formatCurrency(v.invested)} ·{" "}
+            <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+          </span>
+        ) : v.paidCost < v.invested ? (
+          <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
+        ) : null}
+      </Td>
+      <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
+      <Td className="text-right">
+        {v.status !== "VENDIDO" ? (
+          <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock}</Badge>
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
+      </Td>
+      <Td>
+        <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+        {v.consigned ? (
+          <span className="mt-1 block">
+            <Badge tone="info">🏷️ Consignado</Badge>
+          </span>
+        ) : null}
+        {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+          <span className="mt-1 block">
+            <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+          </span>
+        ) : null}
+        {v.receivedInTrade ? (
+          <span className="mt-1 block" title={v.tradeOrigin ?? undefined}>
+            <Badge tone="default">🔄 Recebido em troca</Badge>
+          </span>
+        ) : null}
+        <span className="mt-1 block">
+          <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+        </span>
+        {v.status === "VENDIDO" ? (
+          <span className="mt-1 flex flex-col items-start gap-1">
+            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
+            </Badge>
+            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+            </Badge>
+          </span>
+        ) : null}
+      </Td>
+      <Td>
+        <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
+          Ver detalhes
+        </Link>
+      </Td>
+    </Tr>
+  );
+
+  // A divisória só aparece quando os dois grupos existem na tela.
+  const showDivider = emEstoque.length > 0 && vendidos.length > 0;
 
   return (
     <div>
       <PageHeader
         title="Estoque de veículos"
-        description={`${rows.length} veículo(s) · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)} · valor anunciado: ${formatCurrency(totalValue)}`}
+        description={`${emEstoque.length} em estoque${vendidos.length > 0 ? ` · ${vendidos.length} vendido(s)` : ""} · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)} · valor anunciado: ${formatCurrency(totalValue)}`}
         action={
           <Can module="estoque" action="criar">
             <LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>
@@ -202,72 +348,13 @@ export default async function EstoquePage({
         <>
           {/* Celular: cards */}
           <div className="space-y-3 md:hidden">
-            {rows.map((v) => (
-              <Link key={v.id} href={`/estoque/${v.id}`} className="block">
-                <Card className="px-4 py-3.5 transition-shadow active:shadow-md">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-900">
-                        {v.brand} {v.model}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
-                      {v.consigned ? <Badge tone="info">🏷️ Consignado</Badge> : null}
-                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
-                        <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
-                      ) : null}
-                      {v.receivedInTrade ? (
-                        <span title={v.tradeOrigin ?? undefined}>
-                          <Badge tone="default">🔄 Recebido em troca</Badge>
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
-                      <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
-                      {v.pendingCost > 0 ? (
-                        <p className="text-[11px] text-slate-400">
-                          total {formatCurrency(v.invested)} ·{" "}
-                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-                        </p>
-                      ) : v.paidCost < v.invested ? (
-                        <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
-                      ) : null}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
-                      <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
-                    </div>
-                  </div>
-                  {v.status !== "VENDIDO" ? (
-                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                      </Badge>
-                      <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
-                    </div>
-                  ) : (
-                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                      </Badge>
-                      <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-                        {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
-                      </Badge>
-                      <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-                        {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-                      </Badge>
-                    </div>
-                  )}
-                </Card>
-              </Link>
-            ))}
+            {emEstoque.map(renderCard)}
+            {showDivider ? (
+              <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Vendidos ({vendidos.length})
+              </p>
+            ) : null}
+            {vendidos.map(renderCard)}
           </div>
 
           {/* Computador: tabela */}
@@ -288,76 +375,18 @@ export default async function EstoquePage({
                 </Tr>
               </Thead>
               <tbody>
-                {rows.map((v) => (
-                  <Tr key={v.id}>
-                    <Td className="font-medium text-slate-900">
-                      {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
-                    </Td>
-                    <Td>{v.plate}</Td>
-                    <Td>{v.color || "-"}</Td>
-                    <Td>
-                      {v.manufactureYear}/{v.modelYear}
-                    </Td>
-                    <Td>{v.km.toLocaleString("pt-BR")} km</Td>
-                    <Td className="text-right tabular-nums">
-                      {formatCurrency(v.paidCost)}
-                      {v.pendingCost > 0 ? (
-                        <span className="block text-[11px] text-slate-400">
-                          total {formatCurrency(v.invested)} ·{" "}
-                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-                        </span>
-                      ) : v.paidCost < v.invested ? (
-                        <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
-                      ) : null}
-                    </Td>
-                    <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
-                    <Td className="text-right">
-                      {v.status !== "VENDIDO" ? (
-                        <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock}</Badge>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
-                      {v.consigned ? (
-                        <span className="mt-1 block">
-                          <Badge tone="info">🏷️ Consignado</Badge>
-                        </span>
-                      ) : null}
-                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
-                        <span className="mt-1 block">
-                          <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
-                        </span>
-                      ) : null}
-                      {v.receivedInTrade ? (
-                        <span className="mt-1 block" title={v.tradeOrigin ?? undefined}>
-                          <Badge tone="default">🔄 Recebido em troca</Badge>
-                        </span>
-                      ) : null}
-                      <span className="mt-1 block">
-                        <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                          {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                        </Badge>
-                      </span>
-                      {v.status === "VENDIDO" ? (
-                        <span className="mt-1 flex flex-col items-start gap-1">
-                          <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-                            {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
-                          </Badge>
-                          <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-                            {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-                          </Badge>
-                        </span>
-                      ) : null}
-                    </Td>
-                    <Td>
-                      <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
-                        Ver detalhes
-                      </Link>
-                    </Td>
-                  </Tr>
-                ))}
+                {emEstoque.map(renderRow)}
+                {showDivider ? (
+                  <tr className="bg-slate-50">
+                    <td
+                      colSpan={10}
+                      className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
+                    >
+                      Vendidos ({vendidos.length})
+                    </td>
+                  </tr>
+                ) : null}
+                {vendidos.map(renderRow)}
               </tbody>
             </Table>
           </Card>
