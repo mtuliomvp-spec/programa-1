@@ -87,6 +87,7 @@ export default async function ContasAReceberPage({
         ate={ate}
         min={min}
         max={max}
+        filtersKey={`${statusFilter ?? ""}`}
         extra={
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status

@@ -2061,6 +2061,110 @@ export async function createExpensePayable(input: {
 }
 
 /**
+ * Cria de uma vez TODAS as parcelas de um lançamento parcelado (mesmo destino,
+ * mesmo fornecedor/categoria — muda só descrição, valor e vencimento).
+ *
+ * Existe por desempenho: criar parcela a parcela repetia, por título, a busca do
+ * centro de custo e do veículo mais uma transação própria — 360 parcelas viravam
+ * mais de mil idas ao banco. Aqui o destino é resolvido UMA vez e as parcelas
+ * entram num único `createMany` (os custos de veículo, em outro).
+ *
+ * As parcelas sempre nascem PENDENTES, então não há caixa nem retirada de
+ * capital envolvidos (o capital se move na baixa, via `syncPayableCapital`).
+ */
+export async function createInstallmentPayables(input: {
+  parcels: { description: string; amount: number; dueDate: Date }[];
+  category: CategoriaPagar;
+  categoryLabel?: string | null;
+  documentNumber?: string | null;
+  supplierId?: string | null;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  costCenterId?: string | null;
+  structuralKey?: StructuralKey;
+  notes?: string | null;
+  purchaseRequestId?: string | null;
+  /** Ids dos títulos criados, na ordem das parcelas. */
+}): Promise<string[]> {
+  if (input.parcels.length === 0) return [];
+
+  // Mesma regra de destino de createExpensePayable — resolvida uma única vez.
+  let vehicleSold = false;
+  if (input.vehicleId) {
+    const v = await prisma.vehicle.findUnique({
+      where: { id: input.vehicleId },
+      select: { status: true },
+    });
+    vehicleSold = v?.status === "VENDIDO";
+  }
+  const centerId =
+    input.costCenterId ||
+    (input.vehicleId
+      ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
+      : input.capitalBeneficiaryId
+        ? await structuralCenterId("CAPITAL")
+        : await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId)));
+
+  const data: Prisma.PayableCreateManyInput[] = input.parcels.map((p) => ({
+    description: p.description,
+    category: input.category,
+    categoryLabel: input.categoryLabel || null,
+    documentNumber: input.documentNumber || null,
+    amount: p.amount,
+    dueDate: p.dueDate,
+    status: "PENDENTE",
+    costCenterId: centerId,
+    supplierId: input.supplierId || null,
+    vehicleId: input.vehicleId || null,
+    capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+    notes: input.notes || null,
+    purchaseRequestId: input.purchaseRequestId || null,
+  }));
+
+  // A descrição é única dentro do lote ("Parcela i/N"), então serve de chave
+  // para casar cada título criado com a sua parcela.
+  const byDescription = new Map(input.parcels.map((p) => [p.description, p]));
+  const idsInOrder = (created: { id: string; description: string }[]) => {
+    const byDesc = new Map(created.map((row) => [row.description, row.id]));
+    return input.parcels.map((p) => byDesc.get(p.description)!).filter(Boolean);
+  };
+
+  if (!input.vehicleId) {
+    const created = await prisma.payable.createManyAndReturn({
+      data,
+      select: { id: true, description: true },
+    });
+    return idsInOrder(created);
+  }
+
+  // Com veículo, cada parcela também vira custo do carro.
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.payable.createManyAndReturn({
+      data,
+      select: { id: true, description: true },
+    });
+    await tx.vehicleCost.createMany({
+      data: created.map((row) => {
+        const p = byDescription.get(row.description)!;
+        return {
+          vehicleId: input.vehicleId!,
+          description: input.categoryLabel
+            ? `${input.categoryLabel}: ${p.description}`
+            : p.description,
+          category: "OUTROS" as const,
+          amount: p.amount,
+          date: p.dueDate,
+          postSale: vehicleSold,
+          notes: input.notes || null,
+          payableId: row.id,
+        };
+      }),
+    });
+    return idsInOrder(created);
+  });
+}
+
+/**
  * Edita um título manual (não pago) permitindo mudar o destino: fluxo, veículo e
  * beneficiário do capital. Mantém o custo do veículo (VehicleCost) e o centro de
  * custo coerentes — cria/move/remove o VehicleCost conforme o veículo escolhido.

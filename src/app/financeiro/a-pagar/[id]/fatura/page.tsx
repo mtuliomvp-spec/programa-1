@@ -123,6 +123,7 @@ export default async function FaturaCartaoPage({
         value
         min={min}
         max={max}
+        filtersKey={`${quem ?? ""}|${fluxo ?? ""}`}
         extra={
           <>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">

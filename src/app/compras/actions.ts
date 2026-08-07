@@ -8,7 +8,7 @@ import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
 import {
-  createManualPayable,
+  createManualPayable, createInstallmentPayables,
   markPayablePaid,
   splitInstallments,
   addMonths,
@@ -171,29 +171,43 @@ async function generateEspelho(request: RequestForEspelho): Promise<string | nul
   const amounts = count > 1 ? splitInstallments(amount, count) : [amount];
   const label = `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`;
 
-  let firstPayableId: string | null = null;
-  for (let i = 0; i < amounts.length; i++) {
-    const payable = await createManualPayable({
-      description: count > 1 ? `${label} - Parcela ${i + 1}/${count}` : label,
-      category: request.category,
-      categoryLabel: request.categoryLabel,
-      documentNumber: request.documentNumber,
-      amount: amounts[i],
-      dueDate:
-        request.installmentPeriod === "DIAS"
-          ? addDays(firstDue, i * request.installmentDays)
-          : addMonths(firstDue, i),
-      supplierId: request.supplierId,
-      structuralKey: flowKey,
-      vehicleId: flowKey === "VEICULOS" ? request.vehicleId : null,
-      capitalBeneficiaryId: flowKey === "CAPITAL" ? request.capitalBeneficiaryId : null,
-      notes: request.details,
-      alreadyPaid: false,
-      purchaseRequestId: request.id,
+  const dueDateOf = (i: number) =>
+    request.installmentPeriod === "DIAS"
+      ? addDays(firstDue, i * request.installmentDays)
+      : addMonths(firstDue, i);
+  const destino = {
+    category: request.category,
+    categoryLabel: request.categoryLabel,
+    documentNumber: request.documentNumber,
+    supplierId: request.supplierId,
+    structuralKey: flowKey,
+    vehicleId: flowKey === "VEICULOS" ? request.vehicleId : null,
+    capitalBeneficiaryId: flowKey === "CAPITAL" ? request.capitalBeneficiaryId : null,
+    notes: request.details,
+    purchaseRequestId: request.id,
+  };
+
+  if (count > 1) {
+    // Parcelado: todas as parcelas num lote só (nascem pendentes).
+    const ids = await createInstallmentPayables({
+      ...destino,
+      parcels: amounts.map((amount, i) => ({
+        description: `${label} - Parcela ${i + 1}/${count}`,
+        amount,
+        dueDate: dueDateOf(i),
+      })),
     });
-    if (i === 0) firstPayableId = payable.id;
+    return ids[0] ?? null;
   }
-  return firstPayableId;
+
+  const payable = await createManualPayable({
+    ...destino,
+    description: label,
+    amount: amounts[0],
+    dueDate: firstDue,
+    alreadyPaid: false,
+  });
+  return payable.id;
 }
 
 /** Remove os títulos pendentes do espelho (para regerar ou excluir). */
