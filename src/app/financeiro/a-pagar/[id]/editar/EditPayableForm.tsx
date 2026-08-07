@@ -7,7 +7,7 @@ import SupplierSelect from "@/components/SupplierSelect";
 import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
-import { formatDate, toDateInputValue } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { updatePayableAction, type EditPayableState } from "../../actions";
 
 type Supplier = { id: string; name: string };
@@ -27,6 +27,8 @@ type Payable = {
   capitalBeneficiaryId: string | null;
   /** Venda que gerou o título (comissão, indicação, transferência DETRAN). */
   saleId: string | null;
+  /** É a compra do carro: valor e destino vêm do cadastro do veículo. */
+  isAcquisition: boolean;
   /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
   fromRecurring: boolean;
 };
@@ -51,6 +53,9 @@ export default function EditPayableForm({
   // Título gerado por uma venda: destino contábil travado (o servidor também
   // ignora esses campos — aqui só evitamos oferecer o que não vale).
   const saleGenerated = Boolean(payable.saleId);
+  // Compra do carro: além do destino, o VALOR vem do preço de compra do veículo.
+  const isAcquisition = payable.isAcquisition;
+  const locked = saleGenerated || isAcquisition;
 
   return (
     <form action={formAction} className="space-y-3">
@@ -72,9 +77,22 @@ export default function EditPayableForm({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <Field label="Valor (R$)" required>
-          <MoneyInput name="amount" defaultValue={payable.amount} required />
-        </Field>
+        {isAcquisition ? (
+          <Field label="Valor (R$)">
+            {/* Travado: este é o preço de compra do carro — muda no Estoque. */}
+            <input type="hidden" name="amount" value={payable.amount} />
+            <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+              {formatCurrency(payable.amount)}
+            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              É o preço de compra do veículo. Para mudá-lo, edite o carro no Estoque.
+            </p>
+          </Field>
+        ) : (
+          <Field label="Valor (R$)" required>
+            <MoneyInput name="amount" defaultValue={payable.amount} required />
+          </Field>
+        )}
         {payable.fromRecurring ? (
           <Field label="Vencimento">
             {/* Travado: mudar a data de um título recorrente faria o gerador
@@ -94,7 +112,30 @@ export default function EditPayableForm({
         )}
       </div>
 
-      {saleGenerated ? (
+      {isAcquisition ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">🚗 Compra do veículo</p>
+          <p className="mt-1">
+            Este é o título da <strong>compra do carro</strong>. O <strong>valor</strong>, o{" "}
+            <strong>veículo</strong>, o <strong>fluxo</strong> e a <strong>categoria</strong> vêm do
+            cadastro do veículo no Estoque — se pudessem ser mudados aqui, o mesmo dinheiro seria
+            contado duas vezes no custo do carro (preço de compra + custo).
+          </p>
+          <p className="mt-1">
+            Você pode ajustar normalmente o <strong>fornecedor</strong>, o{" "}
+            <strong>vencimento</strong>, o nº do documento e as observações. Para mudar o valor,
+            edite o preço de compra do veículo.
+          </p>
+          {payable.vehicleId ? (
+            <Link
+              href={`/estoque/${payable.vehicleId}`}
+              className="mt-2 inline-block font-medium text-blue-700 hover:underline"
+            >
+              Ver o veículo →
+            </Link>
+          ) : null}
+        </div>
+      ) : saleGenerated ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
           <p className="font-medium text-slate-800">🔗 Custo de uma venda</p>
           <p className="mt-1">
@@ -126,7 +167,7 @@ export default function EditPayableForm({
         </Field>
       )}
 
-      {!saleGenerated && flow === "VEICULOS" ? (
+      {!locked && flow === "VEICULOS" ? (
         <Field label="Veículo (opcional)">
           <Select name="vehicleId" defaultValue={payable.vehicleId || ""}>
             <option value="">Nenhum — entra como Administrativo</option>
@@ -140,7 +181,7 @@ export default function EditPayableForm({
         </Field>
       ) : null}
 
-      {!saleGenerated && flow === "CAPITAL" ? (
+      {!locked && flow === "CAPITAL" ? (
         <Field label="Beneficiário do capital" required>
           <Select name="capitalBeneficiaryId" defaultValue={payable.capitalBeneficiaryId || ""} required>
             <option value="">Selecione o beneficiário</option>

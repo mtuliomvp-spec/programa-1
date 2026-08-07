@@ -150,6 +150,9 @@ export default async function EditarPayablePage({
               // Título gerado por uma venda: o destino contábil é travado (o
               // custo já pertence àquela venda).
               saleId: payable.saleId,
+              // Título da COMPRA do carro: valor e destino vêm do cadastro do
+              // veículo (mexer aqui contaria o mesmo dinheiro duas vezes).
+              isAcquisition: payable.category === "COMPRA_VEICULO",
               fromRecurring: Boolean(payable.recurringId),
             }}
             suppliers={suppliers}

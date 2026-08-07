@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -533,6 +533,8 @@ export async function updatePayableAction(
       recurringId: true,
       dueDate: true,
       category: true,
+      amount: true,
+      vehicleId: true,
       costCenter: { select: { key: true } },
     },
   });
@@ -550,22 +552,36 @@ export async function updatePayableAction(
   // Nos dois casos o farol quebraria. Descrição, valor, vencimento, fornecedor
   // (o despachante, por exemplo) e o nome da categoria seguem livres.
   const saleGenerated = Boolean(current.saleId);
+  // Título que É a compra do carro: o valor vem do "preço de compra" do veículo
+  // e o carro já está ligado a ele. Salvar por aqui sem trava criava um custo do
+  // veículo com o próprio preço de compra (o mesmo dinheiro contado 2×) e
+  // rebaixava a categoria para OUTROS, soltando o título de
+  // regenerateVehicleAcquisitionPayables (que passaria a criar um 2º título).
+  const isAcquisition = isVehiclePurchase(current.category);
+  const locked = saleGenerated || isAcquisition;
   const currentFlow = isStructuralKey(current.costCenter?.key)
     ? current.costCenter.key
     : "ADMINISTRATIVO";
-  const flow = saleGenerated ? currentFlow : d.structuralKey || "ADMINISTRATIVO";
-  const vehicleId = !saleGenerated && flow === "VEICULOS" ? d.vehicleId || null : null;
-  const capitalBeneficiaryId =
-    !saleGenerated && flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
-  if (!saleGenerated && flow === "CAPITAL" && !capitalBeneficiaryId) {
+  const flow = locked ? currentFlow : d.structuralKey || "ADMINISTRATIVO";
+  // Na compra do carro o vínculo com o veículo PRECISA continuar (é o título
+  // de aquisição dele); no título gerado por venda, o vínculo é pela venda.
+  const vehicleId = isAcquisition
+    ? current.vehicleId
+    : !saleGenerated && flow === "VEICULOS"
+      ? d.vehicleId || null
+      : null;
+  const capitalBeneficiaryId = !locked && flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
+  if (!locked && flow === "CAPITAL" && !capitalBeneficiaryId) {
     return { error: "Escolha o beneficiário do capital." };
   }
 
   const cat = await resolveDespesaCategory(label);
   // Pelo mesmo motivo, a CATEGORIA INTERNA desses títulos fica travada: é ela
-  // que diz à equação patrimonial que aquilo é custo daquela venda. O nome
-  // exibido pode ser trocado à vontade.
-  const category = saleGenerated ? current.category : cat.category;
+  // que diz à equação patrimonial que aquilo é custo daquela venda (ou a compra
+  // do carro). O nome exibido pode ser trocado à vontade.
+  const category = locked ? current.category : cat.category;
+  // O valor da compra do carro é o preço de compra do veículo — muda no Estoque.
+  const amount = isAcquisition ? current.amount : d.amount;
 
   await updateManualPayable({
     id: d.id,
@@ -573,7 +589,7 @@ export async function updatePayableAction(
     category,
     categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
-    amount: d.amount,
+    amount,
     // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
     // que já tem título — mudar a data aqui liberaria o dia original e faria
     // nascer um título duplicado.

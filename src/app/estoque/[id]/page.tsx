@@ -38,7 +38,14 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     include: {
       supplier: true,
       payables: { orderBy: { dueDate: "asc" } },
-      costs: { include: { payable: { select: { id: true, status: true, dueDate: true } } }, orderBy: { date: "asc" } },
+      costs: {
+        include: {
+          payable: {
+            select: { id: true, status: true, dueDate: true, category: true, description: true, vehicleId: true },
+          },
+        },
+        orderBy: { date: "asc" },
+      },
       sale: { include: { customer: true, receivables: true } },
       attachments: {
         select: {
@@ -131,6 +138,18 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       }
     }
   }
+
+  // Compra do carro lançada TAMBÉM como custo: o preço de compra já está no
+  // cadastro do veículo, então o mesmo dinheiro conta duas vezes no custo total.
+  // (A guarda em finance.ts impede novos casos; a tela de correção limpa os
+  // antigos.) Mesmas regras de src/app/estoque/corrigir-custo-compra/detect.ts.
+  const purchaseDuplicated = vehicle.costs.filter((c) =>
+    c.payable
+      ? c.payable.category === "COMPRA_VEICULO" ||
+        (c.payable.description.startsWith("Compra do veículo") && c.payable.vehicleId === vehicle.id)
+      : c.description.includes("Compra do veículo") &&
+        Math.abs(c.amount - vehicle.purchasePrice) < 0.01,
+  );
 
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
@@ -313,6 +332,25 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               title="Custos do veículo"
               description="Preparação, documentação, mecânica... cada lançamento gera conta a pagar integrada"
             />
+            {purchaseDuplicated.length > 0 ? (
+              <div className="mx-5 mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+                <p className="font-medium">⚠️ A compra do carro está contando duas vezes</p>
+                <p className="mt-1">
+                  A linha{" "}
+                  <strong>{purchaseDuplicated.map((c) => c.description).join(" · ")}</strong> é a
+                  própria compra do veículo, que já está no campo &quot;preço de compra&quot;. Por
+                  isso o custo total está{" "}
+                  {formatCurrency(purchaseDuplicated.reduce((s, c) => s + c.amount, 0))} acima do
+                  real.
+                </p>
+                <Link
+                  href="/estoque/corrigir-custo-compra"
+                  className="mt-2 inline-block font-medium text-blue-700 hover:underline"
+                >
+                  Conferir e corrigir →
+                </Link>
+              </div>
+            ) : null}
             <VehicleCosts
               vehicleId={vehicle.id}
               sold={vehicle.status === "VENDIDO"}
