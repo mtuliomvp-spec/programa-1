@@ -3,22 +3,51 @@
 import { useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
+import MatchPicker from "./MatchPicker";
+import CreateEntryForm from "./CreateEntryForm";
 import {
   parseAndMatchAction,
   confirmMatchesAction,
-  createFromBankTxnAction,
+  type BankTxn,
+  type MatchCandidate,
   type MatchRow,
 } from "./actions";
 
-type Account = { id: string; name: string };
+type Option = { id: string; name: string };
+type Vehicle = { id: string; label: string };
 
-export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
+export default function ReconcileClient({
+  accounts,
+  supplierNames,
+  customers,
+  vehicles,
+  beneficiaries,
+  costCenters,
+  despesaCategories,
+  receitaCategories,
+}: {
+  accounts: Option[];
+  supplierNames: string[];
+  customers: Option[];
+  vehicles: Vehicle[];
+  beneficiaries: Option[];
+  costCenters: Option[];
+  despesaCategories: string[];
+  receitaCategories: string[];
+}) {
   const [rows, setRows] = useState<MatchRow[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  /** Vínculos escolhidos na mão, por linha do extrato (substituem o automático). */
+  const [overrides, setOverrides] = useState<Record<string, MatchCandidate[]>>({});
   const [message, setMessage] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [pending, startTransition] = useTransition();
   const [createdIds, setCreatedIds] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [pickerFor, setPickerFor] = useState<BankTxn | null>(null);
+  const [createFor, setCreateFor] = useState<BankTxn | null>(null);
+
+  const accountName = accounts.find((a) => a.id === accountId)?.name ?? "conta padrão";
+  const entriesOf = (r: MatchRow) => overrides[r.txn.fitId] ?? r.matches;
 
   function handleUpload(formData: FormData) {
     setMessage(null);
@@ -31,6 +60,7 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
       }
       setRows(result.rows ?? []);
       setCreatedIds(new Set());
+      setOverrides({});
       setSelected(
         new Set((result.rows ?? []).filter((r) => r.status === "casou").map((r) => r.txn.fitId)),
       );
@@ -39,50 +69,62 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
 
   function handleConfirm() {
     if (!rows) return;
-    const toConfirm = rows
-      .filter((r) => r.status === "casou" && r.match && selected.has(r.txn.fitId))
+    const items = rows
+      .filter((r) => r.status !== "ja_conciliado" && selected.has(r.txn.fitId))
       .map((r) => ({
-        kind: r.match!.kind,
-        id: r.match!.id,
         fitId: r.txn.fitId,
         date: r.txn.date,
-      }));
-    if (toConfirm.length === 0) {
+        amount: r.txn.amount,
+        kind: (r.txn.amount < 0 ? "payable" : "receivable") as "payable" | "receivable",
+        ids: entriesOf(r).map((m) => m.id),
+      }))
+      .filter((i) => i.ids.length > 0);
+    if (items.length === 0) {
       setMessage({ tone: "err", text: "Nenhuma transação selecionada para conciliar." });
       return;
     }
+    const confirmedIds = new Set(items.map((i) => i.fitId));
     startTransition(async () => {
-      const { done } = await confirmMatchesAction(toConfirm, accountId || undefined);
+      const res = await confirmMatchesAction(items, accountId || undefined);
+      if (!res.ok) {
+        setMessage({
+          tone: "err",
+          text: res.error || "Não foi possível conciliar.",
+        });
+        if (res.done > 0) {
+          setMessage({
+            tone: "err",
+            text: `${res.done} conciliada(s) antes do erro: ${res.error || "erro desconhecido"}`,
+          });
+        }
+        return;
+      }
       setMessage({
         tone: "ok",
-        text: `${done} transação(ões) conciliada(s) com sucesso. Pendentes casadas receberam baixa automática.`,
+        text: `${res.done} transação(ões) conciliada(s) com sucesso, na data do extrato. As pendentes receberam baixa automática.`,
       });
       setRows(
         (prev) =>
           prev?.map((r) =>
-            selected.has(r.txn.fitId) && r.status === "casou"
-              ? { ...r, status: "ja_conciliado" as const }
-              : r,
+            confirmedIds.has(r.txn.fitId) ? { ...r, status: "ja_conciliado" as const } : r,
           ) ?? null,
       );
       setSelected(new Set());
     });
   }
 
-  function handleCreate(row: MatchRow) {
-    startTransition(async () => {
-      await createFromBankTxnAction(row.txn, accountId || undefined);
-      setCreatedIds((prev) => new Set(prev).add(row.txn.fitId));
-      setMessage({
-        tone: "ok",
-        text: `Lançamento criado e conciliado: ${row.txn.memo}`,
-      });
-    });
-  }
-
-  const matched = rows?.filter((r) => r.status === "casou") ?? [];
-  const unmatched = rows?.filter((r) => r.status === "sem_match") ?? [];
+  const pendingRows = rows?.filter((r) => r.status !== "ja_conciliado") ?? [];
+  const matched = pendingRows.filter((r) => entriesOf(r).length > 0 && !createdIds.has(r.txn.fitId));
+  const unmatched = pendingRows.filter((r) => entriesOf(r).length === 0 || createdIds.has(r.txn.fitId));
   const already = rows?.filter((r) => r.status === "ja_conciliado") ?? [];
+
+  function txtCell(text: string, className: string) {
+    return (
+      <span title={text} className={className}>
+        {text}
+      </span>
+    );
+  }
 
   return (
     <div className="space-y-4">
@@ -133,7 +175,7 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
           <Card>
             <CardHeader
               title={`2. Correspondências encontradas (${matched.length})`}
-              description="O sistema casou estas transações do banco com contas do sistema — confira e confirme"
+              description="Confira o que o sistema casou — dá para trocar ou juntar mais de um título na mesma linha do banco. A baixa entra com a data do extrato."
               action={
                 matched.length > 0 ? (
                   <Button onClick={handleConfirm} disabled={pending}>
@@ -152,47 +194,79 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
                     <Th>Data</Th>
                     <Th>Extrato do banco</Th>
                     <Th className="text-right">Valor</Th>
-                    <Th>Conta no sistema</Th>
+                    <Th>Conta(s) no sistema</Th>
                     <Th>Situação</Th>
+                    <Th>{""}</Th>
                   </Tr>
                 </Thead>
                 <tbody>
-                  {matched.map((r) => (
-                    <Tr key={r.txn.fitId}>
-                      <Td>
-                        <input
-                          type="checkbox"
-                          checked={selected.has(r.txn.fitId)}
-                          onChange={(e) => {
-                            setSelected((prev) => {
-                              const next = new Set(prev);
-                              if (e.target.checked) next.add(r.txn.fitId);
-                              else next.delete(r.txn.fitId);
-                              return next;
-                            });
-                          }}
-                          className="h-4 w-4 rounded border-slate-300"
-                        />
-                      </Td>
-                      <Td className="whitespace-nowrap">{formatDate(r.txn.date)}</Td>
-                      <Td className="max-w-[260px] truncate text-slate-600">{r.txn.memo}</Td>
-                      <Td
-                        className={`text-right tabular-nums ${
-                          r.txn.amount < 0 ? "text-rose-600" : "text-emerald-600"
-                        }`}
-                      >
-                        {formatCurrency(r.txn.amount)}
-                      </Td>
-                      <Td className="max-w-[260px] truncate font-medium text-slate-900">
-                        {r.match?.description}
-                      </Td>
-                      <Td>
-                        <Badge tone={r.match?.settled ? "success" : "warning"}>
-                          {r.match?.settled ? "Já baixada" : "Pendente → baixa automática"}
-                        </Badge>
-                      </Td>
-                    </Tr>
-                  ))}
+                  {matched.map((r) => {
+                    const entries = entriesOf(r);
+                    return (
+                      <Tr key={r.txn.fitId}>
+                        <Td>
+                          <input
+                            type="checkbox"
+                            checked={selected.has(r.txn.fitId)}
+                            onChange={(e) => {
+                              setSelected((prev) => {
+                                const next = new Set(prev);
+                                if (e.target.checked) next.add(r.txn.fitId);
+                                else next.delete(r.txn.fitId);
+                                return next;
+                              });
+                            }}
+                            className="h-4 w-4 rounded border-slate-300"
+                          />
+                        </Td>
+                        <Td className="whitespace-nowrap">{formatDate(r.txn.date)}</Td>
+                        <Td className="max-w-[260px] text-slate-600">
+                          {txtCell(r.txn.memo, "block break-words")}
+                        </Td>
+                        <Td
+                          className={`text-right tabular-nums ${
+                            r.txn.amount < 0 ? "text-rose-600" : "text-emerald-600"
+                          }`}
+                        >
+                          {formatCurrency(r.txn.amount)}
+                        </Td>
+                        <Td className="max-w-[280px]">
+                          <ul className="space-y-1">
+                            {entries.map((m) => (
+                              <li key={m.id} className="text-slate-900">
+                                {txtCell(m.description, "block break-words font-medium")}
+                                <span className="text-xs text-slate-500">
+                                  {formatCurrency(m.amount)}
+                                  {m.who ? ` · ${m.who}` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                          {entries.length > 1 ? (
+                            <p className="mt-1 text-xs font-medium text-blue-700">
+                              {entries.length} títulos nesta linha
+                            </p>
+                          ) : null}
+                        </Td>
+                        <Td>
+                          <Badge tone={entries.every((m) => m.settled) ? "success" : "warning"}>
+                            {entries.every((m) => m.settled)
+                              ? "Já baixada"
+                              : "Pendente → baixa automática"}
+                          </Badge>
+                        </Td>
+                        <Td>
+                          <button
+                            type="button"
+                            onClick={() => setPickerFor(r.txn)}
+                            className="whitespace-nowrap text-sm font-medium text-blue-700 hover:underline"
+                          >
+                            Escolher títulos
+                          </button>
+                        </Td>
+                      </Tr>
+                    );
+                  })}
                 </tbody>
               </Table>
             )}
@@ -201,7 +275,7 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
           <Card>
             <CardHeader
               title={`3. Sem correspondência (${unmatched.length})`}
-              description="Movimentações do banco que não existem no sistema — crie o lançamento com um clique"
+              description="Movimentações do banco que não existem no sistema — procure o título certo ou lance a conta com todos os dados"
             />
             {unmatched.length === 0 ? (
               <p className="px-5 py-4 text-sm text-slate-500">
@@ -221,7 +295,9 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
                   {unmatched.map((r) => (
                     <Tr key={r.txn.fitId}>
                       <Td className="whitespace-nowrap">{formatDate(r.txn.date)}</Td>
-                      <Td className="max-w-[320px] truncate text-slate-700">{r.txn.memo}</Td>
+                      <Td className="max-w-[320px] text-slate-700">
+                        {txtCell(r.txn.memo, "block break-words")}
+                      </Td>
                       <Td
                         className={`text-right tabular-nums ${
                           r.txn.amount < 0 ? "text-rose-600" : "text-emerald-600"
@@ -233,14 +309,23 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
                         {createdIds.has(r.txn.fitId) ? (
                           <Badge tone="success">Criado ✓</Badge>
                         ) : (
-                          <button
-                            type="button"
-                            disabled={pending}
-                            onClick={() => handleCreate(r)}
-                            className="text-sm font-medium text-blue-700 hover:underline disabled:opacity-50"
-                          >
-                            {r.txn.amount < 0 ? "Criar conta paga" : "Criar recebimento"}
-                          </button>
+                          <div className="flex flex-wrap items-center justify-end gap-3">
+                            <button
+                              type="button"
+                              onClick={() => setPickerFor(r.txn)}
+                              className="whitespace-nowrap text-sm font-medium text-blue-700 hover:underline"
+                            >
+                              Escolher títulos
+                            </button>
+                            <button
+                              type="button"
+                              disabled={pending}
+                              onClick={() => setCreateFor(r.txn)}
+                              className="whitespace-nowrap text-sm font-medium text-blue-700 hover:underline disabled:opacity-50"
+                            >
+                              {r.txn.amount < 0 ? "Lançar conta paga" : "Lançar recebimento"}
+                            </button>
+                          </div>
                         )}
                       </Td>
                     </Tr>
@@ -258,6 +343,47 @@ export default function ReconcileClient({ accounts }: { accounts: Account[] }) {
             </Card>
           ) : null}
         </>
+      ) : null}
+
+      {pickerFor ? (
+        <MatchPicker
+          txn={pickerFor}
+          initial={
+            overrides[pickerFor.fitId] ??
+            rows?.find((r) => r.txn.fitId === pickerFor.fitId)?.matches ??
+            []
+          }
+          onClose={() => setPickerFor(null)}
+          onConfirm={(items) => {
+            setOverrides((prev) => ({ ...prev, [pickerFor.fitId]: items }));
+            setSelected((prev) => new Set(prev).add(pickerFor.fitId));
+            setPickerFor(null);
+            setMessage(null);
+          }}
+        />
+      ) : null}
+
+      {createFor ? (
+        <CreateEntryForm
+          txn={createFor}
+          accountId={accountId}
+          accountName={accountName}
+          supplierNames={supplierNames}
+          customers={customers}
+          vehicles={vehicles}
+          beneficiaries={beneficiaries}
+          costCenters={costCenters}
+          categories={createFor.amount < 0 ? despesaCategories : receitaCategories}
+          onClose={() => setCreateFor(null)}
+          onCreated={() => {
+            setCreatedIds((prev) => new Set(prev).add(createFor.fitId));
+            setMessage({
+              tone: "ok",
+              text: `Lançamento criado e conciliado: ${createFor.memo}`,
+            });
+            setCreateFor(null);
+          }}
+        />
       ) : null}
     </div>
   );
