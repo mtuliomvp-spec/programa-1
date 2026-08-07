@@ -117,7 +117,7 @@ export default function ReportToolbar({
             <LinkButton href={basePath} variant="secondary">
               Limpar
             </LinkButton>
-            <PrintButton title={printTitle} />
+            <PrintButton title={printTitle} mode="table" />
           </div>
         </form>
       </Card>

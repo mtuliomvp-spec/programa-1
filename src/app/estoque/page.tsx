@@ -277,6 +277,7 @@ export default async function EstoquePage({
                 <Tr>
                   <Th>Veículo</Th>
                   <Th>Placa</Th>
+                  <Th>Cor</Th>
                   <Th>Ano</Th>
                   <Th>KM</Th>
                   <Th className="text-right">Custo pago</Th>
@@ -293,6 +294,7 @@ export default async function EstoquePage({
                       {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
                     </Td>
                     <Td>{v.plate}</Td>
+                    <Td>{v.color || "-"}</Td>
                     <Td>
                       {v.manufactureYear}/{v.modelYear}
                     </Td>

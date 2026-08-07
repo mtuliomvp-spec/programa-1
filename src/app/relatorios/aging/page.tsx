@@ -22,7 +22,7 @@ export default async function AgingPage() {
       <PageHeader
         title="Tempo de estoque (aging)"
         description="Veículo parado é capital parado: acompanhe há quanto tempo cada um está na loja"
-        action={<PrintButton />}
+        action={<PrintButton mode="table" />}
       />
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

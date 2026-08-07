@@ -268,7 +268,7 @@ export default async function LivroCaixaPage({
             >
               Mês seguinte →
             </LinkButton>
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />

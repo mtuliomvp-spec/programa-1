@@ -30,7 +30,7 @@ export default async function DespesasPage({
                 {m} meses
               </LinkButton>
             ))}
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />

@@ -137,7 +137,7 @@ export default async function LucroPrejuizoPage({
                 </LinkButton>
               );
             })}
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />
