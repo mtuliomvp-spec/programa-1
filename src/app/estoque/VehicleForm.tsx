@@ -2,6 +2,7 @@
 
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { isChassiPartial, CHASSI_LENGTH } from "@/lib/vehicle-doc";
 import {
   createVehicleAction,
   updateVehicleAction,
@@ -177,7 +178,8 @@ export default function VehicleForm({
         </Field>
         <p className="mt-2 text-xs text-slate-500">
           Digite a placa e clique em buscar: marca, modelo, ano, cor, chassi e o valor FIPE são
-          preenchidos automaticamente.
+          preenchidos automaticamente. O chassi vem <strong>mascarado</strong> — complete-o com o
+          documento do carro, senão a venda dele fica travada.
         </p>
         {lookupMsg ? (
           <p
@@ -270,7 +272,20 @@ export default function VehicleForm({
           <Input type="number" name="modelYear" defaultValue={vehicle?.modelYear ?? new Date().getFullYear()} required />
         </Field>
         <Field label="Chassi (VIN)">
-          <Input name="chassi" defaultValue={vehicle?.chassi || ""} />
+          {/* Não-controlado de propósito: o botão "Buscar dados pela placa"
+              escreve direto no elemento (setField), sem passar pelo React. */}
+          <Input
+            name="chassi"
+            defaultValue={vehicle?.chassi || ""}
+            className="uppercase"
+            placeholder={`${CHASSI_LENGTH} caracteres`}
+          />
+          {isChassiPartial(vehicle?.chassi) ? (
+            <p className="mt-1 text-[11px] text-amber-700">
+              Chassi incompleto no cadastro — a busca pela placa devolve mascarado. Copie os{" "}
+              {CHASSI_LENGTH} caracteres do documento: sem eles a venda deste carro fica travada.
+            </p>
+          ) : null}
         </Field>
         <Field label="Cor">
           <Input name="color" defaultValue={vehicle?.color || ""} />

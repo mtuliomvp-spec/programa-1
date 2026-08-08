@@ -8,7 +8,7 @@ import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
-import { chassiOrNull, renavamOrNull } from "@/lib/vehicle-doc";
+import { chassiOrNull, renavamOrNull, isChassiComplete } from "@/lib/vehicle-doc";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
@@ -111,7 +111,9 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
       select: { chassi: true, renavam: true },
     });
     const docs: { chassi?: string; renavam?: string } = {};
-    if (chassiInput && !atual?.chassi) docs.chassi = chassiInput;
+    // Chassi: sobrescreve também quando o cadastrado está INCOMPLETO — é o caso
+    // do mascarado que a consulta por placa devolve (ex.: *****39578).
+    if (chassiInput && !isChassiComplete(atual?.chassi)) docs.chassi = chassiInput;
     if (renavamInput && !atual?.renavam) docs.renavam = renavamInput;
     if (Object.keys(docs).length) {
       try {

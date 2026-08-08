@@ -11,7 +11,8 @@ import {
   missingVehicleDocs,
   normalizeChassi,
   normalizeRenavam,
-  chassiLooksOdd,
+  isChassiComplete,
+  isChassiPartial,
   renavamLooksOdd,
   CHASSI_LENGTH,
   RENAVAM_LENGTH,
@@ -185,8 +186,13 @@ export default function SaleForm({
   const [vehicleChassi, setVehicleChassi] = useState("");
   const [vehicleRenavam, setVehicleRenavam] = useState("");
   const missingDocs = selectedVehicle ? missingVehicleDocs(selectedVehicle) : [];
-  const needsChassi = missingDocs.includes("chassi");
-  const needsRenavam = missingDocs.includes("RENAVAM");
+  // Chassi parcial conta como faltando: a consulta por placa devolve mascarado
+  // (ex.: *****39578) e é assim que fica gravado.
+  const needsChassi = Boolean(selectedVehicle) && !isChassiComplete(selectedVehicle?.chassi);
+  const chassiParcial = isChassiPartial(selectedVehicle?.chassi)
+    ? normalizeChassi(selectedVehicle?.chassi)
+    : null;
+  const needsRenavam = Boolean(selectedVehicle) && !normalizeRenavam(selectedVehicle?.renavam);
   // Consignado: destino do valor a devolver ao proprietário (pagar ao dono vs
   // aportar no capital de um beneficiário). O valor em si vem do veículo.
   const isConsigned = Boolean(selectedVehicle?.consigned);
@@ -399,8 +405,8 @@ export default function SaleForm({
               Documentos do veículo — obrigatórios para vender
             </p>
             <p className="mt-0.5 text-xs text-amber-800">
-              Este veículo está sem {missingDocs.join(" e ")}. Preencha para continuar: o dado é
-              gravado na ficha do veículo e sai nos contratos.
+              Falta {missingDocs.join(" e ")}. Preencha para continuar: o dado é gravado na ficha do
+              veículo e sai nos contratos.
             </p>
             <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
               {needsRenavam ? (
@@ -422,19 +428,31 @@ export default function SaleForm({
                 </Field>
               ) : null}
               {needsChassi ? (
-                <Field label="Chassi (VIN)" required>
+                <Field label={`Chassi completo (${CHASSI_LENGTH} caracteres)`} required>
                   <Input
                     name="vehicleChassi"
                     value={vehicleChassi}
-                    onChange={(e) => setVehicleChassi(normalizeChassi(e.target.value))}
+                    // Sem `*`: aqui o chassi tem de ser digitado por inteiro.
+                    onChange={(e) =>
+                      setVehicleChassi(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "").slice(0, CHASSI_LENGTH))
+                    }
                     className="uppercase"
-                    placeholder={`${CHASSI_LENGTH} caracteres`}
+                    placeholder={"A".repeat(CHASSI_LENGTH)}
+                    pattern={`[A-Za-z0-9]{${CHASSI_LENGTH}}`}
+                    minLength={CHASSI_LENGTH}
+                    maxLength={CHASSI_LENGTH}
+                    title={`O chassi tem ${CHASSI_LENGTH} caracteres`}
                     required
                   />
-                  {chassiLooksOdd(vehicleChassi) ? (
+                  {chassiParcial ? (
                     <p className="mt-1 text-[11px] text-amber-700">
-                      O chassi costuma ter {CHASSI_LENGTH} caracteres — confira. Dá para salvar assim
-                      mesmo.
+                      A busca pela placa trouxe o chassi incompleto ({chassiParcial}). Copie os{" "}
+                      {CHASSI_LENGTH} caracteres do documento do carro.
+                    </p>
+                  ) : null}
+                  {vehicleChassi.length > 0 && vehicleChassi.length < CHASSI_LENGTH ? (
+                    <p className="mt-1 text-[11px] text-slate-500">
+                      {vehicleChassi.length} de {CHASSI_LENGTH} caracteres
                     </p>
                   ) : null}
                 </Field>
