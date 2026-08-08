@@ -16,10 +16,6 @@ export default async function DesempenhoPage() {
 
   const perf = getPerfSnapshot();
   const db = getDbInfo();
-  const mesmaRegiao =
-    db.region && db.serverRegion
-      ? db.serverRegion.toLowerCase().includes(db.region.split("-")[0])
-      : null;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -46,7 +42,12 @@ export default async function DesempenhoPage() {
         <div className="grid gap-3 px-5 pb-5 text-sm sm:grid-cols-2">
           <div>
             <p className="text-xs text-slate-500">Servidor da aplicação</p>
-            <p className="font-medium text-slate-900">{db.serverRegion ?? "—"}</p>
+            <p className="font-medium text-slate-900">
+              {db.serverRegionLabel ?? db.serverRegion ?? "—"}
+              {db.serverRegionLabel && db.serverRegion ? (
+                <span className="ml-1 text-slate-500">({db.serverRegion})</span>
+              ) : null}
+            </p>
           </div>
           <div>
             <p className="text-xs text-slate-500">Banco de dados</p>
@@ -59,9 +60,13 @@ export default async function DesempenhoPage() {
           <div>
             <p className="text-xs text-slate-500">Mesma região?</p>
             <p
-              className={`font-medium ${mesmaRegiao === false ? "text-rose-700" : mesmaRegiao ? "text-emerald-700" : "text-slate-500"}`}
+              className={`font-medium ${db.sameRegion === false ? "text-rose-700" : db.sameRegion ? "text-emerald-700" : "text-slate-500"}`}
             >
-              {mesmaRegiao === null ? "não dá para saber aqui" : mesmaRegiao ? "sim" : "NÃO — é isto que precisa ser corrigido primeiro"}
+              {db.sameRegion === null
+                ? "não dá para saber aqui"
+                : db.sameRegion
+                  ? "sim — servidor e banco lado a lado"
+                  : "NÃO — é isto que precisa ser corrigido primeiro"}
             </p>
           </div>
           <div>
