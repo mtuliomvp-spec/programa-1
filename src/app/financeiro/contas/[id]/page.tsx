@@ -10,6 +10,7 @@ import { userCan } from "@/lib/guards";
 import PrintButton from "@/components/PrintButton";
 import AccountFinancerSettings from "./AccountFinancerSettings";
 import AccountOwnerSetting from "./AccountOwnerSetting";
+import AccountMaturitySetting from "./AccountMaturitySetting";
 import InvestmentPanel from "./InvestmentPanel";
 
 export const dynamic = "force-dynamic";
@@ -93,6 +94,14 @@ export default async function AccountStatementPage({
             id={account.id}
             initialOwnerId={account.ownerBeneficiaryId}
             beneficiaries={ownerOptions}
+          />
+        ) : null}
+        {canContas ? (
+          <AccountMaturitySetting
+            id={account.id}
+            initialMaturity={
+              account.investmentMaturity ? toDateInputValue(account.investmentMaturity) : ""
+            }
           />
         ) : null}
         <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">

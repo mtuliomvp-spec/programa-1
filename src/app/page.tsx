@@ -1,11 +1,17 @@
 import Link from "next/link";
 import { timed } from "@/lib/perf";
 import { redirect } from "next/navigation";
-import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
+import {
+  getDashboardStats,
+  getUpcomingDue,
+  getCashFlowLastMonths,
+  getInvestmentsDueSoon,
+} from "@/lib/queries";
 import { getStructuralSummary } from "@/lib/structural";
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getPaidTrafficStats } from "@/lib/reports";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { maturityStatus } from "@/lib/status";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
 import PatrimonialCard from "@/components/PatrimonialCard";
@@ -47,7 +53,9 @@ export default async function DashboardPage() {
     );
   }
 
-  const [stats, upcoming, monthly, structural, pat, traffic] = await timed("tela: painel inicial", () =>
+  const [stats, upcoming, monthly, structural, pat, traffic, investmentsDue] = await timed(
+    "tela: painel inicial",
+    () =>
     Promise.all([
       getDashboardStats(),
       getUpcomingDue(7),
@@ -55,6 +63,7 @@ export default async function DashboardPage() {
       getStructuralSummary(),
       getPatrimonialStats(),
       getPaidTrafficStats(),
+      getInvestmentsDueSoon(),
     ]),
   );
 
@@ -296,6 +305,30 @@ export default async function DashboardPage() {
           )}
         </Card>
       </div>
+
+      {investmentsDue.length > 0 ? (
+        <div className="mt-4">
+          <Card className="border-amber-300 bg-amber-50 px-5 py-4">
+            <p className="text-sm font-semibold text-amber-900">
+              📈 Aplicação vencendo — dinheiro parado não rende
+            </p>
+            <ul className="mt-1 space-y-0.5">
+              {investmentsDue.map((a) => {
+                const vencida = maturityStatus(a.investmentMaturity) === "vencido";
+                return (
+                  <li key={a.id} className="text-sm text-amber-800">
+                    <Link href={`/financeiro/contas/${a.id}`} className="font-medium underline">
+                      {a.name}
+                    </Link>{" "}
+                    {vencida ? "venceu" : "vence"} em {formatDate(a.investmentMaturity!)}
+                    {vencida ? " — reaplique" : null}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        </div>
+      ) : null}
 
       {stats.partsLowStockCount > 0 ? (
         <div className="mt-4">
