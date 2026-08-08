@@ -368,6 +368,16 @@ export async function fetchVehicleDebtsAction(vehicleId: string) {
   return lookupVehicleDebts(vehicle.plate);
 }
 
+/**
+ * Importa débitos consultados pela placa como CUSTO do veículo.
+ *
+ * Diferente do campo "Débitos do veículo" da compra/troca (ver
+ * src/lib/vehicle-debts.ts): lá a dívida é do antigo dono e abate o que a loja
+ * paga a ele; aqui o carro já é da loja e o débito venceu com ele no pátio —
+ * IPVA do exercício seguinte, multa em test drive. É despesa da loja, então
+ * vira VehicleCost e reduz a margem daquele carro. Os dois caminhos coexistem
+ * de propósito.
+ */
 export async function importVehicleDebtsAction(
   vehicleId: string,
   debts: { category: "IPVA" | "MULTA" | "LICENCIAMENTO"; description: string; amount: number; dueDate: string }[],

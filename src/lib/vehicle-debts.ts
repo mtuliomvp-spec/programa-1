@@ -9,6 +9,23 @@
  * O total continua sendo a fonte de verdade das contas (é ele que entra nas
  * fórmulas de líquido); estas linhas são a explicação dele. Guardadas como JSON
  * no veículo e na pré-venda, no mesmo molde de `src/lib/referrals.ts`.
+ *
+ * ATENÇÃO — existem DOIS caminhos de débito no sistema, e eles são diferentes
+ * de propósito. Não unifique:
+ *
+ *  1. AQUI (compra/troca): a dívida é do ANTIGO DONO. A loja desconta do que
+ *     paga a ele e quita em seu lugar, então isso é parte do preço de
+ *     aquisição — abate o líquido e NÃO vira `VehicleCost` (o valor já está
+ *     dentro de `purchasePrice`; ver `isVehiclePurchase` em finance.ts).
+ *
+ *  2. `importVehicleDebtsAction` (consulta por placa, em estoque/actions.ts):
+ *     o carro JÁ é da loja e o débito venceu com ele no pátio — IPVA do
+ *     exercício seguinte, multa tomada em test drive. Aí é despesa da loja e
+ *     vira `VehicleCost`, reduzindo a margem daquele carro.
+ *
+ * Um carro recebido em troca em novembro que atravessa o ano paga os dois: o
+ * IPVA do ano anterior pelo caminho 1 e o do ano seguinte pelo caminho 2. Não
+ * é dupla contagem — são dois fatos econômicos distintos.
  */
 
 export type VehicleDebtItem = {
