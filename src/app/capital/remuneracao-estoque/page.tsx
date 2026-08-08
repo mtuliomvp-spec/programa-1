@@ -26,11 +26,17 @@ export default async function RemuneracaoEstoquePage() {
     <div>
       <PageHeader
         title="Remuneração de capital sobre o estoque"
-        description="Aplica um percentual de juros sobre o custo dos veículos em estoque, somando ao custo de cada um e creditando o valor como aporte de capital aos sócios (rateio livre)."
+        description="Aplica um percentual de juros sobre o valor já pago de cada veículo em estoque (o dinheiro preso nele), somando ao custo do carro e creditando o valor como aporte de capital aos sócios (rateio livre)."
       />
 
       <Card className="mb-4 border-blue-200 bg-blue-50/60 px-4 py-3 print:hidden">
         <p className="text-sm text-slate-600">
+          A taxa incide sobre o <strong>valor já pago</strong> de cada veículo — o dinheiro da loja
+          que está preso nele e poderia estar rendendo em outro lugar. Título ainda pendente
+          (inclusive o da compra) <strong>não</strong> entra na conta: esse dinheiro continua no
+          caixa.
+        </p>
+        <p className="mt-2 text-sm text-slate-600">
           O juro de cada veículo <strong>entra no custo dele</strong> (reduz a margem quando for
           vendido) e, ao mesmo tempo, é <strong>creditado como aporte de capital</strong> para os
           sócios que você escolher, nos percentuais que quiser (somando 100%). Enquanto o veículo

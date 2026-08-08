@@ -12,7 +12,10 @@ type Vehicle = {
   model: string;
   plate: string;
   modelYear: number;
-  baseCusto: number;
+  /** Quanto já saiu do caixa por este carro — base do juro. */
+  basePaga: number;
+  /** Custo total (pago + pendente), só como referência na linha. */
+  custoTotal: number;
 };
 
 type Beneficiary = { id: string; name: string };
@@ -56,11 +59,13 @@ export default function RemuneracaoForm({
     () => vehicles.filter((v) => selected[v.id]).map((v) => v.id),
     [vehicles, selected],
   );
-  const allChecked = vehicles.length > 0 && selectedIds.length === vehicles.length;
+  // Carro sem nada pago não tem dinheiro preso: fica visível, mas não seleciona.
+  const selectable = useMemo(() => vehicles.filter((v) => v.basePaga > 0), [vehicles]);
+  const allChecked = selectable.length > 0 && selectedIds.length === selectable.length;
 
   const juroOf = (base: number) => round2(base * (rateNum / 100));
   const totalJuros = useMemo(
-    () => round2(vehicles.filter((v) => selected[v.id]).reduce((s, v) => s + juroOf(v.baseCusto), 0)),
+    () => round2(vehicles.filter((v) => selected[v.id]).reduce((s, v) => s + juroOf(v.basePaga), 0)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [vehicles, selected, rateNum],
   );
@@ -93,7 +98,7 @@ export default function RemuneracaoForm({
 
   const toggleAll = () => {
     if (allChecked) setSelected({});
-    else setSelected(Object.fromEntries(vehicles.map((v) => [v.id, true])));
+    else setSelected(Object.fromEntries(selectable.map((v) => [v.id, true])));
   };
 
   const splitsPayload = JSON.stringify(
@@ -130,8 +135,9 @@ export default function RemuneracaoForm({
               </Field>
             </div>
             <p className="pb-2 text-sm text-slate-500">
-              Aplicada sobre o <strong>custo total</strong> (compra + custos) de cada veículo
-              selecionado.
+              Aplicada sobre o <strong>valor já pago</strong> de cada veículo selecionado — o
+              dinheiro da loja que está preso nele. Título ainda pendente (inclusive o da compra)
+              não entra: esse dinheiro continua no caixa.
             </p>
           </div>
         </Card>
@@ -154,17 +160,21 @@ export default function RemuneracaoForm({
           </div>
           <div className="divide-y divide-slate-100">
             {vehicles.map((v) => {
+              const semDinheiroPreso = v.basePaga <= 0;
               const checked = !!selected[v.id];
-              const juro = juroOf(v.baseCusto);
+              const juro = juroOf(v.basePaga);
               return (
                 <label
                   key={v.id}
-                  className="flex cursor-pointer items-center gap-3 px-5 py-3 hover:bg-slate-50"
+                  className={`flex items-center gap-3 px-5 py-3 ${
+                    semDinheiroPreso ? "opacity-70" : "cursor-pointer hover:bg-slate-50"
+                  }`}
                 >
                   <input
                     type="checkbox"
                     className="h-4 w-4 rounded border-slate-300"
                     checked={checked}
+                    disabled={semDinheiroPreso}
                     onChange={(e) =>
                       setSelected((prev) => ({ ...prev, [v.id]: e.target.checked }))
                     }
@@ -177,7 +187,16 @@ export default function RemuneracaoForm({
                         {v.plate} · {v.modelYear}
                       </span>
                     </p>
-                    <p className="text-xs text-slate-500">Custo total {formatCurrency(v.baseCusto)}</p>
+                    {semDinheiroPreso ? (
+                      <p className="text-xs text-amber-600">
+                        Nada pago ainda — sem dinheiro preso (custo total {formatCurrency(v.custoTotal)})
+                      </p>
+                    ) : (
+                      <p className="text-xs text-slate-500">
+                        Valor pago {formatCurrency(v.basePaga)}
+                        {v.custoTotal > v.basePaga ? ` · de ${formatCurrency(v.custoTotal)} total` : ""}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className="text-xs uppercase tracking-wide text-slate-400">Juro</p>
@@ -186,7 +205,7 @@ export default function RemuneracaoForm({
                         checked && rateNum > 0 ? "text-emerald-600" : "text-slate-400"
                       }`}
                     >
-                      {rateNum > 0 ? formatCurrency(juro) : "—"}
+                      {rateNum > 0 && !semDinheiroPreso ? formatCurrency(juro) : "—"}
                     </p>
                   </div>
                 </label>
