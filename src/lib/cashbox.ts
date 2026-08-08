@@ -94,7 +94,14 @@ export async function closeCashbox(userName: string | null): Promise<void> {
       import("@/lib/patrimonial"),
       import("@/lib/books-health"),
     ]);
-    const [stats, health] = await Promise.all([getPatrimonialStats(), getBooksHealth()]);
+    // Os dois usam os mesmos saldos por conta (e o farol já roda a equação
+    // patrimonial por dentro): pede-se uma vez e repassa-se a promessa.
+    const { getAccountsWithBalances } = await import("@/lib/accounts");
+    const accountsPromise = getAccountsWithBalances();
+    const [stats, health] = await Promise.all([
+      getPatrimonialStats(accountsPromise),
+      getBooksHealth(accountsPromise),
+    ]);
     const prev = await prisma.dashboardSnapshot.findFirst({
       where: { referenceDate: session.workDate },
       orderBy: { version: "desc" },

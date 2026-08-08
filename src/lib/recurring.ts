@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import { structuralCenterId } from "@/lib/structural";
 import { previousBusinessDay } from "@/lib/business-days";
 
@@ -133,6 +134,10 @@ export async function ensureRecurringGeneratedForPage(): Promise<number> {
  * uma antecedência maior para puxar a próxima ocorrência na hora.
  */
 export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
+  return timed("gerar títulos recorrentes", () => recurringGenerated(leadDays));
+}
+
+async function recurringGenerated(leadDays: number): Promise<number> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   // Horizonte: fim do dia (hoje + leadDays). Gera tudo que vence até aqui.

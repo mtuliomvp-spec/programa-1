@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
@@ -33,32 +34,34 @@ export default async function ContasAReceberPage({
   const canEdit = canManage || canEditOnly;
   await ensureRecurringGeneratedForPage();
 
-  const [receivables, accounts, cashbox] = await Promise.all([
-    // `select` enxuto: só o que a tabela mostra (o include trazia a linha
-    // inteira do cliente por título).
-    prisma.receivable.findMany({
-      orderBy: { dueDate: "asc" },
-      select: {
-        id: true,
-        description: true,
-        category: true,
-        categoryLabel: true,
-        amount: true,
-        dueDate: true,
-        status: true,
-        saleId: true,
-        partSaleId: true,
-        recurringId: true,
-        vehicleId: true,
-        // Desconto concedido vira custo pós-venda do carro da venda.
-        sale: { select: { vehicleId: true } },
-        customer: { select: { name: true } },
-        account: { select: { name: true } },
-      },
-    }),
-    getActiveAccounts(),
-    getCashboxState(),
-  ]);
+  const [receivables, accounts, cashbox] = await timed("tela: contas a receber", () =>
+    Promise.all([
+      // `select` enxuto: só o que a tabela mostra (o include trazia a linha
+      // inteira do cliente por título).
+      prisma.receivable.findMany({
+        orderBy: { dueDate: "asc" },
+        select: {
+          id: true,
+          description: true,
+          category: true,
+          categoryLabel: true,
+          amount: true,
+          dueDate: true,
+          status: true,
+          saleId: true,
+          partSaleId: true,
+          recurringId: true,
+          vehicleId: true,
+          // Desconto concedido vira custo pós-venda do carro da venda.
+          sale: { select: { vehicleId: true } },
+          customer: { select: { name: true } },
+          account: { select: { name: true } },
+        },
+      }),
+      getActiveAccounts(),
+      getCashboxState(),
+    ]),
+  );
   // Data em que as baixas vão cair (data de trabalho do caixa aberto).
   const cashboxDate = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 

@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 
 /**
  * Fatura de cartão de crédito: o título (Payable com cardInvoice=true) é uma
@@ -41,7 +42,10 @@ export function cardNonExpenseAmount(items: { structuralKey: string; vehicleId: 
  *
  * Idempotente — pode ser chamada após qualquer mudança de item ou de status.
  */
-export async function syncCardInvoiceDerived(payableId: string): Promise<void> {
+export const syncCardInvoiceDerived = (...a: Parameters<typeof cardInvoiceDerived>) =>
+  timed("fatura de cartão: sincronizar itens", () => cardInvoiceDerived(...a));
+
+async function cardInvoiceDerived(payableId: string): Promise<void> {
   const payable = await prisma.payable.findUnique({
     where: { id: payableId },
     select: {

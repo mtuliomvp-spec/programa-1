@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { timed } from "@/lib/perf";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
@@ -45,34 +46,36 @@ export default async function EstoquePage({
   const q = params.q?.trim();
   const now = new Date();
 
-  const [vehicles, openPreSales] = await Promise.all([
-    prisma.vehicle.findMany({
-      where: { status, intermediation: false },
-      include: {
-        costs: { select: { amount: true } },
-        payables: { select: { amount: true, status: true } },
-        // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
-        attachments: { select: { kind: true, description: true } },
-        // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
-        // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
-        tradeInForSale: {
-          select: {
-            orderNumber: true,
-            vehicle: { select: { brand: true, model: true, plate: true } },
+  const [vehicles, openPreSales] = await timed("tela: estoque", () =>
+    Promise.all([
+      prisma.vehicle.findMany({
+        where: { status, intermediation: false },
+        include: {
+          costs: { select: { amount: true } },
+          payables: { select: { amount: true, status: true } },
+          // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
+          attachments: { select: { kind: true, description: true } },
+          // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
+          // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
+          tradeInForSale: {
+            select: {
+              orderNumber: true,
+              vehicle: { select: { brand: true, model: true, plate: true } },
+            },
           },
+          // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
+          sale: { select: { saleDate: true } },
         },
-        // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
-        sale: { select: { saleDate: true } },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    // Pré-vendas em aberto: o veículo continua no estoque, mas já está pré-vendido.
-    prisma.preSale.findMany({
-      where: { status: "ABERTA" },
-      select: { vehicleId: true, number: true },
-      orderBy: { number: "desc" },
-    }),
-  ]);
+        orderBy: { createdAt: "desc" },
+      }),
+      // Pré-vendas em aberto: o veículo continua no estoque, mas já está pré-vendido.
+      prisma.preSale.findMany({
+        where: { status: "ABERTA" },
+        select: { vehicleId: true, number: true },
+        orderBy: { number: "desc" },
+      }),
+    ]),
+  );
 
   // vehicleId → número da pré-venda aberta mais recente (ordenado desc: 1º = maior).
   const preSaleByVehicle = new Map<string, number>();

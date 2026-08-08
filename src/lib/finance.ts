@@ -1,10 +1,11 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, type TransactionClient } from "@/lib/prisma";
 import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import { resolveDespesaCategory } from "@/lib/categories";
+import { timed } from "@/lib/perf";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -176,7 +177,7 @@ export async function createVehicleWithPayable(input: {
  *   financeira; a entrada fica com o fornecedor.
  */
 async function createAcquisitionPayables(
-  tx: Prisma.TransactionClient,
+  tx: TransactionClient,
   input: {
     vehicleId: string;
     label: string;
@@ -632,7 +633,10 @@ export async function createIntermediationVehicle(input: {
   });
 }
 
-export async function registerVehicleSale(input: {
+export const registerVehicleSale = (...a: Parameters<typeof vehicleSale>) =>
+  timed("registrar venda", () => vehicleSale(...a));
+
+async function vehicleSale(input: {
   vehicleId: string;
   customerId: string;
   saleDate: Date;
@@ -1583,7 +1587,10 @@ export async function syncPurchaseRequestStatus(purchaseRequestId: string) {
   }
 }
 
-export async function markPayablePaid(id: string, paymentDate: Date, accountId?: string | null) {
+export const markPayablePaid = (...a: Parameters<typeof payablePaid>) =>
+  timed("baixa: pagar título", () => payablePaid(...a));
+
+async function payablePaid(id: string, paymentDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
   const updated = await prisma.payable.update({
     where: { id },
@@ -1608,7 +1615,10 @@ export async function markPayablePending(id: string) {
   return updated;
 }
 
-export async function markReceivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
+export const markReceivableReceived = (...a: Parameters<typeof receivableReceived>) =>
+  timed("baixa: receber título", () => receivableReceived(...a));
+
+async function receivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
   const updated = await prisma.receivable.update({
     where: { id },

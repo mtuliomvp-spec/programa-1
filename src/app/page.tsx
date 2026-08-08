@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { timed } from "@/lib/perf";
 import { redirect } from "next/navigation";
 import { getDashboardStats, getUpcomingDue, getCashFlowLastMonths } from "@/lib/queries";
 import { getStructuralSummary } from "@/lib/structural";
@@ -46,14 +47,16 @@ export default async function DashboardPage() {
     );
   }
 
-  const [stats, upcoming, monthly, structural, pat, traffic] = await Promise.all([
-    getDashboardStats(),
-    getUpcomingDue(7),
-    getCashFlowLastMonths(6),
-    getStructuralSummary(),
-    getPatrimonialStats(),
-    getPaidTrafficStats(),
-  ]);
+  const [stats, upcoming, monthly, structural, pat, traffic] = await timed("tela: painel inicial", () =>
+    Promise.all([
+      getDashboardStats(),
+      getUpcomingDue(7),
+      getCashFlowLastMonths(6),
+      getStructuralSummary(),
+      getPatrimonialStats(),
+      getPaidTrafficStats(),
+    ]),
+  );
 
   type UpcomingItem = {
     kind: "pagar" | "receber";

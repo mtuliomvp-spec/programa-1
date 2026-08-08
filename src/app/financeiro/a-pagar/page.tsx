@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -45,43 +46,45 @@ export default async function ContasAPagarPage({
   const canEdit = canManage || canEditOnly;
   await ensureRecurringGeneratedForPage();
 
-  const [payables, accounts, cashbox] = await Promise.all([
-    // `select` enxuto de propósito: `supplier: true`/`vehicle: true` traziam a
-    // linha inteira de cada cadastro (o veículo tem dezenas de colunas) para
-    // milhares de títulos — era o maior peso da tela.
-    prisma.payable.findMany({
-      orderBy: { dueDate: "asc" },
-      select: {
-        id: true,
-        orderNumber: true,
-        description: true,
-        category: true,
-        categoryLabel: true,
-        documentNumber: true,
-        amount: true,
-        dueDate: true,
-        status: true,
-        recurringId: true,
-        saleId: true,
-        purchaseRequestId: true,
-        capitalBeneficiaryId: true,
-        beneficiaryUserId: true,
-        cardInvoice: true,
-        supplierId: true,
-        supplier: { select: { id: true, name: true } },
-        vehicleId: true,
-        vehicle: { select: { id: true, brand: true, model: true, plate: true } },
-        account: { select: { name: true } },
-        beneficiaryUser: { select: { id: true, name: true } },
-        capitalBeneficiary: { select: { id: true, name: true } },
-        paymentCombo: { select: { id: true, name: true, status: true, user: { select: { name: true } } } },
-        _count: { select: { attachments: true } },
-        purchaseRequest: { select: { _count: { select: { attachments: true } } } },
-      },
-    }),
-    getActiveAccounts(),
-    getCashboxState(),
-  ]);
+  const [payables, accounts, cashbox] = await timed("tela: contas a pagar", () =>
+    Promise.all([
+      // `select` enxuto de propósito: `supplier: true`/`vehicle: true` traziam a
+      // linha inteira de cada cadastro (o veículo tem dezenas de colunas) para
+      // milhares de títulos — era o maior peso da tela.
+      prisma.payable.findMany({
+        orderBy: { dueDate: "asc" },
+        select: {
+          id: true,
+          orderNumber: true,
+          description: true,
+          category: true,
+          categoryLabel: true,
+          documentNumber: true,
+          amount: true,
+          dueDate: true,
+          status: true,
+          recurringId: true,
+          saleId: true,
+          purchaseRequestId: true,
+          capitalBeneficiaryId: true,
+          beneficiaryUserId: true,
+          cardInvoice: true,
+          supplierId: true,
+          supplier: { select: { id: true, name: true } },
+          vehicleId: true,
+          vehicle: { select: { id: true, brand: true, model: true, plate: true } },
+          account: { select: { name: true } },
+          beneficiaryUser: { select: { id: true, name: true } },
+          capitalBeneficiary: { select: { id: true, name: true } },
+          paymentCombo: { select: { id: true, name: true, status: true, user: { select: { name: true } } } },
+          _count: { select: { attachments: true } },
+          purchaseRequest: { select: { _count: { select: { attachments: true } } } },
+        },
+      }),
+      getActiveAccounts(),
+      getCashboxState(),
+    ]),
+  );
   // Combos ABERTOS para o botão "Adicionar ao combo" na seleção em lote.
   const openCombos = await prisma.paymentCombo.findMany({
     where: { status: "ABERTO" },
