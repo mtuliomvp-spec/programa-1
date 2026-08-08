@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable } from "@/lib/finance";
+import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
@@ -37,6 +37,43 @@ export async function receiveAction(id: string, amount: number, accountId?: stri
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/");
+}
+
+/**
+ * Recebe por menos que o valor cheio e QUITA o título, lançando a diferença
+ * como desconto concedido (custo pós-venda do veículo, ou despesa
+ * administrativa quando o título não é de um carro).
+ */
+export async function receiveWithDiscountAction(
+  id: string,
+  amount: number,
+  accountId: string,
+): Promise<{ ok: boolean; discount?: number; error?: string }> {
+  if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
+  try {
+    await assertCan("financeiro", "desconto");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  const date = await getCashboxWorkDate();
+  let discount = 0;
+  try {
+    await assertMonthOpen(date);
+    const res = await receiveWithDiscount({ receivableId: id, amount, date, accountId });
+    discount = res.discount;
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar o desconto." };
+  }
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/estoque");
+  revalidatePath("/relatorios/lucro-veiculos");
+  revalidatePath("/");
+  return { ok: true, discount };
 }
 
 export async function markPendingAction(id: string) {

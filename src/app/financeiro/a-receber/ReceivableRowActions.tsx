@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { receiveAction, markPendingAction } from "./actions";
+import { receiveAction, markPendingAction, receiveWithDiscountAction } from "./actions";
 
 type Account = { id: string; name: string };
 
@@ -11,17 +11,26 @@ export default function ReceivableRowActions({
   amount,
   accounts,
   canReceber = true,
+  canDiscount = false,
+  hasVehicle = false,
 }: {
   id: string;
   status: "PENDENTE" | "RECEBIDO" | "ATRASADO";
   amount: number;
   accounts: Account[];
   canReceber?: boolean;
+  /** Pode perdoar a diferença (baixar como custo/despesa) em vez de deixá-la pendente. */
+  canDiscount?: boolean;
+  /** Título ligado a um carro: a diferença vira custo pós-venda dele. */
+  hasVehicle?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [choosing, setChoosing] = useState(false);
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [value, setValue] = useState<string>(String(amount));
+  // O que fazer com a diferença: deixar pendente (padrão) ou dar desconto.
+  const [discount, setDiscount] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Sem permissão de baixa: nenhum controle de receber/reverter aparece.
   if (!canReceber) return null;
@@ -42,6 +51,7 @@ export default function ReceivableRowActions({
   if (choosing) {
     const pay = Number(value) || 0;
     const restante = Math.max(0, Math.round((amount - pay) * 100) / 100);
+    const money = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
     return (
       <div className="flex flex-col items-end gap-1.5">
         <input
@@ -68,13 +78,54 @@ export default function ReceivableRowActions({
           </select>
         ) : null}
         {pay > 0 && pay < amount ? (
-          <p className="text-[11px] text-amber-600">Restante fica pendente: {restante.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</p>
+          canDiscount && hasVehicle ? (
+            <div className="w-56 rounded-lg border border-amber-200 bg-amber-50 p-2 text-left">
+              <p className="text-[11px] font-medium text-amber-800">
+                Faltam {money(restante)}. O que fazer?
+              </p>
+              <label className="mt-1 flex cursor-pointer items-start gap-1.5 text-[11px] text-slate-700">
+                <input
+                  type="radio"
+                  className="mt-0.5"
+                  checked={!discount}
+                  onChange={() => setDiscount(false)}
+                />
+                <span>Restante continua pendente</span>
+              </label>
+              <label className="mt-1 flex cursor-pointer items-start gap-1.5 text-[11px] text-slate-700">
+                <input
+                  type="radio"
+                  className="mt-0.5"
+                  checked={discount}
+                  onChange={() => setDiscount(true)}
+                />
+                <span>
+                  <strong>Dar desconto</strong> — o título é quitado e os {money(restante)} viram
+                  custo pós-venda do veículo (reduzem o lucro dele)
+                </span>
+              </label>
+            </div>
+          ) : (
+            <p className="text-[11px] text-amber-600">Restante fica pendente: {money(restante)}</p>
+          )
         ) : null}
+        {error ? <p className="w-56 text-[11px] text-rose-600">{error}</p> : null}
         <div className="flex items-center gap-2">
           <button
             type="button"
             disabled={pending || pay <= 0}
-            onClick={() => startTransition(() => receiveAction(id, pay, accountId || undefined))}
+            onClick={() => {
+              setError(null);
+              const darDesconto = discount && pay < amount;
+              startTransition(async () => {
+                if (darDesconto) {
+                  const res = await receiveWithDiscountAction(id, pay, accountId);
+                  if (!res.ok) setError(res.error || "Não foi possível dar o desconto.");
+                  return;
+                }
+                await receiveAction(id, pay, accountId || undefined);
+              });
+            }}
             className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
           >
             {pending ? "Salvando..." : "Confirmar"}
@@ -84,6 +135,8 @@ export default function ReceivableRowActions({
             onClick={() => {
               setChoosing(false);
               setValue(String(amount));
+              setDiscount(false);
+              setError(null);
             }}
             className="text-xs text-slate-400 hover:underline"
           >

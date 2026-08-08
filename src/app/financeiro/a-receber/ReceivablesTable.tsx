@@ -23,6 +23,8 @@ export type ReceivableRow = {
   editable: boolean;
   /** Motivo de não poder editar (mostrado como dica na linha). */
   originHint: string | null;
+  /** Ligado a um carro: um desconto vira custo pós-venda dele. */
+  hasVehicle: boolean;
 };
 
 const statusTone = { PENDENTE: "warning", RECEBIDO: "success", ATRASADO: "danger" } as const;
@@ -40,6 +42,7 @@ export default function ReceivablesTable({
   canReceber = true,
   canManage = false,
   canEdit,
+  canDiscount = false,
   cashboxDate = null,
 }: {
   rows: ReceivableRow[];
@@ -47,6 +50,8 @@ export default function ReceivablesTable({
   canReceber?: boolean;
   canManage?: boolean;
   canEdit?: boolean;
+  /** Pode quitar o título dando desconto na diferença. */
+  canDiscount?: boolean;
   cashboxDate?: string | null;
 }) {
   const showEdit = canEdit ?? canManage;
@@ -188,6 +193,8 @@ export default function ReceivablesTable({
                       amount={r.amount}
                       accounts={accounts}
                       canReceber={canReceber}
+                      canDiscount={canDiscount}
+                      hasVehicle={r.hasVehicle}
                     />
                     {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>

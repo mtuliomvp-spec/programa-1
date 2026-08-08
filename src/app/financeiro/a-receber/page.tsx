@@ -23,10 +23,11 @@ export default async function ContasAReceberPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
-  const [canReceber, canManage, canEditOnly] = await Promise.all([
+  const [canReceber, canManage, canEditOnly, canDiscount] = await Promise.all([
     userCan("financeiro", "receber"),
     userCan("financeiro", "criar"),
     userCan("financeiro", "editar"),
+    userCan("financeiro", "desconto"),
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
@@ -48,6 +49,9 @@ export default async function ContasAReceberPage({
         saleId: true,
         partSaleId: true,
         recurringId: true,
+        vehicleId: true,
+        // Desconto concedido vira custo pós-venda do carro da venda.
+        sale: { select: { vehicleId: true } },
         customer: { select: { name: true } },
         account: { select: { name: true } },
       },
@@ -96,6 +100,7 @@ export default async function ContasAReceberPage({
     effective: r.effective,
     // Editar/excluir: manuais e ainda não recebidos. Recorrente É editável
     // (o vencimento é que fica travado, na própria tela de edição).
+    hasVehicle: Boolean(r.vehicleId ?? r.sale?.vehicleId),
     editable: r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId,
     originHint:
       r.status === "RECEBIDO"
@@ -177,6 +182,7 @@ export default async function ContasAReceberPage({
               canReceber={canReceber}
               canManage={canManage}
               canEdit={canEdit}
+              canDiscount={canDiscount}
               cashboxDate={cashboxDate}
             />
             {pageCount > 1 ? (
