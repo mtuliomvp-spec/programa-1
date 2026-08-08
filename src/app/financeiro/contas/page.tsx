@@ -4,6 +4,7 @@ import { getAccountsWithBalances } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
 import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { maturityStatus, daysToMaturity } from "@/lib/status";
 import { matchesSearch } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
@@ -18,6 +19,38 @@ import DeleteTransferButton from "./DeleteTransferButton";
 export const dynamic = "force-dynamic";
 
 const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
+
+/**
+ * Vencimento da aplicação no card. Sem esta linha o dinheiro podia vencer e
+ * ficar parado sem render, sem nada na tela avisando.
+ */
+function MaturityLine({ maturity }: { maturity: Date | null }) {
+  const status = maturityStatus(maturity);
+  if (status === "sem-data") {
+    return (
+      <p className="mt-0.5 text-xs text-slate-400">
+        Vencimento não informado — abra a conta e informe para o dinheiro não ficar parado.
+      </p>
+    );
+  }
+  if (status === "vencido") {
+    return (
+      <p className="mt-0.5 text-xs font-medium text-rose-600">
+        ⚠ Aplicação venceu em {formatDate(maturity!)} — reaplique para voltar a render.
+      </p>
+    );
+  }
+  if (status === "proximo") {
+    const dias = daysToMaturity(maturity!);
+    return (
+      <p className="mt-0.5 text-xs font-medium text-amber-700">
+        ⏳ Vence em {formatDate(maturity!)}
+        {dias === 0 ? " (hoje)" : dias === 1 ? " (amanhã)" : ` (em ${dias} dias)`}
+      </p>
+    );
+  }
+  return <p className="mt-0.5 text-xs text-slate-500">Rende até {formatDate(maturity!)}</p>;
+}
 
 export default async function ContasPage({
   searchParams,
@@ -84,6 +117,7 @@ export default async function ContasPage({
               .join(" · ") || "—"}
             {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
           </p>
+          {a.isInvestment ? <MaturityLine maturity={a.investmentMaturity} /> : null}
           {a.isInvestment ? (
             <p className="mt-0.5 text-xs font-medium text-emerald-700">
               Para creditar, abra a conta e use <strong>Aplicar</strong> — o dinheiro é dividido entre os sócios.

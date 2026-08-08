@@ -44,6 +44,15 @@ export default function AccountForm({ beneficiaries = [] }: { beneficiaries?: Be
           </span>
         </span>
       </label>
+      {isInvestment ? (
+        <Field label="Vencimento da aplicação">
+          <Input name="investmentMaturity" type="date" className="max-w-xs" />
+          <p className="mt-1 text-xs text-slate-400">
+            Até quando o dinheiro rende. Deixe em branco se a aplicação não tem prazo. O sistema
+            avisa antes de vencer, para o dinheiro não ficar parado.
+          </p>
+        </Field>
+      ) : null}
       {type === "FINANCEIRA" && !isInvestment ? (
         <Field label="Desconto de impostos sobre o retorno (%)">
           <Input

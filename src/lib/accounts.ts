@@ -84,6 +84,8 @@ export type AccountWithBalance = {
   accountNumber: string | null;
   isDefault: boolean;
   isInvestment: boolean;
+  /** Até quando a aplicação rende (só faz sentido com isInvestment). */
+  investmentMaturity: Date | null;
   active: boolean;
   initialBalance: number;
   received: number;
@@ -136,6 +138,7 @@ async function accountsWithBalances(): Promise<AccountWithBalance[]> {
       accountNumber: account.accountNumber,
       isDefault: account.isDefault,
       isInvestment: account.isInvestment,
+      investmentMaturity: account.investmentMaturity,
       active: account.active,
       initialBalance: account.initialBalance,
       received: receivedTotal,

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { effectivePayableStatus, effectiveReceivableStatus } from "@/lib/status";
+import { MATURITY_WARN_DAYS } from "@/lib/status";
 
 function monthRange(monthsAgo: number) {
   const now = new Date();
@@ -124,4 +125,23 @@ export async function getCashFlowLastMonths(months = 6) {
     });
   }
   return results;
+}
+
+/**
+ * Aplicações vencendo (ou já vencidas): o aviso que evita o dinheiro ficar
+ * parado sem render depois do vencimento. Inclui as passadas de propósito —
+ * uma aplicação vencida há duas semanas é o caso mais grave, não o menos.
+ */
+export async function getInvestmentsDueSoon(days = MATURITY_WARN_DAYS) {
+  const limit = new Date();
+  limit.setDate(limit.getDate() + days);
+  return prisma.financialAccount.findMany({
+    where: {
+      isInvestment: true,
+      active: true,
+      investmentMaturity: { not: null, lte: limit },
+    },
+    orderBy: { investmentMaturity: "asc" },
+    select: { id: true, name: true, investmentMaturity: true },
+  });
 }

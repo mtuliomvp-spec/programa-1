@@ -162,6 +162,9 @@ model FinancialAccount {
   // Conta de Aplicação (investimento dos sócios): o saldo é sempre distribuído
   // entre os beneficiários do capital via InvestmentAllocation.
   isInvestment   Boolean           @default(false)
+  // Até quando a aplicação rende. Sem isto o dinheiro pode vencer e ficar
+  // parado sem ninguém perceber. Nulo = aplicação sem prazo (liquidez diária).
+  investmentMaturity DateTime?
   // Titular VERDADEIRO da conta: algumas contas cadastradas são de um sócio
   // (beneficiário do capital) e operam como se fossem da MVP. Nulo = conta da
   // própria empresa. Informativo — identifica o dono nas telas, sem alterar a
