@@ -2,7 +2,7 @@
 
 import { useActionState, useEffect, useMemo, useState } from "react";
 import { Button, Card, Field, Input, Select, Textarea } from "@/components/ui";
-import { formatCurrency, toDateInputValue } from "@/lib/format";
+import { formatCurrency } from "@/lib/format";
 import { runStockInterestAction, type StockInterestFormState } from "./actions";
 
 type Vehicle = {
@@ -29,9 +29,12 @@ const round2 = (n: number) => Math.round(n * 100) / 100;
 export default function RemuneracaoForm({
   vehicles,
   beneficiaries,
+  cashboxDate,
 }: {
   vehicles: Vehicle[];
   beneficiaries: Beneficiary[];
+  /** Data de trabalho do caixa aberto (null = caixa fechado). */
+  cashboxDate: string | null;
 }) {
   const [state, formAction, pending] = useActionState(
     runStockInterestAction,
@@ -111,7 +114,8 @@ export default function RemuneracaoForm({
       .filter((r) => r.beneficiaryId),
   );
 
-  const canSubmit = rateNum > 0 && selectedIds.length > 0 && rateioOk && !pending;
+  // Sem caixa aberto não há data de lançamento — o servidor também barra.
+  const canSubmit = rateNum > 0 && selectedIds.length > 0 && rateioOk && !!cashboxDate && !pending;
 
   return (
     <form action={formAction} className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -329,9 +333,24 @@ export default function RemuneracaoForm({
         </Card>
 
         <Card className="px-5 py-4 space-y-3">
-          <Field label="Data" required>
-            <Input name="date" type="date" defaultValue={toDateInputValue(new Date())} required />
-          </Field>
+          <div className="flex flex-col gap-1">
+            {/* A data vem do caixa aberto (como toda baixa do financeiro) — o
+                servidor usa a data de trabalho do caixa, não a de hoje. */}
+            <span className="text-sm font-medium text-slate-700">Data do lançamento</span>
+            <span
+              className={`flex h-11 items-center rounded-lg border px-3 text-sm ${
+                cashboxDate
+                  ? "border-slate-200 bg-slate-50 text-slate-700"
+                  : "border-amber-200 bg-amber-50 text-amber-700"
+              }`}
+            >
+              {cashboxDate ? `${cashboxDate} (data do caixa)` : "Caixa fechado — abra o caixa para lançar"}
+            </span>
+            <p className="text-xs text-slate-400">
+              A remuneração entra na mesma data do movimento de caixa. Para lançar em outro dia,
+              abra o caixa naquela data.
+            </p>
+          </div>
           <Field label="Descrição (opcional)">
             <Textarea name="description" rows={2} placeholder="Ex: Remuneração de julho/2026" />
           </Field>
