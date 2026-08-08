@@ -5,7 +5,13 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { markPendingAction, payBatchAction, deletePayablesAction } from "./actions";
+import {
+  markPendingAction,
+  payBatchAction,
+  deletePayablesAction,
+  correctPaymentDateAction,
+} from "./actions";
+import FixDateButton from "@/components/FixDateButton";
 import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
 
@@ -25,6 +31,8 @@ export type PayableRow = {
   effective: "PENDENTE" | "PAGO" | "ATRASADO";
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
+  /** Data do pagamento (yyyy-mm-dd) quando já pago, para corrigir. */
+  paymentDateInput: string | null;
   recurring: boolean;
   // Combo de pagamento em que o título está (montado/solicitado por um usuário).
   combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
@@ -47,6 +55,7 @@ export default function PayablesTable({
   rows,
   accounts,
   canPagar = true,
+  canFixDate = false,
   canManage = false,
   canEdit,
   canCombo = false,
@@ -56,6 +65,8 @@ export default function PayablesTable({
   rows: PayableRow[];
   accounts: Account[];
   canPagar?: boolean;
+  /** Pode corrigir a data de um pagamento já feito. */
+  canFixDate?: boolean;
   canManage?: boolean;
   // Link "Editar" da linha (permissão granular financeiro.editar); sem a prop,
   // vale o mesmo que canManage.
@@ -264,6 +275,13 @@ export default function PayablesTable({
                       >
                         Editar
                       </Link>
+                    ) : null}
+                    {p.status === "PAGO" && canFixDate && p.paymentDateInput ? (
+                      <FixDateButton
+                        currentDate={p.paymentDateInput}
+                        kind="pagamento"
+                        onSave={(d) => correctPaymentDateAction(p.id, d)}
+                      />
                     ) : null}
                     {p.status === "PAGO" && canPagar ? (
                       <button

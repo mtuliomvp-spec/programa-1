@@ -3,7 +3,7 @@ import { timed } from "@/lib/perf";
 import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { effectiveReceivableStatus } from "@/lib/status";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -24,11 +24,12 @@ export default async function ContasAReceberPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
-  const [canReceber, canManage, canEditOnly, canDiscount] = await Promise.all([
+  const [canReceber, canManage, canEditOnly, canDiscount, canFixDate] = await Promise.all([
     userCan("financeiro", "receber"),
     userCan("financeiro", "criar"),
     userCan("financeiro", "editar"),
     userCan("financeiro", "desconto"),
+    userCan("financeiro", "corrigirdata"),
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
@@ -48,6 +49,7 @@ export default async function ContasAReceberPage({
           amount: true,
           dueDate: true,
           status: true,
+          receivedDate: true,
           saleId: true,
           partSaleId: true,
           recurringId: true,
@@ -104,6 +106,7 @@ export default async function ContasAReceberPage({
     // Editar/excluir: manuais e ainda não recebidos. Recorrente É editável
     // (o vencimento é que fica travado, na própria tela de edição).
     hasVehicle: Boolean(r.vehicleId ?? r.sale?.vehicleId),
+    receivedDateInput: r.receivedDate ? toDateInputValue(r.receivedDate) : null,
     editable: r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId,
     originHint:
       r.status === "RECEBIDO"
@@ -186,6 +189,7 @@ export default async function ContasAReceberPage({
               canManage={canManage}
               canEdit={canEdit}
               canDiscount={canDiscount}
+              canFixDate={canFixDate}
               cashboxDate={cashboxDate}
             />
             {pageCount > 1 ? (

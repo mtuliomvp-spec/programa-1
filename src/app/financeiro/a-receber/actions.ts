@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount } from "@/lib/finance";
+import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount, correctReceivedDate } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
@@ -74,6 +74,40 @@ export async function receiveWithDiscountAction(
   revalidatePath("/relatorios/lucro-veiculos");
   revalidatePath("/");
   return { ok: true, discount };
+}
+
+/**
+ * Corrige a data de um recebimento já feito. É ação de CORREÇÃO: não exige
+ * caixa aberto (a data do caixa é justamente o que estava errado) nem farol
+ * verde — senão o usuário não conseguiria sair de um estado divergente.
+ * Os dois meses envolvidos precisam estar abertos: mover um valor para dentro
+ * ou para fora de um mês já encerrado bagunçaria o fechamento.
+ */
+export async function correctReceivedDateAction(
+  id: string,
+  dateInput: string,
+): Promise<{ ok: boolean; movedCapital?: boolean; error?: string }> {
+  if (!dateInput) return { ok: false, error: "Escolha a data." };
+  try {
+    await assertCan("financeiro", "corrigirdata");
+    const newDate = parseDateInput(dateInput);
+    const current = await prisma.receivable.findUnique({
+      where: { id },
+      select: { receivedDate: true },
+    });
+    if (current?.receivedDate) await assertMonthOpen(current.receivedDate);
+    await assertMonthOpen(newDate);
+    const res = await correctReceivedDate(id, newDate);
+    revalidatePath("/financeiro/a-receber");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/capital");
+    revalidatePath("/");
+    return { ok: true, movedCapital: res.movedCapital };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível corrigir a data." };
+  }
 }
 
 export async function markPendingAction(id: string) {

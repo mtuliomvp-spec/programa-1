@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { receiveAction, markPendingAction, receiveWithDiscountAction } from "./actions";
+import {
+  receiveAction,
+  markPendingAction,
+  receiveWithDiscountAction,
+  correctReceivedDateAction,
+} from "./actions";
+import FixDateButton from "@/components/FixDateButton";
 
 type Account = { id: string; name: string };
 
@@ -13,6 +19,8 @@ export default function ReceivableRowActions({
   canReceber = true,
   canDiscount = false,
   hasVehicle = false,
+  canFixDate = false,
+  receivedDateInput = null,
 }: {
   id: string;
   status: "PENDENTE" | "RECEBIDO" | "ATRASADO";
@@ -23,6 +31,10 @@ export default function ReceivableRowActions({
   canDiscount?: boolean;
   /** Título ligado a um carro: a diferença vira custo pós-venda dele. */
   hasVehicle?: boolean;
+  /** Pode corrigir a data de um recebimento já feito. */
+  canFixDate?: boolean;
+  /** Data atual do recebimento (yyyy-mm-dd), para preencher o campo. */
+  receivedDateInput?: string | null;
 }) {
   const [pending, startTransition] = useTransition();
   const [choosing, setChoosing] = useState(false);
@@ -37,14 +49,23 @@ export default function ReceivableRowActions({
 
   if (status === "RECEBIDO") {
     return (
-      <button
-        type="button"
-        disabled={pending}
-        onClick={() => startTransition(() => markPendingAction(id))}
-        className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
-      >
-        Reverter
-      </button>
+      <div className="flex items-center justify-end gap-3">
+        {canFixDate && receivedDateInput ? (
+          <FixDateButton
+            currentDate={receivedDateInput}
+            kind="recebimento"
+            onSave={(d) => correctReceivedDateAction(id, d)}
+          />
+        ) : null}
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => startTransition(() => markPendingAction(id))}
+          className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
+        >
+          Reverter
+        </button>
+      </div>
     );
   }
 
