@@ -4,6 +4,7 @@ import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } 
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { chassiOrNull } from "@/lib/vehicle-doc";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
  *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
@@ -245,7 +246,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       manufactureYear: d.tiManufactureYear ?? d.tiModelYear ?? new Date().getFullYear(),
       modelYear: d.tiModelYear ?? d.tiManufactureYear ?? new Date().getFullYear(),
       plate: d.tiPlate.toUpperCase(),
-      chassi: d.tiChassi || null,
+      chassi: chassiOrNull(d.tiChassi),
       color: d.tiColor || null,
       km: d.tiKm ?? 0,
       fuel: d.tiFuel || null,

@@ -6,6 +6,12 @@ import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { timed } from "@/lib/perf";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  missingVehicleDocs,
+  missingVehicleDocsError,
+} from "@/lib/vehicle-doc";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -118,8 +124,8 @@ export async function createVehicleWithPayable(input: {
         manufactureYear: input.manufactureYear,
         modelYear: input.modelYear,
         plate: input.plate,
-        chassi: input.chassi || null,
-        renavam: input.renavam || null,
+        chassi: chassiOrNull(input.chassi),
+        renavam: renavamOrNull(input.renavam),
         color: input.color || null,
         km: input.km,
         fuel: input.fuel || null,
@@ -617,8 +623,8 @@ export async function createIntermediationVehicle(input: {
       manufactureYear: input.manufactureYear,
       modelYear: input.modelYear,
       plate: input.plate.toUpperCase(),
-      chassi: input.chassi || null,
-      renavam: input.renavam || null,
+      chassi: chassiOrNull(input.chassi),
+      renavam: renavamOrNull(input.renavam),
       color: input.color || null,
       km: input.km ?? 0,
       fuel: input.fuel || null,
@@ -713,6 +719,18 @@ async function vehicleSale(input: {
   commissionToCapital?: boolean;
 }) {
   const defaultAccountId = await getDefaultAccountId();
+  // Trava única de documentos: TODO caminho que efetiva uma venda passa por
+  // aqui (conversão de pré-venda, venda direta e conversão de intermediação) —
+  // o único `sale.create` do sistema está logo abaixo. Vender sem RENAVAM ou
+  // sem chassi deixa o contrato de compra e o termo de troca com uma linha em
+  // branco para preencher à mão, então o registro é recusado.
+  const docs = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: input.vehicleId },
+    select: { chassi: true, renavam: true },
+  });
+  const faltando = missingVehicleDocs(docs);
+  if (faltando.length) throw new Error(missingVehicleDocsError(faltando));
+
   // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
   // casando com a "Compra do veículo (líquido quitado pela troca)".
   const neutralAccountId =
