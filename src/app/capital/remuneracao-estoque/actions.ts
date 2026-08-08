@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { assertCan } from "@/lib/guards";
-import { parseDateInput } from "@/lib/format";
 import { getSessionUser } from "@/lib/auth";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { runStockInterest, reverseStockInterest } from "@/lib/stock-interest";
 
@@ -13,8 +13,12 @@ type SplitInput = { beneficiaryId: string; percent?: number; amount?: number };
 
 /**
  * Roda a rotina de remuneração de capital sobre o estoque. Recebe do form:
- * taxa (ratePercent), vehicleIds (múltiplos), rateio (splits JSON), data e
- * descrição. Bloqueia lançamento em mês fechado.
+ * taxa (ratePercent), vehicleIds (múltiplos), rateio (splits JSON) e descrição.
+ *
+ * A DATA não vem do formulário: é a data de trabalho do caixa aberto
+ * (`getCashboxWorkDate`), como em toda baixa do financeiro — assim o movimento
+ * cai no dia do caixa e não em "hoje". Bloqueia com o caixa fechado ou mês
+ * fechado.
  */
 export async function runStockInterestAction(
   _prev: StockInterestFormState,
@@ -28,7 +32,6 @@ export async function runStockInterestAction(
 
   const ratePercent = Number(formData.get("ratePercent") || 0);
   const vehicleIds = formData.getAll("vehicleIds").map((v) => String(v)).filter(Boolean);
-  const date = parseDateInput(String(formData.get("date") || ""));
   const description = String(formData.get("description") || "").trim() || null;
   const splitMode = String(formData.get("splitMode") || "PERCENT") === "VALOR" ? "VALOR" : "PERCENT";
 
@@ -49,6 +52,8 @@ export async function runStockInterestAction(
   }
 
   try {
+    await assertCashboxOpen();
+    const date = await getCashboxWorkDate();
     await assertMonthOpen(date);
     const user = await getSessionUser();
     await runStockInterest({

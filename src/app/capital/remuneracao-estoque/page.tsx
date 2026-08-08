@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { stockVehiclesForInterest, stockInterestHistory } from "@/lib/stock-interest";
 import { userCan } from "@/lib/guards";
+import { getCashboxState } from "@/lib/cashbox";
 import RemuneracaoForm from "./RemuneracaoForm";
 import ReverseRunButton from "./ReverseRunButton";
 
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function RemuneracaoEstoquePage() {
   await ensureCompanyBeneficiary();
   const canManage = await userCan("administrativo", "capital");
-  const [vehicles, beneficiaries, history] = await Promise.all([
+  const [vehicles, beneficiaries, history, cashbox] = await Promise.all([
     stockVehiclesForInterest(),
     prisma.capitalBeneficiary.findMany({
       where: { active: true },
@@ -20,7 +21,10 @@ export default async function RemuneracaoEstoquePage() {
       select: { id: true, name: true },
     }),
     stockInterestHistory(),
+    getCashboxState(),
   ]);
+  // A remuneração entra na data de trabalho do caixa aberto (como toda baixa).
+  const cashboxDate = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
   return (
     <div>
@@ -53,7 +57,7 @@ export default async function RemuneracaoEstoquePage() {
           />
         </Card>
       ) : canManage ? (
-        <RemuneracaoForm vehicles={vehicles} beneficiaries={beneficiaries} />
+        <RemuneracaoForm vehicles={vehicles} beneficiaries={beneficiaries} cashboxDate={cashboxDate} />
       ) : null}
 
       <Card className="mt-6 print:hidden">
