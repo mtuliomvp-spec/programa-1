@@ -12,6 +12,8 @@ import {
   missingVehicleDocs,
   missingVehicleDocsError,
 } from "@/lib/vehicle-doc";
+import { parseDebtItems, type VehicleDebtItem } from "@/lib/vehicle-debts";
+import { parseDateInput } from "@/lib/format";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -93,6 +95,8 @@ export async function createVehicleWithPayable(input: {
   payoffAmount?: number;
   payoffTo?: string | null;
   debtsAmount?: number;
+  /** Detalhamento opcional dos débitos (uma conta a pagar por linha). */
+  debtsItems?: unknown;
   // Trade-in: o líquido ao vendedor já é quitado pela troca (não vira conta a
   // pagar em aberto nem sai dinheiro do caixa).
   liquidoSettledByTrade?: boolean;
@@ -112,6 +116,7 @@ export async function createVehicleWithPayable(input: {
   const acquisitionType = input.acquisitionType ?? "A_VISTA";
   const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
   const debtsAmount = Math.max(0, input.debtsAmount ?? 0);
+  const debtsItems = parseDebtItems(input.debtsItems);
   const liquido = Math.max(0, Math.round((input.purchasePrice - payoffAmount - debtsAmount) * 100) / 100);
   const downPayment = Math.min(Math.max(0, input.downPayment ?? 0), liquido);
   const installmentsCount = Math.max(1, input.installmentsCount ?? 1);
@@ -139,6 +144,7 @@ export async function createVehicleWithPayable(input: {
         payoffAmount,
         payoffTo: input.payoffTo || null,
         debtsAmount,
+        debtsItems: debtsItems,
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
@@ -163,6 +169,7 @@ export async function createVehicleWithPayable(input: {
         payoffAmount,
         payoffTo: input.payoffTo || null,
         debtsAmount,
+        debtsItems,
         liquidoSettledByTrade: input.liquidoSettledByTrade,
         tradeNote: input.tradeNote || null,
         alreadyPaid: input.alreadyPaid,
@@ -199,6 +206,8 @@ async function createAcquisitionPayables(
     payoffAmount?: number;
     payoffTo?: string | null;
     debtsAmount?: number;
+    /** Detalhamento dos débitos: uma conta a pagar por linha. */
+    debtsItems?: VehicleDebtItem[];
     liquidoSettledByTrade?: boolean;
     tradeNote?: string | null;
     alreadyPaid: boolean;
@@ -231,16 +240,34 @@ async function createAcquisitionPayables(
     });
   }
   if (debtsAmount > 0) {
-    await tx.payable.create({
-      data: {
-        ...base,
-        description: `Débitos do veículo (repasse) ${input.label}`,
-        amount: debtsAmount,
-        dueDate: input.dueDate,
-        status: "PENDENTE",
-        supplierId: null,
-      },
-    });
+    // Detalhado (IPVA, multa, licenciamento...): um título por linha, cada um
+    // com o seu vencimento. Sem detalhamento, o título único de sempre.
+    const items = (input.debtsItems ?? []).filter((d) => d.amount > 0);
+    if (items.length) {
+      for (const item of items) {
+        await tx.payable.create({
+          data: {
+            ...base,
+            description: `Débitos do veículo: ${item.description || "sem descrição"} ${input.label}`,
+            amount: item.amount,
+            dueDate: item.dueDate ? parseDateInput(item.dueDate) : input.dueDate,
+            status: "PENDENTE",
+            supplierId: null,
+          },
+        });
+      }
+    } else {
+      await tx.payable.create({
+        data: {
+          ...base,
+          description: `Débitos do veículo (repasse) ${input.label}`,
+          amount: debtsAmount,
+          dueDate: input.dueDate,
+          status: "PENDENTE",
+          supplierId: null,
+        },
+      });
+    }
   }
 
   // Líquido ao vendedor = valor negociado − quitação − débitos.
@@ -355,6 +382,9 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
         payoffAmount: vehicle.payoffAmount,
         payoffTo: vehicle.payoffTo,
         debtsAmount: vehicle.debtsAmount,
+        // Detalhamento vem do veículo: é por isso que ele é gravado lá, e não
+        // só no formulário — aqui os títulos são apagados e recriados.
+        debtsItems: parseDebtItems(vehicle.debtsItems),
         alreadyPaid: false,
         defaultAccountId: null,
       });

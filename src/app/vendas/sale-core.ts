@@ -5,6 +5,7 @@ import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { chassiOrNull } from "@/lib/vehicle-doc";
+import { parseDebtItems, sumDebtItems } from "@/lib/vehicle-debts";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
  *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
@@ -96,6 +97,11 @@ export const saleSchema = z.object({
   tiPayoff: z.coerce.number().min(0).optional(),
   tiPayoffTo: z.string().optional(),
   tiDebts: z.coerce.number().min(0).optional(),
+  // Detalhamento dos débitos (JSON do formulário): cada linha vira um título.
+  tiDebtsItems: z
+    .string()
+    .optional()
+    .transform((v) => parseDebtItems(v)),
   tiSupplierName: z.string().optional(),
 });
 
@@ -221,6 +227,14 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     }
     const payoff = d.tiPayoff ?? 0;
     const debts = d.tiDebts ?? 0;
+    // Detalhado: a soma das linhas tem de bater com o total, senão a entrada da
+    // troca (calculada pelo total) não corresponderia aos títulos gerados.
+    const debtItems = d.tiDebtsItems ?? [];
+    if (debtItems.length && Math.abs(sumDebtItems(debtItems) - debts) > 0.005) {
+      throw new Error(
+        "A soma dos débitos detalhados não bate com o total informado. Confira as linhas.",
+      );
+    }
     const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
     if (liquido > d.totalAmount) {
       throw new Error("O líquido do veículo da troca é maior que o valor da venda. Ajuste os valores.");
@@ -261,6 +275,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       payoffAmount: payoff,
       payoffTo: d.tiPayoffTo || null,
       debtsAmount: debts,
+      debtsItems: debtItems,
       liquidoSettledByTrade: true,
       tradeNote: `Recebido em troca de ${customer?.name ?? "cliente"} na venda ${
         sellVehicle ? `${sellVehicle.brand} ${sellVehicle.model} - ${sellVehicle.plate}` : ""

@@ -9,6 +9,7 @@ import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { chassiOrNull, renavamOrNull, isChassiComplete } from "@/lib/vehicle-doc";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
@@ -96,6 +97,7 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     tiPayoff: d.tradeIn ? d.tiPayoff ?? null : null,
     tiPayoffTo: d.tradeIn ? d.tiPayoffTo || null : null,
     tiDebts: d.tradeIn ? d.tiDebts ?? null : null,
+    tiDebtsItems: d.tradeIn ? d.tiDebtsItems : [],
     tiSupplierName: d.tradeIn ? d.tiSupplierName || null : null,
   };
 
@@ -201,6 +203,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiPayoff: pre.tiPayoff ?? undefined,
     tiPayoffTo: pre.tiPayoffTo ?? undefined,
     tiDebts: pre.tiDebts ?? undefined,
+    tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
     tiSupplierName: pre.tiSupplierName ?? undefined,
   };
 

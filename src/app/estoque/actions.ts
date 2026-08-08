@@ -21,6 +21,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
+import { parseDebtItems, sumDebtItems } from "@/lib/vehicle-debts";
 
 const advanceSchema = z.object({
   vehicleId: z.string().min(1),
@@ -104,6 +105,11 @@ const vehicleSchema = z.object({
   payoffAmount: z.coerce.number().min(0).optional(),
   payoffTo: z.string().optional(),
   debtsAmount: z.coerce.number().min(0).optional(),
+  // Detalhamento (JSON do formulário): cada linha vira uma conta a pagar.
+  debtsItems: z
+    .string()
+    .optional()
+    .transform((v) => parseDebtItems(v)),
 });
 
 export type VehicleFormState = { error?: string };
@@ -153,6 +159,15 @@ export async function createVehicleAction(
     if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
   }
 
+  // Detalhado: a soma das linhas tem de bater com o total, senão os títulos
+  // gerados não correspondem ao valor que abate o líquido.
+  if (
+    data.debtsItems.length &&
+    Math.abs(sumDebtItems(data.debtsItems) - (data.debtsAmount ?? 0)) > 0.005
+  ) {
+    return { error: "A soma dos débitos detalhados não bate com o total informado. Confira as linhas." };
+  }
+
   // Consignado: o veículo é de um terceiro. Exige o consignante (fornecedor) e o
   // valor a devolver; não é patrimônio comprado, então purchasePrice fica 0 (sem
   // conta de compra — a devolução ao dono só é apurada quando o carro é vendido).
@@ -199,6 +214,7 @@ export async function createVehicleAction(
       payoffAmount: data.payoffAmount ?? 0,
       payoffTo: data.payoffTo || null,
       debtsAmount: data.debtsAmount ?? 0,
+      debtsItems: data.debtsItems,
       consigned,
       ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
@@ -251,6 +267,15 @@ export async function updateVehicleAction(
     if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
   }
 
+  // Detalhado: a soma das linhas tem de bater com o total, senão os títulos
+  // gerados não correspondem ao valor que abate o líquido.
+  if (
+    data.debtsItems.length &&
+    Math.abs(sumDebtItems(data.debtsItems) - (data.debtsAmount ?? 0)) > 0.005
+  ) {
+    return { error: "A soma dos débitos detalhados não bate com o total informado. Confira as linhas." };
+  }
+
   const consigned = Boolean(data.consigned);
   if (consigned) {
     if (!data.supplierId) {
@@ -289,6 +314,7 @@ export async function updateVehicleAction(
         payoffAmount: data.payoffAmount ?? 0,
         payoffTo: data.payoffTo || null,
         debtsAmount: data.debtsAmount ?? 0,
+        debtsItems: data.debtsItems,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,

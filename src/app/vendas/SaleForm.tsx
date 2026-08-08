@@ -7,6 +7,8 @@ import { createPreSaleAction } from "./pre-vendas/actions";
 import { checkPreSaleConflictAction } from "./actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
+import type { VehicleDebtItem } from "@/lib/vehicle-debts";
+import DebtItemsField from "@/components/DebtItemsField";
 import {
   missingVehicleDocs,
   normalizeChassi,
@@ -93,6 +95,7 @@ export type SaleFormInitial = {
   tiPayoff?: number;
   tiPayoffTo?: string;
   tiDebts?: number;
+  tiDebtsItems?: VehicleDebtItem[];
   tiSupplierName?: string;
 };
 
@@ -253,6 +256,14 @@ export default function SaleForm({
   const [tiSalePrice, setTiSalePrice] = useState(initial?.tiSalePrice ?? 0);
   const [tiPayoff, setTiPayoff] = useState(initial?.tiPayoff ?? 0);
   const [tiDebts, setTiDebts] = useState(initial?.tiDebts ?? 0);
+  // Detalhamento dos débitos: a lista vive no DebtItemsField; aqui só a soma,
+  // para o total ficar travado e as fórmulas de líquido saírem de um número só.
+  const [debtItemsTotal, setDebtItemsTotal] = useState<number | null>(
+    (initial?.tiDebtsItems ?? []).length
+      ? Math.round((initial?.tiDebtsItems ?? []).reduce((s, d) => s + d.amount, 0) * 100) / 100
+      : null,
+  );
+  const tiDebtsEfetivo = debtItemsTotal ?? tiDebts;
   // Fornecedor do veículo recebido em troca: por padrão é o próprio cliente que
   // está comprando (foi ele que "vendeu" o carro à loja). Editável.
   const [tiSupplier, setTiSupplier] = useState(initial?.tiSupplierName ?? "");
@@ -260,7 +271,7 @@ export default function SaleForm({
   useEffect(() => {
     if (tradeIn && !tiSupplierEdited.current && customerName) setTiSupplier(customerName);
   }, [tradeIn, customerName]);
-  const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebts) * 100) / 100);
+  const tiLiquido = Math.max(0, Math.round((tiNegotiated - tiPayoff - tiDebtsEfetivo) * 100) / 100);
   const total = Number(totalAmount) || 0;
   const sinal = advances[vehicleId] || 0;
   const restante = Math.max(0, Math.round((total - tiLiquido) * 100) / 100);
@@ -999,8 +1010,14 @@ export default function SaleForm({
                   step="0.01"
                   min={0}
                   name="tiDebts"
-                  value={tiDebts || ""}
+                  value={debtItemsTotal != null ? debtItemsTotal || "" : tiDebts || ""}
+                  readOnly={debtItemsTotal != null}
                   onChange={(e) => setTiDebts(Number(e.target.value) || 0)}
+                />
+                <DebtItemsField
+                  name="tiDebtsItems"
+                  initialItems={initial?.tiDebtsItems ?? []}
+                  onTotalChange={setDebtItemsTotal}
                 />
               </Field>
             </div>
@@ -1009,7 +1026,7 @@ export default function SaleForm({
               <div className="space-y-1">
                 <SummaryRow label="Avaliação do veículo" value={tiNegotiated} />
                 <SummaryRow label="(−) Quitação / saldo devedor" value={tiPayoff} />
-                <SummaryRow label="(−) Débitos (IPVA, multas)" value={tiDebts} />
+                <SummaryRow label="(−) Débitos (IPVA, multas)" value={tiDebtsEfetivo} />
                 <SummaryRow label="= Entrada da troca" value={tiLiquido} strong tone="green" top />
               </div>
               <div className="mt-3 space-y-1">

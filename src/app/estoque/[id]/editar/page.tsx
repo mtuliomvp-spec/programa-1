@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import { requireAction } from "@/lib/guards";
 import VehicleForm from "../../VehicleForm";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,10 @@ export default async function EditarVeiculoPage({ params }: { params: Promise<{ 
       <Card>
         <CardHeader title="Dados do veículo" />
         <div className="p-5">
-          <VehicleForm suppliers={suppliers} vehicle={vehicle} />
+          <VehicleForm
+            suppliers={suppliers}
+            vehicle={{ ...vehicle, debtsItems: parseDebtItems(vehicle.debtsItems) }}
+          />
         </div>
       </Card>
     </div>
