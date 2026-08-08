@@ -4,6 +4,7 @@ import { toDateInputValue } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import SaleForm, { type SaleFormInitial } from "../SaleForm";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 export const dynamic = "force-dynamic";
 
@@ -66,6 +67,7 @@ export default async function NovaVendaPage({
         tiPayoff: pre.tiPayoff ?? undefined,
         tiPayoffTo: pre.tiPayoffTo ?? undefined,
         tiDebts: pre.tiDebts ?? undefined,
+        tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
         tiSupplierName: pre.tiSupplierName ?? undefined,
       };
     }

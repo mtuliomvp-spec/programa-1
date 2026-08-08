@@ -439,6 +439,10 @@ model Vehicle {
   payoffAmount     Float         @default(0)
   payoffTo         String?
   debtsAmount      Float         @default(0)
+  // Detalhamento opcional do total acima: [{ description, amount, dueDate }].
+  // Vazio = um título só, como antes. Fica no veículo (e não só no formulário)
+  // porque editar o veículo apaga e recria os títulos da compra.
+  debtsItems       Json          @default("[]")
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)
@@ -622,6 +626,8 @@ model PreSale {
   tiPayoff          Float?
   tiPayoffTo        String?
   tiDebts           Float?
+  /// Detalhamento dos débitos do veículo da troca (ver Vehicle.debtsItems).
+  tiDebtsItems      Json           @default("[]")
   tiSupplierName    String?
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel       Int            @default(0)
