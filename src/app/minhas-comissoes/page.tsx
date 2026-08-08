@@ -77,7 +77,7 @@ export default async function MinhasComissoesPage() {
         <StatCard label="Já recebido" value={formatCurrency(totalRecebido)} tone="positive" />
         {capitalSaldo != null ? (
           <StatCard
-            label="Saldo de capital"
+            label="Adiantamentos"
             value={formatCurrency(capitalSaldo)}
             tone={capitalSaldo >= 0 ? "positive" : "negative"}
             hint="aportes menos retiradas"
@@ -88,7 +88,7 @@ export default async function MinhasComissoesPage() {
             label="Saldo total"
             value={formatCurrency(saldoTotal)}
             tone={saldoTotal >= 0 ? "positive" : "negative"}
-            hint="capital + comissões a receber"
+            hint="adiantamentos + comissões a receber"
           />
         ) : null}
       </div>
@@ -96,7 +96,7 @@ export default async function MinhasComissoesPage() {
       {abateComissao > 0 ? (
         <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           Dos <strong>{formatCurrency(totalReceber)}</strong> em comissões a receber,{" "}
-          <strong>{formatCurrency(abateComissao)}</strong> abaterão seu saldo de capital devedor — líquido a
+          <strong>{formatCurrency(abateComissao)}</strong> abaterão seus adiantamentos — líquido a
           receber <strong>{formatCurrency(liquidoReceber)}</strong>.
         </div>
       ) : null}
