@@ -646,6 +646,46 @@ export async function uploadVehicleAttachmentAction(
   return { ok: true, filled: read.filled, warnings: read.warnings };
 }
 
+/**
+ * Lê um CRLV que JÁ está anexado e aplica os dados na ficha.
+ *
+ * A leitura automática só dispara no upload, então os CRLVs anexados antes
+ * dessa funcionalidade nunca foram lidos. Excluir e reenviar resolveria, mas
+ * destruiria o registro original (data de envio, arquivo) à toa: os bytes já
+ * estão no banco e podem ser lidos de onde estão.
+ *
+ * Reusa `applyCrlvToVehicle` — mesma trava de placa, mesma regra de não
+ * sobrescrever dado bom. Só muda de onde vêm os bytes.
+ */
+export async function readCrlvAttachmentAction(attachmentId: string): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "crlv");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const att = await prisma.vehicleAttachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, vehicleId: true, kind: true, mimeType: true, description: true, data: true },
+  });
+  if (!att) return { error: "Anexo não encontrado." };
+  if (att.kind !== "CRLV") return { error: "Este anexo não é um CRLV." };
+
+  try {
+    const read = await applyCrlvToVehicle({
+      vehicleId: att.vehicleId,
+      attachmentId: att.id,
+      base64: Buffer.from(att.data).toString("base64"),
+      mimeType: att.mimeType,
+      typedYear: att.description.match(/(\d{4})/)?.[1] ?? null,
+    });
+    revalidatePath(`/estoque/${att.vehicleId}`);
+    revalidatePath("/estoque");
+    return { ok: true, filled: read.filled, warnings: read.warnings };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o CRLV." };
+  }
+}
+
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
   // A permissão depende do tipo do anexo (a mesma ação serve fotos, documentos
   // e CRLV): CRLV → estoque.crlv; documentos → estoque.comunicacao; fotos →

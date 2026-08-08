@@ -7,6 +7,7 @@ import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehicleAttachmentAction,
   deleteVehicleAttachmentAction,
+  readCrlvAttachmentAction,
   type AttachmentState,
 } from "../actions";
 
@@ -48,6 +49,10 @@ export default function VehicleCrlv({
   );
   const formRef = useRef<HTMLFormElement>(null);
   const [removing, startRemove] = useTransition();
+  // Releitura de um CRLV já anexado: id do que está sendo lido + resultado.
+  const [reading, startRead] = useTransition();
+  const [readingId, setReadingId] = useState<string | null>(null);
+  const [readResult, setReadResult] = useState<AttachmentState | null>(null);
   const [preparing, setPreparing] = useState(false);
   const currentYear = new Date().getFullYear();
 
@@ -78,6 +83,32 @@ export default function VehicleCrlv({
 
   return (
     <div className="p-5">
+      {readResult?.error ? (
+        <p className="mb-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {readResult.error}
+        </p>
+      ) : null}
+      {readResult?.ok ? (
+        <div className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+          <p>
+            {readResult.filled?.length
+              ? "CRLV lido."
+              : "CRLV lido — a ficha já estava completa, nada mudou."}
+          </p>
+          {readResult.filled?.length ? (
+            <p className="mt-1">
+              Preenchido: <strong>{readResult.filled.join(" · ")}</strong>. Confira na ficha acima.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {readResult?.warnings?.length ? (
+        <div className="mb-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {readResult.warnings.map((w) => (
+            <p key={w}>⚠ {w}</p>
+          ))}
+        </div>
+      ) : null}
       {crlvs.length === 0 ? (
         <p className="mb-4 text-sm text-slate-500">
           Nenhum CRLV anexado ainda. Anexe abaixo, informando o ano em exercício.
@@ -111,6 +142,21 @@ export default function VehicleCrlv({
                   >
                     Baixar
                   </a>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      disabled={reading}
+                      onClick={() => {
+                        setReadResult(null);
+                        setReadingId(c.id);
+                        startRead(async () => setReadResult(await readCrlvAttachmentAction(c.id)));
+                      }}
+                      className="font-medium text-blue-700 hover:underline disabled:opacity-50"
+                      title="Lê este CRLV e preenche o que falta na ficha do veículo"
+                    >
+                      {reading && readingId === c.id ? "Lendo…" : "Ler dados"}
+                    </button>
+                  ) : null}
                   {canManage ? (
                     <button
                       type="button"
