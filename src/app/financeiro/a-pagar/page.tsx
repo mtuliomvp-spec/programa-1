@@ -146,7 +146,13 @@ export default async function ContasAPagarPage({
 
   const filtered = withStatus.filter((p) => {
     if (inSolicitedCombo(p)) return false;
-    if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) return false;
+    // "NAO_PAGO" agrupa pendente + atrasado: é tudo que ainda tem de ser pago.
+    // "TODOS" inclui os pagos, então não servia para essa pergunta.
+    if (statusFilter === "NAO_PAGO") {
+      if (p.effective === "PAGO") return false;
+    } else if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) {
+      return false;
+    }
     if (fornecedor && p.supplierId !== fornecedor) return false;
     if (veiculo && p.vehicleId !== veiculo) return false;
     if (beneficiario) {
@@ -313,6 +319,7 @@ export default async function ContasAPagarPage({
               Status
               <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 h-11 w-44">
                 <option value="TODOS">Todos os status</option>
+                <option value="NAO_PAGO">Não pago (pendente + atrasado)</option>
                 <option value="PENDENTE">Pendente</option>
                 <option value="ATRASADO">Atrasado</option>
                 <option value="PAGO">Pago</option>
