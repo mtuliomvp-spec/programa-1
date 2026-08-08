@@ -24,6 +24,9 @@ import { effectivePayableStatus } from "@/lib/status";
 import { computeVehicleSaleResult, daysBetween } from "@/lib/reports";
 
 export const dynamic = "force-dynamic";
+// Anexar o CRLV dispara a leitura por IA (preenche RENAVAM/chassi), que leva
+// alguns segundos — o padrão de 10s da Vercel cortaria a ação no meio.
+export const maxDuration = 300;
 
 const statusTone = { ESTOQUE: "info", RESERVADO: "warning", VENDIDO: "success" } as const;
 const statusLabel = { ESTOQUE: "Em estoque", RESERVADO: "Reservado", VENDIDO: "Vendido" } as const;
@@ -585,7 +588,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           <Card>
             <CardHeader
               title="CRLV"
-              description="Anexe o CRLV do veículo informando o ano em exercício (ex.: CRLV 2025)"
+              description="Anexe o CRLV e o sistema lê o documento: RENAVAM, chassi e os dados em branco são preenchidos sozinhos"
             />
             <VehicleCrlv
               vehicleId={vehicle.id}
