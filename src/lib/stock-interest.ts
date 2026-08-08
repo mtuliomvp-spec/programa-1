@@ -6,8 +6,10 @@ import { getNeutralAccountId } from "@/lib/accounts";
 /**
  * Rotina de REMUNERAÇÃO DE CAPITAL SOBRE O ESTOQUE.
  *
- * Aplica uma taxa X% sobre o CUSTO TOTAL (compra + custos lançados) de veículos
- * em estoque escolhidos. O juro de cada veículo:
+ * Aplica uma taxa X% sobre o VALOR JÁ PAGO de cada veículo em estoque — o
+ * dinheiro da loja que está preso nele e poderia estar rendendo em outro lugar.
+ * Título ainda pendente (inclusive o da compra) NÃO entra: aquele dinheiro
+ * continua no caixa. O juro de cada veículo:
  *   1) é incorporado ao CUSTO do veículo (VehicleCost) — reduz a margem quando
  *      ele for vendido;
  *   2) é creditado, ao mesmo tempo, como APORTE de capital para um ou mais
@@ -37,12 +39,66 @@ export type StockVehicleForInterest = {
   modelYear: number;
   purchasePrice: number;
   custosLancados: number;
-  baseCusto: number;
+  /** Custo total (compra + custos), pago ou não — só referência na tela. */
+  custoTotal: number;
+  /** Base do cálculo: quanto já saiu do caixa por causa deste veículo. */
+  basePaga: number;
 };
 
 /**
- * Veículos em ESTOQUE (não vendidos e que são patrimônio da loja), com o custo
- * total = compra + Σ custos lançados. Base da remuneração e da tela de seleção.
+ * Campos necessários para calcular a base paga de um veículo. Um `select` único
+ * para a listagem e para o recálculo do servidor não divergirem.
+ */
+const BASE_SELECT = {
+  purchasePrice: true,
+  payables: { select: { amount: true, status: true } },
+  costs: {
+    select: {
+      amount: true,
+      payableId: true,
+      cardItemId: true,
+      cardItem: { select: { payable: { select: { status: true } } } },
+    },
+  },
+} as const;
+
+type VehicleBaseInput = {
+  purchasePrice: number;
+  payables: { amount: number; status: string }[];
+  costs: {
+    amount: number;
+    payableId: string | null;
+    cardItemId: string | null;
+    cardItem: { payable: { status: string } | null } | null;
+  }[];
+};
+
+/**
+ * Quanto do dinheiro da loja está PRESO neste veículo — a base da remuneração.
+ *
+ * = Σ títulos PAGOS ligados ao veículo (já cobre a compra, que é um título
+ *   COMPRA_VEICULO com vehicleId e sem VehicleCost, e todo custo com título
+ *   próprio, cujo payable também carrega o vehicleId)
+ * + Σ custos pagos por FATURA DE CARTÃO (o título é o da fatura inteira, sem
+ *   vehicleId — o vínculo com o carro é pelo item da fatura). Sem esse termo
+ *   faltaria dinheiro que realmente saiu.
+ *
+ * O título pendente (inclusive o da compra) fica de fora: o dinheiro dele
+ * continua no caixa.
+ */
+export function paidBaseOf(v: VehicleBaseInput): number {
+  const pagoEmTitulos = v.payables
+    .filter((p) => p.status === "PAGO")
+    .reduce((s, p) => s + p.amount, 0);
+  const pagoNoCartao = v.costs
+    .filter((c) => !c.payableId && c.cardItemId && c.cardItem?.payable?.status === "PAGO")
+    .reduce((s, c) => s + c.amount, 0);
+  return round2(pagoEmTitulos + pagoNoCartao);
+}
+
+/**
+ * Veículos em ESTOQUE (não vendidos e que são patrimônio da loja), com o valor
+ * já pago de cada um. Base da remuneração e da tela de seleção.
  */
 export async function stockVehiclesForInterest(): Promise<StockVehicleForInterest[]> {
   const vehicles = await prisma.vehicle.findMany({
@@ -54,8 +110,7 @@ export async function stockVehiclesForInterest(): Promise<StockVehicleForInteres
       model: true,
       plate: true,
       modelYear: true,
-      purchasePrice: true,
-      costs: { select: { amount: true } },
+      ...BASE_SELECT,
     },
     orderBy: { orderNumber: "asc" },
   });
@@ -70,7 +125,8 @@ export async function stockVehiclesForInterest(): Promise<StockVehicleForInteres
       modelYear: v.modelYear,
       purchasePrice: v.purchasePrice,
       custosLancados,
-      baseCusto: round2(v.purchasePrice + custosLancados),
+      custoTotal: round2(v.purchasePrice + custosLancados),
+      basePaga: paidBaseOf(v),
     };
   });
 }
@@ -121,8 +177,7 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
       model: true,
       plate: true,
       status: true,
-      purchasePrice: true,
-      costs: { select: { amount: true } },
+      ...BASE_SELECT,
     },
   });
   if (vehicles.length !== input.vehicleIds.length) {
@@ -133,14 +188,19 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
     throw new Error(`O veículo ${vendido.brand} ${vendido.model} já foi vendido e não está mais em estoque.`);
   }
 
-  // Juro por veículo e total.
-  const perVehicle = vehicles.map((v) => {
-    const base = v.purchasePrice + v.costs.reduce((s, c) => s + c.amount, 0);
-    return { vehicle: v, juro: round2(base * (rate / 100)) };
-  });
+  // Juro por veículo e total, sempre recalculados aqui (a tela só sugere).
+  // Veículo sem nada pago fica de fora: não há dinheiro preso nele.
+  const perVehicle = vehicles
+    .map((v) => {
+      const base = paidBaseOf(v);
+      return { vehicle: v, base, juro: round2(base * (rate / 100)) };
+    })
+    .filter((x) => x.juro > 0);
   const totalInterest = round2(perVehicle.reduce((s, x) => s + x.juro, 0));
   if (totalInterest <= 0) {
-    throw new Error("O juro calculado ficou zero. Confira a taxa e os custos dos veículos.");
+    throw new Error(
+      "O juro calculado ficou zero: nenhum dos veículos escolhidos tem valor já pago. Confira a taxa e os títulos pagos desses veículos.",
+    );
   }
 
   const beneficiaryIds = splits.map((s) => s.beneficiaryId);
@@ -208,8 +268,11 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
     // Custo: por veículo, incorpora o juro ao custo (Payable PAGO no Banco
     // Neutro + VehicleCost). O payable PAGO de veículo em estoque entra no
     // patrimonial (estoqueVeiculosPago).
-    for (const { vehicle, juro } of perVehicle) {
-      if (juro <= 0) continue;
+    for (const { vehicle, base, juro } of perVehicle) {
+      // Guarda a base usada: o valor pago muda conforme os títulos são
+      // quitados, então sem isso não dá para auditar o juro depois.
+      const baseLabel = base.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      const origem = `Rotina de remuneração de capital sobre estoque (lote ${run.id}) · base paga ${baseLabel} · taxa ${rateLabel}.`;
       const payable = await tx.payable.create({
         data: {
           costCenterId: veiculosCenter,
@@ -221,7 +284,7 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
           status: "PAGO",
           accountId: neutralAccountId,
           vehicleId: vehicle.id,
-          notes: `Rotina de remuneração de capital sobre estoque (lote ${run.id}).`,
+          notes: origem,
         },
       });
       await tx.vehicleCost.create({
@@ -234,7 +297,7 @@ export async function runStockInterest(input: RunStockInterestInput): Promise<{ 
           postSale: false,
           payableId: payable.id,
           stockInterestRunId: run.id,
-          notes: input.description || null,
+          notes: input.description ? `${input.description} · ${origem}` : origem,
         },
       });
     }
