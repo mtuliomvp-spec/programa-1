@@ -80,6 +80,8 @@ export const MODULES: ModuleConfig[] = [
       { acao: "editar", label: "Editar títulos lançados" },
       { acao: "pagar", label: "Registrar pagamento (baixa)" },
       { acao: "receber", label: "Registrar recebimento (baixa)" },
+      // Perdoar valor é diferente de receber: o que sobra vira custo/perda.
+      { acao: "desconto", label: "Dar desconto (baixar diferença como perda)" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
       { acao: "conciliar", label: "Conciliação bancária" },
       { acao: "fechar", label: "Fechamento mensal (fechar mês)" },

@@ -4,6 +4,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
+import { resolveDespesaCategory } from "@/lib/categories";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -1284,6 +1285,21 @@ export async function cancelVehicleSale(saleId: string) {
       where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
     });
     await tx.capitalTransaction.deleteMany({ where: { saleId } });
+
+    // 2e) Desconto concedido na baixa de um recebível desta venda: o par do
+    //     Banco Neutro precisa sair inteiro. O recebível já caiu no passo 2
+    //     (−diff no neutro); sem apagar o título PAGO o neutro travaria
+    //     negativo. O VehicleCost não sai por cascade (payable é SetNull).
+    const descontos = await tx.payable.findMany({
+      where: { saleId, categoryLabel: DISCOUNT_CATEGORY_LABEL },
+      select: { id: true },
+    });
+    if (descontos.length) {
+      const ids = descontos.map((d) => d.id);
+      await tx.vehicleCost.deleteMany({ where: { payableId: { in: ids } } });
+      await tx.payable.deleteMany({ where: { id: { in: ids } } });
+    }
+
     if (sale.consigned) {
       await tx.payable.deleteMany({
         where: { vehicleId: sale.vehicleId, category: "COMPRA_VEICULO" },
@@ -1669,6 +1685,149 @@ export async function receiveReceivable(
   });
   await syncReceivableCapital(partial.createdId);
   return partial.orig;
+}
+
+/** Rótulo da categoria de despesa do desconto concedido (marca o par no neutro). */
+export const DISCOUNT_CATEGORY_LABEL = "Desconto concedido";
+
+/**
+ * Recebe um título por MENOS do que o valor cheio e baixa a diferença como
+ * DESCONTO CONCEDIDO — o título é quitado por inteiro, sem deixar resto
+ * pendente. Caso típico: a entrada da venda estava em 4.152,80, foi acertado
+ * depois que a cliente pagaria 3.153,00; os 999,80 viram custo PÓS-VENDA do
+ * carro e reduzem o lucro dele. Só vale para título ligado a um veículo.
+ *
+ * Como fecha o farol: baixar por menos derruba só o lado patrimonial (caixa
+ * sobe o recebido, "a receber de vendas" cai o cheio). A DRE não se mexe — a
+ * receita da venda já foi reconhecida por competência. Para os dois lados
+ * caírem juntos, a diferença precisa virar custo pós-venda PAGO (a DRE só
+ * reconhece pós-venda quando pago), sem dinheiro real sair: é o par do BANCO
+ * NEUTRO, o mesmo padrão da comissão aplicada no capital, da diferença de
+ * retorno e da remuneração do estoque.
+ *   - resto do título → RECEBIDO no Banco Neutro (+diff)
+ *   - despesa "Desconto concedido" → PAGA no Banco Neutro (−diff)
+ * O Banco Neutro volta a zero e as duas pontas nascem na mesma transação (meio
+ * par deixaria o Check 1 vermelho).
+ */
+export async function receiveWithDiscount(input: {
+  receivableId: string;
+  /** Valor efetivamente recebido na conta real. */
+  amount: number;
+  date: Date;
+  accountId: string;
+  notes?: string | null;
+}): Promise<{ received: number; discount: number; vehicleId: string | null }> {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: input.receivableId },
+    include: { sale: { select: { vehicleId: true } } },
+  });
+  if (r.status === "RECEBIDO") throw new Error("Título já recebido.");
+
+  const pay = Math.min(Math.max(0, Math.round(input.amount * 100) / 100), r.amount);
+  const diff = Math.round((r.amount - pay) * 100) / 100;
+  if (diff <= 0.005) {
+    // Sem diferença: é uma baixa cheia comum.
+    await markReceivableReceived(r.id, input.date, input.accountId);
+    return { received: r.amount, discount: 0, vehicleId: null };
+  }
+  if (pay < 0) throw new Error("Valor recebido inválido.");
+
+  const vehicleId = r.vehicleId ?? r.sale?.vehicleId ?? null;
+  // Só título ligado a um carro: aí a diferença tem onde cair (custo pós-venda)
+  // e os dois lados do farol descem juntos. Em título solto o resultado
+  // dependeria da categoria e poderia desequilibrar — deixa pendente mesmo.
+  if (!vehicleId) {
+    throw new Error(
+      "O desconto só vale para títulos ligados a um veículo (a diferença vira custo pós-venda do carro).",
+    );
+  }
+  const cat = await resolveDespesaCategory(DISCOUNT_CATEGORY_LABEL);
+  const [neutralAccountId, adminCenterId] = await Promise.all([
+    getNeutralAccountId(),
+    // Custo pós-venda mora no Administrativo (o carro não está mais no estoque).
+    structuralCenterId("ADMINISTRATIVO"),
+  ]);
+  const money = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const breakdown = `Título de ${money(r.amount)} · recebido ${money(pay)} · desconto ${money(diff)}.`;
+
+  const createdIds = await prisma.$transaction(async (tx) => {
+    // 1) A parte efetivamente recebida, na conta real (só quando houver).
+    let partialId: string | null = null;
+    if (pay > 0) {
+      const created = await tx.receivable.create({
+        data: {
+          description: `${r.description} - Pagamento parcial`,
+          category: r.category,
+          categoryLabel: r.categoryLabel,
+          amount: pay,
+          dueDate: r.dueDate,
+          receivedDate: input.date,
+          status: "RECEBIDO",
+          customerId: r.customerId,
+          saleId: r.saleId,
+          vehicleId: r.vehicleId,
+          installmentNumber: r.installmentNumber,
+          totalInstallments: r.totalInstallments,
+          costCenterId: r.costCenterId,
+          capitalBeneficiaryId: r.capitalBeneficiaryId,
+          accountId: input.accountId,
+        },
+      });
+      partialId = created.id;
+    }
+
+    // 2) O que sobrou vira o desconto: baixado no Banco Neutro.
+    await tx.receivable.update({
+      where: { id: r.id },
+      data: {
+        description: `${r.description} (desconto concedido)`,
+        amount: diff,
+        status: "RECEBIDO",
+        receivedDate: input.date,
+        accountId: neutralAccountId,
+        notes: [r.notes, breakdown, input.notes].filter(Boolean).join(" · "),
+      },
+    });
+
+    // 3) A contrapartida: despesa PAGA no Banco Neutro (o par zera a conta) que,
+    //    havendo veículo, entra como custo pós-venda dele.
+    const payable = await tx.payable.create({
+      data: {
+        description: `Desconto concedido — ${r.description}`,
+        category: cat.category,
+        categoryLabel: cat.label,
+        amount: diff,
+        dueDate: input.date,
+        paymentDate: input.date,
+        status: "PAGO",
+        accountId: neutralAccountId,
+        costCenterId: adminCenterId,
+        vehicleId,
+        saleId: r.saleId,
+        notes: [breakdown, input.notes].filter(Boolean).join(" · "),
+      },
+    });
+    await tx.vehicleCost.create({
+      data: {
+        vehicleId,
+        description: `${cat.label}: ${r.description}`,
+        category: "OUTROS",
+        amount: diff,
+        date: input.date,
+        // Sempre pós-venda: o desconto é acertado depois da venda fechada.
+        postSale: true,
+        payableId: payable.id,
+        notes: breakdown,
+      },
+    });
+    return { partialId };
+  });
+
+  // Capital (só age se o título tiver sócio): sincroniza as duas pontas.
+  if (createdIds.partialId) await syncReceivableCapital(createdIds.partialId);
+  await syncReceivableCapital(r.id);
+
+  return { received: pay, discount: diff, vehicleId };
 }
 
 export async function createManualPayable(input: {
