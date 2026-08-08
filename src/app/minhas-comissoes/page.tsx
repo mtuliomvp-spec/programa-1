@@ -5,6 +5,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
 export const dynamic = "force-dynamic";
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
@@ -41,15 +43,19 @@ export default async function MinhasComissoesPage() {
   // Saldo de capital do beneficiário = aportes − retiradas (mesma conta da tela
   // de Capital). Só existe quando o usuário está vinculado a um beneficiário.
   const capitalSaldo = beneficiary
-    ? beneficiary.transactions.reduce(
-        (s, t) => s + (t.kind === "APORTE" ? t.amount : t.kind === "RETIRADA" ? -t.amount : 0),
-        0,
+    ? round2(
+        beneficiary.transactions.reduce(
+          (s, t) => s + (t.kind === "APORTE" ? t.amount : t.kind === "RETIRADA" ? -t.amount : 0),
+          0,
+        ),
       )
     : null;
-  // Saldo total = saldo de capital + todas as comissões (a receber + já
-  // recebido), somadas a título informativo.
-  const totalComissoes = totalReceber + totalRecebido;
-  const saldoTotal = capitalSaldo != null ? capitalSaldo + totalComissoes : null;
+  // Saldo total = saldo de capital + o que ainda há a receber. Comissão JÁ
+  // recebida fica de fora: ou o dinheiro saiu para o vendedor, ou foi aplicada
+  // no capital — e nesse caso ela já está dentro do saldo de capital como
+  // APORTE (settleCommissionAction), então somá-la contaria o mesmo valor duas
+  // vezes. O card "Já recebido" continua na tela, como informação.
+  const saldoTotal = capitalSaldo != null ? round2(capitalSaldo + totalReceber) : null;
 
   // Saldo devedor de capital (quando negativo) é abatido das comissões a receber
   // no momento do pagamento: parte cobre a dívida (aporte) e o líquido é pago ao
@@ -82,7 +88,7 @@ export default async function MinhasComissoesPage() {
             label="Saldo total"
             value={formatCurrency(saldoTotal)}
             tone={saldoTotal >= 0 ? "positive" : "negative"}
-            hint="capital + todas as comissões"
+            hint="capital + comissões a receber"
           />
         ) : null}
       </div>
