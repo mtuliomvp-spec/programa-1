@@ -10,6 +10,7 @@ import {
   deleteVehicleCost,
   receiveVehicleAdvance,
 } from "@/lib/finance";
+import { chassiOrNull, renavamOrNull } from "@/lib/vehicle-doc";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
@@ -134,6 +135,18 @@ export async function createVehicleAction(
     };
   }
 
+  // Chassi também é único entre fichas ATIVAS (índice parcial
+  // vehicles_chassi_active_key). Sem esta checagem a colisão estourava no banco
+  // e caía no catch genérico "Não foi possível salvar o veículo".
+  const chassi = chassiOrNull(data.chassi);
+  if (chassi) {
+    const sameChassi = await prisma.vehicle.findFirst({
+      where: { chassi, status: { not: "VENDIDO" } },
+      select: { id: true },
+    });
+    if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
+  }
+
   // Consignado: o veículo é de um terceiro. Exige o consignante (fornecedor) e o
   // valor a devolver; não é patrimônio comprado, então purchasePrice fica 0 (sem
   // conta de compra — a devolução ao dono só é apurada quando o carro é vendido).
@@ -158,8 +171,8 @@ export async function createVehicleAction(
       manufactureYear: data.manufactureYear,
       modelYear: data.modelYear,
       plate: data.plate.toUpperCase(),
-      chassi: data.chassi || null,
-      renavam: data.renavam || null,
+      chassi: chassiOrNull(data.chassi),
+      renavam: renavamOrNull(data.renavam),
       color: data.color || null,
       km: data.km,
       fuel: data.fuel || null,
@@ -223,6 +236,15 @@ export async function updateVehicleAction(
     return { error: "Já existe outro veículo ativo no estoque com essa placa." };
   }
 
+  const chassi = chassiOrNull(data.chassi);
+  if (chassi) {
+    const sameChassi = await prisma.vehicle.findFirst({
+      where: { chassi, status: { not: "VENDIDO" }, id: { not: data.id } },
+      select: { id: true },
+    });
+    if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
+  }
+
   const consigned = Boolean(data.consigned);
   if (consigned) {
     if (!data.supplierId) {
@@ -246,8 +268,8 @@ export async function updateVehicleAction(
         manufactureYear: data.manufactureYear,
         modelYear: data.modelYear,
         plate: data.plate.toUpperCase(),
-        chassi: data.chassi || null,
-        renavam: data.renavam || null,
+        chassi: chassiOrNull(data.chassi),
+        renavam: renavamOrNull(data.renavam),
         color: data.color || null,
         km: data.km,
         fuel: data.fuel || null,

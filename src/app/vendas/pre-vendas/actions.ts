@@ -8,6 +8,7 @@ import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { chassiOrNull, renavamOrNull } from "@/lib/vehicle-doc";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
@@ -97,6 +98,34 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     tiDebts: d.tradeIn ? d.tiDebts ?? null : null,
     tiSupplierName: d.tradeIn ? d.tiSupplierName || null : null,
   };
+
+  // Documentos do veículo digitados no formulário (só aparecem quando faltam):
+  // vão para a FICHA do veículo, não para a pré-venda — é dado cadastral do
+  // carro, e é lá que a trava do registro da venda vai procurar. Só grava o que
+  // está em branco, para não sobrescrever dado já conferido.
+  const chassiInput = chassiOrNull(String(formData.get("vehicleChassi") || ""));
+  const renavamInput = renavamOrNull(String(formData.get("vehicleRenavam") || ""));
+  if (chassiInput || renavamInput) {
+    const atual = await prisma.vehicle.findUnique({
+      where: { id: d.vehicleId },
+      select: { chassi: true, renavam: true },
+    });
+    const docs: { chassi?: string; renavam?: string } = {};
+    if (chassiInput && !atual?.chassi) docs.chassi = chassiInput;
+    if (renavamInput && !atual?.renavam) docs.renavam = renavamInput;
+    if (Object.keys(docs).length) {
+      try {
+        await prisma.vehicle.update({ where: { id: d.vehicleId }, data: docs });
+      } catch {
+        // Índice parcial de chassi entre fichas ativas (allow_rebuy_plate).
+        return {
+          error:
+            "Já existe outro veículo ativo no estoque com esse chassi. Confira o número antes de continuar.",
+        };
+      }
+      revalidatePath(`/estoque/${d.vehicleId}`);
+    }
+  }
 
   let id: string;
   if (preSaleId) {

@@ -2,6 +2,7 @@
 
 import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { CHASSI_LENGTH, RENAVAM_LENGTH } from "@/lib/vehicle-doc";
 import BankInput from "@/components/BankInput";
 import MoneyInput from "@/components/MoneyInput";
 import NewCustomerInline from "@/components/NewCustomerInline";
@@ -435,11 +436,23 @@ export default function IntermediationForm({
           <Field label="Câmbio">
             <Input name="transmission" defaultValue={initial?.transmission ?? ""} />
           </Field>
-          <Field label="Chassi">
-            <Input name="chassi" defaultValue={initial?.chassi ?? ""} />
+          <Field label="Chassi (VIN)" required>
+            <Input
+              name="chassi"
+              defaultValue={initial?.chassi ?? ""}
+              className="uppercase"
+              placeholder={`${CHASSI_LENGTH} caracteres`}
+              required
+            />
           </Field>
-          <Field label="RENAVAM">
-            <Input name="renavam" defaultValue={initial?.renavam ?? ""} placeholder="Nº do RENAVAM (11 dígitos)" />
+          <Field label="RENAVAM" required>
+            <Input
+              name="renavam"
+              defaultValue={initial?.renavam ?? ""}
+              inputMode="numeric"
+              placeholder={`${RENAVAM_LENGTH} dígitos`}
+              required
+            />
           </Field>
         </div>
       </fieldset>

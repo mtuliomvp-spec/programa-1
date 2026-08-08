@@ -80,6 +80,9 @@ export default async function NovaVendaPage({
         model: true,
         plate: true,
         salePrice: true,
+        // Documentos obrigatórios na venda: o formulário pede o que faltar.
+        chassi: true,
+        renavam: true,
         consigned: true,
         ownerRefundAmount: true,
         payoffAmount: true,

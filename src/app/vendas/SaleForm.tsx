@@ -7,6 +7,15 @@ import { createPreSaleAction } from "./pre-vendas/actions";
 import { checkPreSaleConflictAction } from "./actions";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
+import {
+  missingVehicleDocs,
+  normalizeChassi,
+  normalizeRenavam,
+  chassiLooksOdd,
+  renavamLooksOdd,
+  CHASSI_LENGTH,
+  RENAVAM_LENGTH,
+} from "@/lib/vehicle-doc";
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
@@ -18,6 +27,9 @@ type Vehicle = {
   model: string;
   plate: string;
   salePrice: number;
+  // Documentos do veículo: se faltarem, o formulário os pede (obrigatórios).
+  chassi?: string | null;
+  renavam?: string | null;
   // Consignado: o carro é de terceiro; há um valor acertado com o proprietário
   // (supplier), do qual se descontam quitação/débitos, apurado no fechamento.
   consigned?: boolean;
@@ -166,6 +178,15 @@ export default function SaleForm({
   );
 
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
+  // Documentos que faltam no veículo escolhido. Sem RENAVAM ou chassi a venda
+  // não pode ser registrada (o contrato de compra sai com uma linha em branco
+  // para preencher à mão), então o formulário pede aqui — e o que for digitado
+  // vai para a FICHA do veículo, não para a pré-venda.
+  const [vehicleChassi, setVehicleChassi] = useState("");
+  const [vehicleRenavam, setVehicleRenavam] = useState("");
+  const missingDocs = selectedVehicle ? missingVehicleDocs(selectedVehicle) : [];
+  const needsChassi = missingDocs.includes("chassi");
+  const needsRenavam = missingDocs.includes("RENAVAM");
   // Consignado: destino do valor a devolver ao proprietário (pagar ao dono vs
   // aportar no capital de um beneficiário). O valor em si vem do veículo.
   const isConsigned = Boolean(selectedVehicle?.consigned);
@@ -330,6 +351,9 @@ export default function SaleForm({
     setVehicleId(id);
     const v = vehicles.find((x) => x.id === id);
     if (v) setTotalAmount(String(v.salePrice));
+    // Trocar de veículo descarta o que foi digitado para o anterior.
+    setVehicleChassi("");
+    setVehicleRenavam("");
   }
 
   if (vehicles.length === 0) {
@@ -369,6 +393,55 @@ export default function SaleForm({
             ))}
           </Select>
         </Field>
+        {missingDocs.length ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 sm:col-span-2">
+            <p className="text-sm font-medium text-amber-900">
+              Documentos do veículo — obrigatórios para vender
+            </p>
+            <p className="mt-0.5 text-xs text-amber-800">
+              Este veículo está sem {missingDocs.join(" e ")}. Preencha para continuar: o dado é
+              gravado na ficha do veículo e sai nos contratos.
+            </p>
+            <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {needsRenavam ? (
+                <Field label="RENAVAM" required>
+                  <Input
+                    name="vehicleRenavam"
+                    value={vehicleRenavam}
+                    onChange={(e) => setVehicleRenavam(normalizeRenavam(e.target.value))}
+                    inputMode="numeric"
+                    placeholder={`${RENAVAM_LENGTH} dígitos`}
+                    required
+                  />
+                  {renavamLooksOdd(vehicleRenavam) ? (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      O RENAVAM costuma ter {RENAVAM_LENGTH} dígitos — confira. Dá para salvar assim
+                      mesmo.
+                    </p>
+                  ) : null}
+                </Field>
+              ) : null}
+              {needsChassi ? (
+                <Field label="Chassi (VIN)" required>
+                  <Input
+                    name="vehicleChassi"
+                    value={vehicleChassi}
+                    onChange={(e) => setVehicleChassi(normalizeChassi(e.target.value))}
+                    className="uppercase"
+                    placeholder={`${CHASSI_LENGTH} caracteres`}
+                    required
+                  />
+                  {chassiLooksOdd(vehicleChassi) ? (
+                    <p className="mt-1 text-[11px] text-amber-700">
+                      O chassi costuma ter {CHASSI_LENGTH} caracteres — confira. Dá para salvar assim
+                      mesmo.
+                    </p>
+                  ) : null}
+                </Field>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
         <Field label="Cliente" required>
           <Select
             name="customerId"
