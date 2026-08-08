@@ -1,9 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
+import { timed } from "@/lib/perf";
+import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME, type AccountWithBalance } from "@/lib/accounts";
+
+type AccountsInput = AccountWithBalance[] | Promise<AccountWithBalance[]>;
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getProfitLossStatement } from "@/lib/reports";
-import { ensureVehicleFuelCosts } from "@/lib/structural";
+import { ensureVehicleFuelCostsThrottled } from "@/lib/structural";
 
 /**
  * "Farol" de integridade do financeiro, no estilo Agrasty. Dois checks que
@@ -61,13 +64,29 @@ export type BooksHealth = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function getBooksHealth(): Promise<BooksHealth> {
+/**
+ * @param preloadedAccounts saldos já pedidos por quem chama (a tela de Contas
+ * também os mostra) — array pronto ou promessa em voo. Sem isso, a mesma soma
+ * era calculada de novo aqui dentro.
+ */
+export async function getBooksHealth(
+  preloadedAccounts?: AccountsInput,
+): Promise<BooksHealth> {
+  return timed("farol (assertBooksBalanced)", () => booksHealth(preloadedAccounts));
+}
+
+async function booksHealth(preloadedAccounts?: AccountsInput): Promise<BooksHealth> {
   // Garante que o combustível de veículo tenha VehicleCost (senão some da DRE e
   // faz o Check 2 divergir por um furo de escrituração, não por erro real).
-  await ensureVehicleFuelCosts();
+  await ensureVehicleFuelCostsThrottled();
+  // Os saldos por conta são pedidos UMA vez e a promessa é repassada: a equação
+  // patrimonial usa a mesma soma, e pedi-la de novo dobrava as consultas de
+  // saldo em toda gravação do sistema (o farol roda antes de cada uma).
+  // Repassar a promessa (e não o array pronto) mantém tudo em paralelo.
+  const accountsPromise = preloadedAccounts ?? getAccountsWithBalances();
   const [accounts, pat, pl, recSemConta, paySemConta] = await Promise.all([
-    getAccountsWithBalances(),
-    getPatrimonialStats(),
+    accountsPromise,
+    getPatrimonialStats(accountsPromise),
     getProfitLossStatement(LIFETIME_MONTHS),
     // Dinheiro recebido/pago SEM conta financeira. Transações internas da troca
     // já passam pelo Banco Neutro, então não aparecem aqui (têm conta).

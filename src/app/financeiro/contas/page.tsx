@@ -25,14 +25,17 @@ export default async function ContasPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
+  // O farol também precisa dos saldos: pede-se UMA vez e repassa-se a promessa
+  // (antes esta tela calculava a mesma soma três vezes por visita).
+  const accountsPromise = getAccountsWithBalances();
   const [accounts, transfers, health, cashbox, cashboxHistory, owners, beneficiaries] = await Promise.all([
-    getAccountsWithBalances(),
+    accountsPromise,
     prisma.accountTransfer.findMany({
       include: { from: { select: { name: true } }, to: { select: { name: true } } },
       orderBy: { date: "desc" },
       take: 20,
     }),
-    getBooksHealth(),
+    getBooksHealth(accountsPromise),
     getCashboxState(),
     prisma.cashboxSession.findMany({ orderBy: { openedAt: "desc" }, take: 30 }),
     // Titular verdadeiro de cada conta (quando é de um sócio, não da MVP).

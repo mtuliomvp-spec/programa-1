@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import type { CategoriaPagar } from "@prisma/client";
 import { parseReferrals, sumReferrals } from "@/lib/referrals";
 
@@ -284,6 +285,13 @@ export async function getProfitLossStatement(
   months = 12,
   opts?: { start?: Date; end?: Date; excludeFechamento?: boolean },
 ): Promise<PLStatement> {
+  return timed("relatório Lucro/Prejuízo", () => profitLossStatement(months, opts));
+}
+
+async function profitLossStatement(
+  months: number,
+  opts?: { start?: Date; end?: Date; excludeFechamento?: boolean },
+): Promise<PLStatement> {
   // Janela opcional (start/end) para telas que mostram um período específico
   // (período aberto ou um mês fechado). Sem opts = comportamento padrão de antes.
   const rangeStart = opts?.start ?? monthRange(months - 1).start;
@@ -292,9 +300,25 @@ export async function getProfitLossStatement(
   // Movimentações de capital não entram no resultado: o APORTE (recebível) não é
   // receita e a RETIRADA (a pagar) não é despesa — elas mexem no capital, não no
   // lucro. O PRÓ-LABORE é despesa real e continua contando.
-  const capitalTx = await prisma.capitalTransaction.findMany({
-    select: { payableId: true, receivableId: true, kind: true },
-  });
+  //
+  // As outras duas não dependem de nada calculado aqui dentro e antes eram
+  // buscadas lá no fim da função, uma em fila com a outra. O farol chama isto
+  // em toda gravação do sistema, e cada ida ao banco em fila custa uma latência
+  // de rede inteira — então vêm todas na mesma rodada.
+  const [capitalTx, contasComSaldoInicial, closings] = await Promise.all([
+    prisma.capitalTransaction.findMany({
+      select: { payableId: true, receivableId: true, kind: true },
+    }),
+    prisma.financialAccount.findMany({
+      where: { initialBalance: { not: 0 } },
+      select: { id: true, name: true, initialBalance: true, createdAt: true },
+    }),
+    opts?.excludeFechamento
+      ? Promise.resolve([])
+      : prisma.monthlyClosing.findMany({
+          select: { id: true, year: true, month: true, result: true },
+        }),
+  ]);
   const retiradaPayableIds = capitalTx
     .filter((t) => t.kind === "RETIRADA" && t.payableId)
     .map((t) => t.payableId as string);
@@ -575,10 +599,6 @@ export async function getProfitLossStatement(
   // diverge exatamente pelo valor do saldo inicial. É resultado acumulado
   // anterior ao sistema, lançado na data do cadastro da conta.
   let saldosIniciais = 0;
-  const contasComSaldoInicial = await prisma.financialAccount.findMany({
-    where: { initialBalance: { not: 0 } },
-    select: { id: true, name: true, initialBalance: true, createdAt: true },
-  });
   for (const a of contasComSaldoInicial) {
     if (a.createdAt < rangeStart || a.createdAt >= rangeEnd) continue;
     saldosIniciais += a.initialBalance;
@@ -598,11 +618,6 @@ export async function getProfitLossStatement(
   // Na visão de um mês fechado, mostramos o resultado REAL do mês (sem a linha
   // de fechamento que zeraria o período).
   let fechamentos = 0;
-  const closings = opts?.excludeFechamento
-    ? []
-    : await prisma.monthlyClosing.findMany({
-        select: { id: true, year: true, month: true, result: true },
-      });
   for (const c of closings) {
     const closeDate = new Date(Date.UTC(c.year, c.month, 0, 12));
     if (closeDate < rangeStart || closeDate >= rangeEnd) continue;

@@ -1,6 +1,9 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances } from "@/lib/accounts";
+import { timed } from "@/lib/perf";
+import { getAccountsWithBalances, type AccountWithBalance } from "@/lib/accounts";
+
+type AccountsInput = AccountWithBalance[] | Promise<AccountWithBalance[]>;
 
 /**
  * Posição patrimonial no estilo Agrasty, com a equação patrimonial.
@@ -40,10 +43,24 @@ export type PatrimonialStats = {
   lucro: number;
 };
 
-export async function getPatrimonialStats(): Promise<PatrimonialStats> {
+/**
+ * @param preloadedAccounts saldos das contas já pedidos por quem chama — aceita
+ * o array pronto OU a promessa ainda em voo, para não perder o paralelismo.
+ * Evita recalcular: o farol (books-health) e a tela de Contas também precisam
+ * dos saldos e antes pediam a mesma soma duas/três vezes no mesmo request.
+ */
+export async function getPatrimonialStats(
+  preloadedAccounts?: AccountsInput,
+): Promise<PatrimonialStats> {
+  return timed("equação patrimonial", () => patrimonialStats(preloadedAccounts));
+}
+
+async function patrimonialStats(
+  preloadedAccounts?: AccountsInput,
+): Promise<PatrimonialStats> {
   const now = new Date();
   const [accounts, payables, receivables, parts, capitalTx, custosVendidosPendentes] = await Promise.all([
-    getAccountsWithBalances(),
+    preloadedAccounts ?? getAccountsWithBalances(),
     prisma.payable.findMany({
       select: {
         amount: true,

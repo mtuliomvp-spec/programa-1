@@ -78,6 +78,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/usuarios/perfis", label: "Perfis de acesso", icon: "🧩", adminOnly: true },
       { href: "/parametros", label: "Parâmetros da empresa", icon: "⚙️", adminOnly: true },
       { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", adminOnly: true },
+      { href: "/sistema/desempenho", label: "Desempenho", icon: "⚡", adminOnly: true },
     ],
   },
   {
