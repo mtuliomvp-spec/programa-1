@@ -10,7 +10,13 @@ import {
   deleteVehicleCost,
   receiveVehicleAdvance,
 } from "@/lib/finance";
-import { chassiOrNull, renavamOrNull } from "@/lib/vehicle-doc";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  normalizeChassi,
+  normalizeRenavam,
+  isChassiComplete,
+} from "@/lib/vehicle-doc";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
@@ -440,7 +446,134 @@ export async function deleteVehicleCostAction(costId: string, vehicleId: string)
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 
-export type AttachmentState = { error?: string; ok?: boolean };
+export type AttachmentState = {
+  error?: string;
+  ok?: boolean;
+  /** O que a leitura do CRLV preencheu na ficha (texto pronto para a tela). */
+  filled?: string[];
+  /** Avisos da leitura (placa divergente, chassi duplicado, IA indisponível). */
+  warnings?: string[];
+};
+
+
+/** Placa comparável: maiúsculas, só letras e números (padrão de plate-lookup). */
+const plateKey = (v: string | null | undefined) =>
+  (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * Lê o CRLV recém-anexado e preenche o que falta na ficha do veículo.
+ *
+ * Regra de ouro: nunca sobrescrever dado bom. Só entra o que está vazio — a
+ * exceção é o chassi MASCARADO da consulta por placa (`*****80388`), que é
+ * substituído pelos 17 caracteres do documento.
+ *
+ * Antes de gravar qualquer coisa, a PLACA do documento tem de bater com a do
+ * veículo. É o que impede o chassi de um carro entrar na ficha de outro — um
+ * chassi errado passaria na trava da venda e sairia impresso no contrato.
+ */
+async function applyCrlvToVehicle(input: {
+  vehicleId: string;
+  attachmentId: string;
+  base64: string;
+  mimeType: string;
+  /** Ano do exercício digitado pelo usuário ao anexar. */
+  typedYear: string | null;
+}): Promise<{ filled: string[]; warnings: string[] }> {
+  const { extractCrlv } = await import("@/lib/crlv-ai");
+  const crlv = await extractCrlv(input.base64, input.mimeType);
+
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: input.vehicleId },
+    select: {
+      plate: true, chassi: true, renavam: true, brand: true, model: true,
+      manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
+    },
+  });
+
+  const filled: string[] = [];
+  const warnings: string[] = [];
+
+  const lida = plateKey(crlv.placa);
+  if (!lida) {
+    return { filled, warnings: ["Não deu para ler a placa neste CRLV — nada foi preenchido. Confira se o arquivo está legível."] };
+  }
+  if (lida !== plateKey(vehicle.plate)) {
+    return {
+      filled,
+      warnings: [
+        `Este CRLV parece ser de outro carro (placa ${lida}, o veículo é ${vehicle.plate}). Nada foi preenchido — o anexo continua salvo.`,
+      ],
+    };
+  }
+
+  const data: Record<string, unknown> = {};
+
+  const renavam = normalizeRenavam(crlv.renavam);
+  if (renavam && !normalizeRenavam(vehicle.renavam)) {
+    data.renavam = renavam;
+    filled.push(`RENAVAM ${renavam}`);
+  }
+
+  const chassi = normalizeChassi(crlv.chassi);
+  if (chassi && !isChassiComplete(vehicle.chassi)) {
+    if (!isChassiComplete(chassi)) {
+      warnings.push("O chassi do CRLV não veio com os 17 caracteres — preencha à mão na ficha.");
+    } else {
+      // Chassi é único entre fichas ativas (vehicles_chassi_active_key).
+      const outro = await prisma.vehicle.findFirst({
+        where: { chassi, status: { not: "VENDIDO" }, id: { not: input.vehicleId } },
+        select: { plate: true },
+      });
+      if (outro) {
+        warnings.push(`O chassi lido já está no veículo ${outro.plate} — confira o número, não foi gravado.`);
+      } else {
+        data.chassi = chassi;
+        filled.push(`chassi ${chassi}`);
+      }
+    }
+  }
+
+  // Dados do carro: só o que estiver em branco.
+  const texto = (atual: string | null, novo: string | null) =>
+    !atual?.trim() && novo?.trim() ? novo.trim() : undefined;
+  const cor = texto(vehicle.color, crlv.cor);
+  if (cor) { data.color = cor; filled.push(`cor ${cor}`); }
+  const fuel = texto(vehicle.fuel, crlv.combustivel);
+  if (fuel) { data.fuel = fuel; filled.push(`combustível ${fuel}`); }
+  const transmission = texto(vehicle.transmission, crlv.transmissao);
+  if (transmission) { data.transmission = transmission; filled.push(`câmbio ${transmission}`); }
+  const brand = texto(vehicle.brand, crlv.marca);
+  if (brand) { data.brand = brand; filled.push(`marca ${brand}`); }
+  const model = texto(vehicle.model, crlv.modelo);
+  if (model) { data.model = model; filled.push(`modelo ${model}`); }
+  if (!vehicle.manufactureYear && crlv.anoFabricacao) {
+    data.manufactureYear = crlv.anoFabricacao;
+    filled.push(`ano de fabricação ${crlv.anoFabricacao}`);
+  }
+  if (!vehicle.modelYear && crlv.anoModelo) {
+    data.modelYear = crlv.anoModelo;
+    filled.push(`ano do modelo ${crlv.anoModelo}`);
+  }
+
+  if (Object.keys(data).length) {
+    await prisma.vehicle.update({ where: { id: input.vehicleId }, data });
+  }
+
+  // Exercício: o documento é a fonte da verdade. O ano vive no `description` do
+  // anexo (é dele que sai o selo "CRLV 2026" na lista).
+  const exercicio = (crlv.exercicio ?? "").match(/(\d{4})/)?.[1] ?? null;
+  if (exercicio && exercicio !== input.typedYear) {
+    await prisma.vehicleAttachment.update({
+      where: { id: input.attachmentId },
+      data: { description: `CRLV ${exercicio}` },
+    });
+    warnings.push(
+      `O documento é do exercício ${exercicio}${input.typedYear ? ` (você digitou ${input.typedYear})` : ""} — corrigido para o do arquivo.`,
+    );
+  }
+
+  return { filled, warnings };
+}
 
 export async function uploadVehicleAttachmentAction(
   _prev: AttachmentState,
@@ -472,19 +605,45 @@ export async function uploadVehicleAttachmentAction(
   if (!vehicle) return { error: "Veículo não encontrado." };
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  await prisma.vehicleAttachment.create({
+  const mimeType = file.type || "application/octet-stream";
+  const attachment = await prisma.vehicleAttachment.create({
     data: {
       vehicleId,
       kind,
       description,
       filename: file.name || "documento",
-      mimeType: file.type || "application/octet-stream",
+      mimeType,
       size: file.size,
       data: buffer,
     },
   });
+
+  // O CRLV é lido DEPOIS de o anexo estar salvo, e a leitura nunca derruba o
+  // upload: se a IA falhar, o documento continua anexado e o usuário preenche
+  // à mão. Por isso o try/catch só afeta a mensagem devolvida.
+  let read: { filled: string[]; warnings: string[] } = { filled: [], warnings: [] };
+  if (kind === "CRLV") {
+    try {
+      read = await applyCrlvToVehicle({
+        vehicleId,
+        attachmentId: attachment.id,
+        base64: buffer.toString("base64"),
+        mimeType,
+        typedYear: description.match(/(\d{4})/)?.[1] ?? null,
+      });
+    } catch (e) {
+      read = {
+        filled: [],
+        warnings: [e instanceof Error ? e.message : "Não foi possível ler o CRLV automaticamente."],
+      };
+    }
+  }
+
   revalidatePath(`/estoque/${vehicleId}`);
-  return { ok: true };
+  // A lista mostra o selo do CRLV e os dados do carro — sem isto o card ficava
+  // defasado até outra revalidação.
+  revalidatePath("/estoque");
+  return { ok: true, filled: read.filled, warnings: read.warnings };
 }
 
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
