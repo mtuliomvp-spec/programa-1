@@ -4,7 +4,13 @@ import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance"
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
-import { chassiOrNull, renavamOrNull, normalizeChassi, normalizeRenavam } from "@/lib/vehicle-doc";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  normalizeRenavam,
+  isChassiComplete,
+  CHASSI_LENGTH,
+} from "@/lib/vehicle-doc";
 
 /**
  * Núcleo do "Financiamento de terceiros" (intermediação). SEM "use server" —
@@ -76,8 +82,14 @@ export const intermediationSchema = z.object({
     if (!normalizeRenavam(d.renavam)) {
       ctx.addIssue({ code: "custom", path: ["renavam"], message: "Informe o RENAVAM do veículo" });
     }
-    if (!normalizeChassi(d.chassi)) {
-      ctx.addIssue({ code: "custom", path: ["chassi"], message: "Informe o chassi do veículo" });
+    // Completo: a consulta por placa devolve o chassi mascarado, e mascarado
+    // não serve para contrato nem para identificar o carro.
+    if (!isChassiComplete(d.chassi)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["chassi"],
+        message: `Informe o chassi completo do veículo (${CHASSI_LENGTH} caracteres)`,
+      });
     }
   });
 
