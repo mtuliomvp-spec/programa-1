@@ -2622,3 +2622,72 @@ export async function createManualReceivable(input: {
     },
   });
 }
+
+/**
+ * Corrige a DATA DE UMA BAIXA já feita (o dia em que o dinheiro entrou ou saiu),
+ * sem desfazer nada.
+ *
+ * Existe porque a data da baixa nunca é digitada: ela vem da data de trabalho do
+ * caixa aberto. Baixar com o caixa no dia errado só se corrigia fechando o
+ * caixa, reabrindo na data certa, revertendo e refazendo a baixa — e no caminho
+ * se perdia a conta escolhida.
+ *
+ * O que se move junto é só o que está ligado por chave estrangeira, para o
+ * resultado ser previsível: a movimentação de capital gerada pela baixa e, no
+ * caso de um título a pagar, o custo do veículo que ele originou. Nada é
+ * descoberto por semelhança de data ou de descrição.
+ *
+ * Vencimento (`dueDate`) NÃO muda: vencer e pagar são coisas diferentes.
+ */
+
+/** O que uma correção de data mexeu, para avisar na tela. */
+export type DateFixResult = { movedCapital: boolean; movedVehicleCost: boolean };
+
+export async function correctReceivedDate(
+  receivableId: string,
+  newDate: Date,
+): Promise<DateFixResult> {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: receivableId },
+    select: { id: true, status: true, receivedDate: true },
+  });
+  if (r.status !== "RECEBIDO") throw new Error("Só dá para corrigir a data de um título já recebido.");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.update({ where: { id: r.id }, data: { receivedDate: newDate } });
+    // A movimentação de capital copia a data da baixa quando é criada
+    // (finance.ts, syncReceivableCapital) e nunca é reescrita depois.
+    const cap = await tx.capitalTransaction.updateMany({
+      where: { receivableId: r.id },
+      data: { date: newDate },
+    });
+    return { movedCapital: cap.count > 0, movedVehicleCost: false };
+  });
+}
+
+export async function correctPaymentDate(
+  payableId: string,
+  newDate: Date,
+): Promise<DateFixResult> {
+  const p = await prisma.payable.findUniqueOrThrow({
+    where: { id: payableId },
+    select: { id: true, status: true, paymentDate: true },
+  });
+  if (p.status !== "PAGO") throw new Error("Só dá para corrigir a data de um título já pago.");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.payable.update({ where: { id: p.id }, data: { paymentDate: newDate } });
+    const cap = await tx.capitalTransaction.updateMany({
+      where: { payableId: p.id },
+      data: { date: newDate },
+    });
+    // Custo de veículo gerado por este título (peça, serviço, combustível,
+    // desconto concedido): a data do custo tem de acompanhar a do pagamento,
+    // senão o Lucro/Prejuízo e a ficha do carro apontam meses diferentes.
+    const cost = await tx.vehicleCost.updateMany({
+      where: { payableId: p.id },
+      data: { date: newDate },
+    });
+    return { movedCapital: cap.count > 0, movedVehicleCost: cost.count > 0 };
+  });
+}

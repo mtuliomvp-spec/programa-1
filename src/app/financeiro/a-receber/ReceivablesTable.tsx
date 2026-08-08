@@ -25,6 +25,8 @@ export type ReceivableRow = {
   originHint: string | null;
   /** Ligado a um carro: um desconto vira custo pós-venda dele. */
   hasVehicle: boolean;
+  /** Data do recebimento (yyyy-mm-dd) quando já recebido, para corrigir. */
+  receivedDateInput: string | null;
 };
 
 const statusTone = { PENDENTE: "warning", RECEBIDO: "success", ATRASADO: "danger" } as const;
@@ -43,6 +45,7 @@ export default function ReceivablesTable({
   canManage = false,
   canEdit,
   canDiscount = false,
+  canFixDate = false,
   cashboxDate = null,
 }: {
   rows: ReceivableRow[];
@@ -52,6 +55,8 @@ export default function ReceivablesTable({
   canEdit?: boolean;
   /** Pode quitar o título dando desconto na diferença. */
   canDiscount?: boolean;
+  /** Pode corrigir a data de um recebimento já feito. */
+  canFixDate?: boolean;
   cashboxDate?: string | null;
 }) {
   const showEdit = canEdit ?? canManage;
@@ -195,6 +200,8 @@ export default function ReceivablesTable({
                       canReceber={canReceber}
                       canDiscount={canDiscount}
                       hasVehicle={r.hasVehicle}
+                      canFixDate={canFixDate}
+                      receivedDateInput={r.receivedDateInput}
                     />
                     {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>

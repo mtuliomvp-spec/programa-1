@@ -2,7 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/perf";
 import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { getCashboxState } from "@/lib/cashbox";
@@ -35,12 +35,13 @@ export default async function ContasAPagarPage({
 }) {
   const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
-  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly] = await Promise.all([
+  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly, canFixDate] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
     userCan("combos", "criar"),
     userCan("combos", "aprovar"),
     userCan("financeiro", "editar"),
+    userCan("financeiro", "corrigirdata"),
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
@@ -63,6 +64,7 @@ export default async function ContasAPagarPage({
           amount: true,
           dueDate: true,
           status: true,
+          paymentDate: true,
           recurringId: true,
           saleId: true,
           purchaseRequestId: true,
@@ -195,6 +197,7 @@ export default async function ContasAPagarPage({
     effective: p.effective,
     status: p.status,
     accountName: p.account?.name ?? null,
+    paymentDateInput: p.paymentDate ? toDateInputValue(p.paymentDate) : null,
     recurring: Boolean(p.recurringId),
     // Combo de pagamento: sinaliza que alguém montou/solicitou o pagamento.
     combo: p.paymentCombo
@@ -371,7 +374,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
             {pageCount > 1 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 print:hidden">
                 <p className="text-xs text-slate-500">

@@ -82,6 +82,8 @@ export const MODULES: ModuleConfig[] = [
       { acao: "receber", label: "Registrar recebimento (baixa)" },
       // Perdoar valor é diferente de receber: o que sobra vira custo/perda.
       { acao: "desconto", label: "Dar desconto (baixar diferença como perda)" },
+      // Mexer na data de uma baixa já feita é correção contábil, não operação.
+      { acao: "corrigirdata", label: "Corrigir data de um pagamento/recebimento já feito" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
       { acao: "conciliar", label: "Conciliação bancária" },
       { acao: "fechar", label: "Fechamento mensal (fechar mês)" },

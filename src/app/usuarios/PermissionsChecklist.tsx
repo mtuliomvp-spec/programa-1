@@ -40,6 +40,7 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
       "financeiro.pagar",
       "financeiro.receber",
       "financeiro.desconto",
+      "financeiro.corrigirdata",
       "financeiro.contas",
       "financeiro.conciliar",
       "compras.visualizar",

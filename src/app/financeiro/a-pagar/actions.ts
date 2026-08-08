@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays , correctPaymentDate } from "@/lib/finance";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -331,6 +331,43 @@ export async function setPayableSupplierAction(
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/livro-caixa");
   return { ok: true };
+}
+
+/**
+ * Corrige a data de um pagamento já feito. Ação de CORREÇÃO: não exige caixa
+ * aberto (a data do caixa é justamente o que estava errado) nem farol verde.
+ * Os dois meses envolvidos têm de estar abertos — mover um valor para dentro
+ * ou para fora de um mês encerrado bagunçaria o fechamento. Move junto o que
+ * está ligado por chave estrangeira: a movimentação de capital e o custo de
+ * veículo gerados por este título.
+ */
+export async function correctPaymentDateAction(
+  id: string,
+  dateInput: string,
+): Promise<{ ok: boolean; movedCapital?: boolean; movedVehicleCost?: boolean; error?: string }> {
+  if (!dateInput) return { ok: false, error: "Escolha a data." };
+  try {
+    await assertCan("financeiro", "corrigirdata");
+    const newDate = parseDateInput(dateInput);
+    const current = await prisma.payable.findUnique({
+      where: { id },
+      select: { paymentDate: true },
+    });
+    if (current?.paymentDate) await assertMonthOpen(current.paymentDate);
+    await assertMonthOpen(newDate);
+    const res = await correctPaymentDate(id, newDate);
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/capital");
+    revalidatePath("/estoque");
+    revalidatePath("/relatorios/lucro-veiculos");
+    revalidatePath("/");
+    return { ok: true, movedCapital: res.movedCapital, movedVehicleCost: res.movedVehicleCost };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível corrigir a data." };
+  }
 }
 
 export async function markPendingAction(id: string) {
