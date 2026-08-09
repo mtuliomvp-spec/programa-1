@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { timed } from "@/lib/perf";
 import { prisma } from "@/lib/prisma";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { daysBetween } from "@/lib/reports";
 import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
@@ -64,7 +64,8 @@ export default async function EstoquePage({
             },
           },
           // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
-          sale: { select: { saleDate: true } },
+          // transferDoneAt: nulo = o carro ainda está no nome do dono anterior.
+          sale: { select: { saleDate: true, transferDoneAt: true } },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -89,6 +90,8 @@ export default async function EstoquePage({
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
+    transferDoneAt: v.sale?.transferDoneAt ?? null,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
     crlvYear:
       v.attachments
@@ -219,6 +222,11 @@ export default async function EstoquePage({
             <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
               {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
             </Badge>
+            <Badge tone={v.transferDoneAt ? "success" : "danger"}>
+              {v.transferDoneAt
+                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                : "⚠ No nome do dono anterior"}
+            </Badge>
           </div>
         )}
       </Card>
@@ -283,6 +291,11 @@ export default async function EstoquePage({
             </Badge>
             <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
               {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+            </Badge>
+            <Badge tone={v.transferDoneAt ? "success" : "danger"}>
+              {v.transferDoneAt
+                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                : "⚠ No nome do dono anterior"}
             </Badge>
           </span>
         ) : null}
