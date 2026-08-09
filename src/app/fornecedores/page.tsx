@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { matchesSearch } from "@/lib/search";
+import { countDuplicated } from "@/lib/person-keys";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import DeleteRowButton from "@/components/DeleteRowButton";
@@ -30,6 +31,8 @@ export default async function FornecedoresPage({
   const suppliers = q
     ? allSuppliers.filter((s) => matchesSearch(q, s.name, s.document, s.phone, s.email))
     : allSuppliers;
+  // A lista já está carregada — contar os repetidos aqui não custa consulta.
+  const duplicated = canExcluir ? countDuplicated(allSuppliers) : 0;
 
   return (
     <div>
@@ -48,6 +51,15 @@ export default async function FornecedoresPage({
         q={q}
         placeholder="Buscar (nome, documento, telefone, e-mail)"
       />
+      {duplicated > 0 ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>{duplicated} cadastros repetidos</strong> — o mesmo fornecedor aparece mais de uma
+          vez.{" "}
+          <Link href="/fornecedores/unificar" className="font-medium underline">
+            Conferir e unificar →
+          </Link>
+        </div>
+      ) : null}
       <Card>
         {suppliers.length === 0 ? (
           <EmptyState

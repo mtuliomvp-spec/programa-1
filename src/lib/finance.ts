@@ -5,6 +5,7 @@ import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
 import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import { resolveDespesaCategory } from "@/lib/categories";
+import { nameKey } from "@/lib/person-keys";
 import { timed } from "@/lib/perf";
 import {
   chassiOrNull,
@@ -1961,17 +1962,31 @@ export async function createManualPayable(input: {
 }
 
 /**
- * Resolve um fornecedor pelo nome: reaproveita se já existir (sem diferenciar
- * maiúsculas) ou cadastra um novo. Usado para lançar tarifas com o próprio
- * banco como fornecedor sem precisar cadastrá-lo antes.
+ * Resolve um fornecedor pelo nome: reaproveita se já existir ou cadastra um
+ * novo. Usado para lançar tarifas com o próprio banco como fornecedor sem
+ * precisar cadastrá-lo antes.
+ *
+ * A comparação ignora acento, maiúscula, pontuação e espaço (`nameKey`) — era
+ * a comparação estrita daqui que enchia o cadastro de repetições ("Rogerio
+ * venturini" virando um segundo "Rogério Venturini"). Ela SEMPRE reaproveita e
+ * nunca recusa: é chamada de todos os caminhos de gravação financeira, e um
+ * erro aqui derrubaria um lançamento ou uma importação inteira.
  */
 export async function resolveSupplierByName(name: string): Promise<string> {
   const trimmed = name.trim();
-  const existing = await prisma.supplier.findFirst({
+  // Caminho rápido: nome idêntico. Resolve a esmagadora maioria com uma consulta.
+  const exact = await prisma.supplier.findFirst({
     where: { name: { equals: trimmed, mode: "insensitive" } },
     select: { id: true },
   });
-  if (existing) return existing.id;
+  if (exact) return exact.id;
+  // Só quando ia criar mesmo: compara pela chave normalizada.
+  const key = nameKey(trimmed);
+  if (key) {
+    const all = await prisma.supplier.findMany({ select: { id: true, name: true } });
+    const found = all.find((s) => nameKey(s.name) === key);
+    if (found) return found.id;
+  }
   const created = await prisma.supplier.create({ data: { name: trimmed } });
   return created.id;
 }
