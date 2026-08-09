@@ -37,6 +37,11 @@ export const MODULES: ModuleConfig[] = [
       { acao: "crlv", label: "Anexar CRLV" },
       // Preço de compra, custo total, margem e o resultado da venda na ficha.
       { acao: "lucro", label: "Ver resultado (lucro/prejuízo) do veículo" },
+      // Separado do "lucro" de propósito: dá para liberar o custo na lista sem
+      // mostrar o lucro da venda na ficha do carro, e vice-versa.
+      { acao: "vercusto", label: "Ver o custo dos veículos na lista do estoque" },
+      // Levar o custo para fora (papel/arquivo) é decisão à parte de vê-lo na tela.
+      { acao: "pdfcusto", label: "Gerar o PDF do estoque com o custo" },
     ],
   },
   {
@@ -119,7 +124,15 @@ export const MODULES: ModuleConfig[] = [
   {
     key: "cadastros",
     label: "Cadastros (clientes e fornecedores)",
-    acoes: [VER, CRIAR, EDITAR, EXCLUIR],
+    acoes: [
+      VER,
+      CRIAR,
+      EDITAR,
+      EXCLUIR,
+      // Faxina de duplicados: junta cadastros e apaga os repetidos. Separado do
+      // "excluir" comum, que é largo demais para essa operação em lote.
+      { acao: "unificar", label: "Unificar cadastros repetidos" },
+    ],
   },
   {
     key: "documentos_empresa",

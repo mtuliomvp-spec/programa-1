@@ -29,7 +29,7 @@ export type MergeResult = {
  */
 export async function mergeDuplicateCustomersAction(): Promise<MergeResult> {
   try {
-    await assertCan("cadastros", "excluir");
+    await assertCan("cadastros", "unificar");
   } catch (e) {
     return {
       ok: false,
