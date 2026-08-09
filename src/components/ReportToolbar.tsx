@@ -20,6 +20,8 @@ export default function ReportToolbar({
   max,
   extra,
   filtersKey,
+  pdf = true,
+  actions,
 }: {
   basePath: string;
   printTitle: string;
@@ -32,6 +34,10 @@ export default function ReportToolbar({
   min?: string;
   max?: string;
   extra?: ReactNode;
+  /** Mostra o botão de PDF padrão da barra. Desligue quando ele depender de permissão. */
+  pdf?: boolean;
+  /** Botões extras ao lado de Filtrar/Limpar (ex.: um segundo PDF). */
+  actions?: ReactNode;
   /**
    * Valores dos filtros extras (os selects passados em `extra`), concatenados.
    * Entram na `key` do formulário para que o "Limpar" também os recrie.
@@ -117,7 +123,8 @@ export default function ReportToolbar({
             <LinkButton href={basePath} variant="secondary">
               Limpar
             </LinkButton>
-            <PrintButton title={printTitle} mode="table" />
+            {pdf ? <PrintButton title={printTitle} mode="table" /> : null}
+            {actions}
           </div>
         </form>
       </Card>

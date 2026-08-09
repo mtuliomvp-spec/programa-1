@@ -46,10 +46,20 @@ export default function PrintButton({
   title,
   rootSelector = "main",
   mode = "document",
+  label = "📄 PDF",
+  subtitle,
 }: {
   title?: string;
   rootSelector?: string;
   mode?: "table" | "document";
+  /** Texto do botão (para conviver com mais de um PDF na mesma tela). */
+  label?: string;
+  /**
+   * Subtítulo do PDF. Por padrão usa a descrição do cabeçalho da página; passe
+   * "" para não sair nenhum (ex.: quando a descrição traz números que aquele
+   * PDF não pode mostrar).
+   */
+  subtitle?: string;
 }) {
   const [pending, setPending] = useState(false);
 
@@ -119,9 +129,15 @@ export default function PrintButton({
     return collapse(parts.join(" "));
   };
 
-  function insidePrintHidden(el: Element): boolean {
+  /**
+   * Marcado para ficar de fora do PDF. Para no `root`: quando o botão aponta
+   * explicitamente para um contêiner, o que vale é o que está DENTRO dele —
+   * é assim que um bloco `data-no-pdf` (invisível ao PDF geral) pode ser a
+   * origem de um PDF próprio.
+   */
+  function insidePrintHidden(el: Element, root: Element): boolean {
     let node: Element | null = el;
-    while (node) {
+    while (node && node !== root) {
       if (node.classList?.contains("print:hidden") || node.hasAttribute?.("data-no-pdf")) return true;
       node = node.parentElement;
     }
@@ -131,7 +147,7 @@ export default function PrintButton({
   // ---- Modo TABELA: lê as <table> do DOM e desenha uma tabela limpa. ----
   async function generateTable(): Promise<boolean> {
     const root = (document.querySelector(rootSelector) as HTMLElement | null) ?? document.body;
-    const tables = Array.from(root.querySelectorAll("table")).filter((t) => !insidePrintHidden(t));
+    const tables = Array.from(root.querySelectorAll("table")).filter((t) => !insidePrintHidden(t, root));
     if (tables.length === 0) return false;
 
     const { jsPDF } = await import("jspdf");
@@ -147,9 +163,9 @@ export default function PrintButton({
 
     const reportTitle = reportTitleOf();
 
-    // Subtítulo: descrição da PageHeader (traz os totais), se houver.
+    // Subtítulo: o informado ou, por padrão, a descrição da PageHeader.
     const h1 = document.querySelector("main h1");
-    const desc = textOf(h1?.parentElement?.querySelector("p"));
+    const desc = subtitle !== undefined ? subtitle : textOf(h1?.parentElement?.querySelector("p"));
     if (desc) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9);
@@ -386,7 +402,7 @@ export default function PrintButton({
       disabled={pending}
       className="print:hidden"
     >
-      {pending ? "Gerando PDF…" : "📄 PDF"}
+      {pending ? "Gerando PDF…" : label}
     </Button>
   );
 }

@@ -7,6 +7,8 @@ import { daysBetween } from "@/lib/reports";
 import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
+import PrintButton from "@/components/PrintButton";
+import { userCan } from "@/lib/guards";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -45,6 +47,9 @@ export default async function EstoquePage({
       : undefined;
   const q = params.q?.trim();
   const now = new Date();
+  // Mesma permissão que já esconde preço de compra, custo e margem na ficha do
+  // veículo: sem ela, o custo não aparece nem na lista nem no PDF completo.
+  const canLucro = await userCan("estoque", "lucro");
 
   const [vehicles, openPreSales] = await timed("tela: estoque", () =>
     Promise.all([
@@ -191,18 +196,22 @@ export default async function EstoquePage({
           </div>
         </div>
         <div className="mt-3 flex items-end justify-between gap-3">
-          <div>
-            <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
-            <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
-            {v.pendingCost > 0 ? (
-              <p className="text-[11px] text-slate-400">
-                total {formatCurrency(v.invested)} ·{" "}
-                <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-              </p>
-            ) : v.paidCost < v.invested ? (
-              <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
-            ) : null}
-          </div>
+          {canLucro ? (
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
+              <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
+              {v.pendingCost > 0 ? (
+                <p className="text-[11px] text-slate-400">
+                  total {formatCurrency(v.invested)} ·{" "}
+                  <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                </p>
+              ) : v.paidCost < v.invested ? (
+                <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div />
+          )}
           <div className="text-right">
             <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
             <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
@@ -245,17 +254,19 @@ export default async function EstoquePage({
         {v.manufactureYear}/{v.modelYear}
       </Td>
       <Td>{v.km.toLocaleString("pt-BR")} km</Td>
-      <Td className="text-right tabular-nums">
-        {formatCurrency(v.paidCost)}
-        {v.pendingCost > 0 ? (
-          <span className="block text-[11px] text-slate-400">
-            total {formatCurrency(v.invested)} ·{" "}
-            <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-          </span>
-        ) : v.paidCost < v.invested ? (
-          <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
-        ) : null}
-      </Td>
+      {canLucro ? (
+        <Td className="text-right tabular-nums">
+          {formatCurrency(v.paidCost)}
+          {v.pendingCost > 0 ? (
+            <span className="block text-[11px] text-slate-400">
+              total {formatCurrency(v.invested)} ·{" "}
+              <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+            </span>
+          ) : v.paidCost < v.invested ? (
+            <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
+          ) : null}
+        </Td>
+      ) : null}
       <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
       <Td className="text-right">
         {v.status !== "VENDIDO" ? (
@@ -315,7 +326,13 @@ export default async function EstoquePage({
     <div>
       <PageHeader
         title="Estoque de veículos"
-        description={`${emEstoque.length} em estoque${vendidos.length > 0 ? ` · ${vendidos.length} vendido(s)` : ""} · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)} · valor anunciado: ${formatCurrency(totalValue)}`}
+        description={
+          `${emEstoque.length} em estoque${vendidos.length > 0 ? ` · ${vendidos.length} vendido(s)` : ""}` +
+          (canLucro
+            ? ` · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)}`
+            : "") +
+          ` · valor anunciado: ${formatCurrency(totalValue)}`
+        }
         action={
           <Can module="estoque" action="criar">
             <LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>
@@ -335,6 +352,18 @@ export default async function EstoquePage({
         min={min}
         max={max}
         filtersKey={`${params.status ?? ""}`}
+        pdf={canLucro}
+        actions={
+          emEstoque.length > 0 ? (
+            <PrintButton
+              title="Estoque — ficha de venda"
+              mode="table"
+              rootSelector="#pdf-vendedor"
+              label="📄 PDF vendedor"
+              subtitle={`${emEstoque.length} veículo(s) disponível(is) para venda`}
+            />
+          ) : null
+        }
         extra={
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status
@@ -383,7 +412,7 @@ export default async function EstoquePage({
                   <Th>Cor</Th>
                   <Th>Ano</Th>
                   <Th>KM</Th>
-                  <Th className="text-right">Custo pago</Th>
+                  {canLucro ? <Th className="text-right">Custo pago</Th> : null}
                   <Th className="text-right">Preço de venda</Th>
                   <Th className="text-right">Dias</Th>
                   <Th>Status</Th>
@@ -395,7 +424,7 @@ export default async function EstoquePage({
                 {showDivider ? (
                   <tr className="bg-slate-50">
                     <td
-                      colSpan={10}
+                      colSpan={canLucro ? 10 : 9}
                       className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
                     >
                       Vendidos ({vendidos.length})
@@ -408,6 +437,53 @@ export default async function EstoquePage({
           </Card>
         </>
       )}
+
+      {/*
+        Origem do "PDF vendedor": os dados que o vendedor precisa na mão, SEM
+        custo, margem ou dias em estoque. Fica fora da tela (hidden) e fora do
+        PDF completo (data-no-pdf) — o PrintButton aponta direto para este id.
+        Só os veículos disponíveis: carro vendido não entra em ficha de venda.
+      */}
+      {emEstoque.length > 0 ? (
+        <div id="pdf-vendedor" data-no-pdf className="hidden print:hidden">
+          <table>
+            <thead>
+              <tr>
+                <th>Veículo</th>
+                <th>Placa</th>
+                <th>Ano</th>
+                <th className="text-right">KM</th>
+                <th>Cor</th>
+                <th>Câmbio</th>
+                <th>Combustível</th>
+                <th className="text-right">Preço de venda</th>
+                <th>Situação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emEstoque.map((v) => (
+                <tr key={v.id}>
+                  <td>{[v.brand, v.model, v.version].filter(Boolean).join(" ")}</td>
+                  <td>{v.plate}</td>
+                  <td>
+                    {v.manufactureYear}/{v.modelYear}
+                  </td>
+                  <td className="text-right">{v.km.toLocaleString("pt-BR")}</td>
+                  <td>{v.color || "-"}</td>
+                  <td>{v.transmission || "-"}</td>
+                  <td>{v.fuel || "-"}</td>
+                  <td className="text-right">{formatCurrency(v.salePrice)}</td>
+                  <td>
+                    {v.preSaleNumber != null
+                      ? `Pré-vendido nº ${String(v.preSaleNumber).padStart(4, "0")}`
+                      : statusLabel[v.status].label}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }
