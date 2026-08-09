@@ -72,16 +72,9 @@ export default function VehicleForm({
   const [ownerRefund, setOwnerRefund] = useState<number>(vehicle?.ownerRefundAmount ?? 0);
   const [payoff, setPayoff] = useState<number>(vehicle?.payoffAmount ?? 0);
   const [debts, setDebts] = useState<number>(vehicle?.debtsAmount ?? 0);
-  // Detalhamento dos débitos em vários títulos (a lista vive no componente).
-  const [debtItemsTotal, setDebtItemsTotal] = useState<number | null>(
-    (vehicle?.debtsItems ?? []).length
-      ? Math.round((vehicle?.debtsItems ?? []).reduce((s, d) => s + d.amount, 0) * 100) / 100
-      : null,
-  );
-  const debtsEfetivo = debtItemsTotal ?? debts;
-  const liquido = Math.max(0, Math.round((negociado - payoff - debtsEfetivo) * 100) / 100);
+  const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
   // Consignado: líquido a devolver ao proprietário = acertado − quitação − débitos.
-  const consignedLiquido = Math.max(0, Math.round((ownerRefund - payoff - debtsEfetivo) * 100) / 100);
+  const consignedLiquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -377,15 +370,14 @@ export default function VehicleForm({
                   step="0.01"
                   min={0}
                   name="debtsAmount"
-                  value={debtItemsTotal != null ? debtItemsTotal || "" : debts || ""}
-                  readOnly={debtItemsTotal != null}
+                  value={debts || ""}
                   onChange={(e) => setDebts(Number(e.target.value) || 0)}
                   placeholder="IPVA, multas, licenciamento"
                 />
                 <DebtItemsField
                   name="debtsItems"
                   initialItems={vehicle?.debtsItems ?? []}
-                  onTotalChange={setDebtItemsTotal}
+                  agreed={debts}
                 />
               </Field>
             </div>
@@ -501,15 +493,14 @@ export default function VehicleForm({
                   step="0.01"
                   min={0}
                   name="debtsAmount"
-                  value={debtItemsTotal != null ? debtItemsTotal || "" : debts || ""}
-                  readOnly={debtItemsTotal != null}
+                  value={debts || ""}
                   onChange={(e) => setDebts(Number(e.target.value) || 0)}
                   placeholder="IPVA, multas, licenciamento"
                 />
                 <DebtItemsField
                   name="debtsItems"
                   initialItems={vehicle?.debtsItems ?? []}
-                  onTotalChange={setDebtItemsTotal}
+                  agreed={debts}
                 />
               </Field>
             </div>
