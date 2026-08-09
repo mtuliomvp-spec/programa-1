@@ -78,3 +78,20 @@ export function parseDebtItems(value: unknown): VehicleDebtItem[] {
 export function sumDebtItems(value: unknown): number {
   return round2(parseDebtItems(value).reduce((sum, d) => sum + d.amount, 0));
 }
+
+/**
+ * Diferença entre as guias reais (linhas) e o total ACORDADO com o antigo dono.
+ *
+ * Positiva = as guias vieram maiores do que o descontado: a loja paga a mais e
+ * isso é custo do veículo. Negativa = vieram menores: sobra, e o carro custou
+ * menos. Sem detalhamento, `diff` é 0 (nada a ajustar).
+ */
+export function debtsDiff(agreed: number, items: unknown): { real: number; diff: number } {
+  const list = parseDebtItems(items);
+  if (!list.length) return { real: 0, diff: 0 };
+  const real = round2(list.reduce((s, d) => s + d.amount, 0));
+  return { real, diff: round2(real - (agreed || 0)) };
+}
+
+/** Descrição-marca do custo de ajuste — é por ela que ele é apagado e recriado. */
+export const AJUSTE_DEBITOS_DESC = "Ajuste de débitos (guias × acordado)";

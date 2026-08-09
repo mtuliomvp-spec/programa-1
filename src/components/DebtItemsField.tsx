@@ -14,9 +14,10 @@ type DebtRow = { description: string; amount: string; dueDate: string };
  * conta a pagar. Aqui ele pode ser aberto em linhas — cada uma com o seu
  * vencimento — e cada linha vira um título próprio.
  *
- * O componente cuida só da LISTA: quem renderiza o campo do total é a tela, que
- * recebe a soma por `onTotalChange` e a trava enquanto houver detalhamento. Sem
- * isso, o total e as linhas poderiam divergir (e o servidor recusa).
+ * O campo do total (na tela) é o valor ACORDADO com o antigo dono — o que foi
+ * descontado dele. As linhas são as GUIAS REAIS. Os dois podem divergir, e é
+ * normal: a diferença vira custo do veículo (guias maiores) ou desconto (guias
+ * menores). Este componente só mostra a comparação; quem lança é o servidor.
  *
  * Molde copiado das indicações de venda (SaleForm): linha-fantasma no fim e
  * JSON num `<input type="hidden">`.
@@ -24,13 +25,13 @@ type DebtRow = { description: string; amount: string; dueDate: string };
 export default function DebtItemsField({
   name,
   initialItems = [],
-  onTotalChange,
+  agreed,
 }: {
   /** Nome do hidden com o JSON (ex.: "tiDebtsItems" / "debtsItems"). */
   name: string;
   initialItems?: VehicleDebtItem[];
-  /** Soma das linhas, ou null quando não há detalhamento. */
-  onTotalChange: (total: number | null) => void;
+  /** Total acordado com o antigo dono, para comparar com as guias. */
+  agreed: number;
 }) {
   const [items, setItems] = useState<DebtRow[]>(
     initialItems.map((d) => ({
@@ -43,6 +44,8 @@ export default function DebtItemsField({
 
   const rows: DebtRow[] = [...items, { description: "", amount: "", dueDate: "" }];
   const total = Math.round(items.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100;
+  // Guias × acordado: a diferença é o que vira custo (ou desconto) do veículo.
+  const diff = Math.round((total - (agreed || 0)) * 100) / 100;
   const json = JSON.stringify(
     items
       .filter((d) => d.description.trim() || Number(d.amount) > 0)
@@ -55,9 +58,6 @@ export default function DebtItemsField({
 
   function update(next: DebtRow[]) {
     setItems(next);
-    onTotalChange(
-      next.length ? Math.round(next.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100 : null,
-    );
   }
 
   function setField(index: number, field: keyof DebtRow, value: string) {
@@ -137,8 +137,19 @@ export default function DebtItemsField({
             >
               voltar para valor único
             </button>
-            <span className="font-medium text-slate-700">Total: {formatCurrency(total)}</span>
+            <span className="font-medium text-slate-700">
+              Guias somam {formatCurrency(total)}
+            </span>
           </div>
+          {items.length && Math.abs(diff) > 0.005 ? (
+            <p
+              className={`pt-1 text-[11px] font-medium ${diff > 0 ? "text-amber-700" : "text-emerald-700"}`}
+            >
+              {diff > 0
+                ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
+                : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
+            </p>
+          ) : null}
         </div>
       )}
     </>

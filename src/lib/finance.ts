@@ -12,7 +12,12 @@ import {
   missingVehicleDocs,
   missingVehicleDocsError,
 } from "@/lib/vehicle-doc";
-import { parseDebtItems, type VehicleDebtItem } from "@/lib/vehicle-debts";
+import {
+  parseDebtItems,
+  debtsDiff,
+  AJUSTE_DEBITOS_DESC,
+  type VehicleDebtItem,
+} from "@/lib/vehicle-debts";
 import { parseDateInput } from "@/lib/format";
 import type {
   CategoriaCustoVeiculo,
@@ -21,6 +26,9 @@ import type {
   FormaPagamento,
   Prisma,
 } from "@prisma/client";
+
+/** R$ formatado, para as notas dos lançamentos. */
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /**
  * Camada central que integra Estoque, Vendas e Peças ao Financeiro.
@@ -268,6 +276,31 @@ async function createAcquisitionPayables(
         },
       });
     }
+
+    // As guias reais podem não bater com o ACORDADO (debtsAmount, que é o que
+    // foi descontado do antigo dono e ancora o líquido). A diferença é custo do
+    // veículo: positiva quando as guias vieram maiores, negativa quando vieram
+    // menores. O farol pede `pagáveis == purchasePrice + Σ VehicleCost`, e como
+    // os títulos somam o REAL, essa linha fecha a conta sem tocar no
+    // purchasePrice (que segue sendo o valor negociado, o que vai no contrato).
+    //
+    // Sem Payable de propósito: o dinheiro dela já está dentro dos títulos de
+    // débito. Um VehicleCost solto só desequilibraria se NÃO houvesse esse
+    // excedente do lado dos títulos — não é o caso.
+    const { real, diff } = debtsDiff(debtsAmount, items);
+    if (Math.abs(diff) > 0.005) {
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: input.vehicleId,
+          description: AJUSTE_DEBITOS_DESC,
+          category: "OUTROS",
+          amount: diff,
+          date: input.entryDate,
+          postSale: false,
+          notes: `Guias ${brl(real)} · acordado com o antigo dono ${brl(debtsAmount)}`,
+        },
+      });
+    }
   }
 
   // Líquido ao vendedor = valor negociado − quitação − débitos.
@@ -365,6 +398,11 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
     if (purchasePayables.some((p) => p.status === "PAGO")) return;
 
     await tx.payable.deleteMany({ where: { vehicleId, category: "COMPRA_VEICULO" } });
+    // O custo de ajuste dos débitos é recriado junto com os títulos — sem isto
+    // cada edição do veículo somaria mais uma linha.
+    await tx.vehicleCost.deleteMany({
+      where: { vehicleId, payableId: null, description: AJUSTE_DEBITOS_DESC },
+    });
 
     if (vehicle.purchasePrice > 0) {
       await createAcquisitionPayables(tx, {
