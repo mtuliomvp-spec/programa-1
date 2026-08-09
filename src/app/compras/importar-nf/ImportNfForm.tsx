@@ -3,40 +3,57 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import { importNfAction, type ImportNfResult } from "./actions";
 
 /**
  * Envia as notas UMA POR VEZ, mostrando o progresso: a leitura por IA leva
  * alguns segundos por nota, e assim uma nota ruim não derruba o lote nem se
  * corre o risco de estourar o tempo da função.
+ *
+ * Foto passa por `resizeImageToJpeg` antes de subir. Isso resolve dois
+ * problemas de uma vez: a foto do iPhone chega em HEIC (formato que a leitura
+ * não aceita) e vira JPEG ao ser reencodada pelo próprio navegador; e uma foto
+ * de vários MB encolhe, para não encostar no limite do envio. PDF passa
+ * intacto.
  */
 export default function ImportNfForm() {
-  const inputRef = useRef<HTMLInputElement>(null);
+  const pickRef = useRef<HTMLInputElement>(null);
+  const cameraRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const [results, setResults] = useState<ImportNfResult[]>([]);
 
+  function addFrom(input: HTMLInputElement | null) {
+    const picked = Array.from(input?.files ?? []);
+    if (picked.length === 0) return;
+    setFiles((prev) => [...prev, ...picked]);
+    setResults([]);
+    if (input) input.value = "";
+  }
+
   async function handleSend() {
-    const files = Array.from(inputRef.current?.files ?? []);
     if (files.length === 0) return;
     setBusy(true);
     setResults([]);
-    setProgress({ done: 0, total: files.length });
     const out: ImportNfResult[] = [];
-    for (const [i, file] of files.entries()) {
+    for (const [i, original] of files.entries()) {
       setProgress({ done: i, total: files.length });
+      // 2400 px e qualidade alta: a letra da nota é miúda (mesmo ajuste do CRLV).
+      const file = await resizeImageToJpeg(original, 2400, 0.92);
       const fd = new FormData();
       fd.set("file", file);
       try {
         out.push(await importNfAction(fd));
       } catch {
-        out.push({ ok: false, filename: file.name, error: "Falha ao enviar o arquivo." });
+        out.push({ ok: false, filename: original.name, error: "Falha ao enviar o arquivo." });
       }
       setResults([...out]);
     }
     setProgress(null);
     setBusy(false);
-    if (inputRef.current) inputRef.current.value = "";
+    setFiles([]);
   }
 
   const criadas = results.filter((r) => r.ok && !r.duplicated).length;
@@ -47,24 +64,69 @@ export default function ImportNfForm() {
     <div className="space-y-4 p-5">
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700">
-          Arquivos das notas (PDF ou foto)
+          Notas (PDF ou foto)
         </label>
-        <input
-          ref={inputRef}
-          type="file"
-          multiple
-          accept="application/pdf,.pdf,image/*"
-          disabled={busy}
-          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            ref={pickRef}
+            type="file"
+            multiple
+            accept="application/pdf,.pdf,image/*"
+            disabled={busy}
+            onChange={() => addFrom(pickRef.current)}
+            className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+          />
+          {/* Abre a câmera direto no celular; no computador vira um seletor comum. */}
+          <input
+            ref={cameraRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            disabled={busy}
+            onChange={() => addFrom(cameraRef.current)}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={busy}
+            onClick={() => cameraRef.current?.click()}
+          >
+            📷 Tirar foto da nota
+          </Button>
+        </div>
         <p className="mt-1 text-xs text-slate-500">
-          Pode selecionar várias de uma vez. Cada nota é lida separadamente.
+          Pode juntar várias — cada nota é lida separadamente. Dá para fotografar a nota; quando
+          tiver o PDF, prefira ele: a leitura sai mais exata.
         </p>
       </div>
 
+      {files.length > 0 ? (
+        <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200 text-sm">
+          {files.map((f, i) => (
+            <li key={`${f.name}-${i}`} className="flex items-center justify-between gap-3 px-3 py-2">
+              <span className="min-w-0 truncate text-slate-700">{f.name}</span>
+              {!busy ? (
+                <button
+                  type="button"
+                  onClick={() => setFiles((prev) => prev.filter((_, k) => k !== i))}
+                  className="shrink-0 text-xs text-rose-600 hover:underline"
+                >
+                  Remover
+                </button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-3">
-        <Button type="button" onClick={handleSend} disabled={busy}>
-          {busy ? "Lendo as notas..." : "Importar notas"}
+        <Button type="button" onClick={handleSend} disabled={busy || files.length === 0}>
+          {busy
+            ? "Lendo as notas..."
+            : files.length > 1
+              ? `Importar ${files.length} notas`
+              : "Importar nota"}
         </Button>
         {progress ? (
           <span className="text-sm text-slate-500">
