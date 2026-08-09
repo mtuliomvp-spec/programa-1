@@ -77,7 +77,6 @@ export type SaleContractData = {
   // Transferência cobrada na venda: a loja recebeu por ela, então quem
   // providencia (e paga) a transferência é a VENDEDORA — muda a cláusula.
   transferCharged: boolean;
-  notes: string | null;
   backHref: string;
 };
 
@@ -335,11 +334,12 @@ export default function SaleContractDocument(d: SaleContractData) {
           </p>
         </Clausula>
 
-        {d.notes ? (
-          <Clausula n={++n} titulo="Das observações">
-            <p className="whitespace-pre-wrap">{d.notes}</p>
-          </Clausula>
-        ) : null}
+        {/*
+          As observações da venda NÃO saem no contrato. O campo é de controle
+          interno da loja ("fulano fez a transferência", "cliente vai trazer o
+          documento") e virava cláusula assinada, o que não é o que ele é. Elas
+          continuam no documento da venda e na ficha, que são internos.
+        */}
 
         <p className="mb-8 mt-6 text-sm">
           E, por estarem assim justas e contratadas, as partes assinam o presente instrumento em duas

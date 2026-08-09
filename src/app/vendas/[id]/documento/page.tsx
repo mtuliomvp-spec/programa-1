@@ -194,12 +194,13 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
           prazo legal de 30 dias a contar desta data.
         </p>
 
-        <div className="grid grid-cols-2 gap-10 pt-6 text-center text-sm">
-          <div>
-            <div className="border-t border-slate-400 pt-2">{company.razaoSocial} (vendedor)</div>
-          </div>
-          <div>
-            <div className="border-t border-slate-400 pt-2">{c.name} (comprador)</div>
+        {/*
+          Documento interno da revenda — não é entregue ao cliente. Por isso só
+          há a assinatura da loja: quem assina com o comprador é o contrato.
+        */}
+        <div className="pt-6 text-center text-sm">
+          <div className="mx-auto w-64 border-t border-slate-400 pt-2">
+            {company.razaoSocial} (vendedor)
           </div>
         </div>
       </div>
