@@ -20,7 +20,7 @@ import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
-import { effectiveStructuralKey } from "@/lib/structural-flows";
+import { nextRequestSeq } from "@/lib/purchase-requests";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -94,8 +94,7 @@ export async function createRequestAction(
   // Numeração por ano: 0001/2026, reiniciando a cada ano.
   const year = new Date().getFullYear();
   await prisma.$transaction(async (tx) => {
-    const last = await tx.purchaseRequest.aggregate({ where: { year }, _max: { seq: true } });
-    const seq = (last._max.seq ?? 0) + 1;
+    const seq = await nextRequestSeq(tx, year);
     const flow = parsed.data.structuralKey || "ADMINISTRATIVO";
     const created = await tx.purchaseRequest.create({
       data: {
@@ -110,9 +109,11 @@ export async function createRequestAction(
         installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
         installmentDays: parsed.data.installmentDays,
         supplierId: supplierIdCreate,
-        // Sem veículo indicado, "Veículos" vira Administrativo (o gasto é da
-        // loja, não de um carro) — a solicitação já nasce no fluxo certo.
-        structuralKey: effectiveStructuralKey(flow, parsed.data.vehicleId),
+        // A solicitação GUARDA o fluxo escolhido, mesmo em "Veículos" sem a
+        // placa: é uma intenção ("este gasto é de um carro, qual eu digo
+        // depois"). Quem normaliza é a conta a pagar, na aprovação — e a
+        // aprovação exige a placa (ver generateEspelho).
+        structuralKey: flow,
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
         vehicleId: flow === "VEICULOS" ? parsed.data.vehicleId || null : null,
         capitalBeneficiaryId: flow === "CAPITAL" ? parsed.data.capitalBeneficiaryId || null : null,
@@ -164,6 +165,14 @@ async function generateEspelho(request: RequestForEspelho): Promise<string | nul
   const flowKey = (request.structuralKey || "ADMINISTRATIVO") as "CAPITAL" | "VEICULOS" | "ADMINISTRATIVO";
   if (flowKey === "CAPITAL" && !request.capitalBeneficiaryId) {
     throw new Error("Escolha o beneficiário do capital antes de aprovar.");
+  }
+  // Espelha a guarda do Capital. Sem a placa, o custo cairia no Administrativo
+  // e não entraria no carro — e depois de aprovada e paga não dá mais para
+  // corrigir por esta tela.
+  if (flowKey === "VEICULOS" && !request.vehicleId) {
+    throw new Error(
+      "Informe a placa do veículo antes de aprovar — ou troque o fluxo para Administrativo.",
+    );
   }
 
   const count = request.installmentsCount > 1 ? request.installmentsCount : 1;
@@ -282,7 +291,9 @@ export async function updateRequestAction(
       installmentPeriod: parcelado ? d.installmentPeriod : null,
       installmentDays: d.installmentDays,
       supplierId: supplierIdUpdate,
-      structuralKey: effectiveStructuralKey(flow, d.vehicleId),
+      // Como no create: a solicitação guarda a intenção; a normalização
+      // "Veículos sem carro vira Administrativo" acontece no título.
+      structuralKey: flow,
       vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
     },
