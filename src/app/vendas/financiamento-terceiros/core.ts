@@ -4,6 +4,7 @@ import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance"
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { findCustomerByIdentity } from "@/lib/person-dedupe";
 import {
   chassiOrNull,
   renavamOrNull,
@@ -144,12 +145,10 @@ async function resolveIntermediationCustomerId(d: IntermediationData): Promise<s
 
   const document = d.ownerDocument?.trim() || null;
   const name = d.ownerName.trim();
-  if (document) {
-    const byDoc = await prisma.customer.findFirst({ where: { document }, select: { id: true } });
-    if (byDoc) return byDoc.id;
-  }
-  const byName = await prisma.customer.findFirst({ where: { name }, select: { id: true } });
-  if (byName) return byName.id;
+  // Mesma regra de identidade do cadastro (nome sem acento/pontuação OU
+  // CPF/CNPJ), para não nascer um cliente repetido a cada intermediação.
+  const existing = await findCustomerByIdentity(name, document);
+  if (existing) return existing.id;
 
   const created = await prisma.customer.create({
     data: {

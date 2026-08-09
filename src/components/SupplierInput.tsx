@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Input } from "@/components/ui";
 import { BANKS } from "@/lib/banks";
+import { nameKey } from "@/lib/person-keys";
 
 /**
  * Campo de fornecedor com sugestões e digitação livre: sugere os fornecedores
@@ -33,11 +34,17 @@ export default function SupplierInput({
   const [open, setOpen] = useState(false);
 
   // Fornecedores primeiro, depois os bancos que ainda não são fornecedores.
-  const supplierSet = new Set(suppliers.map((s) => s.toLowerCase()));
-  const options = [...suppliers, ...BANKS.filter((b) => !supplierSet.has(b.toLowerCase()))];
+  // A chave normalizada (sem acento/pontuação) evita a mesma pessoa aparecer
+  // duas vezes por diferença de escrita e faz "pmz" achar "PMZ Distribuidora S.A.".
+  const seen = new Map<string, string>();
+  for (const s of [...suppliers, ...BANKS]) {
+    const key = nameKey(s);
+    if (key && !seen.has(key)) seen.set(key, s);
+  }
+  const options = [...seen.values()];
 
-  const q = value.trim().toLowerCase();
-  const matches = (q ? options.filter((o) => o.toLowerCase().includes(q)) : options).slice(0, 40);
+  const q = nameKey(value);
+  const matches = (q ? options.filter((o) => nameKey(o).includes(q)) : options).slice(0, 40);
 
   return (
     <div className="relative">
@@ -57,7 +64,7 @@ export default function SupplierInput({
       {open && matches.length > 0 ? (
         <ul className="absolute left-0 right-0 z-30 mt-1 max-h-56 overflow-auto rounded-lg border border-slate-200 bg-white text-sm shadow-lg">
           {matches.map((o) => (
-            <li key={o}>
+            <li key={nameKey(o)}>
               <button
                 type="button"
                 onMouseDown={(e) => {

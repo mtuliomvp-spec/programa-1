@@ -5,6 +5,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { assertCan } from "@/lib/guards";
+import {
+  duplicateError,
+  findCustomerByIdentity,
+  findSupplierByIdentity,
+} from "@/lib/person-dedupe";
+import { docKey } from "@/lib/person-keys";
 import type { PersonFormState } from "@/components/PersonForm";
 
 const schema = z.object({
@@ -32,10 +38,10 @@ export async function replicateAsSupplier(d: {
   const name = d.name?.trim();
   if (!name) return;
   const document = d.document?.trim() || null;
-  if (document) {
-    const existing = await prisma.supplier.findFirst({ where: { document } });
-    if (existing) return;
-  }
+  // Reaproveita em silêncio: isto é efeito colateral de salvar um cliente,
+  // então nunca pode recusar nem interromper o cadastro principal.
+  const existing = await findSupplierByIdentity(name, document);
+  if (existing) return;
   await prisma.supplier.create({
     data: {
       name,
@@ -58,6 +64,10 @@ export async function createCustomerAction(_prev: PersonFormState, formData: For
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  // Trava contra duplicata: mesmo nome (ignorando acento/pontuação) ou mesmo
+  // CPF/CNPJ já cadastrado.
+  const dup = await findCustomerByIdentity(d.name, d.document);
+  if (dup) return { error: duplicateError("cliente", dup) };
   await prisma.customer.create({
     data: {
       name: d.name,
@@ -84,6 +94,10 @@ export async function updateCustomerAction(_prev: PersonFormState, formData: For
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  // Trava contra duplicata, ignorando o próprio cadastro (salvar sem mudar o
+  // nome não pode dar erro).
+  const dup = await findCustomerByIdentity(d.name, d.document, d.id);
+  if (dup) return { error: duplicateError("cliente", dup) };
   await prisma.customer.update({
     where: { id: d.id },
     data: {
@@ -128,7 +142,19 @@ export async function quickCreateCustomerAction(input: {
 
   const document = input.document?.trim() || null;
   let result: { id: string; name: string; existed: boolean };
-  const existing = document ? await prisma.customer.findFirst({ where: { document } }) : null;
+  // Reaproveita o equivalente (mesmo nome ou mesmo CPF/CNPJ) em vez de recusar:
+  // aqui a intenção é "me dê este cliente selecionado".
+  const existing = await findCustomerByIdentity(name, document);
+  // Mesmo nome, mas CPF/CNPJ diferente: são pessoas diferentes. Recusa em vez
+  // de selecionar o cadastro errado sem o usuário perceber.
+  const existingKey = docKey(existing?.document);
+  const inputKey = docKey(document);
+  if (existing && existingKey && inputKey && existingKey !== inputKey) {
+    return {
+      ok: false,
+      error: `Já existe o cliente «${existing.name}» com outro CPF/CNPJ. Diferencie o nome (ex.: acrescente a cidade ou o sobrenome).`,
+    };
+  }
   if (existing) {
     result = { id: existing.id, name: existing.name, existed: true };
   } else {

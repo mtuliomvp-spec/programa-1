@@ -287,6 +287,7 @@ model PurchaseRequest {
   updatedAt       DateTime          @updatedAt
 
   @@unique([year, seq])
+  @@index([supplierId])
   @@map("purchase_requests")
 }
 
@@ -481,6 +482,7 @@ model Vehicle {
 
   cardItems        CardInvoiceItem[]
 
+  @@index([supplierId])
   @@map("vehicles")
 }
 
@@ -656,6 +658,7 @@ model PreSale {
   createdAt         DateTime       @default(now())
   updatedAt         DateTime       @updatedAt
 
+  @@index([customerId])
   @@map("pre_sales")
 }
 
@@ -749,6 +752,7 @@ model Sale {
   capitalRefunds    CapitalTransaction[] @relation("SaleCapitalRefund")
   createdAt         DateTime       @default(now())
 
+  @@index([customerId])
   @@map("sales")
 }
 
@@ -768,6 +772,7 @@ model Part {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+  @@index([supplierId])
   @@map("parts")
 }
 
@@ -786,6 +791,7 @@ model PartSale {
   receivables   Receivable[]
   createdAt     DateTime       @default(now())
 
+  @@index([customerId])
   @@map("part_sales")
 }
 
@@ -967,6 +973,7 @@ model Receivable {
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
+  @@index([customerId])
   @@map("receivables")
 }
 
@@ -1263,6 +1270,8 @@ model RecurringEntry {
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
 
+  @@index([supplierId])
+  @@index([customerId])
   @@map("recurring_entries")
 }
 
