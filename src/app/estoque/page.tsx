@@ -60,9 +60,13 @@ export default async function EstoquePage({
       : undefined;
   const q = params.q?.trim();
   const now = new Date();
-  // Mesma permissão que já esconde preço de compra, custo e margem na ficha do
-  // veículo: sem ela, o custo não aparece nem na lista nem no PDF completo.
-  const canLucro = await userCan("estoque", "lucro");
+  // Duas permissões separadas: uma para VER o custo aqui na lista e outra para
+  // LEVAR esse custo para fora no PDF. Quem não tem a primeira também não vê
+  // custo no PDF, porque ele é montado a partir desta mesma tabela.
+  const [canVerCusto, canPdfCusto] = await Promise.all([
+    userCan("estoque", "vercusto"),
+    userCan("estoque", "pdfcusto"),
+  ]);
 
   const [vehicles, openPreSales] = await timed("tela: estoque", () =>
     Promise.all([
@@ -209,7 +213,7 @@ export default async function EstoquePage({
           </div>
         </div>
         <div className="mt-3 flex items-end justify-between gap-3">
-          {canLucro ? (
+          {canVerCusto ? (
             <div>
               <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
               <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
@@ -267,7 +271,7 @@ export default async function EstoquePage({
         {v.manufactureYear}/{v.modelYear}
       </Td>
       <Td>{v.km.toLocaleString("pt-BR")} km</Td>
-      {canLucro ? (
+      {canVerCusto ? (
         <Td className="text-right tabular-nums">
           {formatCurrency(v.paidCost)}
           {v.pendingCost > 0 ? (
@@ -341,7 +345,7 @@ export default async function EstoquePage({
         title="Estoque de veículos"
         description={
           `${emEstoque.length} em estoque${vendidos.length > 0 ? ` · ${vendidos.length} vendido(s)` : ""}` +
-          (canLucro
+          (canVerCusto
             ? ` · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)}`
             : "") +
           ` · valor anunciado: ${formatCurrency(totalValue)}`
@@ -365,7 +369,7 @@ export default async function EstoquePage({
         min={min}
         max={max}
         filtersKey={`${params.status ?? ""}`}
-        pdf={canLucro}
+        pdf={canPdfCusto}
         actions={
           emEstoque.length > 0 ? (
             <PrintButton
@@ -425,7 +429,7 @@ export default async function EstoquePage({
                   <Th>Cor</Th>
                   <Th>Ano</Th>
                   <Th>KM</Th>
-                  {canLucro ? <Th className="text-right">Custo pago</Th> : null}
+                  {canVerCusto ? <Th className="text-right">Custo pago</Th> : null}
                   <Th className="text-right">Preço de venda</Th>
                   <Th className="text-right">Dias</Th>
                   <Th>Status</Th>
@@ -437,7 +441,7 @@ export default async function EstoquePage({
                 {showDivider ? (
                   <tr className="bg-slate-50">
                     <td
-                      colSpan={canLucro ? 10 : 9}
+                      colSpan={canVerCusto ? 10 : 9}
                       className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
                     >
                       Vendidos ({vendidos.length})

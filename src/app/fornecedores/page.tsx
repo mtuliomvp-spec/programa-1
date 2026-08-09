@@ -18,9 +18,10 @@ export default async function FornecedoresPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
-  const [canEditar, canExcluir] = await Promise.all([
+  const [canEditar, canExcluir, canUnificar] = await Promise.all([
     userCan("cadastros", "editar"),
     userCan("cadastros", "excluir"),
+    userCan("cadastros", "unificar"),
   ]);
   // Garante o fornecedor-espelho de todos os usuários (auto-heal).
   await syncAllUserSuppliers();
@@ -32,7 +33,7 @@ export default async function FornecedoresPage({
     ? allSuppliers.filter((s) => matchesSearch(q, s.name, s.document, s.phone, s.email))
     : allSuppliers;
   // A lista já está carregada — contar os repetidos aqui não custa consulta.
-  const duplicated = canExcluir ? countDuplicated(allSuppliers) : 0;
+  const duplicated = canUnificar ? countDuplicated(allSuppliers) : 0;
 
   return (
     <div>

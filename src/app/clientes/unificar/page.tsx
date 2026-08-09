@@ -6,7 +6,7 @@ import MergeButton from "./MergeButton";
 export const dynamic = "force-dynamic";
 
 export default async function UnificarClientesPage() {
-  await requireAction("cadastros", "excluir");
+  await requireAction("cadastros", "unificar");
   const groups = await findCustomerDuplicates();
   const mergeable = groups.filter((g) => !g.blocked);
   const blocked = groups.filter((g) => g.blocked);

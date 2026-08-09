@@ -32,6 +32,8 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
       "dashboard.visualizar",
       "estoque.visualizar",
       "estoque.lucro",
+      "estoque.vercusto",
+      "estoque.pdfcusto",
       "vendas.visualizar",
       "cadastros.visualizar",
       "relatorios.visualizar",

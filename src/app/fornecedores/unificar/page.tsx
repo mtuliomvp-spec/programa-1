@@ -20,7 +20,7 @@ const BLOCK_TEXT: Record<string, { title: string; body: string }> = {
 };
 
 export default async function UnificarFornecedoresPage() {
-  await requireAction("cadastros", "excluir");
+  await requireAction("cadastros", "unificar");
   // Garante os fornecedores-espelho antes de decidir quem vence.
   await syncAllUserSuppliers();
   const groups = await findSupplierDuplicates();

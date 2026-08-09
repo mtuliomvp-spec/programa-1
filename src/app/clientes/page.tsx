@@ -17,9 +17,10 @@ export default async function ClientesPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
-  const [canEditar, canExcluir] = await Promise.all([
+  const [canEditar, canExcluir, canUnificar] = await Promise.all([
     userCan("cadastros", "editar"),
     userCan("cadastros", "excluir"),
+    userCan("cadastros", "unificar"),
   ]);
   const allCustomers = await prisma.customer.findMany({
     orderBy: { name: "asc" },
@@ -29,7 +30,7 @@ export default async function ClientesPage({
     ? allCustomers.filter((c) => matchesSearch(q, c.name, c.document, c.phone, c.email))
     : allCustomers;
   // A lista já está carregada — contar os repetidos aqui não custa consulta.
-  const duplicated = canExcluir ? countDuplicated(allCustomers) : 0;
+  const duplicated = canUnificar ? countDuplicated(allCustomers) : 0;
 
   return (
     <div>
