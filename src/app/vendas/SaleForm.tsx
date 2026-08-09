@@ -1121,8 +1121,11 @@ export default function SaleForm({
         </div>
       ) : null}
 
-      <Field label="Observações">
+      <Field label="Observações (uso interno)">
         <Textarea name="notes" rows={3} defaultValue={initial?.notes || ""} />
+        <p className="mt-1 text-xs text-slate-500">
+          Não sai no contrato. Aparece na ficha da venda e no documento interno da revenda.
+        </p>
       </Field>
 
       <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center sm:justify-end">
