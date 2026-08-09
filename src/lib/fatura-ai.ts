@@ -121,7 +121,12 @@ export async function extractFaturaFromPdf(pdfBase64: string): Promise<FaturaExt
       throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos e tente de novo.");
     }
     if (e instanceof Anthropic.APIError) {
-      throw new Error(`A IA respondeu com erro (${e.status}). Tente novamente.`);
+      // Inclui o detalhe da API: sem ele, um 400 (pedido recusado) vira
+      // adivinhação — o número sozinho não diz o que precisa ser corrigido.
+      const detalhe = (e.message || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(
+        `A IA recusou o pedido (${e.status})${detalhe ? `: ${detalhe}` : "."} Tente novamente.`,
+      );
     }
     throw e;
   }
