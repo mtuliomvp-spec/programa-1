@@ -329,6 +329,38 @@ export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RE
   revalidatePath("/");
 }
 
+/**
+ * Marca (ou desfaz) a conclusão da transferência de propriedade no DETRAN.
+ *
+ * Enquanto a data é nula, o carro vendido continua no nome do dono anterior —
+ * é isso que o selo vermelho do estoque mostra. `date` nula desfaz a marcação
+ * (para corrigir engano).
+ */
+export async function setSaleTransferDoneAction(
+  saleId: string,
+  date: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "comunicacao"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const sale = await prisma.sale.findUnique({ where: { id: saleId }, select: { vehicleId: true } });
+  if (!sale) return { ok: false, error: "Venda não encontrada." };
+
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: { transferDoneAt: date ? parseDateInput(date) : null },
+  });
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${sale.vehicleId}`);
+  revalidatePath(`/vendas/${saleId}`);
+  return { ok: true };
+}
+
 export async function lookupPlateAction(plate: string) {
   // Consulta externa (paga) por placa — usada no cadastro de veículo e nos
   // formulários de venda. Liberada a quem cadastra/edita veículo ou registra/

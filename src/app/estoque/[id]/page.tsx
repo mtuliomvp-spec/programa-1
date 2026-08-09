@@ -12,6 +12,7 @@ import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
+import SaleTransferSetting from "./SaleTransferSetting";
 import AdSettings from "./AdSettings";
 import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
@@ -488,6 +489,18 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   <InfoItem label="Data da venda" value={formatDate(vehicle.sale.saleDate)} />
                   <InfoItem label="Valor total" value={formatCurrency(vehicle.sale.totalAmount)} />
                   <InfoItem label="Vendedor" value={vehicle.sale.sellerName || "-"} />
+                </div>
+
+                <div className="px-5 pb-1">
+                  <SaleTransferSetting
+                    saleId={vehicle.sale.id}
+                    initialDone={
+                      vehicle.sale.transferDoneAt
+                        ? vehicle.sale.transferDoneAt.toISOString().slice(0, 10)
+                        : ""
+                    }
+                    canManage={canComunicacao || canEditar}
+                  />
                 </div>
 
                 {canLucro && saleResult ? (
