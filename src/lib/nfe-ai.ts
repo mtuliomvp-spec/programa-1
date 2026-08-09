@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { nameKey } from "@/lib/person-keys";
 
 /**
  * Leitura da NF-e (DANFE) via IA — mesma chave do Parecer IA, cadastrada em
@@ -34,6 +35,16 @@ const CATEGORIAS = [
   "Outros",
 ] as const;
 
+/**
+ * Fecha a categoria na lista acima: casa ignorando acento e maiúscula e cai em
+ * "Peças" quando não reconhece. Fica aqui (e não no JSON Schema) porque `enum`
+ * com tipo anulável faz a API recusar o pedido.
+ */
+export function normalizeCategoria(valor: string | null | undefined): string {
+  const key = nameKey(valor);
+  return CATEGORIAS.find((c) => nameKey(c) === key) ?? "Peças";
+}
+
 const itemSchema = z.object({
   descricao: z.string(),
   quantidade: z.number().nullable(),
@@ -53,7 +64,7 @@ const nfeSchema = z.object({
   valorTotal: z.number().nullable(),
   naturezaOperacao: z.string().nullable(),
   formaPagamento: z.string().nullable(),
-  categoria: z.enum(CATEGORIAS).nullable(),
+  categoria: z.string().nullable(),
   itens: z.array(itemSchema),
 });
 
@@ -97,8 +108,11 @@ const NFE_JSON_SCHEMA = {
     },
     categoria: {
       type: ["string", "null"],
-      enum: [...CATEGORIAS, null],
-      description: "tipo de despesa, a partir dos itens da nota",
+      // Sem `enum` aqui de propósito: combinado com tipo anulável, o validador
+      // de structured outputs recusa a requisição inteira (erro 400). A lista
+      // é pedida no texto e fechada no servidor por `normalizeCategoria`.
+      description:
+        "tipo de despesa, a partir dos itens da nota — use exatamente uma destas: Peças, Óleo e lubrificantes, Pneus, Serviço, Combustível, Documentação de veículo, Despesa operacional, Outros",
     },
     itens: {
       type: "array",
@@ -129,8 +143,10 @@ const SYSTEM_PROMPT =
   "6) ITENS: uma entrada por linha da tabela de produtos/serviços, com a descrição como está " +
   "impressa. Ignore as linhas de 'Valor Aprox. dos Tributos'. " +
   "7) FORMA DE PAGAMENTO só se constar em algum lugar da nota (costuma vir em 'Dados adicionais'). " +
-  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "9) Responda somente com o JSON pedido.";
+  "8) CATEGORIA: escolha exatamente uma destas, sem inventar outra — Peças, Óleo e lubrificantes, " +
+  "Pneus, Serviço, Combustível, Documentação de veículo, Despesa operacional, Outros. " +
+  "9) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "10) Responda somente com o JSON pedido.";
 
 /** Tipos de imagem que a API aceita no bloco `image`. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
@@ -194,7 +210,12 @@ export async function extractNfe(base64: string, mimeType: string): Promise<NfeE
       throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos e tente de novo.");
     }
     if (e instanceof Anthropic.APIError) {
-      throw new Error(`A IA respondeu com erro (${e.status}). Tente novamente.`);
+      // Inclui o detalhe da API: sem ele, um 400 (pedido recusado) vira
+      // adivinhação — o número sozinho não diz o que precisa ser corrigido.
+      const detalhe = (e.message || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(
+        `A IA recusou o pedido (${e.status})${detalhe ? `: ${detalhe}` : "."} Tente novamente.`,
+      );
     }
     throw e;
   }

@@ -9,6 +9,7 @@ import { resolveDespesaCategory } from "@/lib/categories";
 import { findSupplierByIdentity } from "@/lib/person-dedupe";
 import { docKey } from "@/lib/person-keys";
 import { nextRequestSeq } from "@/lib/purchase-requests";
+import { normalizeCategoria } from "@/lib/nfe-ai";
 import type { NfeExtraida, NfeItem } from "@/lib/nfe-ai";
 
 const MAX_NF_BYTES = 15 * 1024 * 1024; // 15 MB (mesmo limite dos demais anexos)
@@ -133,7 +134,7 @@ export async function importNfAction(formData: FormData): Promise<ImportNfResult
     }
   }
 
-  const cat = await resolveDespesaCategory(nf.categoria || "Peças");
+  const cat = await resolveDespesaCategory(normalizeCategoria(nf.categoria));
   const description = `NF ${documentNumber ?? "s/nº"} — ${supplier.name}`;
   const emitida = nf.emitidaEm && /^\d{4}-\d{2}-\d{2}$/.test(nf.emitidaEm) ? nf.emitidaEm : null;
   const year = new Date().getFullYear();
