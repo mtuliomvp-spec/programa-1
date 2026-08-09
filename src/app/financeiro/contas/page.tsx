@@ -86,6 +86,9 @@ export default async function ContasPage({
 
   const canContas = await userCan("financeiro", "contas");
   const active = accounts.filter((a) => a.active);
+  // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
+  // "Aplicar" da própria conta). Vale para o formulário e para o atalho.
+  const podeTransferir = canContas && active.filter((a) => !a.isInvestment).length >= 2;
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
@@ -158,10 +161,19 @@ export default async function ContasPage({
         <BooksHealthChecks health={health} />
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
+      <div
+        className={`mb-4 grid grid-cols-1 gap-2 print:hidden ${podeTransferir ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}
+      >
         <LinkButton href="/financeiro/livro-caixa" variant="secondary" className="justify-center">
           📒 Movimento de caixa diário
         </LinkButton>
+        {/* O formulário de transferência fica nesta mesma página, lá embaixo:
+            o atalho rola até ele em vez de abrir outra tela. */}
+        {podeTransferir ? (
+          <LinkButton href="#transferir" variant="secondary" className="justify-center">
+            ↔️ Transferência entre contas
+          </LinkButton>
+        ) : null}
         <LinkButton href="/financeiro/a-pagar" variant="secondary" className="justify-center">
           📤 Contas a pagar
         </LinkButton>
@@ -249,16 +261,18 @@ export default async function ContasPage({
                 <AccountForm beneficiaries={beneficiaries} />
               </div>
             </Card>
-            {active.filter((a) => !a.isInvestment).length >= 2 ? (
-              <Card>
-                <CardHeader title="Transferir entre contas" />
-                <div className="p-5">
-                  <TransferForm
-                    accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
-                    cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
-                  />
-                </div>
-              </Card>
+            {podeTransferir ? (
+              <div id="transferir" className="scroll-mt-4">
+                <Card>
+                  <CardHeader title="Transferir entre contas" />
+                  <div className="p-5">
+                    <TransferForm
+                      accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                      cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
+                    />
+                  </div>
+                </Card>
+              </div>
             ) : null}
           </div>
         ) : null}
