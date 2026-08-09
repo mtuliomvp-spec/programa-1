@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCan } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
+import { getCompany } from "@/lib/company";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { findSupplierByIdentity } from "@/lib/person-dedupe";
 import { docKey } from "@/lib/person-keys";
+import { guessCategoria, normalizeCategoria } from "@/lib/nfe-categorias";
+import { parseNfeXml } from "@/lib/nfe-xml";
 import { nextRequestSeq } from "@/lib/purchase-requests";
-import { normalizeCategoria } from "@/lib/nfe-ai";
-import type { NfeExtraida, NfeItem } from "@/lib/nfe-ai";
 
 const MAX_NF_BYTES = 15 * 1024 * 1024; // 15 MB (mesmo limite dos demais anexos)
 
@@ -23,16 +24,45 @@ export type ImportNfResult = {
   supplier?: string;
   documentNumber?: string;
   total?: number;
+  /** Lida do XML (exata) em vez do PDF/foto (interpretada pela IA). */
+  fromXml?: boolean;
   /** Já existia uma solicitação com esta nota deste fornecedor. */
   duplicated?: boolean;
+  /** Criada, mas com algo para conferir (ex.: destinatário não é a empresa). */
+  warning?: string;
   error?: string;
+};
+
+/** Forma comum às duas origens (XML e IA), para o resto do fluxo não saber a diferença. */
+type NotaItem = {
+  descricao: string;
+  quantidade: number | null;
+  valorUnitario: number | null;
+  valorTotal: number | null;
+};
+type Nota = {
+  numero: string | null;
+  serie: string | null;
+  chaveAcesso: string | null;
+  emitidaEm: string | null;
+  emitenteNome: string | null;
+  emitenteCnpj: string | null;
+  destinatarioNome: string | null;
+  destinatarioCnpj: string | null;
+  valorTotal: number | null;
+  naturezaOperacao: string | null;
+  formaPagamento: string | null;
+  categoria: string | null;
+  itens: NotaItem[];
 };
 
 const brl = (n: number) =>
   n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2 });
 
+const formatQty = (n: number) => (Number.isInteger(n) ? String(n) : String(n).replace(".", ","));
+
 /** "1x Jogo pastilha freio dianteiro — R$ 132,93" por linha. */
-function itemsText(itens: NfeItem[]): string {
+function itemsText(itens: NotaItem[]): string {
   return itens
     .map((i) => {
       const qtd = i.quantidade && i.quantidade !== 1 ? `${formatQty(i.quantidade)}x ` : "";
@@ -42,10 +72,8 @@ function itemsText(itens: NfeItem[]): string {
     .join("\n");
 }
 
-const formatQty = (n: number) => (Number.isInteger(n) ? String(n) : String(n).replace(".", ","));
-
 /** Texto dos "Detalhes / justificativa" da solicitação. */
-function detailsText(nf: NfeExtraida): string {
+function detailsText(nf: Nota, alerta: string | null): string {
   const parts: string[] = [];
   if (nf.itens.length) parts.push(itemsText(nf.itens));
   const rodape: string[] = [];
@@ -53,13 +81,18 @@ function detailsText(nf: NfeExtraida): string {
   if (nf.formaPagamento) rodape.push(`Pagamento: ${nf.formaPagamento}`);
   if (nf.serie) rodape.push(`Série ${nf.serie}`);
   if (rodape.length) parts.push(rodape.join(" · "));
+  if (alerta) parts.push(`⚠ ${alerta}`);
   return parts.join("\n\n");
 }
 
 /**
- * Lê UMA nota fiscal (PDF ou foto) e cria a solicitação de compra já
- * preenchida, no fluxo Veículos e SEM placa — é a placa que o dono escolhe
- * depois, e sem ela a aprovação é recusada (ver `generateEspelho`).
+ * Lê UMA nota fiscal e cria a solicitação de compra já preenchida, no fluxo
+ * Veículos e SEM placa — é a placa que o dono escolhe depois, e sem ela a
+ * aprovação é recusada (ver `generateEspelho`).
+ *
+ * Duas origens: o **XML** da NF-e, que é a nota em si e é lido campo a campo
+ * (exato, sem IA), e o **PDF/foto** do DANFE, que é uma representação e
+ * precisa ser interpretado. Havendo o XML, é ele que deve ser usado.
  *
  * Nada entra em Contas a pagar aqui: a solicitação nasce PENDENTE e só gera
  * título na aprovação. Idempotente por fornecedor + número da nota.
@@ -83,18 +116,26 @@ export async function importNfAction(formData: FormData): Promise<ImportNfResult
 
   if (!(file instanceof File) || file.size === 0) return fail("Selecione o arquivo da nota.");
   if (file.size > MAX_NF_BYTES) return fail("Arquivo muito grande (máximo 15 MB).");
-  const mimeType =
-    file.type || (filename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
-  if (!mimeType) return fail("Não reconheci o tipo do arquivo. Envie a nota em PDF ou foto.");
 
   const bytes = new Uint8Array(await file.arrayBuffer());
+  const isXml = filename.toLowerCase().endsWith(".xml") || /xml/i.test(file.type || "");
+  const mimeType = isXml
+    ? "application/xml"
+    : file.type || (filename.toLowerCase().endsWith(".pdf") ? "application/pdf" : "");
+  if (!mimeType) return fail("Não reconheci o tipo do arquivo. Envie a nota em XML, PDF ou foto.");
 
-  let nf: NfeExtraida;
-  try {
-    const { extractNfe } = await import("@/lib/nfe-ai");
-    nf = await extractNfe(Buffer.from(bytes).toString("base64"), mimeType);
-  } catch (e) {
-    return fail(e instanceof Error ? e.message : "Não foi possível ler a nota.");
+  let nf: Nota;
+  if (isXml) {
+    const parsed = parseNfeXml(Buffer.from(bytes).toString("utf8"));
+    if (!parsed) return fail("Este XML não é uma NF-e. Envie o arquivo da nota ou o PDF dela.");
+    nf = { ...parsed, categoria: guessCategoria(parsed.itens.map((i) => i.descricao)) };
+  } else {
+    try {
+      const { extractNfe } = await import("@/lib/nfe-ai");
+      nf = await extractNfe(Buffer.from(bytes).toString("base64"), mimeType);
+    } catch (e) {
+      return fail(e instanceof Error ? e.message : "Não foi possível ler a nota.");
+    }
   }
 
   const total = nf.valorTotal ?? nf.itens.reduce((s, i) => s + (i.valorTotal ?? 0), 0);
@@ -104,6 +145,17 @@ export async function importNfAction(formData: FormData): Promise<ImportNfResult
   if (!emitente && !docKey(nf.emitenteCnpj)) {
     return fail("Não achei o fornecedor na nota. Lance a compra à mão.");
   }
+
+  // Confere se a nota é MESMO da empresa. Não recusa (nota em nome de um sócio
+  // acontece), mas avisa na tela e deixa registrado nos detalhes — sem isso, a
+  // nota de outra empresa entraria em silêncio.
+  const company = await getCompany();
+  const nosso = docKey(company.cnpj);
+  const dela = docKey(nf.destinatarioCnpj);
+  const alerta =
+    nosso && dela && nosso !== dela
+      ? `Esta nota foi emitida para ${nf.destinatarioNome || "outro CNPJ"} (${nf.destinatarioCnpj}), e não para ${company.razaoSocial}. Confira antes de aprovar.`
+      : null;
 
   // Fornecedor pelo CNPJ (ou pelo nome, se o CNPJ não vier): mesma regra de
   // identidade da unificação de cadastros, para não nascer um repetido.
@@ -144,7 +196,7 @@ export async function importNfAction(formData: FormData): Promise<ImportNfResult
     const request = await tx.purchaseRequest.create({
       data: {
         description,
-        details: detailsText(nf) || null,
+        details: detailsText(nf, alerta) || null,
         estimatedAmount: total,
         dueDate: emitida ? parseDateInput(emitida) : null,
         documentNumber,
@@ -182,5 +234,7 @@ export async function importNfAction(formData: FormData): Promise<ImportNfResult
     supplier: supplier.name,
     documentNumber: documentNumber ?? undefined,
     total,
+    fromXml: isXml,
+    warning: alerta ?? undefined,
   };
 }

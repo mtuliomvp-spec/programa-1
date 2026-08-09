@@ -2,7 +2,6 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
-import { nameKey } from "@/lib/person-keys";
 
 /**
  * Leitura da NF-e (DANFE) via IA — mesma chave do Parecer IA, cadastrada em
@@ -16,34 +15,6 @@ import { nameKey } from "@/lib/person-keys";
  * zod + JSON Schema, mesmo mapeamento de erros) e aceita PDF ou foto — o DANFE
  * também chega fotografado.
  */
-
-/**
- * Categorias possíveis, fechadas de propósito: `resolveDespesaCategory` cria
- * uma categoria nova quando não conhece o rótulo, e um nome livre vindo da IA
- * ("Autopeças", "Peças e pneus", "Peça automotiva") encheria o cadastro de
- * variações da mesma coisa. "Combustível" e "Documentação de veículo" já são
- * categorias do sistema e casam exatamente.
- */
-const CATEGORIAS = [
-  "Peças",
-  "Óleo e lubrificantes",
-  "Pneus",
-  "Serviço",
-  "Combustível",
-  "Documentação de veículo",
-  "Despesa operacional",
-  "Outros",
-] as const;
-
-/**
- * Fecha a categoria na lista acima: casa ignorando acento e maiúscula e cai em
- * "Peças" quando não reconhece. Fica aqui (e não no JSON Schema) porque `enum`
- * com tipo anulável faz a API recusar o pedido.
- */
-export function normalizeCategoria(valor: string | null | undefined): string {
-  const key = nameKey(valor);
-  return CATEGORIAS.find((c) => nameKey(c) === key) ?? "Peças";
-}
 
 const itemSchema = z.object({
   descricao: z.string(),

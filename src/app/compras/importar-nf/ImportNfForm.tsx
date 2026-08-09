@@ -40,7 +40,8 @@ export default function ImportNfForm() {
     const out: ImportNfResult[] = [];
     for (const [i, original] of files.entries()) {
       setProgress({ done: i, total: files.length });
-      // 2400 px e qualidade alta: a letra da nota é miúda (mesmo ajuste do CRLV).
+      // Só mexe em imagem — XML e PDF passam intactos. 2400 px e qualidade alta
+      // porque a letra da nota é miúda (mesmo ajuste do CRLV).
       const file = await resizeImageToJpeg(original, 2400, 0.92);
       const fd = new FormData();
       fd.set("file", file);
@@ -64,14 +65,14 @@ export default function ImportNfForm() {
     <div className="space-y-4 p-5">
       <div>
         <label className="mb-1 block text-sm font-medium text-slate-700">
-          Notas (PDF ou foto)
+          Notas (XML, PDF ou foto)
         </label>
         <div className="flex flex-wrap items-center gap-2">
           <input
             ref={pickRef}
             type="file"
             multiple
-            accept="application/pdf,.pdf,image/*"
+            accept=".xml,text/xml,application/xml,application/pdf,.pdf,image/*"
             disabled={busy}
             onChange={() => addFrom(pickRef.current)}
             className="block text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
@@ -96,8 +97,9 @@ export default function ImportNfForm() {
           </Button>
         </div>
         <p className="mt-1 text-xs text-slate-500">
-          Pode juntar várias — cada nota é lida separadamente. Dá para fotografar a nota; quando
-          tiver o PDF, prefira ele: a leitura sai mais exata.
+          Pode juntar várias — cada nota é lida separadamente. <strong>Tendo o XML da nota,
+          prefira ele</strong>: os valores são lidos do próprio arquivo, sem chance de erro de
+          leitura. Sem o XML, vale o PDF; e sem o PDF, a foto.
         </p>
       </div>
 
@@ -151,7 +153,11 @@ export default function ImportNfForm() {
                     {" "}
                     → Solicitação {r.numero} · {r.supplier}
                     {r.total != null ? ` · ${formatCurrency(r.total)}` : ""}
+                    {r.fromXml ? " · lida do XML" : ""}
                   </span>
+                ) : null}
+                {r.warning ? (
+                  <p className="mt-0.5 text-amber-700">⚠ {r.warning}</p>
                 ) : null}
                 {r.duplicated ? (
                   <span className="text-amber-700">
