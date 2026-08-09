@@ -155,8 +155,11 @@ export async function extractNfe(base64: string, mimeType: string): Promise<NfeE
 
   const isPdf = mimeType === "application/pdf";
   if (!isPdf && !isImageType(mimeType)) {
+    // O caso real é a foto do iPhone, que chega em HEIC. A tela converte para
+    // JPEG antes de enviar; se a conversão falhar, o arquivo cru cai aqui.
     throw new Error(
-      "Formato não suportado para leitura automática. Envie a nota em PDF, JPG, PNG ou WEBP.",
+      "Não consegui ler esta foto (o iPhone salva em HEIC, que a leitura não aceita). " +
+        "Tente de novo pelo botão de tirar foto, ou envie o PDF da nota.",
     );
   }
 
