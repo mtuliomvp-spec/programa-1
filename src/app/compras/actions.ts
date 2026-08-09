@@ -169,7 +169,13 @@ async function generateEspelho(request: RequestForEspelho): Promise<string | nul
   const count = request.installmentsCount > 1 ? request.installmentsCount : 1;
   const firstDue = request.dueDate ?? new Date();
   const amounts = count > 1 ? splitInstallments(amount, count) : [amount];
-  const label = `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`;
+  // A justificativa entra na própria descrição: é ela que aparece na lista de
+  // Contas a pagar e na ficha do veículo ("Compra 0011/2026: Sandero — Lavagem
+  // e higienização"). Quebras de linha viram espaço para não sujar a lista.
+  const justificativa = request.details?.replace(/\s+/g, " ").trim();
+  const label =
+    `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}` +
+    (justificativa ? ` — ${justificativa}` : "");
 
   const dueDateOf = (i: number) =>
     request.installmentPeriod === "DIAS"
