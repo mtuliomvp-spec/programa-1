@@ -9,6 +9,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
 import PrintButton from "@/components/PrintButton";
 import { userCan } from "@/lib/guards";
+import { nameKey } from "@/lib/person-keys";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,18 @@ function agingTone(days: number): "success" | "info" | "warning" | "danger" {
   if (days <= 60) return "info";
   if (days <= 90) return "warning";
   return "danger";
+}
+
+/**
+ * Nome do veículo para a ficha de venda. A versão só entra quando acrescenta
+ * algo: muitos cadastros repetem a versão dentro do modelo ("Onix Joy Black" +
+ * versão "BLACK"), e no PDF isso saía duplicado.
+ */
+function vehicleLabel(brand: string, model: string, version: string | null): string {
+  const base = `${brand} ${model}`.trim();
+  const v = (version || "").trim();
+  if (!v || nameKey(base).includes(nameKey(v))) return base;
+  return `${base} ${v}`;
 }
 
 /** Texto do selo de CRLV no card (com o ano em exercício quando anexado). */
@@ -463,7 +476,7 @@ export default async function EstoquePage({
             <tbody>
               {emEstoque.map((v) => (
                 <tr key={v.id}>
-                  <td>{[v.brand, v.model, v.version].filter(Boolean).join(" ")}</td>
+                  <td>{vehicleLabel(v.brand, v.model, v.version)}</td>
                   <td>{v.plate}</td>
                   <td>
                     {v.manufactureYear}/{v.modelYear}
