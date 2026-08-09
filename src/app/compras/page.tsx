@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
-import { Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
@@ -87,6 +87,9 @@ export default async function ComprasPage({
     number: formatRequestNumber(r.seq, r.year),
     description: r.description,
     hasAttachment: r._count.attachments > 0,
+    // Fluxo Veículos sem o carro escolhido: a aprovação vai recusar até que a
+    // placa seja informada. É a fila das notas recém-importadas.
+    missingVehicle: r.structuralKey === "VEICULOS" && !r.vehicleId,
     subInfo: [
       formatDate(r.createdAt),
       flowName(r.structuralKey),
@@ -111,6 +114,13 @@ export default async function ComprasPage({
       <PageHeader
         title="Solicitações de compra"
         description="Peça, o administrador aprova, e a conclusão lança direto no financeiro"
+        action={
+          canCreate ? (
+            <LinkButton href="/compras/importar-nf" variant="secondary">
+              📄 Importar NF
+            </LinkButton>
+          ) : null
+        }
       />
 
       <ReportToolbar

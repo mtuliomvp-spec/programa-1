@@ -18,6 +18,8 @@ export type RequestRow = {
   number: string;
   description: string;
   hasAttachment: boolean;
+  /** Fluxo Veículos ainda sem a placa — não dá para aprovar assim. */
+  missingVehicle: boolean;
   subInfo: string;
   requestedBy: string;
   valueText: string;
@@ -138,6 +140,11 @@ export default function RequestsTable({
                     ) : null}
                   </span>
                   <span className="block truncate text-xs font-normal text-slate-400">{r.subInfo}</span>
+                  {r.missingVehicle ? (
+                    <span className="mt-1 block text-xs font-medium text-amber-700">
+                      ⚠ falta a placa
+                    </span>
+                  ) : null}
                 </Link>
               </Td>
               <Td>{r.requestedBy}</Td>

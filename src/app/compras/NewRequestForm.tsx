@@ -138,15 +138,19 @@ export default function NewRequestForm({
       </Field>
 
       {flow === "VEICULOS" ? (
-        <Field label="Veículo (opcional)">
+        <Field label="Veículo">
           <Select name="vehicleId" defaultValue="">
-            <option value="">Nenhum — entra como Administrativo</option>
+            <option value="">Ainda não sei a placa</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>
             ))}
           </Select>
+          <p className="mt-1 text-xs text-slate-500">
+            Sem a placa a solicitação fica esperando: a aprovação é recusada até você escolher o
+            carro. Se o gasto não for de um veículo, troque o fluxo para Administrativo.
+          </p>
         </Field>
       ) : null}
 
