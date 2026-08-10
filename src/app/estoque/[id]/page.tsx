@@ -548,6 +548,27 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                       </>
                     ) : null}
 
+                    {saleResult.insuranceAmount !== 0 ? (
+                      <>
+                        <div className="mt-3 flex items-baseline justify-between gap-3">
+                          <span className="text-sm text-slate-600">Comissão de seguro</span>
+                          <span
+                            className={`text-sm font-semibold tabular-nums ${
+                              saleResult.insuranceNetProfit >= 0 ? "text-emerald-600" : "text-rose-600"
+                            }`}
+                          >
+                            {formatCurrency(saleResult.insuranceNetProfit)}
+                          </span>
+                        </div>
+                        <p className="mt-0.5 text-xs text-slate-400">
+                          recebido {formatCurrency(saleResult.insuranceAmount)}
+                          {saleResult.insuranceCommission > 0
+                            ? ` − comissão do vendedor ${formatCurrency(saleResult.insuranceCommission)}`
+                            : ""}
+                        </p>
+                      </>
+                    ) : null}
+
                     <div className="mt-3 flex items-baseline justify-between gap-3 border-t border-slate-200 pt-3">
                       <span className="text-sm font-medium text-slate-800">
                         {saleResult.netProfit >= 0 ? "Resultado final (lucro)" : "Resultado final (prejuízo)"}

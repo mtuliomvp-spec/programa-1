@@ -14,7 +14,7 @@ import ReceivablesTable, { type ReceivableRow } from "./ReceivablesTable";
 
 export const dynamic = "force-dynamic";
 
-const categoryLabel = { VENDA_VEICULO: "Venda de veículo", VENDA_PECA: "Venda de peça", RETORNO_FINANCEIRA: "Retorno financeira", OUTROS: "Outros" } as const;
+const categoryLabel = { VENDA_VEICULO: "Venda de veículo", VENDA_PECA: "Venda de peça", RETORNO_FINANCEIRA: "Retorno financeira", COMISSAO_SEGURO: "Comissão de seguro", OUTROS: "Outros" } as const;
 const statusLabelMap = { PENDENTE: "Pendente", RECEBIDO: "Recebido", ATRASADO: "Atrasado" } as const;
 
 export default async function ContasAReceberPage({

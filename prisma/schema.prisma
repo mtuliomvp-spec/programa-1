@@ -54,6 +54,11 @@ enum CategoriaReceber {
   VENDA_VEICULO
   VENDA_PECA
   RETORNO_FINANCEIRA
+  // Comissão sobre o seguro vendido junto com o financiamento. Precisa de
+  // categoria própria: receita ligada a uma venda só entra na DRE quando a
+  // categoria é consultada à parte (ver reports.ts) — com "OUTROS" o caixa
+  // subiria sem o lucro subir, e o farol ficaria vermelho.
+  COMISSAO_SEGURO
   OUTROS
 }
 
@@ -643,6 +648,9 @@ model PreSale {
   transferAmount    Float          @default(0)
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira.
   takeReturnCommission Boolean     @default(false)
+  // Seguro vendido junto ao financiamento (comissão a receber, valor e data
+  // desconhecidos até cair).
+  insuranceSold     Boolean        @default(false)
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic    Boolean        @default(false)
   // Consignado: destino da devolução ao proprietário escolhido na negociação. O
@@ -728,6 +736,13 @@ model Sale {
   returnSettledAt   DateTime?
   // Valor realmente pago pela financeira (pode diferir do programado returnNet)
   returnPaidAmount  Float?
+  // Comissão sobre o SEGURO vendido junto ao financiamento. Diferente do
+  // retorno, não tem fórmula nem valor conhecido na venda: fica só marcada e
+  // pendente (nada é lançado), e o valor entra quando o dinheiro cai.
+  insuranceSold     Boolean        @default(false)
+  insuranceAmount   Float?
+  insuranceCommissionAmount Float  @default(0)
+  insuranceSettledAt DateTime?
   // Comissão do vendedor (valor em R$, digitado na venda). Gera uma conta a
   // pagar (categoria Comissão, centro Administrativo) quando > 0.
   commissionAmount  Float          @default(0)

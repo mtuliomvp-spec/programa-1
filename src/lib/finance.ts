@@ -757,6 +757,8 @@ async function vehicleSale(input: {
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira
   // (percentual do líquido, configurado na conta da financeira).
   takeReturnCommission?: boolean | null;
+  /** Seguro vendido junto ao financiamento: fica pendente até o valor cair. */
+  insuranceSold?: boolean | null;
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic?: boolean | null;
   notes?: string | null;
@@ -871,6 +873,8 @@ async function vehicleSale(input: {
           input.paymentMethod === "FINANCIADO" ? (input.refinancing ? 0 : input.financedAmount ?? null) : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
+        // Só marca; nada é lançado até a comissão do seguro cair.
+        insuranceSold: input.paymentMethod === "FINANCIADO" && !!input.insuranceSold,
         commissionAmount: commission,
         referrals,
         transferCharged,
@@ -1431,6 +1435,18 @@ export async function cancelVehicleSale(saleId: string) {
       };
       await tx.receivable.deleteMany({ where: diffFilter });
       await tx.payable.deleteMany({ where: diffFilter });
+    }
+
+    // 3c) Comissão de seguro já recebida: apaga o recebimento e a comissão do
+    //     vendedor (conta a pagar ou aporte no capital).
+    if (sale.insuranceSettledAt) {
+      await tx.receivable.deleteMany({ where: { saleId, category: "COMISSAO_SEGURO" } });
+      await tx.payable.deleteMany({
+        where: { saleId, category: "COMISSAO", description: { startsWith: "Comissão do seguro" } },
+      });
+      await tx.capitalTransaction.deleteMany({
+        where: { saleId, description: { startsWith: "Aporte — comissão do seguro" } },
+      });
     }
 
     // 4) Desfaz o veículo recebido em troca (e suas contas).
@@ -2191,6 +2207,134 @@ export async function reverseFinancing(saleId: string) {
  * "diferença de retorno" (crédito/débito). A venda volta a ter o retorno a
  * receber. Espelha o estorno do retorno feito no cancelamento da venda.
  */
+/**
+ * Baixa da COMISSÃO DE SEGURO vendido junto ao financiamento.
+ *
+ * Ao contrário do retorno, nada foi pré-lançado: enquanto pendente, a venda só
+ * carrega a marcação `insuranceSold` e não existe recebível, receita nem caixa
+ * — é neutro no farol. Toda a contabilização acontece aqui, quando o dinheiro
+ * cai e o valor finalmente é conhecido.
+ *
+ * Por isso é bem mais simples que `settleReturn`: não há valor programado, não
+ * há diferença a acertar, não há transferência da financeira nem Banco Neutro.
+ * A seguradora/financeira paga direto numa conta da empresa.
+ *
+ * A comissão do vendedor segue a mesma regra do retorno: aporte no capital
+ * quando ele é beneficiário, senão conta a pagar. O `saleId` no título é o que
+ * a mantém fora das despesas da DRE (ela entra por competência, ver reports.ts).
+ *
+ * Farol: caixa +valor e DRE +valor (categoria COMISSAO_SEGURO, somada ao balde
+ * dos retornos); a comissão desce os dois lados na mesma medida.
+ */
+export async function settleInsurance(
+  saleId: string,
+  accountId: string,
+  amount: number,
+  commission: number,
+  date: Date,
+) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: {
+      customer: { select: { name: true } },
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+  if (!sale.insuranceSold) throw new Error("Esta venda não tem seguro marcado.");
+  if (sale.insuranceSettledAt) throw new Error("A comissão de seguro desta venda já foi recebida.");
+  if (sale.financerAccountId === accountId) {
+    throw new Error("Escolha uma conta da empresa (diferente da financeira).");
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const valor = round2(amount);
+  if (!Number.isFinite(valor) || valor <= 0) throw new Error("Informe o valor recebido do seguro.");
+  const comissao = Math.max(0, round2(commission || 0));
+  if (comissao > valor) throw new Error("A comissão não pode ser maior que o valor recebido.");
+
+  const label = `${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`;
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
+  // Vendedor beneficiário do capital: a comissão vira aporte, não dinheiro.
+  const beneficiary = sale.sellerId
+    ? await prisma.capitalBeneficiary.findFirst({ where: { userId: sale.sellerId } })
+    : null;
+
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.create({
+      data: {
+        // Prefixo próprio: os estornos do retorno apagam por texto + placa e
+        // engoliriam esta perna se ela dissesse "Retorno financiamento".
+        description: `Comissão de seguro — ${label}`,
+        category: "COMISSAO_SEGURO",
+        amount: valor,
+        dueDate: date,
+        receivedDate: date,
+        status: "RECEBIDO",
+        accountId,
+        saleId,
+        vehicleId: sale.vehicleId,
+        customerId: sale.customerId,
+        costCenterId: adminCenterId,
+      },
+    });
+    if (comissao > 0 && adminCenterId) {
+      if (beneficiary) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: beneficiary.id,
+            kind: "APORTE",
+            amount: comissao,
+            date,
+            saleId,
+            description: `Aporte — comissão do seguro${sale.sellerName ? ` (${sale.sellerName})` : ""} — ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+          },
+        });
+      } else {
+        await tx.payable.create({
+          data: {
+            description: `Comissão do seguro${sale.sellerName ? ` — ${sale.sellerName}` : ""} — ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+            category: "COMISSAO",
+            amount: comissao,
+            dueDate: date,
+            status: "PENDENTE",
+            costCenterId: adminCenterId,
+            saleId,
+            beneficiaryUserId: sale.sellerId || null,
+          },
+        });
+      }
+    }
+    return tx.sale.update({
+      where: { id: saleId },
+      data: {
+        insuranceAmount: valor,
+        insuranceCommissionAmount: comissao,
+        insuranceSettledAt: date,
+      },
+    });
+  });
+}
+
+/** Desfaz a baixa da comissão de seguro (recebimento e comissão do vendedor). */
+export async function reverseInsurance(saleId: string) {
+  const sale = await prisma.sale.findUniqueOrThrow({ where: { id: saleId } });
+  if (!sale.insuranceSettledAt) {
+    throw new Error("A comissão de seguro desta venda ainda não foi recebida.");
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.deleteMany({ where: { saleId, category: "COMISSAO_SEGURO" } });
+    await tx.payable.deleteMany({
+      where: { saleId, category: "COMISSAO", description: { startsWith: "Comissão do seguro" } },
+    });
+    await tx.capitalTransaction.deleteMany({
+      where: { saleId, description: { startsWith: "Aporte — comissão do seguro" } },
+    });
+    return tx.sale.update({
+      where: { id: saleId },
+      data: { insuranceAmount: null, insuranceCommissionAmount: 0, insuranceSettledAt: null },
+    });
+  });
+}
+
 export async function reverseReturn(saleId: string) {
   const sale = await prisma.sale.findUniqueOrThrow({
     where: { id: saleId },

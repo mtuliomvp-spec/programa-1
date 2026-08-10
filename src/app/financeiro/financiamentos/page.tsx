@@ -7,6 +7,7 @@ import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, 
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import FinancingSettleButton from "./FinancingSettleButton";
+import InsuranceSettleButton from "./InsuranceSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
 
 export const dynamic = "force-dynamic";
@@ -26,7 +27,7 @@ export default async function FinanciamentosPage({
       include: {
         customer: { select: { name: true } },
         vehicle: { select: { brand: true, model: true, plate: true } },
-        financerAccount: { select: { name: true } },
+        financerAccount: { select: { name: true, sellerReturnPercent: true } },
       },
     }),
     getAccountsWithBalances(),
@@ -55,6 +56,9 @@ export default async function FinanciamentosPage({
   const financers = accounts.filter((a) => a.type === "FINANCEIRA" && a.active);
   const totalAReceber = financers.reduce((s, a) => s + a.balance, 0);
   const totalFinanciado = sales.reduce((s, v) => s + (v.financedAmount ?? 0), 0);
+  // Seguros marcados na venda cuja comissão ainda não caiu — é a fila que o
+  // dono não tinha como acompanhar ("não sabemos quando pagam").
+  const segurosPendentes = allSales.filter((v) => v.insuranceSold && !v.insuranceSettledAt).length;
   // Contas da empresa (não-financeira) que podem receber o repasse.
   const companyAccounts = accounts
     .filter((a) => a.active && a.type !== "FINANCEIRA")
@@ -81,7 +85,7 @@ export default async function FinanciamentosPage({
         max={max}
       />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
           label="Saldo nas financeiras"
           value={formatCurrency(totalAReceber)}
@@ -89,6 +93,12 @@ export default async function FinanciamentosPage({
           tone={totalAReceber > 0 ? "warning" : "default"}
         />
         <StatCard label="Total financiado (histórico)" value={formatCurrency(totalFinanciado)} />
+        <StatCard
+          label="Seguros a receber"
+          value={String(segurosPendentes)}
+          hint="vendas com seguro marcado e comissão ainda não recebida"
+          tone={segurosPendentes > 0 ? "warning" : "default"}
+        />
       </div>
 
       <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-blue-800">
@@ -115,6 +125,7 @@ export default async function FinanciamentosPage({
                 <Th className="text-right">Valor financiado</Th>
                 <Th className="text-right">Situação</Th>
                 <Th className="text-right">Retorno</Th>
+                <Th className="text-right">Seguro</Th>
               </Tr>
             </Thead>
             <tbody>
@@ -176,6 +187,37 @@ export default async function FinanciamentosPage({
                             programmedAmount={s.returnNet}
                           />
                         ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400">—</span>
+                    )}
+                  </Td>
+                  <Td className="text-right">
+                    {s.insuranceSold ? (
+                      <div className="flex flex-col items-end gap-0.5">
+                        {s.insuranceSettledAt ? (
+                          <>
+                            <span className="text-xs text-slate-500">
+                              {formatCurrency(s.insuranceAmount ?? 0)}
+                              {s.insuranceCommissionAmount > 0
+                                ? ` · comissão ${formatCurrency(s.insuranceCommissionAmount)}`
+                                : ""}
+                            </span>
+                            <Badge tone="success">Recebido {formatDate(s.insuranceSettledAt)}</Badge>
+                            {canReceber ? <ReverseSettleButton saleId={s.id} mode="insurance" /> : null}
+                          </>
+                        ) : (
+                          <>
+                            <Badge tone="warning">A receber</Badge>
+                            {canReceber ? (
+                              <InsuranceSettleButton
+                                saleId={s.id}
+                                accounts={companyAccounts}
+                                sellerPercent={s.financerAccount?.sellerReturnPercent ?? 0}
+                              />
+                            ) : null}
+                          </>
+                        )}
                       </div>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>

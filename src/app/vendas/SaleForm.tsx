@@ -66,6 +66,7 @@ export type SaleFormInitial = {
   transferCharged?: boolean;
   transferAmount?: number;
   takeReturnCommission?: boolean;
+  insuranceSold?: boolean;
   viaPaidTraffic?: boolean;
   installmentsInfoCount?: number;
   installmentsInfoAmount?: number;
@@ -285,6 +286,9 @@ export default function SaleForm({
   const [takeReturnCommission, setTakeReturnCommission] = useState(
     initial?.takeReturnCommission ?? true,
   );
+  // Seguro vendido junto ao financiamento: só a marcação. Valor e data não são
+  // conhecidos agora — entram quando a comissão cair (tela Financiamentos).
+  const [insuranceSold, setInsuranceSold] = useState(initial?.insuranceSold ?? false);
   // Restante depois de troca e sinal — pode ficar negativo (troca + sinal já
   // passam do valor da venda), e aí o excedente já é devolução ao cliente.
   const rawRestante = Math.round((total - tiLiquido - sinal) * 100) / 100;
@@ -839,6 +843,26 @@ export default function SaleForm({
                 </div>
               )
             ) : null}
+
+            <div className="mt-4 border-t border-slate-200 pt-3">
+              <label className="flex items-start gap-2 text-sm text-slate-700">
+                <input
+                  type="checkbox"
+                  name="insuranceSold"
+                  value="true"
+                  checked={insuranceSold}
+                  onChange={(e) => setInsuranceSold(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                />
+                <span>
+                  Seguro vendido no financiamento (comissão a receber)
+                  <span className="mt-0.5 block text-xs text-slate-500">
+                    Marque para não esquecer da comissão do seguro. Nada é lançado agora — o valor
+                    e a data são informados quando o dinheiro cair, na tela Financiamentos.
+                  </span>
+                </span>
+              </label>
+            </div>
           </div>
           {financedAmount !== "" ? (
             devolucaoCliente > 0 ? (

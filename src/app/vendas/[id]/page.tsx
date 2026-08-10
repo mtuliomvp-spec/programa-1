@@ -96,6 +96,26 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
+      {sale.insuranceSold ? (
+        <div
+          className={`mt-4 rounded-lg border px-5 py-3 text-sm ${
+            sale.insuranceSettledAt
+              ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
+              : "border-amber-200 bg-amber-50/60 text-amber-800"
+          }`}
+        >
+          <strong>Seguro do financiamento</strong>:{" "}
+          {sale.insuranceSettledAt
+            ? `comissão de ${formatCurrency(sale.insuranceAmount ?? 0)} recebida em ${formatDate(sale.insuranceSettledAt)}${
+                sale.insuranceCommissionAmount > 0
+                  ? ` · comissão do vendedor ${formatCurrency(sale.insuranceCommissionAmount)}`
+                  : ""
+              }`
+            : "comissão a receber — o valor é informado quando cair (tela Financiamentos)"}
+          .
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <Card>
           <CardHeader title="Contas a receber geradas" description="Parcelas e valores vinculados a esta venda" />

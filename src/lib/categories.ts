@@ -28,6 +28,7 @@ export const CATEGORIA_RECEBER_LABEL: Record<CategoriaReceber, string> = {
   VENDA_VEICULO: "Venda de veículo",
   VENDA_PECA: "Venda de peças",
   RETORNO_FINANCEIRA: "Retorno de financiamento",
+  COMISSAO_SEGURO: "Comissão de seguro",
   OUTROS: "Outros",
 };
 
@@ -57,6 +58,7 @@ const RECEITA_DEFAULTS: { name: string; code: CategoriaReceber | null }[] = [
   { name: "Venda de veículo", code: "VENDA_VEICULO" },
   { name: "Venda de peças", code: "VENDA_PECA" },
   { name: "Retorno de financiamento", code: "RETORNO_FINANCEIRA" },
+  { name: "Comissão de seguro", code: "COMISSAO_SEGURO" },
   { name: "Outros", code: "OUTROS" },
 ];
 
