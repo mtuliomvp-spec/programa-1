@@ -20,17 +20,24 @@ function monthDue(year: number, month: number, dayOfMonth: number): Date {
 }
 
 /**
- * Vencimentos mensais a garantir: o do mês corrente e o do próximo mês. O do mês
- * corrente entra sempre (recupera vencidos); o do próximo só quando já está
- * dentro do horizonte (gerar N dias antes). O chamador ainda filtra por
- * startDate/endDate e horizonte.
+ * Vencimentos mensais a garantir: do mês da data de início (`startDate`) até o
+ * mês seguinte ao horizonte (para já pré-gerar a próxima ocorrência). Assim a
+ * PRIMEIRA parcela cai no mês do início — antes só entravam o mês corrente e o
+ * próximo, então uma recorrência gerada num mês posterior ao início perdia a
+ * primeira ocorrência. Um teto (`CAP`) evita geração em massa por um `startDate`
+ * muito antigo. O chamador ainda filtra por startDate/endDate/horizonte e o
+ * dedup por dia impede duplicatas — só os meses realmente faltantes são criados.
  */
-function monthlyDueDates(dayOfMonth: number): Date[] {
-  const now = new Date();
-  return [
-    monthDue(now.getUTCFullYear(), now.getUTCMonth(), dayOfMonth),
-    monthDue(now.getUTCFullYear(), now.getUTCMonth() + 1, dayOfMonth),
-  ];
+function monthlyDueDates(dayOfMonth: number, startDate: Date, horizon: Date): Date[] {
+  const CAP = 18; // no máximo 18 meses "para trás" a partir do horizonte
+  const startIdx = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
+  const endIdx = horizon.getUTCFullYear() * 12 + horizon.getUTCMonth() + 1; // inclui o próximo mês
+  const fromIdx = Math.max(startIdx, endIdx - CAP + 1);
+  const out: Date[] = [];
+  for (let idx = fromIdx; idx <= endIdx; idx++) {
+    out.push(monthDue(Math.floor(idx / 12), idx % 12, dayOfMonth));
+  }
+  return out;
 }
 
 /** Vencimentos "a cada N dias" desde startDate até o horizonte (com teto). */
@@ -130,7 +137,7 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
     const candidates =
       entry.intervalDays && entry.intervalDays > 0
         ? intervalDueDates(entry.startDate, entry.intervalDays, entry.endDate, horizon)
-        : monthlyDueDates(entry.dayOfMonth);
+        : monthlyDueDates(entry.dayOfMonth, entry.startDate, horizon);
     const startAnchor = new Date(
       Date.UTC(entry.startDate.getUTCFullYear(), entry.startDate.getUTCMonth(), entry.startDate.getUTCDate(), 0, 0),
     );
