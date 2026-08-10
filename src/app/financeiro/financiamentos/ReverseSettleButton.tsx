@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { reverseFinancingAction, reverseReturnAction } from "./actions";
+import { reverseFinancingAction, reverseReturnAction, reverseInsuranceAction } from "./actions";
 
 /**
  * Estorna a baixa do financiamento ou do retorno: desfaz a transferência da
@@ -13,7 +13,7 @@ export default function ReverseSettleButton({
   mode,
 }: {
   saleId: string;
-  mode: "financing" | "return";
+  mode: "financing" | "return" | "insurance";
 }) {
   const [confirming, setConfirming] = useState(false);
   const [pending, start] = useTransition();
@@ -22,7 +22,12 @@ export default function ReverseSettleButton({
   function doReverse() {
     setError(null);
     start(async () => {
-      const res = mode === "return" ? await reverseReturnAction(saleId) : await reverseFinancingAction(saleId);
+      const res =
+        mode === "return"
+          ? await reverseReturnAction(saleId)
+          : mode === "insurance"
+            ? await reverseInsuranceAction(saleId)
+            : await reverseFinancingAction(saleId);
       if (!res.ok) setError(res.error || "Erro ao estornar.");
       else setConfirming(false);
     });

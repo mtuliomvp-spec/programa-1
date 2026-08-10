@@ -39,6 +39,7 @@ export default async function NovaVendaPage({
         transferCharged: pre.transferCharged,
         transferAmount: pre.transferAmount ?? undefined,
         takeReturnCommission: pre.takeReturnCommission,
+        insuranceSold: pre.insuranceSold,
         viaPaidTraffic: pre.viaPaidTraffic,
         installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
         installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,

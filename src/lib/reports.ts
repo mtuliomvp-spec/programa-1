@@ -74,6 +74,18 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     .filter((t) => t.kind === "APORTE" && t.receivableId)
     .map((t) => t.receivableId as string);
 
+  // Comissão do vendedor sobre o SEGURO: entra pela data da BAIXA, não da
+  // venda — é quando o valor fica conhecido. Assim receita e custo caem no
+  // mesmo mês e nenhum mês fechado é reescrito.
+  const seguroComissoes = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      insuranceSettledAt: { gte: rangeStart, lt: rangeEnd },
+      insuranceCommissionAmount: { gt: 0 },
+    },
+    select: { insuranceCommissionAmount: true, insuranceSettledAt: true },
+  });
+
   const [sales, partSales, expenses, retornoRecs, outrasRecs] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
@@ -97,10 +109,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       },
       select: { id: true, amount: true, paymentDate: true, category: true },
     }),
-    // Retorno da financeira recebido no período (regime de caixa).
+    // Retorno da financeira e comissão de seguro recebidos no período (regime
+    // de caixa). As duas são receita de financiamento e entram no mesmo balde.
     prisma.receivable.findMany({
       where: {
-        category: "RETORNO_FINANCEIRA",
+        category: { in: ["RETORNO_FINANCEIRA", "COMISSAO_SEGURO"] },
         status: "RECEBIDO",
         receivedDate: { gte: rangeStart, lt: rangeEnd },
       },
@@ -194,6 +207,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         (sum, s) => sum + (s.commissionAmount || 0) + sumReferrals(s.referrals) + (s.returnCommissionAmount || 0),
         0,
       ) +
+      seguroComissoes
+        .filter((s) => s.insuranceSettledAt! >= start && s.insuranceSettledAt! < end)
+        .reduce((sum, s) => sum + s.insuranceCommissionAmount, 0) +
       monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
@@ -395,11 +411,28 @@ async function profitLossStatement(
   // financiamento). Só o RECEBIDO conta (regime de caixa).
   const retornoRecs = await prisma.receivable.findMany({
     where: {
-      category: "RETORNO_FINANCEIRA",
+      category: { in: ["RETORNO_FINANCEIRA", "COMISSAO_SEGURO"] },
       status: "RECEBIDO",
       receivedDate: { gte: rangeStart, lt: rangeEnd },
     },
     include: { sale: { include: { vehicle: { select: { brand: true, model: true, plate: true } } } } },
+  });
+
+  // Comissão do vendedor sobre o SEGURO: pela data da BAIXA (é quando o valor
+  // fica conhecido), para casar com a receita, que também entra na baixa.
+  const seguroComissoes = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      insuranceSettledAt: { gte: rangeStart, lt: rangeEnd },
+      insuranceCommissionAmount: { gt: 0 },
+    },
+    select: {
+      id: true,
+      sellerName: true,
+      insuranceCommissionAmount: true,
+      insuranceSettledAt: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
   });
 
   // Fatura de cartão: parte dos lançamentos vira custo de veículo (margem) ou
@@ -510,6 +543,19 @@ async function profitLossStatement(
         value: -s.returnCommissionAmount,
       });
     }
+  }
+
+  // Comissão do seguro: custo na data da baixa (a receita entrou no mesmo dia).
+  for (const s of seguroComissoes) {
+    comissoes += s.insuranceCommissionAmount;
+    entries.push({
+      id: `segcom-${s.id}`,
+      date: s.insuranceSettledAt!,
+      kind: "COMISSAO",
+      description: `Comissão do seguro${s.sellerName ? ` — ${s.sellerName}` : ""}`,
+      detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+      value: -s.insuranceCommissionAmount,
+    });
   }
 
   for (const p of partSales) {
@@ -713,7 +759,12 @@ export type VehicleSaleResult = {
   returnCommission: number;
   /** Lucro do retorno: retorno recebido − comissão do retorno. */
   returnNetProfit: number;
-  /** Resultado final: lucro da venda + lucro do retorno. */
+  /** Comissão de seguro já recebida (0 enquanto pendente). */
+  insuranceAmount: number;
+  insuranceCommission: number;
+  /** Lucro do seguro: comissão recebida − comissão do vendedor. */
+  insuranceNetProfit: number;
+  /** Resultado final: lucro da venda + lucro do retorno + lucro do seguro. */
   netProfit: number;
   marginPct: number;
 };
@@ -735,6 +786,8 @@ export function computeVehicleSaleResult(input: {
     returnPaidAmount: number | null;
     returnNet: number;
     returnCommissionAmount: number;
+    insuranceAmount?: number | null;
+    insuranceCommissionAmount?: number | null;
   };
 }): VehicleSaleResult {
   const s = input.sale;
@@ -754,8 +807,12 @@ export function computeVehicleSaleResult(input: {
   const returnAmount = s.returnPaidAmount ?? s.returnNet;
   const returnCommission = s.returnCommissionAmount;
   const returnNetProfit = returnAmount - returnCommission;
+  // Comissão de seguro: 0 enquanto pendente (nada foi lançado até cair).
+  const insuranceAmount = s.insuranceAmount ?? 0;
+  const insuranceCommission = s.insuranceCommissionAmount ?? 0;
+  const insuranceNetProfit = insuranceAmount - insuranceCommission;
   const saleProfit = grossProfit - saleExpenses;
-  const netProfit = saleProfit + returnNetProfit;
+  const netProfit = saleProfit + returnNetProfit + insuranceNetProfit;
   return {
     totalCost,
     saleAmount: s.totalAmount,
@@ -765,6 +822,9 @@ export function computeVehicleSaleResult(input: {
     returnAmount,
     returnCommission,
     returnNetProfit,
+    insuranceAmount,
+    insuranceCommission,
+    insuranceNetProfit,
     netProfit,
     marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
   };

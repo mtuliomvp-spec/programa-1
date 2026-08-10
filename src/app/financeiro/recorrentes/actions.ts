@@ -4,6 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import type { CategoriaReceber } from "@prisma/client";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { resolveSupplierByName } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
@@ -68,7 +69,7 @@ export async function createRecurringAction(
   // No fluxo Capital a categoria não é despesa/receita — usa OUTROS, sem rótulo.
   // Fora dele, resolve o rótulo escolhido/digitado para enum + nome canônico.
   let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
-  let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
+  let categoryReceber: CategoriaReceber | null = null;
   let categoryLabel: string | null = null;
   if (data.kind === "PAGAR") {
     if (isCapital) categoryPagar = "OUTROS";
@@ -162,7 +163,7 @@ export async function updateRecurringAction(
     return { error: "Informe a categoria." };
   }
   let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
-  let categoryReceber: "VENDA_VEICULO" | "VENDA_PECA" | "RETORNO_FINANCEIRA" | "OUTROS" | null = null;
+  let categoryReceber: CategoriaReceber | null = null;
   let categoryLabel: string | null = null;
   if (data.kind === "PAGAR") {
     if (isCapital) categoryPagar = "OUTROS";
