@@ -86,7 +86,7 @@ export default async function ContratoVendaPage({ params }: { params: Promise<{ 
             }
           : null
       }
-      notes={sale.notes}
+      transferCharged={sale.transferCharged}
       backHref={`/vendas/${sale.id}`}
     />
   );

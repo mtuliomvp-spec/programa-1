@@ -34,6 +34,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     items: [
       { href: "/financeiro/contas", label: "Contas e caixas", icon: "💳", module: "financeiro" },
       { href: "/financeiro/a-pagar", label: "Contas a pagar", icon: "📤", module: "financeiro" },
+      { href: "/financeiro/combos", label: "Combos de pagamento", icon: "🧺", module: "combos" },
       { href: "/financeiro/a-receber", label: "Contas a receber", icon: "📥", module: "financeiro" },
       { href: "/financeiro/financiamentos", label: "Financiamentos", icon: "🏦", module: "financeiro" },
       { href: "/financeiro/recorrentes", label: "Recorrentes", icon: "🔁", module: "financeiro" },
@@ -41,6 +42,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/financeiro/fluxo-caixa", label: "Fluxo de caixa", icon: "💰", module: "financeiro" },
       { href: "/financeiro/lucro-prejuizo", label: "Lucro / Prejuízo", icon: "📈", module: "financeiro" },
       { href: "/financeiro/conciliacao", label: "Conciliação bancária", icon: "🏦", module: "financeiro" },
+      { href: "/financeiro/categorias", label: "Categorias", icon: "🏷️", module: "financeiro" },
     ],
   },
   {
@@ -76,6 +78,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/usuarios/perfis", label: "Perfis de acesso", icon: "🧩", adminOnly: true },
       { href: "/parametros", label: "Parâmetros da empresa", icon: "⚙️", adminOnly: true },
       { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", adminOnly: true },
+      { href: "/sistema/desempenho", label: "Desempenho", icon: "⚡", adminOnly: true },
     ],
   },
   {

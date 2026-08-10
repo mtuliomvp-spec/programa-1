@@ -1,11 +1,15 @@
 import Link from "next/link";
+import { timed } from "@/lib/perf";
 import { prisma } from "@/lib/prisma";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { daysBetween } from "@/lib/reports";
 import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, PageHeader } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
+import PrintButton from "@/components/PrintButton";
+import { userCan } from "@/lib/guards";
+import { nameKey } from "@/lib/person-keys";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -21,6 +25,18 @@ function agingTone(days: number): "success" | "info" | "warning" | "danger" {
   if (days <= 60) return "info";
   if (days <= 90) return "warning";
   return "danger";
+}
+
+/**
+ * Nome do veículo para a ficha de venda. A versão só entra quando acrescenta
+ * algo: muitos cadastros repetem a versão dentro do modelo ("Onix Joy Black" +
+ * versão "BLACK"), e no PDF isso saía duplicado.
+ */
+function vehicleLabel(brand: string, model: string, version: string | null): string {
+  const base = `${brand} ${model}`.trim();
+  const v = (version || "").trim();
+  if (!v || nameKey(base).includes(nameKey(v))) return base;
+  return `${base} ${v}`;
 }
 
 /** Texto do selo de CRLV no card (com o ano em exercício quando anexado). */
@@ -44,33 +60,45 @@ export default async function EstoquePage({
       : undefined;
   const q = params.q?.trim();
   const now = new Date();
-
-  const [vehicles, openPreSales] = await Promise.all([
-    prisma.vehicle.findMany({
-      where: { status, intermediation: false },
-      include: {
-        costs: { select: { amount: true } },
-        payables: { select: { amount: true, status: true } },
-        // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
-        attachments: { select: { kind: true, description: true } },
-        // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
-        // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
-        tradeInForSale: {
-          select: {
-            orderNumber: true,
-            vehicle: { select: { brand: true, model: true, plate: true } },
-          },
-        },
-      },
-      orderBy: { createdAt: "desc" },
-    }),
-    // Pré-vendas em aberto: o veículo continua no estoque, mas já está pré-vendido.
-    prisma.preSale.findMany({
-      where: { status: "ABERTA" },
-      select: { vehicleId: true, number: true },
-      orderBy: { number: "desc" },
-    }),
+  // Duas permissões separadas: uma para VER o custo aqui na lista e outra para
+  // LEVAR esse custo para fora no PDF. Quem não tem a primeira também não vê
+  // custo no PDF, porque ele é montado a partir desta mesma tabela.
+  const [canVerCusto, canPdfCusto] = await Promise.all([
+    userCan("estoque", "vercusto"),
+    userCan("estoque", "pdfcusto"),
   ]);
+
+  const [vehicles, openPreSales] = await timed("tela: estoque", () =>
+    Promise.all([
+      prisma.vehicle.findMany({
+        where: { status, intermediation: false },
+        include: {
+          costs: { select: { amount: true } },
+          payables: { select: { amount: true, status: true } },
+          // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
+          attachments: { select: { kind: true, description: true } },
+          // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
+          // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
+          tradeInForSale: {
+            select: {
+              orderNumber: true,
+              vehicle: { select: { brand: true, model: true, plate: true } },
+            },
+          },
+          // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
+          // transferDoneAt: nulo = o carro ainda está no nome do dono anterior.
+          sale: { select: { saleDate: true, transferDoneAt: true } },
+        },
+        orderBy: { createdAt: "desc" },
+      }),
+      // Pré-vendas em aberto: o veículo continua no estoque, mas já está pré-vendido.
+      prisma.preSale.findMany({
+        where: { status: "ABERTA" },
+        select: { vehicleId: true, number: true },
+        orderBy: { number: "desc" },
+      }),
+    ]),
+  );
 
   // vehicleId → número da pré-venda aberta mais recente (ordenado desc: 1º = maior).
   const preSaleByVehicle = new Map<string, number>();
@@ -84,6 +112,8 @@ export default async function EstoquePage({
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
+    transferDoneAt: v.sale?.transferDoneAt ?? null,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
     crlvYear:
       v.attachments
@@ -144,16 +174,182 @@ export default async function EstoquePage({
       inValueRange(v.salePrice, min, max),
   );
 
-  const active = rows.filter((v) => v.status !== "VENDIDO");
-  const totalValue = active.reduce((sum, v) => sum + v.salePrice, 0);
-  const totalInvested = active.reduce((sum, v) => sum + v.invested, 0);
-  const totalPaid = active.reduce((sum, v) => sum + v.paidCost, 0);
+  // A lista é do ESTOQUE: os vendidos são histórico e vão para o fim da página,
+  // depois de uma divisória, com a venda mais recente em cima.
+  const emEstoque = rows.filter((v) => v.status !== "VENDIDO");
+  const soldAt = (v: (typeof rows)[number]) => (v.sale?.saleDate ?? v.createdAt).getTime();
+  const vendidos = rows.filter((v) => v.status === "VENDIDO").sort((a, b) => soldAt(b) - soldAt(a));
+
+  const totalValue = emEstoque.reduce((sum, v) => sum + v.salePrice, 0);
+  const totalInvested = emEstoque.reduce((sum, v) => sum + v.invested, 0);
+  const totalPaid = emEstoque.reduce((sum, v) => sum + v.paidCost, 0);
+
+  type Row = (typeof rows)[number];
+
+  /** Card do celular (um por veículo). */
+  const renderCard = (v: Row) => (
+    <Link key={v.id} href={`/estoque/${v.id}`} className="block">
+      <Card className="px-4 py-3.5 transition-shadow active:shadow-md">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-slate-900">
+              {v.brand} {v.model}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
+            </p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-1">
+            <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+            {v.consigned ? <Badge tone="info">🏷️ Consignado</Badge> : null}
+            {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+              <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+            ) : null}
+            {v.receivedInTrade ? (
+              <span title={v.tradeOrigin ?? undefined}>
+                <Badge tone="default">🔄 Recebido em troca</Badge>
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className="mt-3 flex items-end justify-between gap-3">
+          {canVerCusto ? (
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
+              <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
+              {v.pendingCost > 0 ? (
+                <p className="text-[11px] text-slate-400">
+                  total {formatCurrency(v.invested)} ·{" "}
+                  <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                </p>
+              ) : v.paidCost < v.invested ? (
+                <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
+              ) : null}
+            </div>
+          ) : (
+            <div />
+          )}
+          <div className="text-right">
+            <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
+            <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
+          </div>
+        </div>
+        {v.status !== "VENDIDO" ? (
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
+          </div>
+        ) : (
+          <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
+            </Badge>
+            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+            </Badge>
+            <Badge tone={v.transferDoneAt ? "success" : "danger"}>
+              {v.transferDoneAt
+                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                : "⚠ No nome do dono anterior"}
+            </Badge>
+          </div>
+        )}
+      </Card>
+    </Link>
+  );
+
+  /** Linha da tabela do computador (uma por veículo). */
+  const renderRow = (v: Row) => (
+    <Tr key={v.id}>
+      <Td className="font-medium text-slate-900">
+        {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
+      </Td>
+      <Td>{v.plate}</Td>
+      <Td>{v.color || "-"}</Td>
+      <Td>
+        {v.manufactureYear}/{v.modelYear}
+      </Td>
+      <Td>{v.km.toLocaleString("pt-BR")} km</Td>
+      {canVerCusto ? (
+        <Td className="text-right tabular-nums">
+          {formatCurrency(v.paidCost)}
+          {v.pendingCost > 0 ? (
+            <span className="block text-[11px] text-slate-400">
+              total {formatCurrency(v.invested)} ·{" "}
+              <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+            </span>
+          ) : v.paidCost < v.invested ? (
+            <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
+          ) : null}
+        </Td>
+      ) : null}
+      <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
+      <Td className="text-right">
+        {v.status !== "VENDIDO" ? (
+          <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock}</Badge>
+        ) : (
+          <span className="text-slate-400">—</span>
+        )}
+      </Td>
+      <Td>
+        <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
+        {v.consigned ? (
+          <span className="mt-1 block">
+            <Badge tone="info">🏷️ Consignado</Badge>
+          </span>
+        ) : null}
+        {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
+          <span className="mt-1 block">
+            <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
+          </span>
+        ) : null}
+        {v.receivedInTrade ? (
+          <span className="mt-1 block" title={v.tradeOrigin ?? undefined}>
+            <Badge tone="default">🔄 Recebido em troca</Badge>
+          </span>
+        ) : null}
+        <span className="mt-1 block">
+          <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+        </span>
+        {v.status === "VENDIDO" ? (
+          <span className="mt-1 flex flex-col items-start gap-1">
+            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
+              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
+            </Badge>
+            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
+              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+            </Badge>
+            <Badge tone={v.transferDoneAt ? "success" : "danger"}>
+              {v.transferDoneAt
+                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                : "⚠ No nome do dono anterior"}
+            </Badge>
+          </span>
+        ) : null}
+      </Td>
+      <Td>
+        <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
+          Ver detalhes
+        </Link>
+      </Td>
+    </Tr>
+  );
+
+  // A divisória só aparece quando os dois grupos existem na tela.
+  const showDivider = emEstoque.length > 0 && vendidos.length > 0;
 
   return (
     <div>
       <PageHeader
         title="Estoque de veículos"
-        description={`${rows.length} veículo(s) · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)} · valor anunciado: ${formatCurrency(totalValue)}`}
+        description={
+          `${emEstoque.length} em estoque${vendidos.length > 0 ? ` · ${vendidos.length} vendido(s)` : ""}` +
+          (canVerCusto
+            ? ` · pago: ${formatCurrency(totalPaid)} · custo total: ${formatCurrency(totalInvested)}`
+            : "") +
+          ` · valor anunciado: ${formatCurrency(totalValue)}`
+        }
         action={
           <Can module="estoque" action="criar">
             <LinkButton href="/estoque/novo">+ Novo veículo</LinkButton>
@@ -172,6 +368,19 @@ export default async function EstoquePage({
         ate={ate}
         min={min}
         max={max}
+        filtersKey={`${params.status ?? ""}`}
+        pdf={canPdfCusto}
+        actions={
+          emEstoque.length > 0 ? (
+            <PrintButton
+              title="Estoque — ficha de venda"
+              mode="table"
+              rootSelector="#pdf-vendedor"
+              label="📄 PDF vendedor"
+              subtitle={`${emEstoque.length} veículo(s) disponível(is) para venda`}
+            />
+          ) : null
+        }
         extra={
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status
@@ -201,71 +410,13 @@ export default async function EstoquePage({
         <>
           {/* Celular: cards */}
           <div className="space-y-3 md:hidden">
-            {rows.map((v) => (
-              <Link key={v.id} href={`/estoque/${v.id}`} className="block">
-                <Card className="px-4 py-3.5 transition-shadow active:shadow-md">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="truncate font-semibold text-slate-900">
-                        {v.brand} {v.model}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 flex-col items-end gap-1">
-                      <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
-                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
-                        <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
-                      ) : null}
-                      {v.receivedInTrade ? (
-                        <span title={v.tradeOrigin ?? undefined}>
-                          <Badge tone="default">🔄 Recebido em troca</Badge>
-                        </span>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="mt-3 flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
-                      <p className="text-sm font-semibold text-slate-700">{formatCurrency(v.paidCost)}</p>
-                      {v.pendingCost > 0 ? (
-                        <p className="text-[11px] text-slate-400">
-                          total {formatCurrency(v.invested)} ·{" "}
-                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-                        </p>
-                      ) : v.paidCost < v.invested ? (
-                        <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
-                      ) : null}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[11px] uppercase tracking-wide text-slate-400">Preço</p>
-                      <p className="text-base font-bold text-slate-900">{formatCurrency(v.salePrice)}</p>
-                    </div>
-                  </div>
-                  {v.status !== "VENDIDO" ? (
-                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                      </Badge>
-                      <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
-                    </div>
-                  ) : (
-                    <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-                      <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                        {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                      </Badge>
-                      <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-                        {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
-                      </Badge>
-                      <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-                        {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-                      </Badge>
-                    </div>
-                  )}
-                </Card>
-              </Link>
-            ))}
+            {emEstoque.map(renderCard)}
+            {showDivider ? (
+              <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                Vendidos ({vendidos.length})
+              </p>
+            ) : null}
+            {vendidos.map(renderCard)}
           </div>
 
           {/* Computador: tabela */}
@@ -275,9 +426,10 @@ export default async function EstoquePage({
                 <Tr>
                   <Th>Veículo</Th>
                   <Th>Placa</Th>
+                  <Th>Cor</Th>
                   <Th>Ano</Th>
                   <Th>KM</Th>
-                  <Th className="text-right">Custo pago</Th>
+                  {canVerCusto ? <Th className="text-right">Custo pago</Th> : null}
                   <Th className="text-right">Preço de venda</Th>
                   <Th className="text-right">Dias</Th>
                   <Th>Status</Th>
@@ -285,75 +437,70 @@ export default async function EstoquePage({
                 </Tr>
               </Thead>
               <tbody>
-                {rows.map((v) => (
-                  <Tr key={v.id}>
-                    <Td className="font-medium text-slate-900">
-                      {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
-                    </Td>
-                    <Td>{v.plate}</Td>
-                    <Td>
-                      {v.manufactureYear}/{v.modelYear}
-                    </Td>
-                    <Td>{v.km.toLocaleString("pt-BR")} km</Td>
-                    <Td className="text-right tabular-nums">
-                      {formatCurrency(v.paidCost)}
-                      {v.pendingCost > 0 ? (
-                        <span className="block text-[11px] text-slate-400">
-                          total {formatCurrency(v.invested)} ·{" "}
-                          <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
-                        </span>
-                      ) : v.paidCost < v.invested ? (
-                        <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
-                      ) : null}
-                    </Td>
-                    <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
-                    <Td className="text-right">
-                      {v.status !== "VENDIDO" ? (
-                        <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock}</Badge>
-                      ) : (
-                        <span className="text-slate-400">—</span>
-                      )}
-                    </Td>
-                    <Td>
-                      <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
-                      {v.status !== "VENDIDO" && v.preSaleNumber != null ? (
-                        <span className="mt-1 block">
-                          <Badge tone="warning">🤝 Pré-vendido nº {String(v.preSaleNumber).padStart(4, "0")}</Badge>
-                        </span>
-                      ) : null}
-                      {v.receivedInTrade ? (
-                        <span className="mt-1 block" title={v.tradeOrigin ?? undefined}>
-                          <Badge tone="default">🔄 Recebido em troca</Badge>
-                        </span>
-                      ) : null}
-                      <span className="mt-1 block">
-                        <Badge tone={v.hasCrlv ? "success" : "warning"}>
-                          {crlvBadgeLabel(v.hasCrlv, v.crlvYear)}
-                        </Badge>
-                      </span>
-                      {v.status === "VENDIDO" ? (
-                        <span className="mt-1 flex flex-col items-start gap-1">
-                          <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-                            {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
-                          </Badge>
-                          <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-                            {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-                          </Badge>
-                        </span>
-                      ) : null}
-                    </Td>
-                    <Td>
-                      <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
-                        Ver detalhes
-                      </Link>
-                    </Td>
-                  </Tr>
-                ))}
+                {emEstoque.map(renderRow)}
+                {showDivider ? (
+                  <tr className="bg-slate-50">
+                    <td
+                      colSpan={canVerCusto ? 10 : 9}
+                      className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
+                    >
+                      Vendidos ({vendidos.length})
+                    </td>
+                  </tr>
+                ) : null}
+                {vendidos.map(renderRow)}
               </tbody>
             </Table>
           </Card>
         </>
       )}
+
+      {/*
+        Origem do "PDF vendedor": os dados que o vendedor precisa na mão, SEM
+        custo, margem ou dias em estoque. Fica fora da tela (hidden) e fora do
+        PDF completo (data-no-pdf) — o PrintButton aponta direto para este id.
+        Só os veículos disponíveis: carro vendido não entra em ficha de venda.
+      */}
+      {emEstoque.length > 0 ? (
+        <div id="pdf-vendedor" data-no-pdf className="hidden print:hidden">
+          <table>
+            <thead>
+              <tr>
+                <th>Veículo</th>
+                <th>Placa</th>
+                <th>Ano</th>
+                <th className="text-right">KM</th>
+                <th>Cor</th>
+                <th>Câmbio</th>
+                <th>Combustível</th>
+                <th className="text-right">Preço de venda</th>
+                <th>Situação</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emEstoque.map((v) => (
+                <tr key={v.id}>
+                  <td>{vehicleLabel(v.brand, v.model, v.version)}</td>
+                  <td>{v.plate}</td>
+                  <td>
+                    {v.manufactureYear}/{v.modelYear}
+                  </td>
+                  <td className="text-right">{v.km.toLocaleString("pt-BR")}</td>
+                  <td>{v.color || "-"}</td>
+                  <td>{v.transmission || "-"}</td>
+                  <td>{v.fuel || "-"}</td>
+                  <td className="text-right">{formatCurrency(v.salePrice)}</td>
+                  <td>
+                    {v.preSaleNumber != null
+                      ? `Pré-vendido nº ${String(v.preSaleNumber).padStart(4, "0")}`
+                      : statusLabel[v.status].label}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
     </div>
   );
 }

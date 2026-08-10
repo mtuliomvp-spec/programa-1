@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 
 /**
  * Contas financeiras (caixas/bancos): saldo calculado a partir do saldo
@@ -83,6 +84,8 @@ export type AccountWithBalance = {
   accountNumber: string | null;
   isDefault: boolean;
   isInvestment: boolean;
+  /** Até quando a aplicação rende (só faz sentido com isInvestment). */
+  investmentMaturity: Date | null;
   active: boolean;
   initialBalance: number;
   received: number;
@@ -93,6 +96,10 @@ export type AccountWithBalance = {
 };
 
 export async function getAccountsWithBalances(): Promise<AccountWithBalance[]> {
+  return timed("saldo das contas", accountsWithBalances);
+}
+
+async function accountsWithBalances(): Promise<AccountWithBalance[]> {
   const [accounts, paid, received, transfers] = await Promise.all([
     prisma.financialAccount.findMany({
       orderBy: [{ active: "desc" }, { isDefault: "desc" }, { name: "asc" }],
@@ -131,6 +138,7 @@ export async function getAccountsWithBalances(): Promise<AccountWithBalance[]> {
       accountNumber: account.accountNumber,
       isDefault: account.isDefault,
       isInvestment: account.isInvestment,
+      investmentMaturity: account.investmentMaturity,
       active: account.active,
       initialBalance: account.initialBalance,
       received: receivedTotal,

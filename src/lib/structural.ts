@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import { STRUCTURAL_FLOWS, type StructuralKey } from "@/lib/structural-flows";
 
 /**
@@ -20,6 +21,10 @@ export type { StructuralKey };
 
 /** Cria os centros estruturais (idempotente) e classifica lançamentos antigos. */
 export async function ensureStructuralCostCenters(): Promise<Record<StructuralKey, string>> {
+  return timed("conserto: centros de custo", structuralCostCenters);
+}
+
+async function structuralCostCenters(): Promise<Record<StructuralKey, string>> {
   const ids = {} as Record<StructuralKey, string>;
   for (const def of STRUCTURAL_CENTERS) {
     const center = await prisma.costCenter.upsert({
@@ -95,6 +100,27 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
 }
 
 /**
+ * Represa de 1 minuto (mesmo molde de `ensureRecurringGeneratedForPage`, em
+ * src/lib/recurring.ts): esta é uma rotina de CONSERTO que escreve no banco, e
+ * ela era chamada de dentro do farol — ou seja, em toda gravação do sistema,
+ * varrendo os títulos de combustível e serializando 5 consultas antes de
+ * qualquer leitura começar. O caminho normal já está coberto: lançar um
+ * abastecimento cria o VehicleCost na hora (src/app/combustiveis/actions.ts:113).
+ * Esta rotina é o conserto de lançamentos antigos — não precisa ser
+ * re-verificada a cada clique, e o painel segue chamando a versão sem represa.
+ */
+let lastFuelSyncAt = 0;
+const FUEL_SYNC_THROTTLE_MS = 60_000;
+
+/** Roda o conserto no máximo uma vez por minuto (por instância). */
+export async function ensureVehicleFuelCostsThrottled(): Promise<void> {
+  const now = Date.now();
+  if (now - lastFuelSyncAt < FUEL_SYNC_THROTTLE_MS) return;
+  lastFuelSyncAt = now;
+  await ensureVehicleFuelCosts();
+}
+
+/**
  * Garante que cada nota de combustível ligada a um veículo tenha um VehicleCost
  * (senão o valor some do Lucro/Prejuízo e diverge da equação patrimonial) e que
  * a classificação esteja correta. Idempotente.
@@ -105,6 +131,10 @@ export async function ensureStructuralCostCenters(): Promise<Record<StructuralKe
  * Pós-venda → custo pós-venda (postSale=true, centro Administrativo).
  */
 export async function ensureVehicleFuelCosts(): Promise<void> {
+  return timed("conserto: custos de combustível", vehicleFuelCosts);
+}
+
+async function vehicleFuelCosts(): Promise<void> {
   const fuelPayables = await prisma.payable.findMany({
     where: { category: "COMBUSTIVEL", vehicleId: { not: null } },
     select: {

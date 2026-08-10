@@ -17,6 +17,7 @@ type Company = {
   uf: string | null;
   logoDataUrl: string | null;
   publicUrl: string | null;
+  instagram: string | null;
   // Parecer IA: provedor/modelo aparecem; a chave NUNCA vem ao cliente (só o
   // indicador de que existe).
   aiProvider: string | null;
@@ -161,6 +162,14 @@ export default function CompanyForm({ company }: { company: Company }) {
           Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
           (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
           automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
+        </p>
+        <div className="mt-3">
+          <Field label="Instagram da loja">
+            <Input name="instagram" defaultValue={company.instagram || ""} placeholder="@mvpveiculos" />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Aparece no rodapé da vitrine pública. Pode ser o @usuario ou o link completo do perfil.
         </p>
       </div>
 

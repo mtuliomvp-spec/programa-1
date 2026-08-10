@@ -4,6 +4,7 @@ import { getAccountsWithBalances } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
 import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { maturityStatus, daysToMaturity } from "@/lib/status";
 import { matchesSearch } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
@@ -19,26 +20,75 @@ export const dynamic = "force-dynamic";
 
 const typeLabel = { CAIXA: "Caixa físico", BANCO: "Banco", POUPANCA: "Poupança", FINANCEIRA: "Financeira", OUTRO: "Outro" } as const;
 
+/**
+ * Vencimento da aplicação no card. Sem esta linha o dinheiro podia vencer e
+ * ficar parado sem render, sem nada na tela avisando.
+ */
+function MaturityLine({ maturity }: { maturity: Date | null }) {
+  const status = maturityStatus(maturity);
+  if (status === "sem-data") {
+    return (
+      <p className="mt-0.5 text-xs text-slate-400">
+        Vencimento não informado — abra a conta e informe para o dinheiro não ficar parado.
+      </p>
+    );
+  }
+  if (status === "vencido") {
+    return (
+      <p className="mt-0.5 text-xs font-medium text-rose-600">
+        ⚠ Aplicação venceu em {formatDate(maturity!)} — reaplique para voltar a render.
+      </p>
+    );
+  }
+  if (status === "proximo") {
+    const dias = daysToMaturity(maturity!);
+    return (
+      <p className="mt-0.5 text-xs font-medium text-amber-700">
+        ⏳ Vence em {formatDate(maturity!)}
+        {dias === 0 ? " (hoje)" : dias === 1 ? " (amanhã)" : ` (em ${dias} dias)`}
+      </p>
+    );
+  }
+  return <p className="mt-0.5 text-xs text-slate-500">Rende até {formatDate(maturity!)}</p>;
+}
+
 export default async function ContasPage({
   searchParams,
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
-  const [accounts, transfers, health, cashbox, cashboxHistory] = await Promise.all([
-    getAccountsWithBalances(),
+  // O farol também precisa dos saldos: pede-se UMA vez e repassa-se a promessa
+  // (antes esta tela calculava a mesma soma três vezes por visita).
+  const accountsPromise = getAccountsWithBalances();
+  const [accounts, transfers, health, cashbox, cashboxHistory, owners, beneficiaries] = await Promise.all([
+    accountsPromise,
     prisma.accountTransfer.findMany({
       include: { from: { select: { name: true } }, to: { select: { name: true } } },
       orderBy: { date: "desc" },
       take: 20,
     }),
-    getBooksHealth(),
+    getBooksHealth(accountsPromise),
     getCashboxState(),
     prisma.cashboxSession.findMany({ orderBy: { openedAt: "desc" }, take: 30 }),
+    // Titular verdadeiro de cada conta (quando é de um sócio, não da MVP).
+    prisma.financialAccount.findMany({
+      where: { ownerBeneficiaryId: { not: null } },
+      select: { id: true, ownerBeneficiary: { select: { name: true } } },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { isCompany: false },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
   ]);
+  const ownerByAccount = new Map(owners.map((o) => [o.id, o.ownerBeneficiary?.name ?? null]));
 
   const canContas = await userCan("financeiro", "contas");
   const active = accounts.filter((a) => a.active);
+  // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
+  // "Aplicar" da própria conta). Vale para o formulário e para o atalho.
+  const podeTransferir = canContas && active.filter((a) => !a.isInvestment).length >= 2;
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
@@ -56,6 +106,9 @@ export default async function ContasPage({
             {a.isInvestment ? "📈" : a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
             <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
+            {ownerByAccount.get(a.id) ? (
+              <Badge tone="warning">👤 Titular: {ownerByAccount.get(a.id)}</Badge>
+            ) : null}
             {!a.active ? <Badge tone="danger">Inativa</Badge> : null}
             <span className="text-xs font-normal text-blue-600 group-hover:underline">
               {a.isInvestment ? "abrir / creditar →" : "ver extrato →"}
@@ -67,6 +120,7 @@ export default async function ContasPage({
               .join(" · ") || "—"}
             {" · "}inicial {formatCurrency(a.initialBalance)} · entradas {formatCurrency(a.received + a.transfersIn)} · saídas {formatCurrency(a.paid + a.transfersOut)}
           </p>
+          {a.isInvestment ? <MaturityLine maturity={a.investmentMaturity} /> : null}
           {a.isInvestment ? (
             <p className="mt-0.5 text-xs font-medium text-emerald-700">
               Para creditar, abra a conta e use <strong>Aplicar</strong> — o dinheiro é dividido entre os sócios.
@@ -107,10 +161,19 @@ export default async function ContasPage({
         <BooksHealthChecks health={health} />
       </div>
 
-      <div className="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-3 print:hidden">
+      <div
+        className={`mb-4 grid grid-cols-1 gap-2 print:hidden ${podeTransferir ? "sm:grid-cols-2 lg:grid-cols-4" : "sm:grid-cols-3"}`}
+      >
         <LinkButton href="/financeiro/livro-caixa" variant="secondary" className="justify-center">
           📒 Movimento de caixa diário
         </LinkButton>
+        {/* O formulário de transferência fica nesta mesma página, lá embaixo:
+            o atalho rola até ele em vez de abrir outra tela. */}
+        {podeTransferir ? (
+          <LinkButton href="#transferir" variant="secondary" className="justify-center">
+            ↔️ Transferência entre contas
+          </LinkButton>
+        ) : null}
         <LinkButton href="/financeiro/a-pagar" variant="secondary" className="justify-center">
           📤 Contas a pagar
         </LinkButton>
@@ -195,18 +258,21 @@ export default async function ContasPage({
             <Card>
               <CardHeader title="Nova conta" />
               <div className="p-5">
-                <AccountForm />
+                <AccountForm beneficiaries={beneficiaries} />
               </div>
             </Card>
-            {active.filter((a) => !a.isInvestment).length >= 2 ? (
-              <Card>
-                <CardHeader title="Transferir entre contas" />
-                <div className="p-5">
-                  <TransferForm
-                    accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
-                  />
-                </div>
-              </Card>
+            {podeTransferir ? (
+              <div id="transferir" className="scroll-mt-4">
+                <Card>
+                  <CardHeader title="Transferir entre contas" />
+                  <div className="p-5">
+                    <TransferForm
+                      accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                      cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
+                    />
+                  </div>
+                </Card>
+              </div>
             ) : null}
           </div>
         ) : null}

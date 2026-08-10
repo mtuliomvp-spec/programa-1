@@ -16,3 +16,16 @@ export const STRUCTURAL_KEYS = STRUCTURAL_FLOWS.map((f) => f.key) as StructuralK
 export function isStructuralKey(value: unknown): value is StructuralKey {
   return typeof value === "string" && (STRUCTURAL_KEYS as string[]).includes(value);
 }
+
+/**
+ * Fluxo que VALE de fato para um lançamento: "Veículos" só existe com um
+ * veículo indicado — sem carro, o gasto/receita é da loja e entra como
+ * Administrativo. Chave inválida ou vazia também cai em Administrativo.
+ */
+export function effectiveStructuralKey(
+  key: unknown,
+  vehicleId: string | null | undefined,
+): StructuralKey {
+  const flow = isStructuralKey(key) ? key : "ADMINISTRATIVO";
+  return flow === "VEICULOS" && !vehicleId ? "ADMINISTRATIVO" : flow;
+}

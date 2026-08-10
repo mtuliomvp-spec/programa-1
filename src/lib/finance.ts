@@ -1,14 +1,35 @@
-import { prisma } from "@/lib/prisma";
+import { prisma, type TransactionClient } from "@/lib/prisma";
 import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
+import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
-import type { StructuralKey } from "@/lib/structural-flows";
+import { effectiveStructuralKey, type StructuralKey } from "@/lib/structural-flows";
+import { resolveDespesaCategory } from "@/lib/categories";
+import { nameKey } from "@/lib/person-keys";
+import { timed } from "@/lib/perf";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  missingVehicleDocs,
+  missingVehicleDocsError,
+} from "@/lib/vehicle-doc";
+import {
+  parseDebtItems,
+  debtsDiff,
+  AJUSTE_DEBITOS_DESC,
+  type VehicleDebtItem,
+} from "@/lib/vehicle-debts";
+import { parseDateInput } from "@/lib/format";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
+  CategoriaReceber,
   FormaPagamento,
   Prisma,
 } from "@prisma/client";
+
+/** R$ formatado, para as notas dos lançamentos. */
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /**
  * Camada central que integra Estoque, Vendas e Peças ao Financeiro.
@@ -37,6 +58,17 @@ export function splitInstallments(total: number, count: number): number[] {
   return Array.from({ length: count }, (_, i) =>
     (base + (i < remainder ? 1 : 0)) / 100,
   );
+}
+
+/**
+ * Título que É a compra do carro (aquisição, quitação, repasse do consignado).
+ * Esse valor já está no `Vehicle.purchasePrice`, então ele NUNCA pode virar um
+ * `VehicleCost`: o custo do veículo é calculado como
+ * `purchasePrice + soma(VehicleCost)` (estoque/[id]/page.tsx e estoque/page.tsx)
+ * e o mesmo dinheiro apareceria duas vezes, estourando o custo e a margem.
+ */
+export function isVehiclePurchase(category: CategoriaPagar): boolean {
+  return category === "COMPRA_VEICULO";
 }
 
 // ---------------------------------------------------------------------------
@@ -72,10 +104,18 @@ export async function createVehicleWithPayable(input: {
   payoffAmount?: number;
   payoffTo?: string | null;
   debtsAmount?: number;
+  /** Detalhamento opcional dos débitos (uma conta a pagar por linha). */
+  debtsItems?: unknown;
   // Trade-in: o líquido ao vendedor já é quitado pela troca (não vira conta a
   // pagar em aberto nem sai dinheiro do caixa).
   liquidoSettledByTrade?: boolean;
   tradeNote?: string | null;
+  // Consignado: o veículo é de um terceiro (o consignante = supplier). Fica no
+  // estoque/vitrine como um carro normal, mas com purchasePrice 0 (não é
+  // patrimônio comprado). `ownerRefundAmount` é o valor a devolver ao dono,
+  // apurado só no fechamento da venda (não gera conta a pagar na entrada).
+  consigned?: boolean;
+  ownerRefundAmount?: number;
 }) {
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   // Troca: o líquido é "pago" pelo carro recebido — passa pelo Banco Neutro
@@ -85,6 +125,7 @@ export async function createVehicleWithPayable(input: {
   const acquisitionType = input.acquisitionType ?? "A_VISTA";
   const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
   const debtsAmount = Math.max(0, input.debtsAmount ?? 0);
+  const debtsItems = parseDebtItems(input.debtsItems);
   const liquido = Math.max(0, Math.round((input.purchasePrice - payoffAmount - debtsAmount) * 100) / 100);
   const downPayment = Math.min(Math.max(0, input.downPayment ?? 0), liquido);
   const installmentsCount = Math.max(1, input.installmentsCount ?? 1);
@@ -97,8 +138,8 @@ export async function createVehicleWithPayable(input: {
         manufactureYear: input.manufactureYear,
         modelYear: input.modelYear,
         plate: input.plate,
-        chassi: input.chassi || null,
-        renavam: input.renavam || null,
+        chassi: chassiOrNull(input.chassi),
+        renavam: renavamOrNull(input.renavam),
         color: input.color || null,
         km: input.km,
         fuel: input.fuel || null,
@@ -112,9 +153,12 @@ export async function createVehicleWithPayable(input: {
         payoffAmount,
         payoffTo: input.payoffTo || null,
         debtsAmount,
+        debtsItems: debtsItems,
         entryDate: input.entryDate,
         notes: input.notes || null,
         supplierId: input.supplierId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100),
       },
     });
 
@@ -134,6 +178,7 @@ export async function createVehicleWithPayable(input: {
         payoffAmount,
         payoffTo: input.payoffTo || null,
         debtsAmount,
+        debtsItems,
         liquidoSettledByTrade: input.liquidoSettledByTrade,
         tradeNote: input.tradeNote || null,
         alreadyPaid: input.alreadyPaid,
@@ -154,7 +199,7 @@ export async function createVehicleWithPayable(input: {
  *   financeira; a entrada fica com o fornecedor.
  */
 async function createAcquisitionPayables(
-  tx: Prisma.TransactionClient,
+  tx: TransactionClient,
   input: {
     vehicleId: string;
     label: string;
@@ -170,6 +215,8 @@ async function createAcquisitionPayables(
     payoffAmount?: number;
     payoffTo?: string | null;
     debtsAmount?: number;
+    /** Detalhamento dos débitos: uma conta a pagar por linha. */
+    debtsItems?: VehicleDebtItem[];
     liquidoSettledByTrade?: boolean;
     tradeNote?: string | null;
     alreadyPaid: boolean;
@@ -202,16 +249,59 @@ async function createAcquisitionPayables(
     });
   }
   if (debtsAmount > 0) {
-    await tx.payable.create({
-      data: {
-        ...base,
-        description: `Débitos do veículo (repasse) ${input.label}`,
-        amount: debtsAmount,
-        dueDate: input.dueDate,
-        status: "PENDENTE",
-        supplierId: null,
-      },
-    });
+    // Detalhado (IPVA, multa, licenciamento...): um título por linha, cada um
+    // com o seu vencimento. Sem detalhamento, o título único de sempre.
+    const items = (input.debtsItems ?? []).filter((d) => d.amount > 0);
+    if (items.length) {
+      for (const item of items) {
+        await tx.payable.create({
+          data: {
+            ...base,
+            description: `Débitos do veículo: ${item.description || "sem descrição"} ${input.label}`,
+            amount: item.amount,
+            dueDate: item.dueDate ? parseDateInput(item.dueDate) : input.dueDate,
+            status: "PENDENTE",
+            supplierId: null,
+          },
+        });
+      }
+    } else {
+      await tx.payable.create({
+        data: {
+          ...base,
+          description: `Débitos do veículo (repasse) ${input.label}`,
+          amount: debtsAmount,
+          dueDate: input.dueDate,
+          status: "PENDENTE",
+          supplierId: null,
+        },
+      });
+    }
+
+    // As guias reais podem não bater com o ACORDADO (debtsAmount, que é o que
+    // foi descontado do antigo dono e ancora o líquido). A diferença é custo do
+    // veículo: positiva quando as guias vieram maiores, negativa quando vieram
+    // menores. O farol pede `pagáveis == purchasePrice + Σ VehicleCost`, e como
+    // os títulos somam o REAL, essa linha fecha a conta sem tocar no
+    // purchasePrice (que segue sendo o valor negociado, o que vai no contrato).
+    //
+    // Sem Payable de propósito: o dinheiro dela já está dentro dos títulos de
+    // débito. Um VehicleCost solto só desequilibraria se NÃO houvesse esse
+    // excedente do lado dos títulos — não é o caso.
+    const { real, diff } = debtsDiff(debtsAmount, items);
+    if (Math.abs(diff) > 0.005) {
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: input.vehicleId,
+          description: AJUSTE_DEBITOS_DESC,
+          category: "OUTROS",
+          amount: diff,
+          date: input.entryDate,
+          postSale: false,
+          notes: `Guias ${brl(real)} · acordado com o antigo dono ${brl(debtsAmount)}`,
+        },
+      });
+    }
   }
 
   // Líquido ao vendedor = valor negociado − quitação − débitos.
@@ -298,6 +388,10 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   return prisma.$transaction(async (tx) => {
     const vehicle = await tx.vehicle.findUniqueOrThrow({ where: { id: vehicleId } });
+    // Consignado: não tem contas de compra de entrada (purchasePrice 0). A
+    // quitação/débitos do consignado são criadas no FECHAMENTO da venda (repasse)
+    // — não devem ser recriadas/apagadas ao editar o veículo.
+    if (vehicle.consigned) return;
     const purchasePayables = await tx.payable.findMany({
       where: { vehicleId, category: "COMPRA_VEICULO" },
     });
@@ -305,6 +399,11 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
     if (purchasePayables.some((p) => p.status === "PAGO")) return;
 
     await tx.payable.deleteMany({ where: { vehicleId, category: "COMPRA_VEICULO" } });
+    // O custo de ajuste dos débitos é recriado junto com os títulos — sem isto
+    // cada edição do veículo somaria mais uma linha.
+    await tx.vehicleCost.deleteMany({
+      where: { vehicleId, payableId: null, description: AJUSTE_DEBITOS_DESC },
+    });
 
     if (vehicle.purchasePrice > 0) {
       await createAcquisitionPayables(tx, {
@@ -322,6 +421,9 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
         payoffAmount: vehicle.payoffAmount,
         payoffTo: vehicle.payoffTo,
         debtsAmount: vehicle.debtsAmount,
+        // Detalhamento vem do veículo: é por isso que ele é gravado lá, e não
+        // só no formulário — aqui os títulos são apagados e recriados.
+        debtsItems: parseDebtItems(vehicle.debtsItems),
         alreadyPaid: false,
         defaultAccountId: null,
       });
@@ -411,6 +513,11 @@ export async function deleteVehicleCost(costId: string) {
     const cost = await tx.vehicleCost.findUniqueOrThrow({
       where: { id: costId },
     });
+    if (cost.cardItemId) {
+      throw new Error(
+        "Este custo vem de um lançamento da fatura do cartão — exclua o lançamento dentro do título da fatura.",
+      );
+    }
     await tx.vehicleCost.delete({ where: { id: costId } });
     if (cost.payableId) {
       await tx.payable.delete({ where: { id: cost.payableId } });
@@ -585,8 +692,8 @@ export async function createIntermediationVehicle(input: {
       manufactureYear: input.manufactureYear,
       modelYear: input.modelYear,
       plate: input.plate.toUpperCase(),
-      chassi: input.chassi || null,
-      renavam: input.renavam || null,
+      chassi: chassiOrNull(input.chassi),
+      renavam: renavamOrNull(input.renavam),
       color: input.color || null,
       km: input.km ?? 0,
       fuel: input.fuel || null,
@@ -601,7 +708,10 @@ export async function createIntermediationVehicle(input: {
   });
 }
 
-export async function registerVehicleSale(input: {
+export const registerVehicleSale = (...a: Parameters<typeof vehicleSale>) =>
+  timed("registrar venda", () => vehicleSale(...a));
+
+async function vehicleSale(input: {
   vehicleId: string;
   customerId: string;
   saleDate: Date;
@@ -647,6 +757,8 @@ export async function registerVehicleSale(input: {
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira
   // (percentual do líquido, configurado na conta da financeira).
   takeReturnCommission?: boolean | null;
+  /** Seguro vendido junto ao financiamento: fica pendente até o valor cair. */
+  insuranceSold?: boolean | null;
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic?: boolean | null;
   notes?: string | null;
@@ -664,8 +776,32 @@ export async function registerVehicleSale(input: {
   tradeInAmount?: number;
   tradeInLabel?: string | null;
   tradeInVehicleId?: string | null;
+  // Consignado: o veículo era de um terceiro (o consignante = supplier do
+  // veículo). No fechamento a loja deve `ownerRefundAmount` ao dono. Se
+  // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário
+  // (sem sair do caixa — o dinheiro da venda fica na empresa como capital);
+  // senão vira conta a pagar (DEVOLUCAO_PROPRIETARIO) ao proprietário.
+  consigned?: boolean;
+  ownerRefundAmount?: number;
+  ownerRefundToCapital?: boolean;
+  ownerRefundBeneficiaryId?: string | null;
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de virar conta
+  // a pagar — só quando o vendedor (sellerId) é beneficiário do capital.
+  commissionToCapital?: boolean;
 }) {
   const defaultAccountId = await getDefaultAccountId();
+  // Trava única de documentos: TODO caminho que efetiva uma venda passa por
+  // aqui (conversão de pré-venda, venda direta e conversão de intermediação) —
+  // o único `sale.create` do sistema está logo abaixo. Vender sem RENAVAM ou
+  // sem chassi deixa o contrato de compra e o termo de troca com uma linha em
+  // branco para preencher à mão, então o registro é recusado.
+  const docs = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: input.vehicleId },
+    select: { chassi: true, renavam: true },
+  });
+  const faltando = missingVehicleDocs(docs);
+  if (faltando.length) throw new Error(missingVehicleDocsError(faltando));
+
   // A entrada em troca é compensada pelo Banco Neutro (fica sempre em zero),
   // casando com a "Compra do veículo (líquido quitado pela troca)".
   const neutralAccountId =
@@ -678,6 +814,10 @@ export async function registerVehicleSale(input: {
   const transferCharged = Boolean(input.transferCharged);
   const transferAmount = transferCharged
     ? Math.max(0, Math.round((input.transferAmount ?? 0) * 100) / 100)
+    : 0;
+  // Consignado: valor a devolver ao proprietário, normalizado.
+  const ownerRefund = input.consigned
+    ? Math.max(0, Math.round((input.ownerRefundAmount ?? 0) * 100) / 100)
     : 0;
   const adminCenterId =
     commission > 0 || referrals.some((r) => r.amount > 0) || transferAmount > 0 || input.takeReturnCommission
@@ -702,6 +842,16 @@ export async function registerVehicleSale(input: {
     if (canceladas.length > 0) {
       const ids = canceladas.map((s) => s.id);
       await tx.receivable.deleteMany({ where: { saleId: { in: ids } } });
+      // Aporte de consignado gerado por uma venda cancelada deste veículo: remove
+      // o resíduo antes de recriar a venda (senão ficaria um aporte órfão).
+      await tx.capitalTransaction.deleteMany({ where: { saleId: { in: ids } } });
+      // Consignado: quitação/débitos (repasse) da venda cancelada só existem por
+      // causa dela — remove antes de recriar para não duplicar no revender.
+      if (vehicle.consigned) {
+        await tx.payable.deleteMany({
+          where: { vehicleId: input.vehicleId, category: "COMPRA_VEICULO" },
+        });
+      }
       await tx.sale.deleteMany({ where: { id: { in: ids } } });
     }
 
@@ -723,6 +873,8 @@ export async function registerVehicleSale(input: {
           input.paymentMethod === "FINANCIADO" ? (input.refinancing ? 0 : input.financedAmount ?? null) : null,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
+        // Só marca; nada é lançado até a comissão do seguro cair.
+        insuranceSold: input.paymentMethod === "FINANCIADO" && !!input.insuranceSold,
         commissionAmount: commission,
         referrals,
         transferCharged,
@@ -745,6 +897,12 @@ export async function registerVehicleSale(input: {
         installmentsInfoAmount: input.installmentsInfoAmount ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
+        consigned: Boolean(input.consigned),
+        ownerRefundAmount: input.consigned ? ownerRefund : 0,
+        ownerRefundToCapital: Boolean(input.consigned && input.ownerRefundToCapital),
+        ownerRefundBeneficiaryId:
+          input.consigned && input.ownerRefundToCapital ? input.ownerRefundBeneficiaryId || null : null,
+        commissionToCapital: Boolean(input.commissionToCapital),
       },
     });
 
@@ -753,22 +911,48 @@ export async function registerVehicleSale(input: {
       data: { status: "VENDIDO" },
     });
 
+    // Comissão no capital: quando a flag está ligada e o vendedor é beneficiário
+    // do capital, a comissão do vendedor (e a do retorno) vira APORTE no capital
+    // dele em vez de conta a pagar. Sem beneficiário vinculado → conta a pagar.
+    const commissionBeneficiary =
+      input.commissionToCapital && input.sellerId
+        ? await tx.capitalBeneficiary.findUnique({
+            where: { userId: input.sellerId },
+            select: { id: true },
+          })
+        : null;
+
     // Comissão do vendedor: conta a pagar avulsa (categoria Comissão, centro
     // Administrativo), vinculada à venda. NÃO é custo do veículo (vehicleId
     // nulo) — é despesa de venda, entra no resultado quando for paga.
+    // Quando aplicada no capital, vira APORTE puro (sem conta a pagar); o custo
+    // continua reconhecido na DRE por competência (sale.commissionAmount).
     if (commission > 0 && adminCenterId) {
-      await tx.payable.create({
-        data: {
-          description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-          category: "COMISSAO",
-          amount: commission,
-          dueDate: input.saleDate,
-          status: "PENDENTE",
-          costCenterId: adminCenterId,
-          saleId: sale.id,
-          beneficiaryUserId: input.sellerId || null,
-        },
-      });
+      if (commissionBeneficiary) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: commissionBeneficiary.id,
+            kind: "APORTE",
+            amount: commission,
+            date: input.saleDate,
+            saleId: sale.id,
+            description: `Aporte — comissão de venda${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          },
+        });
+      } else {
+        await tx.payable.create({
+          data: {
+            description: `Comissão de venda${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+            category: "COMISSAO",
+            amount: commission,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            costCenterId: adminCenterId,
+            saleId: sale.id,
+            beneficiaryUserId: input.sellerId || null,
+          },
+        });
+      }
     }
 
     // Indicações de venda: mesma mecânica da comissão do vendedor (Comissão,
@@ -790,13 +974,17 @@ export async function registerVehicleSale(input: {
     }
 
     // Transferência (DETRAN) cobrada: custo da venda, mesma mecânica da comissão
-    // (Comissão, Administrativo, vencendo na data da venda). NÃO é custo do
-    // veículo (vehicleId nulo) — não mexe na margem do carro.
+    // (Administrativo, vencendo na data da venda). NÃO é custo do veículo
+    // (vehicleId nulo) — não mexe na margem do carro.
+    // A categoria interna é COMISSAO (é ela que diz à equação patrimonial que
+    // isto é custo da venda, já reconhecido no resultado por competência); o
+    // rótulo exibido é "Documentação de veículo", que descreve o gasto.
     if (transferAmount > 0 && adminCenterId) {
       await tx.payable.create({
         data: {
           description: `Transferência DETRAN — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
           category: "COMISSAO",
+          categoryLabel: "Documentação de veículo",
           amount: transferAmount,
           dueDate: input.saleDate,
           status: "PENDENTE",
@@ -982,18 +1170,33 @@ export async function registerVehicleSale(input: {
             if (input.takeReturnCommission && sellerPct > 0 && adminCenterId) {
               const returnCommission = Math.round(net * (sellerPct / 100) * 100) / 100;
               if (returnCommission > 0) {
-                await tx.payable.create({
-                  data: {
-                    description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
-                    category: "COMISSAO",
-                    amount: returnCommission,
-                    dueDate: input.saleDate,
-                    status: "PENDENTE",
-                    costCenterId: adminCenterId,
-                    saleId: sale.id,
-                    beneficiaryUserId: input.sellerId || null,
-                  },
-                });
+                // Igual à comissão de venda: no capital vira APORTE puro; senão
+                // conta a pagar. Custo reconhecido na DRE por competência.
+                if (commissionBeneficiary) {
+                  await tx.capitalTransaction.create({
+                    data: {
+                      beneficiaryId: commissionBeneficiary.id,
+                      kind: "APORTE",
+                      amount: returnCommission,
+                      date: input.saleDate,
+                      saleId: sale.id,
+                      description: `Aporte — comissão do retorno${input.sellerName ? ` (${input.sellerName})` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                    },
+                  });
+                } else {
+                  await tx.payable.create({
+                    data: {
+                      description: `Comissão do retorno${input.sellerName ? ` — ${input.sellerName}` : ""} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+                      category: "COMISSAO",
+                      amount: returnCommission,
+                      dueDate: input.saleDate,
+                      status: "PENDENTE",
+                      costCenterId: adminCenterId,
+                      saleId: sale.id,
+                      beneficiaryUserId: input.sellerId || null,
+                    },
+                  });
+                }
                 await tx.sale.update({
                   where: { id: sale.id },
                   data: { returnCommissionAmount: returnCommission },
@@ -1042,6 +1245,81 @@ export async function registerVehicleSale(input: {
       });
     }
 
+    // Consignado: o valor ACERTADO com o proprietário (bruto) é o custo do
+    // negócio, reconhecido por inteiro no fechamento da venda. Ele se divide em:
+    // - Quitação do financiamento e débitos do veículo (repasse): a loja paga
+    //   direto ao banco/órgãos — contas a pagar COMPRA_VEICULO, iguais às da
+    //   compra de estoque (entram no passivo pós-venda da equação patrimonial).
+    // - Líquido ao proprietário = acertado − quitação − débitos. Dois destinos:
+    //   * Aporte no capital do beneficiário (aporte PURO, sem recebível — o caixa
+    //     já entrou pela venda); ou
+    //   * Pagar ao dono → conta a pagar (DEVOLUCAO_PROPRIETARIO).
+    if (input.consigned && ownerRefund > 0) {
+      const payoff = Math.max(0, Math.round((vehicle.payoffAmount ?? 0) * 100) / 100);
+      const debts = Math.max(0, Math.round((vehicle.debtsAmount ?? 0) * 100) / 100);
+      const repasseLabel = `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
+      if (payoff > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Quitação do financiamento ${repasseLabel}${vehicle.payoffTo ? ` (${vehicle.payoffTo})` : ""}`,
+            category: "COMPRA_VEICULO",
+            amount: payoff,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+          },
+        });
+      }
+      if (debts > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Débitos do veículo (repasse) ${repasseLabel}`,
+            category: "COMPRA_VEICULO",
+            amount: debts,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+          },
+        });
+      }
+      // Líquido ao proprietário = valor acertado − quitação − débitos.
+      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
+      if (liquido > 0) {
+        // Nome do proprietário (consignante) para constar nos documentos.
+        const owner = vehicle.supplierId
+          ? await tx.supplier.findUnique({ where: { id: vehicle.supplierId }, select: { name: true } })
+          : null;
+        if (input.ownerRefundToCapital && input.ownerRefundBeneficiaryId) {
+          await tx.capitalTransaction.create({
+            data: {
+              beneficiaryId: input.ownerRefundBeneficiaryId,
+              kind: "APORTE",
+              amount: liquido,
+              date: input.saleDate,
+              saleId: sale.id,
+              description: `Aporte — devolução do consignado ${vehicle.brand} ${vehicle.model} (${vehicle.plate})${owner?.name ? ` — proprietário ${owner.name}` : ""}`,
+            },
+          });
+        } else {
+          await tx.payable.create({
+            data: {
+              description: `Devolução ao proprietário${owner?.name ? ` ${owner.name}` : ""} - ${baseDescription}`,
+              category: "DEVOLUCAO_PROPRIETARIO",
+              amount: liquido,
+              dueDate: input.saleDate,
+              status: "PENDENTE",
+              vehicleId: input.vehicleId,
+              supplierId: vehicle.supplierId || null,
+              costCenterId: veiculosCenterId,
+              notes: "Valor líquido devido ao consignante pela venda do veículo consignado.",
+            },
+          });
+        }
+      }
+    }
+
     return sale;
   });
 }
@@ -1085,8 +1363,43 @@ export async function cancelVehicleSale(saleId: string) {
     });
 
     // 2c) Comissão do vendedor gerada por esta venda: apagar o título (se já foi
-    //     pago, o dinheiro volta ao caixa).
+    //     pago, o dinheiro volta ao caixa). Se a comissão foi "aplicada no
+    //     capital" (Pagar comissão), o título PAGO no Banco Neutro também tem
+    //     saleId e cai aqui; o recebível do aporte (par no Banco Neutro) cai no
+    //     passo 2 e a movimentação de capital no passo 2d — o trio some junto.
     await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
+
+    // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
+    //     apaga a conta a pagar (se já quitada, o dinheiro volta ao caixa). Se
+    //     foi aplicada no capital, apaga o aporte (baixa o saldo de capital).
+    //     A quitação/débitos (repasse COMPRA_VEICULO) do consignado também são
+    //     criadas no fechamento — só existem por causa da venda, então são
+    //     revertidas junto (num veículo de estoque a compra é da entrada e NÃO
+    //     se apaga aqui; por isso a limpeza é condicionada ao consignado).
+    await tx.payable.deleteMany({
+      where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
+    });
+    await tx.capitalTransaction.deleteMany({ where: { saleId } });
+
+    // 2e) Desconto concedido na baixa de um recebível desta venda: o par do
+    //     Banco Neutro precisa sair inteiro. O recebível já caiu no passo 2
+    //     (−diff no neutro); sem apagar o título PAGO o neutro travaria
+    //     negativo. O VehicleCost não sai por cascade (payable é SetNull).
+    const descontos = await tx.payable.findMany({
+      where: { saleId, categoryLabel: DISCOUNT_CATEGORY_LABEL },
+      select: { id: true },
+    });
+    if (descontos.length) {
+      const ids = descontos.map((d) => d.id);
+      await tx.vehicleCost.deleteMany({ where: { payableId: { in: ids } } });
+      await tx.payable.deleteMany({ where: { id: { in: ids } } });
+    }
+
+    if (sale.consigned) {
+      await tx.payable.deleteMany({
+        where: { vehicleId: sale.vehicleId, category: "COMPRA_VEICULO" },
+      });
+    }
 
     // 3) Se o financiamento já foi recebido (baixa: transferência da financeira
     //    para a empresa), estorna essa transferência.
@@ -1122,6 +1435,18 @@ export async function cancelVehicleSale(saleId: string) {
       };
       await tx.receivable.deleteMany({ where: diffFilter });
       await tx.payable.deleteMany({ where: diffFilter });
+    }
+
+    // 3c) Comissão de seguro já recebida: apaga o recebimento e a comissão do
+    //     vendedor (conta a pagar ou aporte no capital).
+    if (sale.insuranceSettledAt) {
+      await tx.receivable.deleteMany({ where: { saleId, category: "COMISSAO_SEGURO" } });
+      await tx.payable.deleteMany({
+        where: { saleId, category: "COMISSAO", description: { startsWith: "Comissão do seguro" } },
+      });
+      await tx.capitalTransaction.deleteMany({
+        where: { saleId, description: { startsWith: "Aporte — comissão do seguro" } },
+      });
     }
 
     // 4) Desfaz o veículo recebido em troca (e suas contas).
@@ -1365,13 +1690,18 @@ export async function syncPurchaseRequestStatus(purchaseRequestId: string) {
   }
 }
 
-export async function markPayablePaid(id: string, paymentDate: Date, accountId?: string | null) {
+export const markPayablePaid = (...a: Parameters<typeof payablePaid>) =>
+  timed("baixa: pagar título", () => payablePaid(...a));
+
+async function payablePaid(id: string, paymentDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
   const updated = await prisma.payable.update({
     where: { id },
     data: { status: "PAGO", paymentDate, accountId: account },
   });
   await syncPayableCapital(id);
+  // Fatura de cartão: a baixa lança as retiradas dos itens CAPITAL.
+  if (updated.cardInvoice) await syncCardInvoiceDerived(id);
   if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }
@@ -1382,11 +1712,16 @@ export async function markPayablePending(id: string) {
     data: { status: "PENDENTE", paymentDate: null, accountId: null },
   });
   await syncPayableCapital(id);
+  // Fatura de cartão: o estorno desfaz as retiradas dos itens CAPITAL.
+  if (updated.cardInvoice) await syncCardInvoiceDerived(id);
   if (updated.purchaseRequestId) await syncPurchaseRequestStatus(updated.purchaseRequestId);
   return updated;
 }
 
-export async function markReceivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
+export const markReceivableReceived = (...a: Parameters<typeof receivableReceived>) =>
+  timed("baixa: receber título", () => receivableReceived(...a));
+
+async function receivableReceived(id: string, receivedDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
   const updated = await prisma.receivable.update({
     where: { id },
@@ -1465,6 +1800,149 @@ export async function receiveReceivable(
   return partial.orig;
 }
 
+/** Rótulo da categoria de despesa do desconto concedido (marca o par no neutro). */
+export const DISCOUNT_CATEGORY_LABEL = "Desconto concedido";
+
+/**
+ * Recebe um título por MENOS do que o valor cheio e baixa a diferença como
+ * DESCONTO CONCEDIDO — o título é quitado por inteiro, sem deixar resto
+ * pendente. Caso típico: a entrada da venda estava em 4.152,80, foi acertado
+ * depois que a cliente pagaria 3.153,00; os 999,80 viram custo PÓS-VENDA do
+ * carro e reduzem o lucro dele. Só vale para título ligado a um veículo.
+ *
+ * Como fecha o farol: baixar por menos derruba só o lado patrimonial (caixa
+ * sobe o recebido, "a receber de vendas" cai o cheio). A DRE não se mexe — a
+ * receita da venda já foi reconhecida por competência. Para os dois lados
+ * caírem juntos, a diferença precisa virar custo pós-venda PAGO (a DRE só
+ * reconhece pós-venda quando pago), sem dinheiro real sair: é o par do BANCO
+ * NEUTRO, o mesmo padrão da comissão aplicada no capital, da diferença de
+ * retorno e da remuneração do estoque.
+ *   - resto do título → RECEBIDO no Banco Neutro (+diff)
+ *   - despesa "Desconto concedido" → PAGA no Banco Neutro (−diff)
+ * O Banco Neutro volta a zero e as duas pontas nascem na mesma transação (meio
+ * par deixaria o Check 1 vermelho).
+ */
+export async function receiveWithDiscount(input: {
+  receivableId: string;
+  /** Valor efetivamente recebido na conta real. */
+  amount: number;
+  date: Date;
+  accountId: string;
+  notes?: string | null;
+}): Promise<{ received: number; discount: number; vehicleId: string | null }> {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: input.receivableId },
+    include: { sale: { select: { vehicleId: true } } },
+  });
+  if (r.status === "RECEBIDO") throw new Error("Título já recebido.");
+
+  const pay = Math.min(Math.max(0, Math.round(input.amount * 100) / 100), r.amount);
+  const diff = Math.round((r.amount - pay) * 100) / 100;
+  if (diff <= 0.005) {
+    // Sem diferença: é uma baixa cheia comum.
+    await markReceivableReceived(r.id, input.date, input.accountId);
+    return { received: r.amount, discount: 0, vehicleId: null };
+  }
+  if (pay < 0) throw new Error("Valor recebido inválido.");
+
+  const vehicleId = r.vehicleId ?? r.sale?.vehicleId ?? null;
+  // Só título ligado a um carro: aí a diferença tem onde cair (custo pós-venda)
+  // e os dois lados do farol descem juntos. Em título solto o resultado
+  // dependeria da categoria e poderia desequilibrar — deixa pendente mesmo.
+  if (!vehicleId) {
+    throw new Error(
+      "O desconto só vale para títulos ligados a um veículo (a diferença vira custo pós-venda do carro).",
+    );
+  }
+  const cat = await resolveDespesaCategory(DISCOUNT_CATEGORY_LABEL);
+  const [neutralAccountId, adminCenterId] = await Promise.all([
+    getNeutralAccountId(),
+    // Custo pós-venda mora no Administrativo (o carro não está mais no estoque).
+    structuralCenterId("ADMINISTRATIVO"),
+  ]);
+  const money = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const breakdown = `Título de ${money(r.amount)} · recebido ${money(pay)} · desconto ${money(diff)}.`;
+
+  const createdIds = await prisma.$transaction(async (tx) => {
+    // 1) A parte efetivamente recebida, na conta real (só quando houver).
+    let partialId: string | null = null;
+    if (pay > 0) {
+      const created = await tx.receivable.create({
+        data: {
+          description: `${r.description} - Pagamento parcial`,
+          category: r.category,
+          categoryLabel: r.categoryLabel,
+          amount: pay,
+          dueDate: r.dueDate,
+          receivedDate: input.date,
+          status: "RECEBIDO",
+          customerId: r.customerId,
+          saleId: r.saleId,
+          vehicleId: r.vehicleId,
+          installmentNumber: r.installmentNumber,
+          totalInstallments: r.totalInstallments,
+          costCenterId: r.costCenterId,
+          capitalBeneficiaryId: r.capitalBeneficiaryId,
+          accountId: input.accountId,
+        },
+      });
+      partialId = created.id;
+    }
+
+    // 2) O que sobrou vira o desconto: baixado no Banco Neutro.
+    await tx.receivable.update({
+      where: { id: r.id },
+      data: {
+        description: `${r.description} (desconto concedido)`,
+        amount: diff,
+        status: "RECEBIDO",
+        receivedDate: input.date,
+        accountId: neutralAccountId,
+        notes: [r.notes, breakdown, input.notes].filter(Boolean).join(" · "),
+      },
+    });
+
+    // 3) A contrapartida: despesa PAGA no Banco Neutro (o par zera a conta) que,
+    //    havendo veículo, entra como custo pós-venda dele.
+    const payable = await tx.payable.create({
+      data: {
+        description: `Desconto concedido — ${r.description}`,
+        category: cat.category,
+        categoryLabel: cat.label,
+        amount: diff,
+        dueDate: input.date,
+        paymentDate: input.date,
+        status: "PAGO",
+        accountId: neutralAccountId,
+        costCenterId: adminCenterId,
+        vehicleId,
+        saleId: r.saleId,
+        notes: [breakdown, input.notes].filter(Boolean).join(" · "),
+      },
+    });
+    await tx.vehicleCost.create({
+      data: {
+        vehicleId,
+        description: `${cat.label}: ${r.description}`,
+        category: "OUTROS",
+        amount: diff,
+        date: input.date,
+        // Sempre pós-venda: o desconto é acertado depois da venda fechada.
+        postSale: true,
+        payableId: payable.id,
+        notes: breakdown,
+      },
+    });
+    return { partialId };
+  });
+
+  // Capital (só age se o título tiver sócio): sincroniza as duas pontas.
+  if (createdIds.partialId) await syncReceivableCapital(createdIds.partialId);
+  await syncReceivableCapital(r.id);
+
+  return { received: pay, discount: diff, vehicleId };
+}
+
 export async function createManualPayable(input: {
   description: string;
   category: CategoriaPagar;
@@ -1500,17 +1978,31 @@ export async function createManualPayable(input: {
 }
 
 /**
- * Resolve um fornecedor pelo nome: reaproveita se já existir (sem diferenciar
- * maiúsculas) ou cadastra um novo. Usado para lançar tarifas com o próprio
- * banco como fornecedor sem precisar cadastrá-lo antes.
+ * Resolve um fornecedor pelo nome: reaproveita se já existir ou cadastra um
+ * novo. Usado para lançar tarifas com o próprio banco como fornecedor sem
+ * precisar cadastrá-lo antes.
+ *
+ * A comparação ignora acento, maiúscula, pontuação e espaço (`nameKey`) — era
+ * a comparação estrita daqui que enchia o cadastro de repetições ("Rogerio
+ * venturini" virando um segundo "Rogério Venturini"). Ela SEMPRE reaproveita e
+ * nunca recusa: é chamada de todos os caminhos de gravação financeira, e um
+ * erro aqui derrubaria um lançamento ou uma importação inteira.
  */
 export async function resolveSupplierByName(name: string): Promise<string> {
   const trimmed = name.trim();
-  const existing = await prisma.supplier.findFirst({
+  // Caminho rápido: nome idêntico. Resolve a esmagadora maioria com uma consulta.
+  const exact = await prisma.supplier.findFirst({
     where: { name: { equals: trimmed, mode: "insensitive" } },
     select: { id: true },
   });
-  if (existing) return existing.id;
+  if (exact) return exact.id;
+  // Só quando ia criar mesmo: compara pela chave normalizada.
+  const key = nameKey(trimmed);
+  if (key) {
+    const all = await prisma.supplier.findMany({ select: { id: true, name: true } });
+    const found = all.find((s) => nameKey(s.name) === key);
+    if (found) return found.id;
+  }
   const created = await prisma.supplier.create({ data: { name: trimmed } });
   return created.id;
 }
@@ -1715,6 +2207,134 @@ export async function reverseFinancing(saleId: string) {
  * "diferença de retorno" (crédito/débito). A venda volta a ter o retorno a
  * receber. Espelha o estorno do retorno feito no cancelamento da venda.
  */
+/**
+ * Baixa da COMISSÃO DE SEGURO vendido junto ao financiamento.
+ *
+ * Ao contrário do retorno, nada foi pré-lançado: enquanto pendente, a venda só
+ * carrega a marcação `insuranceSold` e não existe recebível, receita nem caixa
+ * — é neutro no farol. Toda a contabilização acontece aqui, quando o dinheiro
+ * cai e o valor finalmente é conhecido.
+ *
+ * Por isso é bem mais simples que `settleReturn`: não há valor programado, não
+ * há diferença a acertar, não há transferência da financeira nem Banco Neutro.
+ * A seguradora/financeira paga direto numa conta da empresa.
+ *
+ * A comissão do vendedor segue a mesma regra do retorno: aporte no capital
+ * quando ele é beneficiário, senão conta a pagar. O `saleId` no título é o que
+ * a mantém fora das despesas da DRE (ela entra por competência, ver reports.ts).
+ *
+ * Farol: caixa +valor e DRE +valor (categoria COMISSAO_SEGURO, somada ao balde
+ * dos retornos); a comissão desce os dois lados na mesma medida.
+ */
+export async function settleInsurance(
+  saleId: string,
+  accountId: string,
+  amount: number,
+  commission: number,
+  date: Date,
+) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    include: {
+      customer: { select: { name: true } },
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+  if (!sale.insuranceSold) throw new Error("Esta venda não tem seguro marcado.");
+  if (sale.insuranceSettledAt) throw new Error("A comissão de seguro desta venda já foi recebida.");
+  if (sale.financerAccountId === accountId) {
+    throw new Error("Escolha uma conta da empresa (diferente da financeira).");
+  }
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const valor = round2(amount);
+  if (!Number.isFinite(valor) || valor <= 0) throw new Error("Informe o valor recebido do seguro.");
+  const comissao = Math.max(0, round2(commission || 0));
+  if (comissao > valor) throw new Error("A comissão não pode ser maior que o valor recebido.");
+
+  const label = `${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`;
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
+  // Vendedor beneficiário do capital: a comissão vira aporte, não dinheiro.
+  const beneficiary = sale.sellerId
+    ? await prisma.capitalBeneficiary.findFirst({ where: { userId: sale.sellerId } })
+    : null;
+
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.create({
+      data: {
+        // Prefixo próprio: os estornos do retorno apagam por texto + placa e
+        // engoliriam esta perna se ela dissesse "Retorno financiamento".
+        description: `Comissão de seguro — ${label}`,
+        category: "COMISSAO_SEGURO",
+        amount: valor,
+        dueDate: date,
+        receivedDate: date,
+        status: "RECEBIDO",
+        accountId,
+        saleId,
+        vehicleId: sale.vehicleId,
+        customerId: sale.customerId,
+        costCenterId: adminCenterId,
+      },
+    });
+    if (comissao > 0 && adminCenterId) {
+      if (beneficiary) {
+        await tx.capitalTransaction.create({
+          data: {
+            beneficiaryId: beneficiary.id,
+            kind: "APORTE",
+            amount: comissao,
+            date,
+            saleId,
+            description: `Aporte — comissão do seguro${sale.sellerName ? ` (${sale.sellerName})` : ""} — ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+          },
+        });
+      } else {
+        await tx.payable.create({
+          data: {
+            description: `Comissão do seguro${sale.sellerName ? ` — ${sale.sellerName}` : ""} — ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`,
+            category: "COMISSAO",
+            amount: comissao,
+            dueDate: date,
+            status: "PENDENTE",
+            costCenterId: adminCenterId,
+            saleId,
+            beneficiaryUserId: sale.sellerId || null,
+          },
+        });
+      }
+    }
+    return tx.sale.update({
+      where: { id: saleId },
+      data: {
+        insuranceAmount: valor,
+        insuranceCommissionAmount: comissao,
+        insuranceSettledAt: date,
+      },
+    });
+  });
+}
+
+/** Desfaz a baixa da comissão de seguro (recebimento e comissão do vendedor). */
+export async function reverseInsurance(saleId: string) {
+  const sale = await prisma.sale.findUniqueOrThrow({ where: { id: saleId } });
+  if (!sale.insuranceSettledAt) {
+    throw new Error("A comissão de seguro desta venda ainda não foi recebida.");
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.deleteMany({ where: { saleId, category: "COMISSAO_SEGURO" } });
+    await tx.payable.deleteMany({
+      where: { saleId, category: "COMISSAO", description: { startsWith: "Comissão do seguro" } },
+    });
+    await tx.capitalTransaction.deleteMany({
+      where: { saleId, description: { startsWith: "Aporte — comissão do seguro" } },
+    });
+    return tx.sale.update({
+      where: { id: saleId },
+      data: { insuranceAmount: null, insuranceCommissionAmount: 0, insuranceSettledAt: null },
+    });
+  });
+}
+
 export async function reverseReturn(saleId: string) {
   const sale = await prisma.sale.findUniqueOrThrow({
     where: { id: saleId },
@@ -1804,7 +2424,9 @@ export async function createExpensePayable(input: {
       ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
       : input.capitalBeneficiaryId
         ? await structuralCenterId("CAPITAL")
-        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO"));
+        : // Sem veículo indicado, "Veículos" vira Administrativo (o gasto é da
+          // loja, não de um carro).
+          await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId)));
   const paymentDate = input.paid ? input.paymentDate || input.dueDate : null;
   const accountId = input.paid ? input.accountId ?? (await getDefaultAccountId()) : null;
 
@@ -1829,7 +2451,7 @@ export async function createExpensePayable(input: {
         purchaseRequestId: input.purchaseRequestId || null,
       },
     });
-    if (input.vehicleId) {
+    if (input.vehicleId && !isVehiclePurchase(input.category)) {
       await tx.vehicleCost.create({
         data: {
           vehicleId: input.vehicleId,
@@ -1865,6 +2487,156 @@ export async function createExpensePayable(input: {
 }
 
 /**
+ * Edita um título a receber MANUAL e ainda não recebido. Só chega aqui o que a
+ * action liberou (sem origem em venda/peça/recorrência), então não há nada a
+ * ressincronizar além do capital: se o título tiver um sócio, o aporte nasce na
+ * baixa já com o valor novo (enquanto pendente, nenhuma movimentação existe).
+ */
+export async function updateManualReceivable(input: {
+  id: string;
+  description: string;
+  category: CategoriaReceber;
+  categoryLabel?: string | null;
+  documentNumber?: string | null;
+  amount: number;
+  dueDate: Date;
+  customerId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  costCenterId?: string | null;
+  structuralKey?: StructuralKey;
+  notes?: string | null;
+}) {
+  const centerId =
+    input.costCenterId ||
+    (input.capitalBeneficiaryId
+      ? await structuralCenterId("CAPITAL")
+      : await structuralCenterId(effectiveStructuralKey(input.structuralKey, null)));
+
+  const receivable = await prisma.receivable.update({
+    where: { id: input.id },
+    data: {
+      description: input.description,
+      category: input.category,
+      categoryLabel: input.categoryLabel || null,
+      documentNumber: input.documentNumber || null,
+      amount: input.amount,
+      dueDate: input.dueDate,
+      customerId: input.customerId || null,
+      capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+      costCenterId: centerId,
+      notes: input.notes || null,
+    },
+  });
+  await syncReceivableCapital(input.id);
+  return receivable;
+}
+
+/**
+ * Cria de uma vez TODAS as parcelas de um lançamento parcelado (mesmo destino,
+ * mesmo fornecedor/categoria — muda só descrição, valor e vencimento).
+ *
+ * Existe por desempenho: criar parcela a parcela repetia, por título, a busca do
+ * centro de custo e do veículo mais uma transação própria — 360 parcelas viravam
+ * mais de mil idas ao banco. Aqui o destino é resolvido UMA vez e as parcelas
+ * entram num único `createMany` (os custos de veículo, em outro).
+ *
+ * As parcelas sempre nascem PENDENTES, então não há caixa nem retirada de
+ * capital envolvidos (o capital se move na baixa, via `syncPayableCapital`).
+ */
+export async function createInstallmentPayables(input: {
+  parcels: { description: string; amount: number; dueDate: Date }[];
+  category: CategoriaPagar;
+  categoryLabel?: string | null;
+  documentNumber?: string | null;
+  supplierId?: string | null;
+  vehicleId?: string | null;
+  capitalBeneficiaryId?: string | null;
+  costCenterId?: string | null;
+  structuralKey?: StructuralKey;
+  notes?: string | null;
+  purchaseRequestId?: string | null;
+  /** Ids dos títulos criados, na ordem das parcelas. */
+}): Promise<string[]> {
+  if (input.parcels.length === 0) return [];
+
+  // Mesma regra de destino de createExpensePayable — resolvida uma única vez.
+  let vehicleSold = false;
+  if (input.vehicleId) {
+    const v = await prisma.vehicle.findUnique({
+      where: { id: input.vehicleId },
+      select: { status: true },
+    });
+    vehicleSold = v?.status === "VENDIDO";
+  }
+  const centerId =
+    input.costCenterId ||
+    (input.vehicleId
+      ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
+      : input.capitalBeneficiaryId
+        ? await structuralCenterId("CAPITAL")
+        : await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId)));
+
+  const data: Prisma.PayableCreateManyInput[] = input.parcels.map((p) => ({
+    description: p.description,
+    category: input.category,
+    categoryLabel: input.categoryLabel || null,
+    documentNumber: input.documentNumber || null,
+    amount: p.amount,
+    dueDate: p.dueDate,
+    status: "PENDENTE",
+    costCenterId: centerId,
+    supplierId: input.supplierId || null,
+    vehicleId: input.vehicleId || null,
+    capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+    notes: input.notes || null,
+    purchaseRequestId: input.purchaseRequestId || null,
+  }));
+
+  // A descrição é única dentro do lote ("Parcela i/N"), então serve de chave
+  // para casar cada título criado com a sua parcela.
+  const byDescription = new Map(input.parcels.map((p) => [p.description, p]));
+  const idsInOrder = (created: { id: string; description: string }[]) => {
+    const byDesc = new Map(created.map((row) => [row.description, row.id]));
+    return input.parcels.map((p) => byDesc.get(p.description)!).filter(Boolean);
+  };
+
+  // Sem veículo — ou sendo a própria compra do carro, que não vira custo dele.
+  if (!input.vehicleId || isVehiclePurchase(input.category)) {
+    const created = await prisma.payable.createManyAndReturn({
+      data,
+      select: { id: true, description: true },
+    });
+    return idsInOrder(created);
+  }
+
+  // Com veículo, cada parcela também vira custo do carro.
+  return prisma.$transaction(async (tx) => {
+    const created = await tx.payable.createManyAndReturn({
+      data,
+      select: { id: true, description: true },
+    });
+    await tx.vehicleCost.createMany({
+      data: created.map((row) => {
+        const p = byDescription.get(row.description)!;
+        return {
+          vehicleId: input.vehicleId!,
+          description: input.categoryLabel
+            ? `${input.categoryLabel}: ${p.description}`
+            : p.description,
+          category: "OUTROS" as const,
+          amount: p.amount,
+          date: p.dueDate,
+          postSale: vehicleSold,
+          notes: input.notes || null,
+          payableId: row.id,
+        };
+      }),
+    });
+    return idsInOrder(created);
+  });
+}
+
+/**
  * Edita um título manual (não pago) permitindo mudar o destino: fluxo, veículo e
  * beneficiário do capital. Mantém o custo do veículo (VehicleCost) e o centro de
  * custo coerentes — cria/move/remove o VehicleCost conforme o veículo escolhido.
@@ -1892,7 +2664,8 @@ export async function updateManualPayable(input: {
     ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
     : input.capitalBeneficiaryId
       ? await structuralCenterId("CAPITAL")
-      : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+      : // Sem veículo indicado, "Veículos" vira Administrativo.
+        await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId));
 
   return prisma.$transaction(async (tx) => {
     const payable = await tx.payable.update({
@@ -1912,9 +2685,11 @@ export async function updateManualPayable(input: {
       },
     });
 
-    // Sincroniza o custo do veículo com o novo destino.
+    // Sincroniza o custo do veículo com o novo destino. O título da COMPRA do
+    // carro fica de fora (o valor já é o preço de compra do veículo) — e se um
+    // custo desses já tiver sido criado por engano, ele sai aqui.
     const existing = await tx.vehicleCost.findUnique({ where: { payableId: input.id } });
-    if (input.vehicleId) {
+    if (input.vehicleId && !isVehiclePurchase(input.category)) {
       const costData = {
         vehicleId: input.vehicleId,
         description: input.categoryLabel ? `${input.categoryLabel}: ${input.description}` : input.description,
@@ -1953,7 +2728,8 @@ export async function createCashEntry(input: {
       ? await structuralCenterId("VEICULOS")
       : input.capitalBeneficiaryId
         ? await structuralCenterId("CAPITAL")
-        : await structuralCenterId(input.structuralKey || "ADMINISTRATIVO");
+        : // Sem veículo indicado, "Veículos" vira Administrativo.
+          await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId));
     return prisma.$transaction(async (tx) => {
       const receivable = await tx.receivable.create({
         data: {
@@ -2082,10 +2858,81 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
+      // Conta a receber manual não tem veículo — "Veículos" vira Administrativo.
       costCenterId:
-        input.costCenterId || (await structuralCenterId(input.structuralKey || "ADMINISTRATIVO")),
+        input.costCenterId ||
+        (await structuralCenterId(effectiveStructuralKey(input.structuralKey, null))),
       accountId: defaultAccountId,
       notes: input.notes || null,
     },
+  });
+}
+
+/**
+ * Corrige a DATA DE UMA BAIXA já feita (o dia em que o dinheiro entrou ou saiu),
+ * sem desfazer nada.
+ *
+ * Existe porque a data da baixa nunca é digitada: ela vem da data de trabalho do
+ * caixa aberto. Baixar com o caixa no dia errado só se corrigia fechando o
+ * caixa, reabrindo na data certa, revertendo e refazendo a baixa — e no caminho
+ * se perdia a conta escolhida.
+ *
+ * O que se move junto é só o que está ligado por chave estrangeira, para o
+ * resultado ser previsível: a movimentação de capital gerada pela baixa e, no
+ * caso de um título a pagar, o custo do veículo que ele originou. Nada é
+ * descoberto por semelhança de data ou de descrição.
+ *
+ * Vencimento (`dueDate`) NÃO muda: vencer e pagar são coisas diferentes.
+ */
+
+/** O que uma correção de data mexeu, para avisar na tela. */
+export type DateFixResult = { movedCapital: boolean; movedVehicleCost: boolean };
+
+export async function correctReceivedDate(
+  receivableId: string,
+  newDate: Date,
+): Promise<DateFixResult> {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: receivableId },
+    select: { id: true, status: true, receivedDate: true },
+  });
+  if (r.status !== "RECEBIDO") throw new Error("Só dá para corrigir a data de um título já recebido.");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.update({ where: { id: r.id }, data: { receivedDate: newDate } });
+    // A movimentação de capital copia a data da baixa quando é criada
+    // (finance.ts, syncReceivableCapital) e nunca é reescrita depois.
+    const cap = await tx.capitalTransaction.updateMany({
+      where: { receivableId: r.id },
+      data: { date: newDate },
+    });
+    return { movedCapital: cap.count > 0, movedVehicleCost: false };
+  });
+}
+
+export async function correctPaymentDate(
+  payableId: string,
+  newDate: Date,
+): Promise<DateFixResult> {
+  const p = await prisma.payable.findUniqueOrThrow({
+    where: { id: payableId },
+    select: { id: true, status: true, paymentDate: true },
+  });
+  if (p.status !== "PAGO") throw new Error("Só dá para corrigir a data de um título já pago.");
+
+  return prisma.$transaction(async (tx) => {
+    await tx.payable.update({ where: { id: p.id }, data: { paymentDate: newDate } });
+    const cap = await tx.capitalTransaction.updateMany({
+      where: { payableId: p.id },
+      data: { date: newDate },
+    });
+    // Custo de veículo gerado por este título (peça, serviço, combustível,
+    // desconto concedido): a data do custo tem de acompanhar a do pagamento,
+    // senão o Lucro/Prejuízo e a ficha do carro apontam meses diferentes.
+    const cost = await tx.vehicleCost.updateMany({
+      where: { payableId: p.id },
+      data: { date: newDate },
+    });
+    return { movedCapital: cap.count > 0, movedVehicleCost: cost.count > 0 };
   });
 }

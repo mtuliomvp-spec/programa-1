@@ -1,10 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { markPendingAction, payBatchAction, deletePayablesAction } from "./actions";
+import {
+  markPendingAction,
+  payBatchAction,
+  deletePayablesAction,
+  correctPaymentDateAction,
+} from "./actions";
+import FixDateButton from "@/components/FixDateButton";
+import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
 
 type Account = { id: string; name: string };
@@ -16,19 +24,28 @@ export type PayableRow = {
   categoryLabel: string;
   documentNumber: string | null;
   supplierName: string | null;
+  beneficiaryName: string | null;
   vehicleLabel: string | null;
   dueDate: string; // ISO
   amount: number;
   effective: "PENDENTE" | "PAGO" | "ATRASADO";
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
+  /** Data do pagamento (yyyy-mm-dd) quando já pago, para corrigir. */
+  paymentDateInput: string | null;
   recurring: boolean;
+  // Combo de pagamento em que o título está (montado/solicitado por um usuário).
+  combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
   // Manual e não pago: pode editar/excluir direto por aqui.
   editable: boolean;
+  // Fatura de cartão de crédito: mostra o link do relatório de lançamentos.
+  cardInvoice: boolean;
   // Tem anexo (NF/comprovante) no título ou na solicitação de origem.
   hasAttachment: boolean;
-  // Comissão de vendedor vinculado a beneficiário: permite pagar com excedente.
-  commissionExcess: { beneficiaryName: string; free: number } | null;
+  // Comissão de vendedor vinculado a beneficiário: permite acertar o capital na baixa.
+  commissionExcess: { beneficiaryName: string; free: number; capital: number } | null;
+  // Comissão de vendedor SEM beneficiário do capital vinculado: mostra uma dica.
+  commissionSellerUnlinked: boolean;
 };
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
@@ -38,21 +55,52 @@ export default function PayablesTable({
   rows,
   accounts,
   canPagar = true,
+  canFixDate = false,
   canManage = false,
+  canEdit,
+  canCombo = false,
   cashboxDate = null,
+  openCombos = [],
 }: {
   rows: PayableRow[];
   accounts: Account[];
   canPagar?: boolean;
+  /** Pode corrigir a data de um pagamento já feito. */
+  canFixDate?: boolean;
   canManage?: boolean;
+  // Link "Editar" da linha (permissão granular financeiro.editar); sem a prop,
+  // vale o mesmo que canManage.
+  canEdit?: boolean;
+  canCombo?: boolean;
   cashboxDate?: string | null;
+  openCombos?: { id: string; name: string }[];
 }) {
+  const showEdit = canEdit ?? canManage;
+  const router = useRouter();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
+  const [comboId, setComboId] = useState(openCombos[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
+  const [addingCombo, startAddCombo] = useTransition();
+
+  function addToCombo() {
+    const ids = [...selected];
+    if (!ids.length || !comboId) return;
+    setMsg(null);
+    startAddCombo(async () => {
+      const r = await addPayablesToComboAction(comboId, ids);
+      if (!r.ok) {
+        setMsg(r.error || "Não foi possível adicionar ao combo.");
+        return;
+      }
+      setSelected(new Set());
+      setMsg(`${r.added} título(s) adicionado(s) ao combo.`);
+      router.refresh();
+    });
+  }
 
   const payableRows = rows.filter((r) => r.effective !== "PAGO");
   const allSelected = payableRows.length > 0 && payableRows.every((r) => selected.has(r.id));
@@ -187,6 +235,16 @@ export default function PayablesTable({
                   {p.documentNumber ? (
                     <p className="mt-0.5 text-[11px] font-normal text-slate-400">Doc. {p.documentNumber}</p>
                   ) : null}
+                  {p.combo ? (
+                    <Link
+                      href={`/financeiro/combos/${p.combo.id}`}
+                      className="mt-1 flex w-fit items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[11px] font-medium text-violet-700 hover:bg-violet-200"
+                      title={`${p.combo.status === "SOLICITADO" ? "Pagamento solicitado" : "No combo (em montagem)"}${p.combo.userName ? ` por ${p.combo.userName}` : ""} — combo "${p.combo.name}"`}
+                    >
+                      🧺 {p.combo.status === "SOLICITADO" ? "Pagamento solicitado" : "Em combo"}
+                      {p.combo.userName ? ` · ${p.combo.userName}` : ""}
+                    </Link>
+                  ) : null}
                 </Td>
                 <Td>{p.categoryLabel}</Td>
                 <Td>{p.supplierName || "-"}</Td>
@@ -201,13 +259,29 @@ export default function PayablesTable({
                 </Td>
                 <Td>
                   <div className="flex items-center justify-end gap-3">
-                    {p.editable && canManage ? (
+                    {p.cardInvoice ? (
+                      <Link
+                        href={`/financeiro/a-pagar/${p.id}/fatura`}
+                        className="text-sm font-medium text-blue-700 hover:underline"
+                        title="Lançamentos da fatura: buscar, filtrar por sócio e gerar PDF"
+                      >
+                        Fatura
+                      </Link>
+                    ) : null}
+                    {p.editable && showEdit ? (
                       <Link
                         href={`/financeiro/a-pagar/${p.id}/editar`}
                         className="text-sm font-medium text-blue-700 hover:underline"
                       >
                         Editar
                       </Link>
+                    ) : null}
+                    {p.status === "PAGO" && canFixDate && p.paymentDateInput ? (
+                      <FixDateButton
+                        currentDate={p.paymentDateInput}
+                        kind="pagamento"
+                        onSave={(d) => correctPaymentDateAction(p.id, d)}
+                      />
                     ) : null}
                     {p.status === "PAGO" && canPagar ? (
                       <button
@@ -225,8 +299,16 @@ export default function PayablesTable({
                         accounts={accounts}
                         beneficiaryName={p.commissionExcess.beneficiaryName}
                         free={p.commissionExcess.free}
+                        capital={p.commissionExcess.capital}
                         cashboxDate={cashboxDate}
                       />
+                    ) : selectable && canPagar && p.commissionSellerUnlinked ? (
+                      <span
+                        className="cursor-help text-xs text-slate-400"
+                        title={`Para aplicar a comissão no capital, vincule ${p.beneficiaryName ?? "o vendedor"} a um beneficiário do capital (módulo Capital → beneficiário → vincular ao usuário).`}
+                      >
+                        ⓘ capital
+                      </span>
                     ) : null}
                   </div>
                 </Td>
@@ -291,6 +373,32 @@ export default function PayablesTable({
                       : `Pagar ${selected.size} títulos`}
                 </button>
               </>
+            ) : null}
+            {canCombo && openCombos.length > 0 ? (
+              <label className="flex flex-col gap-1 text-xs text-slate-500">
+                Adicionar ao combo
+                <span className="flex items-center gap-2">
+                  <select
+                    value={comboId}
+                    onChange={(e) => setComboId(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+                  >
+                    {openCombos.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={addingCombo || !comboId}
+                    onClick={addToCombo}
+                    className="h-9 rounded-lg border border-blue-300 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                  >
+                    {addingCombo ? "Adicionando..." : "🧺 Adicionar"}
+                  </button>
+                </span>
+              </label>
             ) : null}
             {canManage ? (
               <button

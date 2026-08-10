@@ -2,14 +2,13 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { prisma } from "@/lib/prisma";
 import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
-import type { CategoriaPagar } from "@prisma/client";
+import { resolveDespesaCategory } from "@/lib/categories";
 
 const schema = z.object({
   kind: z.enum(["entrada", "saida"]),
@@ -28,22 +27,6 @@ const schema = z.object({
 });
 
 export type CashEntryState = { error?: string; ok?: boolean };
-
-// Rótulos "de fábrica" já mapeados para uma categoria contábil do enum.
-const KNOWN: Record<string, CategoriaPagar> = {
-  outros: "OUTROS",
-  "despesa operacional": "DESPESA_OPERACIONAL",
-  comissão: "COMISSAO",
-  comissao: "COMISSAO",
-  salário: "SALARIO",
-  salario: "SALARIO",
-  combustível: "COMBUSTIVEL",
-  combustivel: "COMBUSTIVEL",
-};
-
-function mapCategory(label?: string): CategoriaPagar {
-  return KNOWN[(label || "").trim().toLowerCase()] || "OUTROS";
-}
 
 export async function createCashEntryAction(
   _prev: CashEntryState,
@@ -70,14 +53,14 @@ export async function createCashEntryAction(
   const isCapital = d.structuralKey === "CAPITAL";
   const supplierName = (d.supplierName || "").trim();
 
-  // Toda saída precisa de categoria; e de fornecedor (ou, no Capital, do
-  // beneficiário do capital).
+  // Toda saída precisa de categoria; e de fornecedor — exceto no Capital, onde
+  // o fornecedor é opcional (o valor pode ter sido pago ao próprio beneficiário).
   if (d.kind === "saida") {
     if (!label) return { error: "Informe a categoria do lançamento." };
     if (isCapital && !d.capitalBeneficiaryId) {
       return { error: "Escolha o beneficiário do capital." };
     }
-    if (!supplierName) {
+    if (!supplierName && !isCapital) {
       return { error: "Informe o fornecedor do lançamento." };
     }
   } else if (isCapital && !d.capitalBeneficiaryId) {
@@ -85,14 +68,8 @@ export async function createCashEntryAction(
     return { error: "Escolha o beneficiário do capital (aporte)." };
   }
 
-  // Categoria nova (não é uma das padrão) é cadastrada para reaproveitar.
-  if (label && !KNOWN[label.toLowerCase()]) {
-    await prisma.launchCategory.upsert({
-      where: { name: label },
-      update: {},
-      create: { name: label },
-    });
-  }
+  // Resolve a categoria da saída (rótulo canônico + enum); cria custom se nova.
+  const cat = d.kind === "saida" && label ? await resolveDespesaCategory(label) : null;
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
   // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
@@ -105,8 +82,8 @@ export async function createCashEntryAction(
     amount: d.amount,
     date: parseDateInput(d.date),
     accountId: d.accountId,
-    category: d.kind === "saida" ? mapCategory(label) : undefined,
-    categoryLabel: d.kind === "saida" && label ? label : null,
+    category: d.kind === "saida" ? cat?.category ?? "OUTROS" : undefined,
+    categoryLabel: cat?.label ?? null,
     documentNumber: d.documentNumber?.trim() || null,
     structuralKey: d.structuralKey,
     supplierId,

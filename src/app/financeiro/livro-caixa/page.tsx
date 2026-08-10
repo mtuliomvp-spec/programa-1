@@ -7,11 +7,13 @@ import { getCashboxState } from "@/lib/cashbox";
 import { userCan } from "@/lib/guards";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
+import { listCategoryNames } from "@/lib/categories";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
 import CashEntryForm from "./CashEntryForm";
 import DeleteCashEntryButton from "./DeleteCashEntryButton";
+import FixEntryDateButton from "./FixEntryDateButton";
 
 export const dynamic = "force-dynamic";
 
@@ -54,8 +56,9 @@ export default async function LivroCaixaPage({
   const cashbox = await getCashboxState();
   const cashboxWorkDate = cashbox.open ? cashbox.session?.workDate ?? null : null;
   const canCriar = await userCan("financeiro", "criar");
+  const canFixDate = await userCan("financeiro", "corrigirdata");
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, customCategories, beneficiaries, customers, health] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, categoryOptions, beneficiaries, customers, health] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -99,7 +102,7 @@ export default async function LivroCaixaPage({
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
         select: { id: true, brand: true, model: true, plate: true, status: true },
       }),
-      prisma.launchCategory.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
+      listCategoryNames("DESPESA"),
       prisma.capitalBeneficiary.findMany({
         where: { active: true },
         orderBy: { name: "asc" },
@@ -124,10 +127,6 @@ export default async function LivroCaixaPage({
   // Oculta só por padrão; a busca ou o botão "Ver lançamentos" (ver=1) revela.
   const hideEntries = monthClosed && !filtering && !reveal;
 
-  const DEFAULT_CATEGORIES = ["Outros", "Despesa operacional", "Comissão", "Salário", "Combustível", "Tráfego pago"];
-  const categoryOptions = Array.from(
-    new Set([...DEFAULT_CATEGORIES, ...customCategories.map((c) => c.name)]),
-  );
   const vehicleOptions = stockVehicles.map((v) => ({
     id: v.id,
     label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
@@ -163,6 +162,9 @@ export default async function LivroCaixaPage({
     // se é exclusão de vez (dinheiro lançado direto no caixa) ou estorno do
     // título (volta pendente ao a-pagar/receber).
     deletable?: { kind: "entrada" | "saida"; id: string; avulso: boolean };
+    // Baixa de título (entrada recebida ou saída paga): permite corrigir o dia.
+    // Transferência entre contas não entra — ali a data é do próprio lançamento.
+    fixable?: { kind: "entrada" | "saida"; id: string; dateInput: string };
   };
 
   const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
@@ -194,6 +196,7 @@ export default async function LivroCaixaPage({
       account: r.account?.name ?? null,
       kind: "entrada" as const,
       amount: r.amount,
+      fixable: { kind: "entrada", id: r.id, dateInput: toDateInputValue(r.receivedDate!) } as const,
       deletable:
         !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null
           ? ({ kind: "entrada", id: r.id, avulso: r.avulso } as const)
@@ -210,6 +213,7 @@ export default async function LivroCaixaPage({
       kind: "saida" as const,
       amount: p.amount,
       href: `/financeiro/a-pagar/${p.id}/ordem`,
+      fixable: { kind: "saida", id: p.id, dateInput: toDateInputValue(p.paymentDate!) } as const,
       deletable:
         !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId
           ? ({ kind: "saida", id: p.id, avulso: p.avulso } as const)
@@ -271,7 +275,7 @@ export default async function LivroCaixaPage({
             >
               Mês seguinte →
             </LinkButton>
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />
@@ -477,6 +481,13 @@ export default async function LivroCaixaPage({
                       ) : (
                         m.description
                       )}
+                      {m.fixable && canFixDate ? (
+                        <FixEntryDateButton
+                          kind={m.fixable.kind}
+                          id={m.fixable.id}
+                          currentDate={m.fixable.dateInput}
+                        />
+                      ) : null}
                       {m.deletable && canCriar ? (
                         <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} avulso={m.deletable.avulso} />
                       ) : null}

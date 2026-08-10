@@ -23,6 +23,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
       tradeInVehicle: true,
       customer: true,
       receivables: { orderBy: { installmentNumber: "asc" } },
+      ownerRefundBeneficiary: { select: { name: true } },
     },
   });
 
@@ -53,6 +54,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             <LinkButton href={`/vendas/${sale.id}/contrato`} variant="secondary">
               📝 Contrato de venda
             </LinkButton>
+            {sale.vehicle.consigned ? (
+              <LinkButton href={`/estoque/${sale.vehicleId}/contrato`} variant="secondary">
+                📝 Contrato de compra (consignante)
+              </LinkButton>
+            ) : null}
             {sale.tradeInVehicle ? (
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca
@@ -90,6 +96,26 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
+      {sale.insuranceSold ? (
+        <div
+          className={`mt-4 rounded-lg border px-5 py-3 text-sm ${
+            sale.insuranceSettledAt
+              ? "border-emerald-200 bg-emerald-50/60 text-emerald-800"
+              : "border-amber-200 bg-amber-50/60 text-amber-800"
+          }`}
+        >
+          <strong>Seguro do financiamento</strong>:{" "}
+          {sale.insuranceSettledAt
+            ? `comissão de ${formatCurrency(sale.insuranceAmount ?? 0)} recebida em ${formatDate(sale.insuranceSettledAt)}${
+                sale.insuranceCommissionAmount > 0
+                  ? ` · comissão do vendedor ${formatCurrency(sale.insuranceCommissionAmount)}`
+                  : ""
+              }`
+            : "comissão a receber — o valor é informado quando cair (tela Financiamentos)"}
+          .
+        </div>
+      ) : null}
+
       <div className="mt-4">
         <Card>
           <CardHeader title="Contas a receber geradas" description="Parcelas e valores vinculados a esta venda" />
@@ -118,14 +144,44 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
         </Card>
       </div>
 
-      {sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || (sale.transferCharged && sale.transferAmount > 0) || sale.returnCommissionAmount > 0 || sale.viaPaidTraffic || sale.notes ? (
+      {sale.consigned || sale.sellerName || sale.commissionAmount > 0 || referrals.length > 0 || (sale.transferCharged && sale.transferAmount > 0) || sale.returnCommissionAmount > 0 || sale.viaPaidTraffic || sale.notes ? (
         <div className="mt-4">
           <Card className="p-5 text-sm text-slate-600">
+            {sale.consigned ? (
+              <p>
+                <span className="font-medium text-slate-800">Devolução ao proprietário:</span>{" "}
+                {(() => {
+                  const payoff = sale.vehicle.payoffAmount || 0;
+                  const debts = sale.vehicle.debtsAmount || 0;
+                  const liquido = Math.max(0, sale.ownerRefundAmount - payoff - debts);
+                  const destino = sale.ownerRefundToCapital
+                    ? `aporte de capital${sale.ownerRefundBeneficiary?.name ? ` de ${sale.ownerRefundBeneficiary.name}` : ""}`
+                    : "conta a pagar ao proprietário";
+                  return (
+                    <>
+                      {formatCurrency(liquido)}{" "}
+                      <span className="text-slate-400">— líquido ({destino})</span>
+                      {payoff > 0 || debts > 0 ? (
+                        <span className="text-slate-400">
+                          {" "}· acertado {formatCurrency(sale.ownerRefundAmount)}
+                          {payoff > 0 ? `, quitação ${formatCurrency(payoff)}` : ""}
+                          {debts > 0 ? `, débitos ${formatCurrency(debts)}` : ""} (repasse aos credores)
+                        </span>
+                      ) : null}
+                    </>
+                  );
+                })()}
+              </p>
+            ) : null}
             {sale.sellerName ? <p><span className="font-medium text-slate-800">Vendedor:</span> {sale.sellerName}</p> : null}
             {sale.commissionAmount > 0 ? (
               <p className="mt-1">
                 <span className="font-medium text-slate-800">Comissão do vendedor:</span> {formatCurrency(sale.commissionAmount)}{" "}
-                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+                <span className="text-slate-400">
+                  {sale.commissionToCapital
+                    ? "— aplicada no capital do vendedor (aporte)"
+                    : "— lançada em Contas a pagar (Comissão)"}
+                </span>
               </p>
             ) : null}
             {sale.transferCharged && sale.transferAmount > 0 ? (
@@ -137,7 +193,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
             {sale.returnCommissionAmount > 0 ? (
               <p className="mt-1">
                 <span className="font-medium text-slate-800">Comissão do retorno:</span> {formatCurrency(sale.returnCommissionAmount)}{" "}
-                <span className="text-slate-400">— lançada em Contas a pagar (Comissão)</span>
+                <span className="text-slate-400">
+                  {sale.commissionToCapital
+                    ? "— aplicada no capital do vendedor (aporte)"
+                    : "— lançada em Contas a pagar (Comissão)"}
+                </span>
               </p>
             ) : null}
             {referrals.map((r, i) => (

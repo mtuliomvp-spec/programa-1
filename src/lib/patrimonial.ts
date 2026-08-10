@@ -1,6 +1,9 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances } from "@/lib/accounts";
+import { timed } from "@/lib/perf";
+import { getAccountsWithBalances, type AccountWithBalance } from "@/lib/accounts";
+
+type AccountsInput = AccountWithBalance[] | Promise<AccountWithBalance[]>;
 
 /**
  * Posição patrimonial no estilo Agrasty, com a equação patrimonial.
@@ -25,6 +28,7 @@ export type PatrimonialStats = {
   veiculosAReceber: number;
   sinaisRecebidos: number;
   devolucoesClientes: number;
+  devolucoesProprietario: number;
   veiculosAPagarPosVenda: number;
   pecasAPagar: number;
   comissoesAPagar: number;
@@ -39,10 +43,24 @@ export type PatrimonialStats = {
   lucro: number;
 };
 
-export async function getPatrimonialStats(): Promise<PatrimonialStats> {
+/**
+ * @param preloadedAccounts saldos das contas já pedidos por quem chama — aceita
+ * o array pronto OU a promessa ainda em voo, para não perder o paralelismo.
+ * Evita recalcular: o farol (books-health) e a tela de Contas também precisam
+ * dos saldos e antes pediam a mesma soma duas/três vezes no mesmo request.
+ */
+export async function getPatrimonialStats(
+  preloadedAccounts?: AccountsInput,
+): Promise<PatrimonialStats> {
+  return timed("equação patrimonial", () => patrimonialStats(preloadedAccounts));
+}
+
+async function patrimonialStats(
+  preloadedAccounts?: AccountsInput,
+): Promise<PatrimonialStats> {
   const now = new Date();
-  const [accounts, payables, receivables, parts, capitalTx] = await Promise.all([
-    getAccountsWithBalances(),
+  const [accounts, payables, receivables, parts, capitalTx, custosVendidosPendentes] = await Promise.all([
+    preloadedAccounts ?? getAccountsWithBalances(),
     prisma.payable.findMany({
       select: {
         amount: true,
@@ -60,6 +78,24 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
     prisma.capitalTransaction.findMany({ select: { kind: true, amount: true } }),
+    // Custos de veículo JÁ VENDIDO ainda não pagos (peça/serviço a prazo,
+    // combustível, item de fatura de cartão...): o custo já saiu no resultado
+    // na data da venda (a margem soma os custos pré-venda por competência,
+    // pagos ou não), mas o dinheiro ainda não saiu do caixa. É passivo puro e
+    // entra subtraindo — espelha a quitação da compra (COMPRA_VEICULO abaixo).
+    // Custos pós-venda ficam FORA: o Lucro/Prejuízo só os reconhece quando
+    // pagos, então pendente é neutro dos dois lados.
+    prisma.vehicleCost.findMany({
+      where: {
+        postSale: false,
+        vehicle: { status: "VENDIDO" },
+        OR: [
+          { payable: { status: { in: ["PENDENTE", "ATRASADO"] } } },
+          { cardItem: { payable: { status: { in: ["PENDENTE", "ATRASADO"] } } } },
+        ],
+      },
+      select: { amount: true },
+    }),
   ]);
 
   const saldoCaixa = accounts.reduce((s, a) => s + a.balance, 0);
@@ -76,6 +112,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
   let titulosVencidosCount = 0;
   let titulosVencidosValor = 0;
   let devolucoesClientes = 0;
+  let devolucoesProprietario = 0;
   let veiculosAPagarPosVenda = 0;
   let pecasAPagar = 0;
   let comissoesAPagar = 0;
@@ -103,6 +140,9 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       // débitos da troca): o carro (ativo pago) já saiu da equação, mas a
       // dívida continua. Vira passivo puro e entra subtraindo — assim o lucro
       // fica correto na hora da venda e não muda quando a dívida for paga.
+      // (Os DEMAIS custos pendentes de veículo vendido — peça, serviço,
+      // combustível, cartão — entram no mesmo balde via custosVendidosPendentes,
+      // somados após este loop; COMPRA_VEICULO não tem VehicleCost, sem 2x.)
       if (
         p.category === "COMPRA_VEICULO" &&
         !!p.vehicleId &&
@@ -117,11 +157,29 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
       if (p.category === "DEVOLUCAO_CLIENTE") {
         devolucoesClientes += p.amount;
       }
-      // Comissão do vendedor de uma venda: custo direto da venda já realizada.
-      // Entra subtraindo enquanto pendente (competência), casando com a
-      // comissão reconhecida no Lucro/Prejuízo na data da venda. Ao ser paga,
-      // sai do caixa e o efeito continua o mesmo (não conta duas vezes).
-      if (p.category === "COMISSAO" && p.saleId) {
+      // Devolução ao proprietário do consignado ainda não paga: o dinheiro da
+      // venda está no caixa mas é do dono do carro, então entra subtraindo
+      // (quando for paga, sai do caixa e o efeito já está refletido — não conta
+      // duas vezes). No destino "aporte de capital" não existe este título: lá o
+      // valor já entra subtraindo via saldoCapital (aporte do beneficiário).
+      if (p.category === "DEVOLUCAO_PROPRIETARIO") {
+        devolucoesProprietario += p.amount;
+      }
+      // Custos gerados por uma venda já realizada (comissão do vendedor,
+      // indicações, transferência DETRAN): entram subtraindo enquanto pendentes,
+      // casando com o que o Lucro/Prejuízo já reconheceu por competência na data
+      // da venda. Ao serem pagos, saem do caixa e o efeito continua o mesmo
+      // (não conta duas vezes).
+      // O que manda aqui é o VÍNCULO com a venda (saleId), não a categoria —
+      // assim renomear/reclassificar o título não desequilibra a equação.
+      // Devoluções e compra de veículo têm baldes próprios (e se ligam pelo
+      // veículo, não pela venda); ficam de fora por segurança.
+      if (
+        p.saleId &&
+        p.category !== "DEVOLUCAO_CLIENTE" &&
+        p.category !== "DEVOLUCAO_PROPRIETARIO" &&
+        p.category !== "COMPRA_VEICULO"
+      ) {
         comissoesAPagar += p.amount;
       }
       if (p.dueDate < now) {
@@ -129,6 +187,13 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
         titulosVencidosValor += p.amount;
       }
     }
+  }
+
+  // Custos pré-venda ainda pendentes de veículos vendidos (query acima): já
+  // estão na margem do Lucro/Prejuízo, então a dívida subtrai aqui também —
+  // o farol fecha no ato da venda e não muda quando cada título for pago.
+  for (const c of custosVendidosPendentes) {
+    veiculosAPagarPosVenda += c.amount;
   }
 
   let veiculosRecebido = 0;
@@ -187,6 +252,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     consorcios -
     sinaisRecebidos -
     devolucoesClientes -
+    devolucoesProprietario -
     veiculosAPagarPosVenda -
     pecasAPagar -
     comissoesAPagar -
@@ -200,6 +266,7 @@ export async function getPatrimonialStats(): Promise<PatrimonialStats> {
     veiculosAReceber,
     sinaisRecebidos,
     devolucoesClientes,
+    devolucoesProprietario,
     veiculosAPagarPosVenda,
     pecasAPagar,
     comissoesAPagar,

@@ -2,7 +2,9 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import SupplierSelect from "@/components/SupplierSelect";
+import NewSupplierInline from "@/components/NewSupplierInline";
+import SupplierInput from "@/components/SupplierInput";
+import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
@@ -18,14 +20,14 @@ type Request = {
   estimatedAmount: number | null;
   dueDate: string | null;
   documentNumber: string | null;
-  category: string;
+  categoryLabel: string;
   installmentsCount: number;
   installmentPeriod: string | null;
   installmentDays: number;
   structuralKey: string | null;
   vehicleId: string | null;
   capitalBeneficiaryId: string | null;
-  supplierId: string | null;
+  supplierName: string;
 };
 
 export default function EditRequestForm({
@@ -33,15 +35,20 @@ export default function EditRequestForm({
   suppliers,
   vehicles,
   beneficiaries,
+  categories,
 }: {
   request: Request;
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(updateRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState(request.structuralKey || "ADMINISTRATIVO");
   const [parcelado, setParcelado] = useState(request.installmentsCount > 1);
+  const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
+  const [supplierName, setSupplierName] = useState(request.supplierName);
+  const [newSupplier, setNewSupplier] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [preparing, setPreparing] = useState(false);
   const submittingRef = useRef(false);
@@ -91,12 +98,7 @@ export default function EditRequestForm({
           <MoneyInput name="estimatedAmount" defaultValue={request.estimatedAmount} />
         </Field>
         <Field label="Categoria">
-          <Select name="category" defaultValue={request.category}>
-            <option value="OUTROS">Outros</option>
-            <option value="COMPRA_PECA">Compra de peças</option>
-            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-            <option value="COMBUSTIVEL">Combustível</option>
-          </Select>
+          <CategoryInput name="categoryLabel" options={categories} defaultValue={request.categoryLabel} />
         </Field>
       </div>
 
@@ -150,15 +152,19 @@ export default function EditRequestForm({
       </Field>
 
       {flow === "VEICULOS" ? (
-        <Field label="Veículo (opcional)">
+        <Field label="Veículo">
           <Select name="vehicleId" defaultValue={request.vehicleId || ""}>
-            <option value="">Nenhum (custo geral de veículos)</option>
+            <option value="">Ainda não sei a placa</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>
             ))}
           </Select>
+          <p className="mt-1 text-xs text-slate-500">
+            Sem a placa a solicitação fica esperando: a aprovação é recusada até você escolher o
+            carro. Se o gasto não for de um veículo, troque o fluxo para Administrativo.
+          </p>
         </Field>
       ) : null}
 
@@ -175,12 +181,30 @@ export default function EditRequestForm({
         </Field>
       ) : null}
 
-      <SupplierSelect
-        suppliers={suppliers}
-        label="Fornecedor"
-        emptyLabel="Sem fornecedor"
-        defaultValue={request.supplierId || ""}
-      />
+      <Field label="Fornecedor">
+        <SupplierInput
+          name="supplierName"
+          suppliers={supplierNames}
+          value={supplierName}
+          onValueChange={setSupplierName}
+        />
+        <button
+          type="button"
+          onClick={() => setNewSupplier((v) => !v)}
+          className="mt-1 text-xs font-medium text-blue-700 hover:underline"
+        >
+          {newSupplier ? "Fechar" : "➕ Cadastrar fornecedor"}
+        </button>
+        {newSupplier ? (
+          <NewSupplierInline
+            onCreated={(name) => {
+              setSupplierNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+              setSupplierName(name);
+              setNewSupplier(false);
+            }}
+          />
+        ) : null}
+      </Field>
 
       <Field label="Anexo (opcional — foto, PDF…)">
         <input

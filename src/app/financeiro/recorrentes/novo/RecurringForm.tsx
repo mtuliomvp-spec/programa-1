@@ -3,41 +3,77 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import NewSupplierInline from "@/components/NewSupplierInline";
-import { createRecurringAction, type RecurringFormState } from "../actions";
+import SupplierInput from "@/components/SupplierInput";
+import CategoryInput from "@/components/CategoryInput";
+import MoneyInput from "@/components/MoneyInput";
+import { createRecurringAction, updateRecurringAction, type RecurringFormState } from "../actions";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { toDateInputValue } from "@/lib/format";
 
 type Option = { id: string; name: string };
 
+export type RecurringInitial = {
+  kind: "PAGAR" | "RECEBER";
+  description: string;
+  amount: number;
+  structuralKey: string;
+  periodicidade: "MENSAL" | "DIAS";
+  dayOfMonth: number;
+  intervalDays: number | null;
+  anticipateToBusinessDay: boolean;
+  cardInvoice: boolean;
+  categoryLabel: string | null;
+  supplierName: string;
+  customerId: string | null;
+  capitalBeneficiaryId: string | null;
+  startDate: string; // yyyy-mm-dd
+  endDate: string | null;
+  notes: string | null;
+};
+
 export default function RecurringForm({
   suppliers,
   customers,
   beneficiaries,
+  despesaCategories,
+  receitaCategories,
+  initial,
+  id,
 }: {
   suppliers: Option[];
   customers: Option[];
   beneficiaries: Option[];
+  despesaCategories: string[];
+  receitaCategories: string[];
+  initial?: RecurringInitial;
+  id?: string;
 }) {
-  const [state, formAction, pending] = useActionState(createRecurringAction, {} as RecurringFormState);
-  const [kind, setKind] = useState<"PAGAR" | "RECEBER">("PAGAR");
-  const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">("MENSAL");
-  const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
+  const editing = !!id;
+  const [state, formAction, pending] = useActionState(
+    editing ? updateRecurringAction : createRecurringAction,
+    {} as RecurringFormState,
+  );
+  const [kind, setKind] = useState<"PAGAR" | "RECEBER">(initial?.kind ?? "PAGAR");
+  const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">(initial?.periodicidade ?? "MENSAL");
+  const [flow, setFlow] = useState<string>(initial?.structuralKey ?? "ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
-  // Fornecedor: lista + seleção controladas, para poder cadastrar um novo na hora.
-  const [supplierList, setSupplierList] = useState<Option[]>(suppliers);
-  const [supplierId, setSupplierId] = useState("");
+  // Fornecedor: campo com digitação livre e sugestões (mais fácil de achar numa
+  // lista grande). Envia o NOME; o servidor reaproveita/cadastra pelo nome.
+  const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
+  const [supplierName, setSupplierName] = useState(initial?.supplierName ?? "");
   const [newSupplier, setNewSupplier] = useState(false);
+  // Fatura de cartão: o título gerado tem lançamentos detalháveis e o valor
+  // pode começar em 0 (a soma dos lançamentos vira o valor do título).
+  const [cardInvoice, setCardInvoice] = useState(initial?.cardInvoice ?? false);
 
   const supplierField = (label: string) => (
     <Field label={label}>
-      <Select name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)}>
-        <option value="">Sem fornecedor</option>
-        {supplierList.map((s) => (
-          <option key={s.id} value={s.id}>
-            {s.name}
-          </option>
-        ))}
-      </Select>
+      <SupplierInput
+        name="supplierName"
+        suppliers={supplierNames}
+        value={supplierName}
+        onValueChange={setSupplierName}
+      />
       <button
         type="button"
         onClick={() => setNewSupplier((v) => !v)}
@@ -47,9 +83,9 @@ export default function RecurringForm({
       </button>
       {newSupplier ? (
         <NewSupplierInline
-          onCreated={(name, id) => {
-            setSupplierList((prev) => (prev.some((s) => s.id === id) ? prev : [...prev, { id, name }]));
-            setSupplierId(id);
+          onCreated={(name) => {
+            setSupplierNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+            setSupplierName(name);
             setNewSupplier(false);
           }}
         />
@@ -59,6 +95,7 @@ export default function RecurringForm({
 
   return (
     <form action={formAction} className="space-y-4">
+      {editing ? <input type="hidden" name="id" value={id} /> : null}
       {state.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}
@@ -76,17 +113,43 @@ export default function RecurringForm({
         <Input
           name="description"
           required
+          defaultValue={initial?.description}
           placeholder={kind === "PAGAR" ? "Ex: Aluguel do salão" : "Ex: Aluguel de sala anexa"}
         />
+        <p className="mt-1 text-xs text-slate-400">
+          Dica: escreva <code>{"{competencia}"}</code> na descrição e cada título sai com o mês de
+          competência (o mês anterior ao vencimento) — ex.: &quot;DAS — competência{" "}
+          {"{competencia}"}&quot; vira &quot;DAS — competência 05/2026&quot; no vencimento de junho.
+        </p>
       </Field>
 
+      {kind === "PAGAR" && !isCapital ? (
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="cardInvoice"
+            value="true"
+            checked={cardInvoice}
+            onChange={(e) => setCardInvoice(e.target.checked)}
+            className="mt-0.5"
+          />
+          <span>
+            💳 <strong>Fatura de cartão de crédito</strong> — o título do mês vira uma linha só e,
+            ao abrir, você digita os lançamentos da fatura (cada um no seu fluxo: Administrativo,
+            Veículos ou Capital). A recorrência serve para marcar o dia do pagamento; o valor do
+            título é a soma dos lançamentos.
+          </span>
+        </label>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label="Valor (R$)" required>
-          <Input type="number" step="0.01" min={0.01} name="amount" required />
+        <Field label={cardInvoice ? "Valor estimado (R$) — pode ser 0" : "Valor (R$)"} required>
+          <MoneyInput name="amount" required defaultValue={initial?.amount} />
         </Field>
         <Field label="Fluxo (obra estrutural)" required>
+          {/* Recorrência não tem veículo — sem carro, o fluxo é Administrativo. */}
           <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
-            {STRUCTURAL_FLOWS.map((f) => (
+            {STRUCTURAL_FLOWS.filter((f) => f.key !== "VEICULOS").map((f) => (
               <option key={f.key} value={f.key}>
                 {f.name}
               </option>
@@ -106,18 +169,31 @@ export default function RecurringForm({
         </Field>
         {periodicidade === "MENSAL" ? (
           <Field label="Dia do vencimento (1 a 31)" required>
-            <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={5} required />
+            <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={initial?.dayOfMonth ?? 5} required />
+            <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                name="anticipateToBusinessDay"
+                value="true"
+                defaultChecked={initial?.anticipateToBusinessDay ?? false}
+                className="mt-0.5"
+              />
+              <span>
+                Antecipar para o <strong>último dia útil</strong> quando cair em fim de semana ou
+                feriado (padrão de guias de impostos: DAS, FGTS, DARF).
+              </span>
+            </label>
           </Field>
         ) : (
           <Field label="A cada quantos dias" required>
-            <Input type="number" name="intervalDays" min={1} max={365} defaultValue={15} required />
+            <Input type="number" name="intervalDays" min={1} max={365} defaultValue={initial?.intervalDays ?? 15} required />
             <p className="mt-1 text-xs text-slate-400">Conta a partir da data em &quot;Começa em&quot;.</p>
           </Field>
         )}
 
         {isCapital ? (
           <Field label="Sócio (beneficiário)" required>
-            <Select name="capitalBeneficiaryId" defaultValue="" required>
+            <Select name="capitalBeneficiaryId" defaultValue={initial?.capitalBeneficiaryId ?? ""} required>
               <option value="">Selecione o sócio</option>
               {beneficiaries.map((b) => (
                 <option key={b.id} value={b.id}>
@@ -138,13 +214,7 @@ export default function RecurringForm({
         {!isCapital && kind === "PAGAR" ? (
           <>
             <Field label="Categoria" required>
-              <Select name="categoryPagar" defaultValue="DESPESA_OPERACIONAL">
-                <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-                <option value="COMISSAO">Comissão</option>
-                <option value="SALARIO">Salário</option>
-                <option value="COMBUSTIVEL">Combustível</option>
-                <option value="OUTROS">Outros</option>
-              </Select>
+              <CategoryInput name="categoryLabel" options={despesaCategories} defaultValue={initial?.categoryLabel ?? "Despesa operacional"} />
             </Field>
             {supplierField("Fornecedor")}
           </>
@@ -153,14 +223,10 @@ export default function RecurringForm({
         {!isCapital && kind === "RECEBER" ? (
           <>
             <Field label="Categoria" required>
-              <Select name="categoryReceber" defaultValue="OUTROS">
-                <option value="OUTROS">Outros</option>
-                <option value="VENDA_VEICULO">Venda de veículo</option>
-                <option value="VENDA_PECA">Venda de peças</option>
-              </Select>
+              <CategoryInput name="categoryLabel" options={receitaCategories} defaultValue={initial?.categoryLabel ?? "Outros"} />
             </Field>
             <Field label="Cliente">
-              <Select name="customerId" defaultValue="">
+              <Select name="customerId" defaultValue={initial?.customerId ?? ""}>
                 <option value="">Sem cliente</option>
                 {customers.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -173,20 +239,20 @@ export default function RecurringForm({
         ) : null}
 
         <Field label="Começa em" required>
-          <Input type="date" name="startDate" defaultValue={toDateInputValue(new Date())} required />
+          <Input type="date" name="startDate" defaultValue={initial?.startDate ?? toDateInputValue(new Date())} required />
         </Field>
         <Field label="Termina em (opcional)">
-          <Input type="date" name="endDate" />
+          <Input type="date" name="endDate" defaultValue={initial?.endDate ?? ""} />
         </Field>
       </div>
 
       <Field label="Observações">
-        <Textarea name="notes" rows={2} />
+        <Textarea name="notes" rows={2} defaultValue={initial?.notes ?? ""} />
       </Field>
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>
-          {pending ? "Salvando..." : "Salvar recorrência"}
+          {pending ? "Salvando..." : editing ? "Salvar alterações" : "Salvar recorrência"}
         </Button>
       </div>
     </form>

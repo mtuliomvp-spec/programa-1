@@ -10,10 +10,18 @@ import {
   deleteVehicleCost,
   receiveVehicleAdvance,
 } from "@/lib/finance";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  normalizeChassi,
+  normalizeRenavam,
+  isChassiComplete,
+} from "@/lib/vehicle-doc";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { assertCan, canUseFormLookup } from "@/lib/guards";
+import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 const advanceSchema = z.object({
   vehicleId: z.string().min(1),
@@ -81,6 +89,11 @@ const vehicleSchema = z.object({
   transmission: z.string().optional(),
   purchasePrice: z.coerce.number().min(0),
   salePrice: z.coerce.number().min(0),
+  // Consignado: o carro é de um terceiro (o consignante = fornecedor). Não é
+  // patrimônio comprado (purchasePrice fica 0); a loja deve `ownerRefundAmount`
+  // ao dono quando o carro é vendido.
+  consigned: z.coerce.boolean().optional(),
+  ownerRefundAmount: z.coerce.number().min(0).optional(),
   entryDate: z.string().min(1),
   notes: z.string().optional(),
   supplierId: z.string().optional(),
@@ -92,6 +105,11 @@ const vehicleSchema = z.object({
   payoffAmount: z.coerce.number().min(0).optional(),
   payoffTo: z.string().optional(),
   debtsAmount: z.coerce.number().min(0).optional(),
+  // Detalhamento (JSON do formulário): cada linha vira uma conta a pagar.
+  debtsItems: z
+    .string()
+    .optional()
+    .transform((v) => parseDebtItems(v)),
 });
 
 export type VehicleFormState = { error?: string };
@@ -129,6 +147,34 @@ export async function createVehicleAction(
     };
   }
 
+  // Chassi também é único entre fichas ATIVAS (índice parcial
+  // vehicles_chassi_active_key). Sem esta checagem a colisão estourava no banco
+  // e caía no catch genérico "Não foi possível salvar o veículo".
+  const chassi = chassiOrNull(data.chassi);
+  if (chassi) {
+    const sameChassi = await prisma.vehicle.findFirst({
+      where: { chassi, status: { not: "VENDIDO" } },
+      select: { id: true },
+    });
+    if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
+  }
+
+  // Consignado: o veículo é de um terceiro. Exige o consignante (fornecedor) e o
+  // valor a devolver; não é patrimônio comprado, então purchasePrice fica 0 (sem
+  // conta de compra — a devolução ao dono só é apurada quando o carro é vendido).
+  const consigned = Boolean(data.consigned);
+  if (consigned) {
+    if (!data.supplierId) {
+      return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
+    }
+    if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
+      return { error: "Para um veículo consignado, informe o valor acertado com o proprietário." };
+    }
+    if ((data.payoffAmount ?? 0) + (data.debtsAmount ?? 0) > data.ownerRefundAmount) {
+      return { error: "A quitação e os débitos não podem passar do valor acertado com o proprietário." };
+    }
+  }
+
   try {
     const vehicle = await createVehicleWithPayable({
       brand: data.brand,
@@ -137,26 +183,31 @@ export async function createVehicleAction(
       manufactureYear: data.manufactureYear,
       modelYear: data.modelYear,
       plate: data.plate.toUpperCase(),
-      chassi: data.chassi || null,
-      renavam: data.renavam || null,
+      chassi: chassiOrNull(data.chassi),
+      renavam: renavamOrNull(data.renavam),
       color: data.color || null,
       km: data.km,
       fuel: data.fuel || null,
       transmission: data.transmission || null,
-      purchasePrice: data.purchasePrice,
+      purchasePrice: consigned ? 0 : data.purchasePrice,
       salePrice: data.salePrice,
       entryDate: parseDateInput(data.entryDate),
       notes: data.notes || null,
       supplierId: data.supplierId || null,
       alreadyPaid: false,
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
-      acquisitionType: data.acquisitionType ?? "A_VISTA",
-      downPayment: data.downPayment ?? 0,
-      installmentsCount: data.installmentsCount ?? 1,
-      financerName: data.financerName || null,
+      acquisitionType: consigned ? "A_VISTA" : data.acquisitionType ?? "A_VISTA",
+      downPayment: consigned ? 0 : data.downPayment ?? 0,
+      installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
+      financerName: consigned ? null : data.financerName || null,
+      // Consignado: quitação/débitos são descontados do valor acertado com o dono
+      // e viram repasse (contas a pagar aos credores) no fechamento da venda.
       payoffAmount: data.payoffAmount ?? 0,
       payoffTo: data.payoffTo || null,
       debtsAmount: data.debtsAmount ?? 0,
+      debtsItems: data.debtsItems,
+      consigned,
+      ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
     revalidatePath("/estoque");
     revalidatePath("/financeiro/a-pagar");
@@ -198,6 +249,28 @@ export async function updateVehicleAction(
     return { error: "Já existe outro veículo ativo no estoque com essa placa." };
   }
 
+  const chassi = chassiOrNull(data.chassi);
+  if (chassi) {
+    const sameChassi = await prisma.vehicle.findFirst({
+      where: { chassi, status: { not: "VENDIDO" }, id: { not: data.id } },
+      select: { id: true },
+    });
+    if (sameChassi) return { error: "Já existe outro veículo ativo no estoque com esse chassi. Confira o número — ele identifica o carro." };
+  }
+
+  const consigned = Boolean(data.consigned);
+  if (consigned) {
+    if (!data.supplierId) {
+      return { error: "Para um veículo consignado, informe o proprietário (consignante)." };
+    }
+    if (!data.ownerRefundAmount || data.ownerRefundAmount <= 0) {
+      return { error: "Para um veículo consignado, informe o valor acertado com o proprietário." };
+    }
+    if ((data.payoffAmount ?? 0) + (data.debtsAmount ?? 0) > data.ownerRefundAmount) {
+      return { error: "A quitação e os débitos não podem passar do valor acertado com o proprietário." };
+    }
+  }
+
   try {
     await prisma.vehicle.update({
       where: { id: data.id },
@@ -208,24 +281,27 @@ export async function updateVehicleAction(
         manufactureYear: data.manufactureYear,
         modelYear: data.modelYear,
         plate: data.plate.toUpperCase(),
-        chassi: data.chassi || null,
-        renavam: data.renavam || null,
+        chassi: chassiOrNull(data.chassi),
+        renavam: renavamOrNull(data.renavam),
         color: data.color || null,
         km: data.km,
         fuel: data.fuel || null,
         transmission: data.transmission || null,
-        purchasePrice: data.purchasePrice,
+        purchasePrice: consigned ? 0 : data.purchasePrice,
         salePrice: data.salePrice,
-        acquisitionType: data.acquisitionType ?? "A_VISTA",
-        downPayment: data.downPayment ?? 0,
-        installmentsCount: data.installmentsCount ?? 1,
-        financerName: data.financerName || null,
+        acquisitionType: consigned ? "A_VISTA" : data.acquisitionType ?? "A_VISTA",
+        downPayment: consigned ? 0 : data.downPayment ?? 0,
+        installmentsCount: consigned ? 1 : data.installmentsCount ?? 1,
+        financerName: consigned ? null : data.financerName || null,
         payoffAmount: data.payoffAmount ?? 0,
         payoffTo: data.payoffTo || null,
         debtsAmount: data.debtsAmount ?? 0,
+        debtsItems: data.debtsItems,
         entryDate: parseDateInput(data.entryDate),
         notes: data.notes || null,
         supplierId: data.supplierId || null,
+        consigned,
+        ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
       },
     });
 
@@ -253,6 +329,38 @@ export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RE
   revalidatePath("/");
 }
 
+/**
+ * Marca (ou desfaz) a conclusão da transferência de propriedade no DETRAN.
+ *
+ * Enquanto a data é nula, o carro vendido continua no nome do dono anterior —
+ * é isso que o selo vermelho do estoque mostra. `date` nula desfaz a marcação
+ * (para corrigir engano).
+ */
+export async function setSaleTransferDoneAction(
+  saleId: string,
+  date: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "comunicacao"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const sale = await prisma.sale.findUnique({ where: { id: saleId }, select: { vehicleId: true } });
+  if (!sale) return { ok: false, error: "Venda não encontrada." };
+
+  await prisma.sale.update({
+    where: { id: saleId },
+    data: { transferDoneAt: date ? parseDateInput(date) : null },
+  });
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${sale.vehicleId}`);
+  revalidatePath(`/vendas/${saleId}`);
+  return { ok: true };
+}
+
 export async function lookupPlateAction(plate: string) {
   // Consulta externa (paga) por placa — usada no cadastro de veículo e nos
   // formulários de venda. Liberada a quem cadastra/edita veículo ou registra/
@@ -274,6 +382,16 @@ export async function fetchVehicleDebtsAction(vehicleId: string) {
   return lookupVehicleDebts(vehicle.plate);
 }
 
+/**
+ * Importa débitos consultados pela placa como CUSTO do veículo.
+ *
+ * Diferente do campo "Débitos do veículo" da compra/troca (ver
+ * src/lib/vehicle-debts.ts): lá a dívida é do antigo dono e abate o que a loja
+ * paga a ele; aqui o carro já é da loja e o débito venceu com ele no pátio —
+ * IPVA do exercício seguinte, multa em test drive. É despesa da loja, então
+ * vira VehicleCost e reduz a margem daquele carro. Os dois caminhos coexistem
+ * de propósito.
+ */
 export async function importVehicleDebtsAction(
   vehicleId: string,
   debts: { category: "IPVA" | "MULTA" | "LICENCIAMENTO"; description: string; amount: number; dueDate: string }[],
@@ -378,7 +496,134 @@ export async function deleteVehicleCostAction(costId: string, vehicleId: string)
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 
-export type AttachmentState = { error?: string; ok?: boolean };
+export type AttachmentState = {
+  error?: string;
+  ok?: boolean;
+  /** O que a leitura do CRLV preencheu na ficha (texto pronto para a tela). */
+  filled?: string[];
+  /** Avisos da leitura (placa divergente, chassi duplicado, IA indisponível). */
+  warnings?: string[];
+};
+
+
+/** Placa comparável: maiúsculas, só letras e números (padrão de plate-lookup). */
+const plateKey = (v: string | null | undefined) =>
+  (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+/**
+ * Lê o CRLV recém-anexado e preenche o que falta na ficha do veículo.
+ *
+ * Regra de ouro: nunca sobrescrever dado bom. Só entra o que está vazio — a
+ * exceção é o chassi MASCARADO da consulta por placa (`*****80388`), que é
+ * substituído pelos 17 caracteres do documento.
+ *
+ * Antes de gravar qualquer coisa, a PLACA do documento tem de bater com a do
+ * veículo. É o que impede o chassi de um carro entrar na ficha de outro — um
+ * chassi errado passaria na trava da venda e sairia impresso no contrato.
+ */
+async function applyCrlvToVehicle(input: {
+  vehicleId: string;
+  attachmentId: string;
+  base64: string;
+  mimeType: string;
+  /** Ano do exercício digitado pelo usuário ao anexar. */
+  typedYear: string | null;
+}): Promise<{ filled: string[]; warnings: string[] }> {
+  const { extractCrlv } = await import("@/lib/crlv-ai");
+  const crlv = await extractCrlv(input.base64, input.mimeType);
+
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: input.vehicleId },
+    select: {
+      plate: true, chassi: true, renavam: true, brand: true, model: true,
+      manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
+    },
+  });
+
+  const filled: string[] = [];
+  const warnings: string[] = [];
+
+  const lida = plateKey(crlv.placa);
+  if (!lida) {
+    return { filled, warnings: ["Não deu para ler a placa neste CRLV — nada foi preenchido. Confira se o arquivo está legível."] };
+  }
+  if (lida !== plateKey(vehicle.plate)) {
+    return {
+      filled,
+      warnings: [
+        `Este CRLV parece ser de outro carro (placa ${lida}, o veículo é ${vehicle.plate}). Nada foi preenchido — o anexo continua salvo.`,
+      ],
+    };
+  }
+
+  const data: Record<string, unknown> = {};
+
+  const renavam = normalizeRenavam(crlv.renavam);
+  if (renavam && !normalizeRenavam(vehicle.renavam)) {
+    data.renavam = renavam;
+    filled.push(`RENAVAM ${renavam}`);
+  }
+
+  const chassi = normalizeChassi(crlv.chassi);
+  if (chassi && !isChassiComplete(vehicle.chassi)) {
+    if (!isChassiComplete(chassi)) {
+      warnings.push("O chassi do CRLV não veio com os 17 caracteres — preencha à mão na ficha.");
+    } else {
+      // Chassi é único entre fichas ativas (vehicles_chassi_active_key).
+      const outro = await prisma.vehicle.findFirst({
+        where: { chassi, status: { not: "VENDIDO" }, id: { not: input.vehicleId } },
+        select: { plate: true },
+      });
+      if (outro) {
+        warnings.push(`O chassi lido já está no veículo ${outro.plate} — confira o número, não foi gravado.`);
+      } else {
+        data.chassi = chassi;
+        filled.push(`chassi ${chassi}`);
+      }
+    }
+  }
+
+  // Dados do carro: só o que estiver em branco.
+  const texto = (atual: string | null, novo: string | null) =>
+    !atual?.trim() && novo?.trim() ? novo.trim() : undefined;
+  const cor = texto(vehicle.color, crlv.cor);
+  if (cor) { data.color = cor; filled.push(`cor ${cor}`); }
+  const fuel = texto(vehicle.fuel, crlv.combustivel);
+  if (fuel) { data.fuel = fuel; filled.push(`combustível ${fuel}`); }
+  const transmission = texto(vehicle.transmission, crlv.transmissao);
+  if (transmission) { data.transmission = transmission; filled.push(`câmbio ${transmission}`); }
+  const brand = texto(vehicle.brand, crlv.marca);
+  if (brand) { data.brand = brand; filled.push(`marca ${brand}`); }
+  const model = texto(vehicle.model, crlv.modelo);
+  if (model) { data.model = model; filled.push(`modelo ${model}`); }
+  if (!vehicle.manufactureYear && crlv.anoFabricacao) {
+    data.manufactureYear = crlv.anoFabricacao;
+    filled.push(`ano de fabricação ${crlv.anoFabricacao}`);
+  }
+  if (!vehicle.modelYear && crlv.anoModelo) {
+    data.modelYear = crlv.anoModelo;
+    filled.push(`ano do modelo ${crlv.anoModelo}`);
+  }
+
+  if (Object.keys(data).length) {
+    await prisma.vehicle.update({ where: { id: input.vehicleId }, data });
+  }
+
+  // Exercício: o documento é a fonte da verdade. O ano vive no `description` do
+  // anexo (é dele que sai o selo "CRLV 2026" na lista).
+  const exercicio = (crlv.exercicio ?? "").match(/(\d{4})/)?.[1] ?? null;
+  if (exercicio && exercicio !== input.typedYear) {
+    await prisma.vehicleAttachment.update({
+      where: { id: input.attachmentId },
+      data: { description: `CRLV ${exercicio}` },
+    });
+    warnings.push(
+      `O documento é do exercício ${exercicio}${input.typedYear ? ` (você digitou ${input.typedYear})` : ""} — corrigido para o do arquivo.`,
+    );
+  }
+
+  return { filled, warnings };
+}
 
 export async function uploadVehicleAttachmentAction(
   _prev: AttachmentState,
@@ -410,19 +655,85 @@ export async function uploadVehicleAttachmentAction(
   if (!vehicle) return { error: "Veículo não encontrado." };
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  await prisma.vehicleAttachment.create({
+  const mimeType = file.type || "application/octet-stream";
+  const attachment = await prisma.vehicleAttachment.create({
     data: {
       vehicleId,
       kind,
       description,
       filename: file.name || "documento",
-      mimeType: file.type || "application/octet-stream",
+      mimeType,
       size: file.size,
       data: buffer,
     },
   });
+
+  // O CRLV é lido DEPOIS de o anexo estar salvo, e a leitura nunca derruba o
+  // upload: se a IA falhar, o documento continua anexado e o usuário preenche
+  // à mão. Por isso o try/catch só afeta a mensagem devolvida.
+  let read: { filled: string[]; warnings: string[] } = { filled: [], warnings: [] };
+  if (kind === "CRLV") {
+    try {
+      read = await applyCrlvToVehicle({
+        vehicleId,
+        attachmentId: attachment.id,
+        base64: buffer.toString("base64"),
+        mimeType,
+        typedYear: description.match(/(\d{4})/)?.[1] ?? null,
+      });
+    } catch (e) {
+      read = {
+        filled: [],
+        warnings: [e instanceof Error ? e.message : "Não foi possível ler o CRLV automaticamente."],
+      };
+    }
+  }
+
   revalidatePath(`/estoque/${vehicleId}`);
-  return { ok: true };
+  // A lista mostra o selo do CRLV e os dados do carro — sem isto o card ficava
+  // defasado até outra revalidação.
+  revalidatePath("/estoque");
+  return { ok: true, filled: read.filled, warnings: read.warnings };
+}
+
+/**
+ * Lê um CRLV que JÁ está anexado e aplica os dados na ficha.
+ *
+ * A leitura automática só dispara no upload, então os CRLVs anexados antes
+ * dessa funcionalidade nunca foram lidos. Excluir e reenviar resolveria, mas
+ * destruiria o registro original (data de envio, arquivo) à toa: os bytes já
+ * estão no banco e podem ser lidos de onde estão.
+ *
+ * Reusa `applyCrlvToVehicle` — mesma trava de placa, mesma regra de não
+ * sobrescrever dado bom. Só muda de onde vêm os bytes.
+ */
+export async function readCrlvAttachmentAction(attachmentId: string): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "crlv");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const att = await prisma.vehicleAttachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, vehicleId: true, kind: true, mimeType: true, description: true, data: true },
+  });
+  if (!att) return { error: "Anexo não encontrado." };
+  if (att.kind !== "CRLV") return { error: "Este anexo não é um CRLV." };
+
+  try {
+    const read = await applyCrlvToVehicle({
+      vehicleId: att.vehicleId,
+      attachmentId: att.id,
+      base64: Buffer.from(att.data).toString("base64"),
+      mimeType: att.mimeType,
+      typedYear: att.description.match(/(\d{4})/)?.[1] ?? null,
+    });
+    revalidatePath(`/estoque/${att.vehicleId}`);
+    revalidatePath("/estoque");
+    return { ok: true, filled: read.filled, warnings: read.warnings };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o CRLV." };
+  }
 }
 
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
@@ -465,7 +776,11 @@ export async function toggleVehiclePublishedAction(
     });
     if (fotos === 0) return { ok: false, error: "Anexe ao menos uma foto antes de postar." };
   }
-  await prisma.vehicle.update({ where: { id: vehicleId }, data: { published: publish } });
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    // Ao postar, marca a data (selo "Chegou agora" na vitrine nos primeiros dias).
+    data: { published: publish, ...(publish ? { publishedAt: new Date() } : {}) },
+  });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
   revalidatePath("/vitrine");
@@ -541,7 +856,14 @@ export async function uploadClientPhotoAction(
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("estoque", "editar");
+    // Também vale para o fluxo de vendas/financiamento de terceiros (vendedor
+    // fotografa o cliente na negociação, sem precisar de estoque.editar).
+    await assertCanAny([
+      ["estoque", "editar"],
+      ["vendas", "prevenda"],
+      ["vendas", "registrar"],
+      ["vendas", "foto"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -601,4 +923,33 @@ export async function deleteVehicleAction(id: string) {
   revalidatePath("/estoque");
   revalidatePath("/");
   redirect("/estoque");
+}
+
+/**
+ * Configura o ANÚNCIO do veículo (QR do para-brisa / vitrine): destaque
+ * promocional e quais dados aparecem (lista de campos ocultos; vazio = tudo).
+ */
+export async function updateAdSettingsAction(
+  vehicleId: string,
+  promo: string,
+  hiddenFields: string[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "publicar"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const allowed = new Set(["preco", "ano", "km", "cor", "combustivel", "cambio", "versao"]);
+  const hidden = hiddenFields.filter((f) => allowed.has(f));
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: { adPromo: promo.trim().slice(0, 200) || null, adHiddenFields: hidden },
+  });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath(`/vitrine/${vehicleId}`);
+  revalidatePath("/vitrine");
+  return { ok: true };
 }

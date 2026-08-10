@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen, openCashbox, closeCashbox } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
@@ -66,7 +66,10 @@ const accountSchema = z.object({
   initialBalance: z.coerce.number().default(0),
   isDefault: z.coerce.boolean().optional(),
   isInvestment: z.coerce.boolean().optional(),
+  investmentMaturity: z.string().optional(),
   returnTaxPercent: z.coerce.number().min(0).max(100).default(0),
+  // Titular verdadeiro da conta (sócio/beneficiário do capital). Vazio = MVP.
+  ownerBeneficiaryId: z.string().optional(),
 });
 
 export async function createAccountAction(
@@ -102,12 +105,78 @@ export async function createAccountAction(
         initialBalance: isInvestment ? 0 : data.initialBalance,
         isDefault,
         isInvestment,
+        // Só faz sentido em conta de Aplicação (mesmo padrão do returnTaxPercent).
+        investmentMaturity:
+          isInvestment && data.investmentMaturity ? parseDateInput(data.investmentMaturity) : null,
         returnTaxPercent: data.type === "FINANCEIRA" && !isInvestment ? data.returnTaxPercent : 0,
+        // Titular verdadeiro vale para qualquer conta — inclusive Aplicação (a
+        // conta no banco pode ser de um sócio; o rateio interno é outra coisa).
+        ownerBeneficiaryId: data.ownerBeneficiaryId || null,
       },
     });
   });
   revalidatePath("/financeiro/contas");
   return {};
+}
+
+/**
+ * Define/troca o titular verdadeiro de uma conta já cadastrada (sócio dono da
+ * conta, que opera como se fosse da MVP). Nulo = conta da própria empresa.
+ * Informativo — não altera saldos nem a equação patrimonial.
+ */
+/**
+ * Define/limpa o vencimento da aplicação. Fica na página da conta porque o
+ * sistema não tem formulário de EDIÇÃO de conta — só de criação — e sem isto
+ * as contas de aplicação que já existem ficariam sem como informar a data.
+ */
+export async function setAccountMaturityAction(
+  id: string,
+  dateInput: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const account = await prisma.financialAccount.findUnique({
+    where: { id },
+    select: { isInvestment: true },
+  });
+  if (!account) return { ok: false, error: "Conta não encontrada." };
+  if (!account.isInvestment) {
+    return { ok: false, error: "Só conta de Aplicação tem vencimento." };
+  }
+  await prisma.financialAccount.update({
+    where: { id },
+    // Vazio limpa a data (aplicação sem prazo / liquidez diária).
+    data: { investmentMaturity: dateInput ? parseDateInput(dateInput) : null },
+  });
+  revalidatePath("/financeiro/contas");
+  revalidatePath(`/financeiro/contas/${id}`);
+  revalidatePath("/");
+  return { ok: true };
+}
+
+export async function setAccountOwnerAction(
+  id: string,
+  beneficiaryId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (beneficiaryId) {
+    const b = await prisma.capitalBeneficiary.findUnique({ where: { id: beneficiaryId }, select: { id: true } });
+    if (!b) return { ok: false, error: "Beneficiário não encontrado." };
+  }
+  await prisma.financialAccount.update({
+    where: { id },
+    data: { ownerBeneficiaryId: beneficiaryId || null },
+  });
+  revalidatePath("/financeiro/contas");
+  revalidatePath(`/financeiro/contas/${id}`);
+  return { ok: true };
 }
 
 /**
@@ -163,7 +232,6 @@ const transferSchema = z.object({
   fromId: z.string().min(1, "Escolha a conta de origem"),
   toId: z.string().min(1, "Escolha a conta de destino"),
   amount: z.coerce.number().positive("Informe um valor maior que zero"),
-  date: z.string().min(1),
   description: z.string().optional(),
 });
 
@@ -192,8 +260,10 @@ export async function createTransferAction(
         "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).",
     };
   }
+  // A transferência segue a data de trabalho do caixa aberto (como as baixas).
+  const date = await getCashboxWorkDate();
   try {
-    await assertMonthOpen(parseDateInput(data.date));
+    await assertMonthOpen(date);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -203,7 +273,7 @@ export async function createTransferAction(
       fromId: data.fromId,
       toId: data.toId,
       amount: data.amount,
-      date: parseDateInput(data.date),
+      date,
       description: data.description || null,
     },
   });

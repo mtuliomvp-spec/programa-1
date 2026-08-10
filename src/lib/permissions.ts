@@ -35,6 +35,13 @@ export const MODULES: ModuleConfig[] = [
       { acao: "publicar", label: "Postar na vitrine" },
       { acao: "comunicacao", label: "Anexar comunicação de venda / documentos" },
       { acao: "crlv", label: "Anexar CRLV" },
+      // Preço de compra, custo total, margem e o resultado da venda na ficha.
+      { acao: "lucro", label: "Ver resultado (lucro/prejuízo) do veículo" },
+      // Separado do "lucro" de propósito: dá para liberar o custo na lista sem
+      // mostrar o lucro da venda na ficha do carro, e vice-versa.
+      { acao: "vercusto", label: "Ver o custo dos veículos na lista do estoque" },
+      // Levar o custo para fora (papel/arquivo) é decisão à parte de vê-lo na tela.
+      { acao: "pdfcusto", label: "Gerar o PDF do estoque com o custo" },
     ],
   },
   {
@@ -45,6 +52,7 @@ export const MODULES: ModuleConfig[] = [
       { acao: "prevenda", label: "Criar/editar pré-venda" },
       { acao: "registrar", label: "Registrar venda (efetivar)" },
       { acao: "cancelar", label: "Cancelar venda" },
+      { acao: "foto", label: "Foto do cliente (antifraude)" },
     ],
   },
   {
@@ -74,12 +82,26 @@ export const MODULES: ModuleConfig[] = [
     acoes: [
       VER,
       { acao: "criar", label: "Lançar conta a pagar/receber" },
+      { acao: "editar", label: "Editar títulos lançados" },
       { acao: "pagar", label: "Registrar pagamento (baixa)" },
       { acao: "receber", label: "Registrar recebimento (baixa)" },
+      // Perdoar valor é diferente de receber: o que sobra vira custo/perda.
+      { acao: "desconto", label: "Dar desconto (baixar diferença como perda)" },
+      // Mexer na data de uma baixa já feita é correção contábil, não operação.
+      { acao: "corrigirdata", label: "Corrigir data de um pagamento/recebimento já feito" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
       { acao: "conciliar", label: "Conciliação bancária" },
       { acao: "fechar", label: "Fechamento mensal (fechar mês)" },
       { acao: "reabrir", label: "Fechamento mensal (reabrir mês)" },
+    ],
+  },
+  {
+    key: "combos",
+    label: "Combos de pagamento",
+    acoes: [
+      { acao: "visualizar", label: "Ver combos" },
+      { acao: "criar", label: "Montar combo (adicionar títulos / solicitar)" },
+      { acao: "aprovar", label: "Aprovar e pagar combo" },
     ],
   },
   {
@@ -102,7 +124,15 @@ export const MODULES: ModuleConfig[] = [
   {
     key: "cadastros",
     label: "Cadastros (clientes e fornecedores)",
-    acoes: [VER, CRIAR, EDITAR, EXCLUIR],
+    acoes: [
+      VER,
+      CRIAR,
+      EDITAR,
+      EXCLUIR,
+      // Faxina de duplicados: junta cadastros e apaga os repetidos. Separado do
+      // "excluir" comum, que é largo demais para essa operação em lote.
+      { acao: "unificar", label: "Unificar cadastros repetidos" },
+    ],
   },
   {
     key: "documentos_empresa",

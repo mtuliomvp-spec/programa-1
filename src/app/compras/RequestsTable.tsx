@@ -18,6 +18,8 @@ export type RequestRow = {
   number: string;
   description: string;
   hasAttachment: boolean;
+  /** Fluxo Veículos ainda sem a placa — não dá para aprovar assim. */
+  missingVehicle: boolean;
   subInfo: string;
   requestedBy: string;
   valueText: string;
@@ -78,6 +80,12 @@ export default function RequestsTable({
 
   const canBatch = canApprove || canCreate;
 
+  // Aprovar/Rejeitar/Cancelar só agem em solicitações PENDENTES (aguardando
+  // aprovação). Se nenhuma selecionada estiver pendente, esses botões ficam
+  // desabilitados — evita "aprovar" o que já está aprovado.
+  const pendentesSelecionadas = rows.filter((r) => selected.has(r.id) && r.status === "PENDENTE").length;
+  const semPendentes = pendentesSelecionadas === 0;
+
   return (
     <>
       <Table>
@@ -132,6 +140,11 @@ export default function RequestsTable({
                     ) : null}
                   </span>
                   <span className="block truncate text-xs font-normal text-slate-400">{r.subInfo}</span>
+                  {r.missingVehicle ? (
+                    <span className="mt-1 block text-xs font-medium text-amber-700">
+                      ⚠ falta a placa
+                    </span>
+                  ) : null}
                 </Link>
               </Td>
               <Td>{r.requestedBy}</Td>
@@ -161,15 +174,17 @@ export default function RequestsTable({
               <>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending || semPendentes}
+                  title={semPendentes ? "Nenhuma das selecionadas está aguardando aprovação." : undefined}
                   onClick={() => run(batchApproveRequestsAction, "aprovada(s)")}
                   className="h-9 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
-                  Aprovar
+                  Aprovar{pendentesSelecionadas > 0 ? ` (${pendentesSelecionadas})` : ""}
                 </button>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending || semPendentes}
+                  title={semPendentes ? "Nenhuma das selecionadas está aguardando aprovação." : undefined}
                   onClick={() => run(batchRejectRequestsAction, "rejeitada(s)", "Rejeitar as selecionadas?")}
                   className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
                 >
@@ -181,7 +196,8 @@ export default function RequestsTable({
               <>
                 <button
                   type="button"
-                  disabled={pending}
+                  disabled={pending || semPendentes}
+                  title={semPendentes ? "Só é possível cancelar solicitações aguardando aprovação." : undefined}
                   onClick={() => run(batchCancelRequestsAction, "cancelada(s)", "Cancelar as selecionadas?")}
                   className="h-9 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50"
                 >

@@ -19,6 +19,9 @@ export default function ReportToolbar({
   min,
   max,
   extra,
+  filtersKey,
+  pdf = true,
+  actions,
 }: {
   basePath: string;
   printTitle: string;
@@ -31,6 +34,15 @@ export default function ReportToolbar({
   min?: string;
   max?: string;
   extra?: ReactNode;
+  /** Mostra o botão de PDF padrão da barra. Desligue quando ele depender de permissão. */
+  pdf?: boolean;
+  /** Botões extras ao lado de Filtrar/Limpar (ex.: um segundo PDF). */
+  actions?: ReactNode;
+  /**
+   * Valores dos filtros extras (os selects passados em `extra`), concatenados.
+   * Entram na `key` do formulário para que o "Limpar" também os recrie.
+   */
+  filtersKey?: string;
 }) {
   const emittedAt = new Date().toLocaleString("pt-BR", {
     day: "2-digit",
@@ -49,11 +61,20 @@ export default function ReportToolbar({
       </div>
 
       <Card className="mb-4 px-4 py-3 print:hidden">
-        <form className="flex flex-wrap items-end gap-3">
-          <div className="min-w-[200px] flex-1">
+        {/*
+          A `key` muda junto com os filtros da URL para o React RECRIAR os campos.
+          Sem ela, o "Limpar" (navegação sem recarregar a página) deixava no
+          formulário o texto já digitado: os campos são não-controlados e o
+          navegador mantém o valor do DOM mesmo com o defaultValue vazio.
+        */}
+        <form
+          key={`${q ?? ""}|${de ?? ""}|${ate ?? ""}|${min ?? ""}|${max ?? ""}|${filtersKey ?? ""}`}
+          className="flex flex-wrap items-end gap-3"
+        >
+          <div className="min-w-[320px] flex-[2] basis-full sm:basis-auto">
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Buscar
-              <Input name="q" placeholder={placeholder} defaultValue={q} className="mt-0.5" />
+              <Input name="q" placeholder={placeholder} defaultValue={q} className="mt-0.5 h-11 text-base" />
             </label>
           </div>
 
@@ -61,11 +82,11 @@ export default function ReportToolbar({
             <div className="flex items-end gap-2">
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 De
-                <Input type="date" name="de" defaultValue={de} className="mt-0.5 w-40" />
+                <Input type="date" name="de" defaultValue={de} className="mt-0.5 h-11 w-44" />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Até
-                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 w-40" />
+                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 h-11 w-44" />
               </label>
             </div>
           ) : null}
@@ -79,7 +100,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={min}
                   placeholder="0,00"
-                  className="mt-0.5 w-28"
+                  className="mt-0.5 h-11 w-32"
                 />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -89,7 +110,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={max}
                   placeholder="—"
-                  className="mt-0.5 w-28"
+                  className="mt-0.5 h-11 w-32"
                 />
               </label>
             </div>
@@ -102,7 +123,8 @@ export default function ReportToolbar({
             <LinkButton href={basePath} variant="secondary">
               Limpar
             </LinkButton>
-            <PrintButton title={printTitle} />
+            {pdf ? <PrintButton title={printTitle} mode="table" /> : null}
+            {actions}
           </div>
         </form>
       </Card>

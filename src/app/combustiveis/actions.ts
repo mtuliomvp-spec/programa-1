@@ -19,6 +19,9 @@ const fuelSchema = z.object({
   fuelType: z.string().optional(),
   liters: z.coerce.number().positive("Informe os litros"),
   pricePerLiter: z.coerce.number().positive("Informe o preço por litro"),
+  // Valor pago digitado (o form calcula os litros a partir dele); evita
+  // diferença de centavos entre o valor real e litros arredondados.
+  total: z.coerce.number().positive().optional(),
   km: z.coerce.number().int().min(0).optional(),
   notes: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
@@ -46,7 +49,7 @@ export async function createFuelEntryAction(
   }
 
   const date = parseDateInput(data.date);
-  const total = Math.round(data.liters * data.pricePerLiter * 100) / 100;
+  const total = data.total ?? Math.round(data.liters * data.pricePerLiter * 100) / 100;
   const defaultAccountId = data.alreadyPaid ? await getDefaultAccountId() : null;
 
   try {
@@ -143,4 +146,32 @@ export async function deleteFuelEntryAction(id: string) {
   });
   revalidatePath("/combustiveis");
   revalidatePath("/financeiro/a-pagar");
+}
+
+/** Salva os preços por litro pré-determinados (um por combustível). */
+export async function saveFuelPricesAction(
+  prices: { fuelType: string; pricePerLiter: number }[],
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "combustiveis");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  for (const p of prices) {
+    const fuelType = p.fuelType?.trim();
+    if (!fuelType) continue;
+    const price = Math.round(Number(p.pricePerLiter) * 1000) / 1000;
+    if (!Number.isFinite(price) || price <= 0) {
+      // Preço vazio/zerado remove o pré-determinado daquele combustível.
+      await prisma.fuelPrice.deleteMany({ where: { fuelType } });
+      continue;
+    }
+    await prisma.fuelPrice.upsert({
+      where: { fuelType },
+      update: { pricePerLiter: price },
+      create: { fuelType, pricePerLiter: price },
+    });
+  }
+  revalidatePath("/combustiveis");
+  return { ok: true };
 }

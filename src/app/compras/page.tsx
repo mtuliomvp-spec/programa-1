@@ -1,9 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
-import { Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
+import { listCategoryNames } from "@/lib/categories";
 import NewRequestForm from "./NewRequestForm";
 import RequestsTable, { type RequestRow } from "./RequestsTable";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
@@ -28,7 +29,7 @@ export default async function ComprasPage({
 }) {
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const [allRequests, suppliers, stockVehicles, beneficiaries] = await Promise.all([
+  const [allRequests, suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.purchaseRequest.findMany({
       include: { supplier: true, _count: { select: { attachments: true } } },
       orderBy: { createdAt: "desc" },
@@ -45,6 +46,7 @@ export default async function ComprasPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    listCategoryNames("DESPESA"),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -85,6 +87,9 @@ export default async function ComprasPage({
     number: formatRequestNumber(r.seq, r.year),
     description: r.description,
     hasAttachment: r._count.attachments > 0,
+    // Fluxo Veículos sem o carro escolhido: a aprovação vai recusar até que a
+    // placa seja informada. É a fila das notas recém-importadas.
+    missingVehicle: r.structuralKey === "VEICULOS" && !r.vehicleId,
     subInfo: [
       formatDate(r.createdAt),
       flowName(r.structuralKey),
@@ -109,6 +114,13 @@ export default async function ComprasPage({
       <PageHeader
         title="Solicitações de compra"
         description="Peça, o administrador aprova, e a conclusão lança direto no financeiro"
+        action={
+          canCreate ? (
+            <LinkButton href="/compras/importar-nf" variant="secondary">
+              📄 Importar NF
+            </LinkButton>
+          ) : null
+        }
       />
 
       <ReportToolbar
@@ -156,7 +168,7 @@ export default async function ComprasPage({
           <Card className="h-fit print:hidden">
             <CardHeader title="Nova solicitação" />
             <div className="p-5">
-              <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} />
+              <NewRequestForm suppliers={suppliers} vehicles={vehicles} beneficiaries={beneficiaries} categories={categories} />
             </div>
           </Card>
         ) : null}

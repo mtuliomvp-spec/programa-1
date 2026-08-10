@@ -2,7 +2,9 @@
 
 import { useActionState, useEffect, useRef, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
-import SupplierSelect from "@/components/SupplierSelect";
+import NewSupplierInline from "@/components/NewSupplierInline";
+import SupplierInput from "@/components/SupplierInput";
+import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { resizeImageToJpeg } from "@/lib/image-resize";
@@ -15,14 +17,19 @@ export default function NewRequestForm({
   suppliers,
   vehicles,
   beneficiaries,
+  categories,
 }: {
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
+  categories: string[];
 }) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
   const [flow, setFlow] = useState("ADMINISTRATIVO");
   const [parcelado, setParcelado] = useState(false);
+  const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
+  const [supplierName, setSupplierName] = useState("");
+  const [newSupplier, setNewSupplier] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const [preparing, setPreparing] = useState(false);
   // Trava síncrona contra envio duplicado: um `pending`/`preparing` de state pode
@@ -76,12 +83,7 @@ export default function NewRequestForm({
           <MoneyInput name="estimatedAmount" />
         </Field>
         <Field label="Categoria">
-          <Select name="category" defaultValue="OUTROS">
-            <option value="OUTROS">Outros</option>
-            <option value="COMPRA_PECA">Compra de peças</option>
-            <option value="DESPESA_OPERACIONAL">Despesa operacional</option>
-            <option value="COMBUSTIVEL">Combustível</option>
-          </Select>
+          <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
         </Field>
       </div>
 
@@ -136,15 +138,19 @@ export default function NewRequestForm({
       </Field>
 
       {flow === "VEICULOS" ? (
-        <Field label="Veículo (opcional)">
+        <Field label="Veículo">
           <Select name="vehicleId" defaultValue="">
-            <option value="">Nenhum (custo geral de veículos)</option>
+            <option value="">Ainda não sei a placa</option>
             {vehicles.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.label}
               </option>
             ))}
           </Select>
+          <p className="mt-1 text-xs text-slate-500">
+            Sem a placa a solicitação fica esperando: a aprovação é recusada até você escolher o
+            carro. Se o gasto não for de um veículo, troque o fluxo para Administrativo.
+          </p>
         </Field>
       ) : null}
 
@@ -161,7 +167,30 @@ export default function NewRequestForm({
         </Field>
       ) : null}
 
-      <SupplierSelect suppliers={suppliers} label="Fornecedor" emptyLabel="Sem fornecedor" />
+      <Field label="Fornecedor">
+        <SupplierInput
+          name="supplierName"
+          suppliers={supplierNames}
+          value={supplierName}
+          onValueChange={setSupplierName}
+        />
+        <button
+          type="button"
+          onClick={() => setNewSupplier((v) => !v)}
+          className="mt-1 text-xs font-medium text-blue-700 hover:underline"
+        >
+          {newSupplier ? "Fechar" : "➕ Cadastrar fornecedor"}
+        </button>
+        {newSupplier ? (
+          <NewSupplierInline
+            onCreated={(name) => {
+              setSupplierNames((prev) => (prev.includes(name) ? prev : [...prev, name]));
+              setSupplierName(name);
+              setNewSupplier(false);
+            }}
+          />
+        ) : null}
+      </Field>
 
       <Field label="Anexo (opcional — foto, PDF…)">
         <input

@@ -36,6 +36,22 @@ recebido.
 
 Pronto: o site fica disponível em `https://<seu-projeto>.vercel.app`.
 
+### Região: o servidor tem de ficar ao lado do banco
+
+O `vercel.json` fixa as funções em **`gru1` (São Paulo)** porque é onde fica o
+banco Neon (`sa-east-1`). Isso não é detalhe de configuração — é o item de maior
+impacto no desempenho do sistema.
+
+Com o servidor em `iad1` (Washington, padrão da Vercel) e o banco em São Paulo,
+cada consulta media **113 ms** só de viagem. Como o farol contábil faz ~41
+consultas antes de qualquer gravação, pagar um título levava mais de 5 segundos
+— e uma fatura de cartão com 40 itens, quase meio minuto. Na mesma região isso
+cai para 1-5 ms por consulta.
+
+Ao criar o banco em outra região, mude `regions` no `vercel.json` para
+acompanhá-lo. A tela **Sistema › Desempenho** (administradores) compara as duas
+regiões e mede a latência real com o botão "Medir agora".
+
 Para popular o banco de produção com dados de demonstração (opcional),
 rode localmente apontando para o banco da Vercel:
 

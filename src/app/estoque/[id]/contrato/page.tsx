@@ -29,6 +29,11 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
   const s = vehicle.supplier;
   const acquisition = describeAcquisition(vehicle);
   const allPaid = vehicle.payables.length > 0 && vehicle.payables.every((p) => p.status === "PAGO");
+  // Consignado: o carro é de terceiro (o consignante = VENDEDOR). Não há compra
+  // (purchasePrice 0); o "preço" do contrato é o valor a devolver ao dono,
+  // pagável só quando o carro for vendido a terceiro.
+  const isConsigned = vehicle.consigned;
+  const preco = isConsigned ? vehicle.ownerRefundAmount : vehicle.purchasePrice;
   const today = new Date();
   const companyCity = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}`
@@ -131,20 +136,57 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
 
           <div>
             <p className="font-bold">Cláusula 2ª — Do preço e da forma de pagamento</p>
-            <p>
-              O preço certo e ajustado é de <strong>{formatCurrency(vehicle.purchasePrice)}</strong>,
-              na forma de pagamento <strong>{acquisition.forma.toLowerCase()}</strong>
-              {vehicle.acquisitionType !== "A_VISTA" && vehicle.downPayment > 0
-                ? `, com entrada de ${formatCurrency(vehicle.downPayment)}`
-                : ""}
-              {vehicle.acquisitionType !== "A_VISTA"
-                ? ` e ${Math.max(1, vehicle.installmentsCount)} parcela(s)`
-                : ""}
-              {vehicle.financerName ? `, por meio de ${vehicle.financerName}` : ""}
-              {allPaid
-                ? `. Valor pago integralmente pela COMPRADORA na data de ${formatDate(vehicle.entryDate)}, servindo este contrato como recibo de quitação.`
-                : ", conforme o cronograma abaixo:"}
-            </p>
+            {isConsigned ? (
+              <>
+                <p>
+                  O(A) VENDEDOR(A) entrega o veículo em <strong>consignação</strong> para venda pela
+                  COMPRADORA. O valor certo e ajustado entre as partes é de{" "}
+                  <strong>{formatCurrency(preco)}</strong>, devido e pagável{" "}
+                  <strong>quando da venda do veículo a terceiro</strong> pela COMPRADORA.
+                </p>
+                {vehicle.payoffAmount > 0 || vehicle.debtsAmount > 0 ? (
+                  <p className="mt-1">
+                    Do valor acertado, a COMPRADORA reterá e quitará diretamente:{" "}
+                    {vehicle.payoffAmount > 0 ? (
+                      <>
+                        o saldo devedor do financiamento de{" "}
+                        <strong>{formatCurrency(vehicle.payoffAmount)}</strong>
+                        {vehicle.payoffTo ? ` junto a ${vehicle.payoffTo}` : ""}
+                      </>
+                    ) : null}
+                    {vehicle.payoffAmount > 0 && vehicle.debtsAmount > 0 ? " e " : ""}
+                    {vehicle.debtsAmount > 0 ? (
+                      <>
+                        os débitos do veículo (IPVA, licenciamento e multas) de{" "}
+                        <strong>{formatCurrency(vehicle.debtsAmount)}</strong>
+                      </>
+                    ) : null}
+                    , cabendo ao(à) VENDEDOR(A) receber o valor líquido de{" "}
+                    <strong>
+                      {formatCurrency(
+                        Math.max(0, preco - vehicle.payoffAmount - vehicle.debtsAmount),
+                      )}
+                    </strong>
+                    .
+                  </p>
+                ) : null}
+              </>
+            ) : (
+              <p>
+                O preço certo e ajustado é de <strong>{formatCurrency(preco)}</strong>,
+                na forma de pagamento <strong>{acquisition.forma.toLowerCase()}</strong>
+                {vehicle.acquisitionType !== "A_VISTA" && vehicle.downPayment > 0
+                  ? `, com entrada de ${formatCurrency(vehicle.downPayment)}`
+                  : ""}
+                {vehicle.acquisitionType !== "A_VISTA"
+                  ? ` e ${Math.max(1, vehicle.installmentsCount)} parcela(s)`
+                  : ""}
+                {vehicle.financerName ? `, por meio de ${vehicle.financerName}` : ""}
+                {allPaid
+                  ? `. Valor pago integralmente pela COMPRADORA na data de ${formatDate(vehicle.entryDate)}, servindo este contrato como recibo de quitação.`
+                  : ", conforme o cronograma abaixo:"}
+              </p>
+            )}
             {vehicle.payoffAmount > 0 || vehicle.debtsAmount > 0 ? (
               <p className="mt-1">
                 Do valor negociado, a COMPRADORA reterá e quitará diretamente:{" "}

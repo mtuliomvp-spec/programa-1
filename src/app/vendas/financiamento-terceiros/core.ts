@@ -4,6 +4,14 @@ import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance"
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { findCustomerByIdentity } from "@/lib/person-dedupe";
+import {
+  chassiOrNull,
+  renavamOrNull,
+  normalizeRenavam,
+  isChassiComplete,
+  CHASSI_LENGTH,
+} from "@/lib/vehicle-doc";
 
 /**
  * Núcleo do "Financiamento de terceiros" (intermediação). SEM "use server" —
@@ -39,6 +47,9 @@ export const intermediationSchema = z.object({
   manufactureYear: z.coerce.number().int().min(1950).max(2100),
   modelYear: z.coerce.number().int().min(1950).max(2100),
   plate: z.string().min(1, "Informe a placa"),
+  // Obrigatórios: a intermediação é uma venda e gera contrato, que imprime o
+  // chassi. A checagem é feita depois da normalização (o usuário pode digitar
+  // com pontos/espaços), por isso `.optional()` aqui e `superRefine` abaixo.
   chassi: z.string().optional(),
   renavam: z.string().optional(),
   color: z.string().optional(),
@@ -67,7 +78,21 @@ export const intermediationSchema = z.object({
     .optional()
     .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
-});
+})
+  .superRefine((d, ctx) => {
+    if (!normalizeRenavam(d.renavam)) {
+      ctx.addIssue({ code: "custom", path: ["renavam"], message: "Informe o RENAVAM do veículo" });
+    }
+    // Completo: a consulta por placa devolve o chassi mascarado, e mascarado
+    // não serve para contrato nem para identificar o carro.
+    if (!isChassiComplete(d.chassi)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["chassi"],
+        message: `Informe o chassi completo do veículo (${CHASSI_LENGTH} caracteres)`,
+      });
+    }
+  });
 
 export type IntermediationFormState = { error?: string };
 export type IntermediationData = z.infer<typeof intermediationSchema>;
@@ -120,12 +145,10 @@ async function resolveIntermediationCustomerId(d: IntermediationData): Promise<s
 
   const document = d.ownerDocument?.trim() || null;
   const name = d.ownerName.trim();
-  if (document) {
-    const byDoc = await prisma.customer.findFirst({ where: { document }, select: { id: true } });
-    if (byDoc) return byDoc.id;
-  }
-  const byName = await prisma.customer.findFirst({ where: { name }, select: { id: true } });
-  if (byName) return byName.id;
+  // Mesma regra de identidade do cadastro (nome sem acento/pontuação OU
+  // CPF/CNPJ), para não nascer um cliente repetido a cada intermediação.
+  const existing = await findCustomerByIdentity(name, document);
+  if (existing) return existing.id;
 
   const created = await prisma.customer.create({
     data: {
@@ -192,8 +215,8 @@ function buildVehicleData(d: IntermediationData, F: number) {
     manufactureYear: d.manufactureYear,
     modelYear: d.modelYear,
     plate: d.plate.toUpperCase(),
-    chassi: d.chassi || null,
-    renavam: d.renavam || null,
+    chassi: chassiOrNull(d.chassi),
+    renavam: renavamOrNull(d.renavam),
     color: d.color || null,
     km: d.km,
     fuel: d.fuel || null,

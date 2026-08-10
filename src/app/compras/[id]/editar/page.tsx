@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireAction } from "@/lib/guards";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { formatRequestNumber } from "@/lib/format";
+import { listCategoryNames, CATEGORIA_PAGAR_LABEL } from "@/lib/categories";
 import EditRequestForm from "./EditRequestForm";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function EditarSolicitacaoPage({
 
   const request = await prisma.purchaseRequest.findUnique({
     where: { id },
-    include: { payables: { select: { status: true } } },
+    include: { payables: { select: { status: true } }, supplier: { select: { name: true } } },
   });
   if (!request) notFound();
   // Edita pendente ou aprovada. Depois de paga (alguma parcela), bloqueia.
@@ -26,7 +27,7 @@ export default async function EditarSolicitacaoPage({
     (request.status === "APROVADA" && !request.payables.some((p) => p.status === "PAGO"));
   if (!podeEditar) redirect(`/compras/${id}`);
 
-  const [suppliers, stockVehicles, beneficiaries] = await Promise.all([
+  const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
       where: { status: "ESTOQUE", intermediation: false },
@@ -38,6 +39,7 @@ export default async function EditarSolicitacaoPage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    listCategoryNames("DESPESA"),
   ]);
   const vehicles = stockVehicles.map((v) => ({ id: v.id, label: `${v.brand} ${v.model} · ${v.plate}` }));
 
@@ -62,18 +64,19 @@ export default async function EditarSolicitacaoPage({
               estimatedAmount: request.estimatedAmount,
               dueDate: request.dueDate ? request.dueDate.toISOString() : null,
               documentNumber: request.documentNumber,
-              category: request.category,
+              categoryLabel: request.categoryLabel || CATEGORIA_PAGAR_LABEL[request.category],
               installmentsCount: request.installmentsCount,
               installmentPeriod: request.installmentPeriod,
               installmentDays: request.installmentDays,
               structuralKey: request.structuralKey,
               vehicleId: request.vehicleId,
               capitalBeneficiaryId: request.capitalBeneficiaryId,
-              supplierId: request.supplierId,
+              supplierName: request.supplier?.name ?? "",
             }}
             suppliers={suppliers}
             vehicles={vehicles}
             beneficiaries={beneficiaries}
+            categories={categories}
           />
         </div>
       </Card>

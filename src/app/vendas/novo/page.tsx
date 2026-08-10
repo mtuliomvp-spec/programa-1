@@ -4,6 +4,7 @@ import { toDateInputValue } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import SaleForm, { type SaleFormInitial } from "../SaleForm";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 export const dynamic = "force-dynamic";
 
@@ -38,10 +39,14 @@ export default async function NovaVendaPage({
         transferCharged: pre.transferCharged,
         transferAmount: pre.transferAmount ?? undefined,
         takeReturnCommission: pre.takeReturnCommission,
+        insuranceSold: pre.insuranceSold,
         viaPaidTraffic: pre.viaPaidTraffic,
         installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
         installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
         notes: pre.notes ?? undefined,
+        ownerRefundToCapital: pre.ownerRefundToCapital,
+        ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
+        commissionToCapital: pre.commissionToCapital,
         buyerBankName: pre.buyerBankName ?? undefined,
         buyerBankAgency: pre.buyerBankAgency ?? undefined,
         buyerBankAccount: pre.buyerBankAccount ?? undefined,
@@ -63,15 +68,30 @@ export default async function NovaVendaPage({
         tiPayoff: pre.tiPayoff ?? undefined,
         tiPayoffTo: pre.tiPayoffTo ?? undefined,
         tiDebts: pre.tiDebts ?? undefined,
+        tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
         tiSupplierName: pre.tiSupplierName ?? undefined,
       };
     }
   }
-  const [vehicles, customers, financers, users] = await Promise.all([
+  const [vehicles, customers, financers, users, beneficiaries] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { in: ["ESTOQUE", "RESERVADO"] }, intermediation: false },
       orderBy: { createdAt: "desc" },
-      select: { id: true, brand: true, model: true, plate: true, salePrice: true },
+      select: {
+        id: true,
+        brand: true,
+        model: true,
+        plate: true,
+        salePrice: true,
+        // Documentos obrigatórios na venda: o formulário pede o que faltar.
+        chassi: true,
+        renavam: true,
+        consigned: true,
+        ownerRefundAmount: true,
+        payoffAmount: true,
+        debtsAmount: true,
+        supplier: { select: { name: true } },
+      },
     }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.financialAccount.findMany({
@@ -80,7 +100,21 @@ export default async function NovaVendaPage({
       select: { id: true, name: true, returnTaxPercent: true, sellerReturnPercent: true },
     }),
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    // Todos os beneficiários do capital (destino opcional da devolução do
+    // consignado). Mesma lista da tela de Capital: qualquer beneficiário, a
+    // empresa primeiro. `userId` identifica quais são vendedores do sistema
+    // (para oferecer aplicar a comissão no capital do vendedor).
+    prisma.capitalBeneficiary.findMany({
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+      select: { id: true, name: true, userId: true },
+    }),
   ]);
+
+  // Vendedores (usuários) vinculados a um beneficiário do capital: só para eles
+  // a opção "aplicar comissão no capital" faz sentido.
+  const sellersWithCapital = beneficiaries
+    .map((b) => b.userId)
+    .filter((id): id is string => !!id);
 
   // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
   const advanceRows = await prisma.receivable.groupBy({
@@ -122,6 +156,8 @@ export default async function NovaVendaPage({
             customers={customers}
             financers={financers}
             users={users}
+            beneficiaries={beneficiaries}
+            sellersWithCapital={sellersWithCapital}
             advances={advances}
             preselectedVehicleId={vehicleId}
             currentUserId={user?.id}

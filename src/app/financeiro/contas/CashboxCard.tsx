@@ -18,6 +18,12 @@ function todayInput(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Data de trabalho (yyyy-mm-dd em UTC) para pré-preencher o Boletim de Caixa. */
+function boletimDay(d: Date): string {
+  const x = new Date(d);
+  return `${x.getUTCFullYear()}-${String(x.getUTCMonth() + 1).padStart(2, "0")}-${String(x.getUTCDate()).padStart(2, "0")}`;
+}
+
 export default function CashboxCard({
   open,
   session,
@@ -112,6 +118,17 @@ export default function CashboxCard({
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             📋 Fechamento Mensal
+          </a>
+
+          <a
+            href={
+              session
+                ? `/financeiro/boletim-caixa?de=${boletimDay(session.workDate)}&ate=${boletimDay(session.workDate)}`
+                : "/financeiro/boletim-caixa"
+            }
+            className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            📄 Boletim de Caixa
           </a>
 
           {canManage && open ? (

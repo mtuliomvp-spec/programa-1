@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { timed } from "@/lib/perf";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
@@ -20,17 +21,19 @@ export default async function VendasPage({
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canPreSale = await userCan("vendas", "prevenda");
-  const [allSales, allPreSales] = await Promise.all([
-    prisma.sale.findMany({
-      where: { saleType: "VENDA" },
-      orderBy: { saleDate: "desc" },
-      include: { vehicle: true, customer: true },
-    }),
-    prisma.preSale.findMany({
-      where: { status: "ABERTA", saleType: "VENDA" },
-      orderBy: { createdAt: "desc" },
-    }),
-  ]);
+  const [allSales, allPreSales] = await timed("tela: vendas", () =>
+    Promise.all([
+      prisma.sale.findMany({
+        where: { saleType: "VENDA" },
+        orderBy: { saleDate: "desc" },
+        include: { vehicle: true, customer: true },
+      }),
+      prisma.preSale.findMany({
+        where: { status: "ABERTA", saleType: "VENDA" },
+        orderBy: { createdAt: "desc" },
+      }),
+    ]),
+  );
 
   // Dados dos veículos/clientes das pré-vendas abertas (para exibir na lista).
   const preVehicleIds = [...new Set(allPreSales.map((p) => p.vehicleId))];

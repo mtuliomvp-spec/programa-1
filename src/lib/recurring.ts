@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import { structuralCenterId } from "@/lib/structural";
+import { previousBusinessDay } from "@/lib/business-days";
 
 /**
  * Geração idempotente dos lançamentos recorrentes do mês corrente.
@@ -11,6 +13,21 @@ import { structuralCenterId } from "@/lib/structural";
  */
 
 const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+
+/**
+ * Competência de uma guia: o mês ANTERIOR ao do vencimento nominal (venceu em
+ * 20/06/2026 → competência 05/2026). Usada para preencher o marcador
+ * {competencia} na descrição da recorrência.
+ */
+export function competenciaLabel(nominalDue: Date): string {
+  const prev = new Date(Date.UTC(nominalDue.getUTCFullYear(), nominalDue.getUTCMonth() - 1, 1));
+  return `${String(prev.getUTCMonth() + 1).padStart(2, "0")}/${prev.getUTCFullYear()}`;
+}
+
+/** Substitui {competencia} (com ou sem acento) na descrição do título gerado. */
+export function applyCompetencia(description: string, nominalDue: Date): string {
+  return description.replace(/\{compet[êe]ncia\}/gi, competenciaLabel(nominalDue));
+}
 
 /** Vencimento de um dia do mês num (ano, mês) dado — meio-dia UTC. */
 function monthDue(year: number, month: number, dayOfMonth: number): Date {
@@ -99,11 +116,35 @@ const isStructuralKey = (v: string | null): v is "VEICULOS" | "ADMINISTRATIVO" |
   v === "VEICULOS" || v === "ADMINISTRATIVO" || v === "CAPITAL";
 
 /**
+ * Versão para as TELAS: só roda de fato uma vez a cada minuto.
+ *
+ * A geração roda ao abrir Contas a pagar/a receber como rede de segurança, mas
+ * quem cria ou edita uma recorrência já chama a geração na hora — repetir a
+ * varredura a cada troca de tela só deixava a navegação lenta. Ações continuam
+ * usando `ensureRecurringGenerated` direto (sem represa).
+ */
+let lastGenerationAt = 0;
+const GENERATION_THROTTLE_MS = 60_000;
+
+export async function ensureRecurringGeneratedForPage(): Promise<number> {
+  const now = Date.now();
+  if (now - lastGenerationAt < GENERATION_THROTTLE_MS) return 0;
+  lastGenerationAt = now;
+  const created = await ensureRecurringGenerated();
+  await ensureConsortiumInstallments();
+  return created;
+}
+
+/**
  * Gera os títulos recorrentes que vencem até `leadDays` dias à frente (padrão 15
  * — "gera 15 dias antes do vencimento"), sem duplicar. O botão "Gerar agora" usa
  * uma antecedência maior para puxar a próxima ocorrência na hora.
  */
 export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
+  return timed("gerar títulos recorrentes", () => recurringGenerated(leadDays));
+}
+
+async function recurringGenerated(leadDays: number): Promise<number> {
   const now = new Date();
   const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
   // Horizonte: fim do dia (hoje + leadDays). Gera tudo que vence até aqui.
@@ -141,9 +182,15 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
     const startAnchor = new Date(
       Date.UTC(entry.startDate.getUTCFullYear(), entry.startDate.getUTCMonth(), entry.startDate.getUTCDate(), 0, 0),
     );
-    const dueDates = candidates.filter(
-      (d) => d <= horizon && d >= startAnchor && (!entry.endDate || d <= entry.endDate),
-    );
+    // Cada candidato guarda a data NOMINAL (dia configurado — define mês de
+    // competência e dedupe lógico) e a data EFETIVA de vencimento (antecipada
+    // para o último dia útil quando a recorrência pede — padrão das guias).
+    const dueDates = candidates
+      .filter((d) => d <= horizon && d >= startAnchor && (!entry.endDate || d <= entry.endDate))
+      .map((nominal) => ({
+        nominal,
+        due: entry.anticipateToBusinessDay ? previousBusinessDay(nominal) : nominal,
+      }));
 
     // Fluxo Capital: o título carrega o sócio e, quando for baixado, lança o
     // aporte/retirada dele (sync na baixa). Categoria = OUTROS (capital não é
@@ -151,20 +198,26 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
     const isCapital = entry.structuralKey === "CAPITAL" && !!entry.capitalBeneficiaryId;
     const capitalBeneficiaryId = isCapital ? entry.capitalBeneficiaryId : null;
 
-    for (const dueDate of dueDates) {
-      if (existingDays.has(dayKey(dueDate))) continue;
+    for (const { nominal, due: dueDate } of dueDates) {
+      // Dedupe pelas duas chaves: a data efetiva (como o título foi gravado) e
+      // a nominal (protege recorrências antigas geradas sem antecipação).
+      if (existingDays.has(dayKey(dueDate)) || existingDays.has(dayKey(nominal))) continue;
+      const description = applyCompetencia(entry.description, nominal);
       if (entry.kind === "PAGAR") {
         await prisma.payable.create({
           data: {
             costCenterId: center,
-            description: entry.description,
+            description,
             category: isCapital ? "OUTROS" : entry.categoryPagar ?? "DESPESA_OPERACIONAL",
+            categoryLabel: isCapital ? null : entry.categoryLabel,
             amount: entry.amount,
             dueDate,
             status: "PENDENTE",
             supplierId: entry.supplierId,
             capitalBeneficiaryId,
             recurringId: entry.id,
+            // Fatura de cartão: o título nasce detalhável (lançamentos dentro).
+            cardInvoice: entry.cardInvoice,
             notes: entry.notes,
           },
         });
@@ -172,8 +225,9 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
         await prisma.receivable.create({
           data: {
             costCenterId: center,
-            description: entry.description,
+            description,
             category: isCapital ? "OUTROS" : entry.categoryReceber ?? "OUTROS",
+            categoryLabel: isCapital ? null : entry.categoryLabel,
             amount: entry.amount,
             dueDate,
             status: "PENDENTE",
@@ -185,6 +239,7 @@ export async function ensureRecurringGenerated(leadDays = 15): Promise<number> {
         });
       }
       existingDays.add(dayKey(dueDate));
+      existingDays.add(dayKey(nominal));
       created++;
     }
   }

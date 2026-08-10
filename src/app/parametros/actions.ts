@@ -18,6 +18,7 @@ const schema = z.object({
   uf: z.string().max(2).optional(),
   logoDataUrl: z.string().optional(),
   publicUrl: z.string().optional(),
+  instagram: z.string().optional(),
   aiProvider: z.string().optional(),
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
@@ -65,6 +66,7 @@ export async function saveCompanyAction(
     city: d.city || null,
     uf: d.uf ? d.uf.toUpperCase() : null,
     publicUrl,
+    instagram: d.instagram?.trim() || null,
     // Parecer IA: provedor/modelo sempre atualizam; a chave só muda quando uma
     // nova é digitada (em branco = mantém) ou quando pedem para remover.
     aiProvider: d.aiProvider === "OPENAI" ? "OPENAI" : "ANTHROPIC",

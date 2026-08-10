@@ -1,7 +1,8 @@
 import { prisma } from "@/lib/prisma";
-import { ensureRecurringGenerated, ensureConsortiumInstallments } from "@/lib/recurring";
+import { timed } from "@/lib/perf";
+import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { getCashboxState } from "@/lib/cashbox";
@@ -11,6 +12,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
 import { userCan } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
+import SolicitedCombosCard, { type SolicitedCombo } from "./SolicitedCombosCard";
 
 export const dynamic = "force-dynamic";
 
@@ -22,44 +24,144 @@ const categoryLabel = {
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 } as const;
 
 export default async function ContasAPagarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string; p?: string }>;
 }) {
-  const { status: statusFilter, q: qParam, de, ate, min, max } = await searchParams;
+  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
-  const [canPagar, canManage] = await Promise.all([
+  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly, canFixDate] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
+    userCan("combos", "criar"),
+    userCan("combos", "aprovar"),
+    userCan("financeiro", "editar"),
+    userCan("financeiro", "corrigirdata"),
   ]);
-  await ensureRecurringGenerated();
-  await ensureConsortiumInstallments();
+  // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
+  const canEdit = canManage || canEditOnly;
+  await ensureRecurringGeneratedForPage();
 
-  const [payables, accounts, cashbox] = await Promise.all([
-    prisma.payable.findMany({
-      orderBy: { dueDate: "asc" },
-      include: {
-        supplier: true,
-        vehicle: true,
-        part: true,
-        account: { select: { name: true } },
-        _count: { select: { attachments: true } },
-        purchaseRequest: { select: { _count: { select: { attachments: true } } } },
-      },
-    }),
-    getActiveAccounts(),
-    getCashboxState(),
-  ]);
+  const [payables, accounts, cashbox] = await timed("tela: contas a pagar", () =>
+    Promise.all([
+      // `select` enxuto de propósito: `supplier: true`/`vehicle: true` traziam a
+      // linha inteira de cada cadastro (o veículo tem dezenas de colunas) para
+      // milhares de títulos — era o maior peso da tela.
+      prisma.payable.findMany({
+        orderBy: { dueDate: "asc" },
+        select: {
+          id: true,
+          orderNumber: true,
+          description: true,
+          category: true,
+          categoryLabel: true,
+          documentNumber: true,
+          amount: true,
+          dueDate: true,
+          status: true,
+          paymentDate: true,
+          recurringId: true,
+          saleId: true,
+          purchaseRequestId: true,
+          capitalBeneficiaryId: true,
+          beneficiaryUserId: true,
+          cardInvoice: true,
+          supplierId: true,
+          supplier: { select: { id: true, name: true } },
+          vehicleId: true,
+          vehicle: { select: { id: true, brand: true, model: true, plate: true } },
+          account: { select: { name: true } },
+          beneficiaryUser: { select: { id: true, name: true } },
+          capitalBeneficiary: { select: { id: true, name: true } },
+          paymentCombo: { select: { id: true, name: true, status: true, user: { select: { name: true } } } },
+          _count: { select: { attachments: true } },
+          purchaseRequest: { select: { _count: { select: { attachments: true } } } },
+        },
+      }),
+      getActiveAccounts(),
+      getCashboxState(),
+    ]),
+  );
+  // Combos ABERTOS para o botão "Adicionar ao combo" na seleção em lote.
+  const openCombos = await prisma.paymentCombo.findMany({
+    where: { status: "ABERTO" },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, name: true },
+  });
   // Data em que as baixas vão cair (data de trabalho do caixa aberto).
   const cashboxDate =
     cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
   const withStatus = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
-  const filtered = statusFilter && statusFilter !== "TODOS" ? withStatus.filter((p) => p.effective === statusFilter) : withStatus;
+
+  // Combos SOLICITADOS viram pagamento ÚNICO: seus títulos pendentes saem da
+  // tabela individual e aparecem agrupados no card próprio, com baixa única.
+  const inSolicitedCombo = (p: (typeof withStatus)[number]) =>
+    p.paymentCombo?.status === "SOLICITADO" && p.effective !== "PAGO";
+  const solicitedComboMap = new Map<string, SolicitedCombo>();
+  for (const p of withStatus) {
+    if (!inSolicitedCombo(p)) continue;
+    const combo = p.paymentCombo!;
+    const entry = solicitedComboMap.get(combo.id) ?? {
+      id: combo.id,
+      name: combo.name,
+      userName: combo.user?.name ?? null,
+      count: 0,
+      total: 0,
+    };
+    entry.count += 1;
+    entry.total = Math.round((entry.total + p.amount) * 100) / 100;
+    solicitedComboMap.set(combo.id, entry);
+  }
+  const solicitedCombos = Array.from(solicitedComboMap.values());
+
+  // Opções distintas presentes nos títulos, para os filtros separados.
+  const supplierOptions = Array.from(
+    new Map(payables.filter((p) => p.supplier).map((p) => [p.supplier!.id, p.supplier!.name])).entries(),
+  )
+    .map(([id, name]) => ({ id, name }))
+    .sort((a, b) => a.name.localeCompare(b.name, "pt-BR"));
+  const vehicleOptions = Array.from(
+    new Map(
+      payables.filter((p) => p.vehicle).map((p) => [p.vehicle!.id, `${p.vehicle!.brand} ${p.vehicle!.model} · ${p.vehicle!.plate}`]),
+    ).entries(),
+  )
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+  // Beneficiários = vendedores (usuário, valor "u:<id>") + sócios do capital
+  // (valor "c:<id>", com sufixo), unidos numa lista só.
+  const beneficiaryMap = new Map<string, string>();
+  for (const p of payables) {
+    if (p.beneficiaryUser) beneficiaryMap.set(`u:${p.beneficiaryUser.id}`, p.beneficiaryUser.name);
+    if (p.capitalBeneficiary) beneficiaryMap.set(`c:${p.capitalBeneficiary.id}`, `${p.capitalBeneficiary.name} (sócio)`);
+  }
+  const beneficiaryOptions = Array.from(beneficiaryMap.entries())
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
+
+  const filtered = withStatus.filter((p) => {
+    if (inSolicitedCombo(p)) return false;
+    // "NAO_PAGO" agrupa pendente + atrasado: é tudo que ainda tem de ser pago.
+    // "TODOS" inclui os pagos, então não servia para essa pergunta.
+    if (statusFilter === "NAO_PAGO") {
+      if (p.effective === "PAGO") return false;
+    } else if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) {
+      return false;
+    }
+    if (fornecedor && p.supplierId !== fornecedor) return false;
+    if (veiculo && p.vehicleId !== veiculo) return false;
+    if (beneficiario) {
+      const [kind, bid] = [beneficiario.slice(0, 2), beneficiario.slice(2)];
+      if (kind === "u:" && p.beneficiaryUserId !== bid) return false;
+      if (kind === "c:" && p.capitalBeneficiaryId !== bid) return false;
+    }
+    return true;
+  });
 
   // Comissões de vendedores vinculados a um beneficiário do capital: permitem
   // pagar um valor maior (o excedente vira retirada de capital). Mapeia o
@@ -74,9 +176,14 @@ export default async function ContasAPagarPage({
       })
     : [];
   const capStatus = linkedBeneficiaries.length ? await capitalStatusByBeneficiary() : new Map();
-  const excessByUser = new Map<string, { beneficiaryName: string; free: number }>();
+  const excessByUser = new Map<string, { beneficiaryName: string; free: number; capital: number }>();
   for (const b of linkedBeneficiaries) {
-    if (b.userId) excessByUser.set(b.userId, { beneficiaryName: b.name, free: capStatus.get(b.id)?.free ?? 0 });
+    if (b.userId)
+      excessByUser.set(b.userId, {
+        beneficiaryName: b.name,
+        free: capStatus.get(b.id)?.free ?? 0,
+        capital: capStatus.get(b.id)?.capital ?? 0,
+      });
   }
 
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);
@@ -89,21 +196,38 @@ export default async function ContasAPagarPage({
     categoryLabel: p.categoryLabel || categoryLabel[p.category],
     documentNumber: p.documentNumber ?? null,
     supplierName: p.supplier?.name ?? null,
+    beneficiaryName: p.beneficiaryUser?.name ?? p.capitalBeneficiary?.name ?? null,
     vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : null,
     dueDate: p.dueDate.toISOString(),
     amount: p.amount,
     effective: p.effective,
     status: p.status,
     accountName: p.account?.name ?? null,
+    paymentDateInput: p.paymentDate ? toDateInputValue(p.paymentDate) : null,
     recurring: Boolean(p.recurringId),
+    // Combo de pagamento: sinaliza que alguém montou/solicitou o pagamento.
+    combo: p.paymentCombo
+      ? {
+          id: p.paymentCombo.id,
+          name: p.paymentCombo.name,
+          status: p.paymentCombo.status,
+          userName: p.paymentCombo.user?.name ?? null,
+        }
+      : null,
     // Editável: qualquer título ainda não pago (pagos: reverter antes).
     editable: p.effective !== "PAGO",
+    // Fatura de cartão: linha ganha o link do relatório de lançamentos (busca/PDF).
+    cardInvoice: p.cardInvoice,
     // Tem anexo no próprio título ou na solicitação de compra que o gerou.
     hasAttachment: p._count.attachments > 0 || (p.purchaseRequest?._count.attachments ?? 0) > 0,
     commissionExcess:
       p.category === "COMISSAO" && p.beneficiaryUserId && excessByUser.has(p.beneficiaryUserId)
         ? excessByUser.get(p.beneficiaryUserId)!
         : null,
+    // Comissão de um vendedor que NÃO está vinculado a um beneficiário do capital:
+    // a opção "aplicar no capital" não aparece — mostramos uma dica de como habilitar.
+    commissionSellerUnlinked:
+      p.category === "COMISSAO" && !!p.beneficiaryUserId && !excessByUser.has(p.beneficiaryUserId),
   }));
 
   // Busca livre pelos campos exibidos (nº, descrição, categoria, fornecedor,
@@ -118,6 +242,7 @@ export default async function ContasAPagarPage({
         r.documentNumber,
         r.categoryLabel,
         r.supplierName,
+        r.beneficiaryName,
         r.vehicleLabel,
         formatDate(r.dueDate),
         r.amount,
@@ -133,6 +258,26 @@ export default async function ContasAPagarPage({
   // estável: dentro de cada grupo mantém o vencimento crescente (ordem do findMany).
   tableRows.sort((a, b) => (a.effective === "PAGO" ? 1 : 0) - (b.effective === "PAGO" ? 1 : 0));
 
+  // Página de 100 linhas: a busca e os filtros continuam valendo sobre TODOS os
+  // títulos — só o que vai para a tela é fatiado. Sem isso, milhares de linhas
+  // eram enviadas ao navegador de uma vez (o que travava no celular).
+  const PER_PAGE = 100;
+  const totalRows = tableRows.length;
+  const pageCount = Math.max(1, Math.ceil(totalRows / PER_PAGE));
+  const currentPage = Math.min(Math.max(1, Number(pParam) || 1), pageCount);
+  const pageStart = (currentPage - 1) * PER_PAGE;
+  const pageRows = tableRows.slice(pageStart, pageStart + PER_PAGE);
+  // Link de outra página preservando busca e filtros.
+  const pageHref = (n: number) => {
+    const sp = new URLSearchParams();
+    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max, fornecedor, beneficiario, veiculo })) {
+      if (v) sp.set(k, String(v));
+    }
+    if (n > 1) sp.set("p", String(n));
+    const qs = sp.toString();
+    return qs ? `/financeiro/a-pagar?${qs}` : "/financeiro/a-pagar";
+  };
+
   return (
     <div>
       <PageHeader
@@ -147,6 +292,9 @@ export default async function ContasAPagarPage({
               <LinkButton href="/financeiro/a-pagar/importar-pmz" variant="secondary">
                 ⇪ Importar PMZ
               </LinkButton>
+              <LinkButton href="/financeiro/a-pagar/importar-agrasty" variant="secondary">
+                ⇪ Lançar Pix 31/07 (Agrasty)
+              </LinkButton>
               <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
             </div>
           </Can>
@@ -157,25 +305,71 @@ export default async function ContasAPagarPage({
         basePath="/financeiro/a-pagar"
         printTitle="Contas a pagar"
         q={q}
-        placeholder="Buscar (descrição, fornecedor, veículo, valor...)"
+        placeholder="Buscar (descrição, fornecedor, beneficiário, veículo, valor...)"
         date
         value
         de={de}
         ate={ate}
         min={min}
         max={max}
+        filtersKey={`${statusFilter ?? ""}|${fornecedor ?? ""}|${beneficiario ?? ""}|${veiculo ?? ""}`}
         extra={
-          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
-            Status
-            <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 w-48">
-              <option value="TODOS">Todos os status</option>
-              <option value="PENDENTE">Pendente</option>
-              <option value="ATRASADO">Atrasado</option>
-              <option value="PAGO">Pago</option>
-            </Select>
-          </label>
+          <>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Status
+              <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 h-11 w-44">
+                <option value="TODOS">Todos os status</option>
+                <option value="NAO_PAGO">Não pago (pendente + atrasado)</option>
+                <option value="PENDENTE">Pendente</option>
+                <option value="ATRASADO">Atrasado</option>
+                <option value="PAGO">Pago</option>
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Fornecedor
+              <Select name="fornecedor" defaultValue={fornecedor || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os fornecedores</option>
+                {supplierOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Beneficiário
+              <Select name="beneficiario" defaultValue={beneficiario || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os beneficiários</option>
+                {beneficiaryOptions.map((b) => (
+                  <option key={b.value} value={b.value}>
+                    {b.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Veículo
+              <Select name="veiculo" defaultValue={veiculo || ""} className="mt-0.5 h-11 w-52">
+                <option value="">Todos os veículos</option>
+                {vehicleOptions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </Select>
+            </label>
+          </>
         }
       />
+
+      {statusFilter !== "PAGO" ? (
+        <SolicitedCombosCard
+          combos={solicitedCombos}
+          accounts={accounts}
+          canPay={canPayCombo}
+          cashboxDate={cashboxDate}
+        />
+      ) : null}
 
       <Card>
         {tableRows.length === 0 ? (
@@ -187,7 +381,27 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={tableRows} accounts={accounts} canPagar={canPagar} canManage={canManage} cashboxDate={cashboxDate} />
+            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            {pageCount > 1 ? (
+              <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 print:hidden">
+                <p className="text-xs text-slate-500">
+                  Mostrando {pageStart + 1}-{pageStart + pageRows.length} de {totalRows} título(s)
+                  {" · "}página {currentPage} de {pageCount}
+                </p>
+                <div className="flex gap-2">
+                  {currentPage > 1 ? (
+                    <LinkButton href={pageHref(currentPage - 1)} variant="secondary">
+                      ← Anterior
+                    </LinkButton>
+                  ) : null}
+                  {currentPage < pageCount ? (
+                    <LinkButton href={pageHref(currentPage + 1)} variant="secondary">
+                      Próxima →
+                    </LinkButton>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </>
         )}
       </Card>

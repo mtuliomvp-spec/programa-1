@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { matchesSearch } from "@/lib/search";
+import { countDuplicated } from "@/lib/person-keys";
 import { Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import DeleteRowButton from "@/components/DeleteRowButton";
@@ -16,9 +17,10 @@ export default async function ClientesPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
-  const [canEditar, canExcluir] = await Promise.all([
+  const [canEditar, canExcluir, canUnificar] = await Promise.all([
     userCan("cadastros", "editar"),
     userCan("cadastros", "excluir"),
+    userCan("cadastros", "unificar"),
   ]);
   const allCustomers = await prisma.customer.findMany({
     orderBy: { name: "asc" },
@@ -27,6 +29,8 @@ export default async function ClientesPage({
   const customers = q
     ? allCustomers.filter((c) => matchesSearch(q, c.name, c.document, c.phone, c.email))
     : allCustomers;
+  // A lista já está carregada — contar os repetidos aqui não custa consulta.
+  const duplicated = canUnificar ? countDuplicated(allCustomers) : 0;
 
   return (
     <div>
@@ -45,6 +49,15 @@ export default async function ClientesPage({
         q={q}
         placeholder="Buscar (nome, documento, telefone, e-mail)"
       />
+      {duplicated > 0 ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <strong>{duplicated} cadastros repetidos</strong> — o mesmo cliente aparece mais de uma
+          vez.{" "}
+          <Link href="/clientes/unificar" className="font-medium underline">
+            Conferir e unificar →
+          </Link>
+        </div>
+      ) : null}
       <Card>
         {customers.length === 0 ? (
           <EmptyState

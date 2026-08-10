@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { timed } from "@/lib/perf";
 import type { CategoriaPagar } from "@prisma/client";
 import { parseReferrals, sumReferrals } from "@/lib/referrals";
 
@@ -73,6 +74,18 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     .filter((t) => t.kind === "APORTE" && t.receivableId)
     .map((t) => t.receivableId as string);
 
+  // Comissão do vendedor sobre o SEGURO: entra pela data da BAIXA, não da
+  // venda — é quando o valor fica conhecido. Assim receita e custo caem no
+  // mesmo mês e nenhum mês fechado é reescrito.
+  const seguroComissoes = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      insuranceSettledAt: { gte: rangeStart, lt: rangeEnd },
+      insuranceCommissionAmount: { gt: 0 },
+    },
+    select: { insuranceCommissionAmount: true, insuranceSettledAt: true },
+  });
+
   const [sales, partSales, expenses, retornoRecs, outrasRecs] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", saleDate: { gte: rangeStart, lt: rangeEnd } },
@@ -94,12 +107,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         saleId: null, // comissão de venda entra por competência (abaixo)
         id: { notIn: retiradaPayableIds }, // retirada de capital não é despesa
       },
-      select: { amount: true, paymentDate: true, category: true },
+      select: { id: true, amount: true, paymentDate: true, category: true },
     }),
-    // Retorno da financeira recebido no período (regime de caixa).
+    // Retorno da financeira e comissão de seguro recebidos no período (regime
+    // de caixa). As duas são receita de financiamento e entram no mesmo balde.
     prisma.receivable.findMany({
       where: {
-        category: "RETORNO_FINANCEIRA",
+        category: { in: ["RETORNO_FINANCEIRA", "COMISSAO_SEGURO"] },
         status: "RECEBIDO",
         receivedDate: { gte: rangeStart, lt: rangeEnd },
       },
@@ -120,10 +134,36 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     }),
   ]);
 
+  // Fatura de cartão: a parte dos lançamentos que virou custo de veículo ou
+  // retirada de capital NÃO é despesa (o custo entra na margem do carro e o
+  // capital não é resultado) — desconta do valor do título nas despesas.
+  const cardSplits = await prisma.cardInvoiceItem.findMany({
+    where: {
+      payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } },
+      OR: [
+        { structuralKey: "VEICULOS", vehicleId: { not: null } },
+        { structuralKey: "CAPITAL", capitalBeneficiaryId: { not: null } },
+      ],
+    },
+    select: { payableId: true, amount: true },
+  });
+  const cardNonExpense = new Map<string, number>();
+  for (const it of cardSplits) {
+    cardNonExpense.set(it.payableId, (cardNonExpense.get(it.payableId) ?? 0) + it.amount);
+  }
+
   // Fechamentos mensais: o resultado do mês fechado migrou para o capital, então
   // a DRE do mês fechado desconta o valor transferido (fica ~zero).
   const allClosings = await prisma.monthlyClosing.findMany({
     select: { year: true, month: true, result: true },
+  });
+
+  // Saldo inicial de contas cadastradas no período: entra como outra receita no
+  // mês do cadastro (mesma regra do extrato de Lucro/Prejuízo — o dinheiro
+  // pré-sistema é resultado acumulado, senão a DRE diverge da equação).
+  const contasComSaldoInicial = await prisma.financialAccount.findMany({
+    where: { initialBalance: { not: 0 } },
+    select: { initialBalance: true, createdAt: true },
   });
 
   const result: DreMonth[] = [];
@@ -135,9 +175,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const retornos = retornoRecs
       .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
       .reduce((sum, r) => sum + r.amount, 0);
-    const outrasReceitas = outrasRecs
-      .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
-      .reduce((sum, r) => sum + r.amount, 0);
+    const outrasReceitas =
+      outrasRecs
+        .filter((r) => r.receivedDate! >= start && r.receivedDate! < end)
+        .reduce((sum, r) => sum + r.amount, 0) +
+      contasComSaldoInicial
+        .filter((a) => a.createdAt >= start && a.createdAt < end)
+        .reduce((sum, a) => sum + a.initialBalance, 0);
 
     const receitaVeiculos = monthSales.reduce((sum, s) => sum + s.totalAmount, 0);
     const receitaPecas = monthPartSales.reduce((sum, p) => sum + p.totalAmount, 0);
@@ -145,7 +189,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, s) =>
         sum +
         s.vehicle.purchasePrice +
-        s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0),
+        s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+        // Consignado: o valor devolvido ao proprietário é custo da venda (o carro
+        // não é patrimônio comprado, então purchasePrice é 0). Reconhecido por
+        // competência aqui — o destino (conta a pagar ou aporte) não muda o custo.
+        (s.ownerRefundAmount || 0),
       0,
     );
     const custoPecas = monthPartSales.reduce(
@@ -159,10 +207,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         (sum, s) => sum + (s.commissionAmount || 0) + sumReferrals(s.referrals) + (s.returnCommissionAmount || 0),
         0,
       ) +
+      seguroComissoes
+        .filter((s) => s.insuranceSettledAt! >= start && s.insuranceSettledAt! < end)
+        .reduce((sum, s) => sum + s.insuranceCommissionAmount, 0) +
       monthExpenses.filter((e) => e.category === "COMISSAO").reduce((sum, e) => sum + e.amount, 0);
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
-      .reduce((sum, e) => sum + e.amount, 0);
+      .reduce((sum, e) => sum + e.amount - (cardNonExpense.get(e.id) ?? 0), 0);
     // Transferência (DETRAN) cobrada por competência no mês.
     const transferencias = monthSales.reduce(
       (sum, s) => sum + (s.transferCharged ? s.transferAmount : 0),
@@ -216,6 +267,7 @@ export type PLEntryKind =
   | "POS_VENDA"
   | "RETORNO"
   | "RECEITA"
+  | "SALDO_INICIAL"
   | "FECHAMENTO";
 
 export type PLEntry = {
@@ -237,6 +289,8 @@ export type PLStatement = {
   posVenda: number;
   retornos: number;
   outrasReceitas: number;
+  /** Saldo inicial informado no cadastro de contas financeiras (dinheiro pré-sistema). */
+  saldosIniciais: number;
   transferencias: number;
   fechamentos: number;
   lucroLiquido: number;
@@ -247,6 +301,13 @@ export async function getProfitLossStatement(
   months = 12,
   opts?: { start?: Date; end?: Date; excludeFechamento?: boolean },
 ): Promise<PLStatement> {
+  return timed("relatório Lucro/Prejuízo", () => profitLossStatement(months, opts));
+}
+
+async function profitLossStatement(
+  months: number,
+  opts?: { start?: Date; end?: Date; excludeFechamento?: boolean },
+): Promise<PLStatement> {
   // Janela opcional (start/end) para telas que mostram um período específico
   // (período aberto ou um mês fechado). Sem opts = comportamento padrão de antes.
   const rangeStart = opts?.start ?? monthRange(months - 1).start;
@@ -255,9 +316,25 @@ export async function getProfitLossStatement(
   // Movimentações de capital não entram no resultado: o APORTE (recebível) não é
   // receita e a RETIRADA (a pagar) não é despesa — elas mexem no capital, não no
   // lucro. O PRÓ-LABORE é despesa real e continua contando.
-  const capitalTx = await prisma.capitalTransaction.findMany({
-    select: { payableId: true, receivableId: true, kind: true },
-  });
+  //
+  // As outras duas não dependem de nada calculado aqui dentro e antes eram
+  // buscadas lá no fim da função, uma em fila com a outra. O farol chama isto
+  // em toda gravação do sistema, e cada ida ao banco em fila custa uma latência
+  // de rede inteira — então vêm todas na mesma rodada.
+  const [capitalTx, contasComSaldoInicial, closings] = await Promise.all([
+    prisma.capitalTransaction.findMany({
+      select: { payableId: true, receivableId: true, kind: true },
+    }),
+    prisma.financialAccount.findMany({
+      where: { initialBalance: { not: 0 } },
+      select: { id: true, name: true, initialBalance: true, createdAt: true },
+    }),
+    opts?.excludeFechamento
+      ? Promise.resolve([])
+      : prisma.monthlyClosing.findMany({
+          select: { id: true, year: true, month: true, result: true },
+        }),
+  ]);
   const retiradaPayableIds = capitalTx
     .filter((t) => t.kind === "RETIRADA" && t.payableId)
     .map((t) => t.payableId as string);
@@ -294,15 +371,24 @@ export async function getProfitLossStatement(
         category: true,
         description: true,
         categoryLabel: true,
+        cardInvoice: true,
         supplier: { select: { name: true } },
       },
     }),
-    // Custos pós-venda: também só quando o pagamento é efetuado.
+    // Custos pós-venda: também só quando o pagamento é efetuado (título próprio
+    // ou fatura de cartão que contém o lançamento).
     prisma.vehicleCost.findMany({
-      where: { postSale: true, payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
+      where: {
+        postSale: true,
+        OR: [
+          { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
+          { cardItem: { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } } },
+        ],
+      },
       include: {
         vehicle: { select: { brand: true, model: true, plate: true } },
         payable: { select: { paymentDate: true } },
+        cardItem: { select: { payable: { select: { paymentDate: true } } } },
       },
     }),
     // Outras receitas avulsas: dinheiro que entrou (RECEBIDO) sem ser venda,
@@ -325,12 +411,46 @@ export async function getProfitLossStatement(
   // financiamento). Só o RECEBIDO conta (regime de caixa).
   const retornoRecs = await prisma.receivable.findMany({
     where: {
-      category: "RETORNO_FINANCEIRA",
+      category: { in: ["RETORNO_FINANCEIRA", "COMISSAO_SEGURO"] },
       status: "RECEBIDO",
       receivedDate: { gte: rangeStart, lt: rangeEnd },
     },
     include: { sale: { include: { vehicle: { select: { brand: true, model: true, plate: true } } } } },
   });
+
+  // Comissão do vendedor sobre o SEGURO: pela data da BAIXA (é quando o valor
+  // fica conhecido), para casar com a receita, que também entra na baixa.
+  const seguroComissoes = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      insuranceSettledAt: { gte: rangeStart, lt: rangeEnd },
+      insuranceCommissionAmount: { gt: 0 },
+    },
+    select: {
+      id: true,
+      sellerName: true,
+      insuranceCommissionAmount: true,
+      insuranceSettledAt: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+
+  // Fatura de cartão: parte dos lançamentos vira custo de veículo (margem) ou
+  // retirada de capital — essa parte sai das despesas para não contar 2x.
+  const cardSplits = await prisma.cardInvoiceItem.findMany({
+    where: {
+      payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } },
+      OR: [
+        { structuralKey: "VEICULOS", vehicleId: { not: null } },
+        { structuralKey: "CAPITAL", capitalBeneficiaryId: { not: null } },
+      ],
+    },
+    select: { payableId: true, amount: true },
+  });
+  const cardNonExpense = new Map<string, number>();
+  for (const it of cardSplits) {
+    cardNonExpense.set(it.payableId, (cardNonExpense.get(it.payableId) ?? 0) + it.amount);
+  }
 
   const fmt = (n: number) =>
     n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -341,9 +461,12 @@ export async function getProfitLossStatement(
 
   for (const s of sales) {
     // A margem da venda usa só os custos ATÉ a venda; pós-venda entra à parte.
+    // Consignado: o valor devolvido ao proprietário é custo da venda (o carro
+    // não é patrimônio comprado) — reconhecido por competência na margem.
     const custo =
       s.vehicle.purchasePrice +
-      s.vehicle.costs.filter((x) => !x.postSale).reduce((c, x) => c + x.amount, 0);
+      s.vehicle.costs.filter((x) => !x.postSale).reduce((c, x) => c + x.amount, 0) +
+      (s.ownerRefundAmount || 0);
     const margem = s.totalAmount - custo;
     receitaVeiculos += s.totalAmount;
     custoVeiculos += custo;
@@ -354,10 +477,14 @@ export async function getProfitLossStatement(
       kind: "VEICULO",
       description: isIntermediacao
         ? `Financiamento de terceiros — ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`
-        : `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+        : s.consigned
+          ? `Venda (consignado) ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`
+          : `Venda ${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
       detail: isIntermediacao
         ? `lucro bruto: financiamento ${fmt(s.financingAmount)} − devolução ${fmt(s.refundAmount)} (comissões e demais despesas saem em linhas próprias)`
-        : `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
+        : s.consigned
+          ? `lucro bruto: venda ${fmt(s.totalAmount)} − devolução ao proprietário ${fmt(s.ownerRefundAmount)}${s.vehicle.costs.some((x) => !x.postSale) ? " − custos" : ""} (comissões e demais despesas da venda saem em linhas próprias)`
+          : `lucro bruto: venda ${fmt(s.totalAmount)} − custo ${fmt(custo)} (comissões e demais despesas da venda saem em linhas próprias)`,
       value: margem,
     });
     // Comissão do vendedor: custo direto da venda, reconhecido por competência
@@ -418,6 +545,19 @@ export async function getProfitLossStatement(
     }
   }
 
+  // Comissão do seguro: custo na data da baixa (a receita entrou no mesmo dia).
+  for (const s of seguroComissoes) {
+    comissoes += s.insuranceCommissionAmount;
+    entries.push({
+      id: `segcom-${s.id}`,
+      date: s.insuranceSettledAt!,
+      kind: "COMISSAO",
+      description: `Comissão do seguro${s.sellerName ? ` — ${s.sellerName}` : ""}`,
+      detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate}`,
+      value: -s.insuranceCommissionAmount,
+    });
+  }
+
   for (const p of partSales) {
     const custo = p.quantity * p.part.costPrice;
     const margem = p.totalAmount - custo;
@@ -435,13 +575,21 @@ export async function getProfitLossStatement(
 
   for (const e of expenses) {
     const isComissao = e.category === "COMISSAO";
-    if (isComissao) comissoes += e.amount;
-    else despesas += e.amount;
+    // Fatura de cartão: só a parte "despesa" entra no resultado (o que virou
+    // custo de veículo entra na margem do carro; capital não é resultado).
+    const nonExpense = cardNonExpense.get(e.id) ?? 0;
+    const expenseValue = Math.max(0, Math.round((e.amount - nonExpense) * 100) / 100);
+    if (e.cardInvoice && expenseValue <= 0.004) continue; // fatura 100% veículos/capital
+    if (isComissao) comissoes += expenseValue;
+    else despesas += expenseValue;
     // O texto digitado pelo usuário é o principal; a categoria (e o
     // fornecedor, se houver) vai no detalhe — "Outros" sozinho não diz nada.
     const detailParts = [
       e.categoryLabel && e.categoryLabel !== e.description ? e.categoryLabel : null,
       e.supplier?.name ?? null,
+      nonExpense > 0.004
+        ? `fatura ${fmt(e.amount)} − ${fmt(nonExpense)} em custos de veículos/capital (entram em linhas próprias)`
+        : null,
     ].filter(Boolean);
     entries.push({
       id: `e-${e.id}`,
@@ -449,7 +597,7 @@ export async function getProfitLossStatement(
       kind: isComissao ? "COMISSAO" : "DESPESA",
       description: e.description || e.categoryLabel || "Despesa",
       detail: detailParts.length ? detailParts.join(" · ") : null,
-      value: -e.amount,
+      value: -expenseValue,
     });
   }
 
@@ -457,7 +605,7 @@ export async function getProfitLossStatement(
     posVenda += c.amount;
     entries.push({
       id: `pv-${c.id}`,
-      date: c.payable?.paymentDate ?? c.date,
+      date: c.payable?.paymentDate ?? c.cardItem?.payable?.paymentDate ?? c.date,
       kind: "POS_VENDA",
       description: `Pós-venda: ${c.description}`,
       detail: `${c.vehicle.brand} ${c.vehicle.model} · ${c.vehicle.plate}`,
@@ -491,17 +639,31 @@ export async function getProfitLossStatement(
     });
   }
 
+  // Saldo inicial das contas financeiras: dinheiro que a conta já tinha quando
+  // foi cadastrada no sistema. Ele entra direto no caixa da equação patrimonial,
+  // então PRECISA aparecer aqui também — senão o farol (equação × Lucro/Prejuízo)
+  // diverge exatamente pelo valor do saldo inicial. É resultado acumulado
+  // anterior ao sistema, lançado na data do cadastro da conta.
+  let saldosIniciais = 0;
+  for (const a of contasComSaldoInicial) {
+    if (a.createdAt < rangeStart || a.createdAt >= rangeEnd) continue;
+    saldosIniciais += a.initialBalance;
+    entries.push({
+      id: `si-${a.id}`,
+      date: a.createdAt,
+      kind: "SALDO_INICIAL",
+      description: `Saldo inicial da conta ${a.name}`,
+      detail: "dinheiro que a conta já tinha quando foi cadastrada no sistema",
+      value: a.initialBalance,
+    });
+  }
+
   // Fechamentos mensais: o resultado do mês fechado foi transferido para o
   // capital da empresa — entra aqui como −resultado (o mês fechado zera no
   // extrato, casando com o aporte/retirada de capital na equação patrimonial).
   // Na visão de um mês fechado, mostramos o resultado REAL do mês (sem a linha
   // de fechamento que zeraria o período).
   let fechamentos = 0;
-  const closings = opts?.excludeFechamento
-    ? []
-    : await prisma.monthlyClosing.findMany({
-        select: { id: true, year: true, month: true, result: true },
-      });
   for (const c of closings) {
     const closeDate = new Date(Date.UTC(c.year, c.month, 0, 12));
     if (closeDate < rangeStart || closeDate >= rangeEnd) continue;
@@ -532,10 +694,19 @@ export async function getProfitLossStatement(
     posVenda,
     retornos,
     outrasReceitas,
+    saldosIniciais,
     transferencias,
     fechamentos,
     lucroLiquido:
-      lucroBruto - despesas - comissoes - posVenda - transferencias - fechamentos + retornos + outrasReceitas,
+      lucroBruto -
+      despesas -
+      comissoes -
+      posVenda -
+      transferencias -
+      fechamentos +
+      retornos +
+      outrasReceitas +
+      saldosIniciais,
     veiculosVendidos: sales.length,
   };
 }
@@ -574,6 +745,91 @@ export type VehicleProfitRow = {
   daysInStock: number;
 };
 
+/** Resultado de UMA venda, na mesma conta do relatório "Lucro por veículo". */
+export type VehicleSaleResult = {
+  totalCost: number;
+  saleAmount: number;
+  /** Lucro bruto: venda − (compra + custos do veículo + devolução do consignado). */
+  grossProfit: number;
+  /** Comissão do vendedor + indicações + transferência DETRAN cobrada. */
+  saleExpenses: number;
+  /** Lucro da venda em si: bruto − despesas da venda. */
+  saleProfit: number;
+  returnAmount: number;
+  returnCommission: number;
+  /** Lucro do retorno: retorno recebido − comissão do retorno. */
+  returnNetProfit: number;
+  /** Comissão de seguro já recebida (0 enquanto pendente). */
+  insuranceAmount: number;
+  insuranceCommission: number;
+  /** Lucro do seguro: comissão recebida − comissão do vendedor. */
+  insuranceNetProfit: number;
+  /** Resultado final: lucro da venda + lucro do retorno + lucro do seguro. */
+  netProfit: number;
+  marginPct: number;
+};
+
+/**
+ * Conta do resultado de uma venda. Fica aqui, pura, para o relatório "Lucro por
+ * veículo" e a ficha do veículo mostrarem SEMPRE o mesmo número.
+ */
+export function computeVehicleSaleResult(input: {
+  purchasePrice: number;
+  extraCosts: number;
+  sale: {
+    totalAmount: number;
+    ownerRefundAmount: number | null;
+    commissionAmount: number;
+    referrals: unknown;
+    transferCharged: boolean;
+    transferAmount: number;
+    returnPaidAmount: number | null;
+    returnNet: number;
+    returnCommissionAmount: number;
+    insuranceAmount?: number | null;
+    insuranceCommissionAmount?: number | null;
+  };
+}): VehicleSaleResult {
+  const s = input.sale;
+  // Consignado: a devolução ao proprietário é custo da venda (o carro não é
+  // patrimônio comprado, então purchasePrice é 0).
+  const totalCost = input.purchasePrice + input.extraCosts + (s.ownerRefundAmount || 0);
+  const grossProfit = s.totalAmount - totalCost;
+  // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
+  // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
+  // ela é despesa do RETORNO e sai do lucro do retorno (abaixo).
+  const saleExpenses =
+    s.commissionAmount +
+    parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
+    (s.transferCharged ? s.transferAmount : 0);
+  // Retorno da financeira recebido, líquido do imposto (o já pago, se
+  // liquidado, senão o programado).
+  const returnAmount = s.returnPaidAmount ?? s.returnNet;
+  const returnCommission = s.returnCommissionAmount;
+  const returnNetProfit = returnAmount - returnCommission;
+  // Comissão de seguro: 0 enquanto pendente (nada foi lançado até cair).
+  const insuranceAmount = s.insuranceAmount ?? 0;
+  const insuranceCommission = s.insuranceCommissionAmount ?? 0;
+  const insuranceNetProfit = insuranceAmount - insuranceCommission;
+  const saleProfit = grossProfit - saleExpenses;
+  const netProfit = saleProfit + returnNetProfit + insuranceNetProfit;
+  return {
+    totalCost,
+    saleAmount: s.totalAmount,
+    grossProfit,
+    saleExpenses,
+    saleProfit,
+    returnAmount,
+    returnCommission,
+    returnNetProfit,
+    insuranceAmount,
+    insuranceCommission,
+    insuranceNetProfit,
+    netProfit,
+    marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
+  };
+}
+
 export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
   // Inclui vendas próprias e financiamento de terceiros (intermediação). Na
   // intermediação o veículo tem custo 0 e a "venda" é a sobra do financiamento
@@ -586,24 +842,11 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
 
   return sales.map((s) => {
     const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
-    const totalCost = s.vehicle.purchasePrice + extraCosts;
-    const profit = s.totalAmount - totalCost;
-    // Despesas da VENDA (saem do lucro da venda): comissão do vendedor,
-    // indicações e transferência DETRAN. A comissão do retorno NÃO entra aqui —
-    // ela é despesa do RETORNO e sai do lucro do retorno (abaixo).
-    const saleExpenses =
-      s.commissionAmount +
-      parseReferrals(s.referrals).reduce((sum, r) => sum + r.amount, 0) +
-      (s.transferCharged ? s.transferAmount : 0);
-    // Retorno da financeira recebido, líquido do imposto (o já pago, se
-    // liquidado, senão o programado).
-    const returnAmount = s.returnPaidAmount ?? s.returnNet;
-    // Lucro do retorno = retorno recebido − comissão do vendedor sobre o retorno.
-    const returnCommission = s.returnCommissionAmount;
-    const returnNetProfit = returnAmount - returnCommission;
-    // Lucro líquido total: lucro da venda + lucro do retorno (mesmo total de
-    // antes — só muda a atribuição entre venda e retorno).
-    const netProfit = profit - saleExpenses + returnNetProfit;
+    const r = computeVehicleSaleResult({
+      purchasePrice: s.vehicle.purchasePrice,
+      extraCosts,
+      sale: s,
+    });
     return {
       saleId: s.id,
       vehicleId: s.vehicleId,
@@ -612,17 +855,17 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
       saleDate: s.saleDate,
       purchasePrice: s.vehicle.purchasePrice,
       extraCosts,
-      totalCost,
-      saleAmount: s.totalAmount,
-      profit,
-      saleExpenses,
-      returnAmount,
-      returnCommission,
-      returnNetProfit,
-      netProfit,
+      totalCost: r.totalCost,
+      saleAmount: r.saleAmount,
+      profit: r.grossProfit,
+      saleExpenses: r.saleExpenses,
+      returnAmount: r.returnAmount,
+      returnCommission: r.returnCommission,
+      returnNetProfit: r.returnNetProfit,
+      netProfit: r.netProfit,
       viaPaidTraffic: s.viaPaidTraffic,
       isIntermediation: s.saleType === "FINANCIAMENTO_TERCEIROS",
-      marginPct: s.totalAmount > 0 ? (netProfit / s.totalAmount) * 100 : 0,
+      marginPct: r.marginPct,
       daysInStock: daysBetween(s.vehicle.entryDate, s.saleDate),
     };
   });
@@ -756,6 +999,7 @@ export const PAYABLE_CATEGORY_LABEL: Record<CategoriaPagar, string> = {
   SALARIO: "Salários",
   COMBUSTIVEL: "Combustíveis",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 };
 
@@ -776,27 +1020,26 @@ export async function getExpensesByCategory(months = 12): Promise<{
   const { start } = monthRange(months - 1);
   const payables = await prisma.payable.findMany({
     where: { dueDate: { gte: start } },
-    select: { category: true, amount: true, status: true },
+    select: { category: true, categoryLabel: true, amount: true, status: true },
   });
 
-  const categories = Object.keys(PAYABLE_CATEGORY_LABEL) as CategoriaPagar[];
-  const rows: ExpenseCategoryRow[] = categories
-    .map((category) => {
-      const items = payables.filter((p) => p.category === category);
-      const paid = items
-        .filter((p) => p.status === "PAGO")
-        .reduce((sum, p) => sum + p.amount, 0);
-      const total = items.reduce((sum, p) => sum + p.amount, 0);
-      return {
-        category,
-        label: PAYABLE_CATEGORY_LABEL[category],
-        total,
-        paid,
-        pending: total - paid,
-        count: items.length,
-      };
-    })
-    .filter((r) => r.count > 0)
+  // Agrupa pelo rótulo EXIBIDO (o mesmo que aparece em Contas a pagar): as
+  // categorias criadas pela loja — "Impostos", "Documentação de veículo",
+  // "Cartão de crédito"... — ganham linha própria em vez de cair todas em
+  // "Outros". Sem rótulo, vale o nome padrão da categoria interna.
+  const byLabel = new Map<string, ExpenseCategoryRow>();
+  for (const p of payables) {
+    const label = (p.categoryLabel || "").trim() || PAYABLE_CATEGORY_LABEL[p.category];
+    const row =
+      byLabel.get(label) ??
+      { category: p.category, label, total: 0, paid: 0, pending: 0, count: 0 };
+    row.total += p.amount;
+    if (p.status === "PAGO") row.paid += p.amount;
+    row.count += 1;
+    byLabel.set(label, row);
+  }
+  const rows: ExpenseCategoryRow[] = [...byLabel.values()]
+    .map((r) => ({ ...r, pending: r.total - r.paid }))
     .sort((a, b) => b.total - a.total);
 
   return {
@@ -827,7 +1070,10 @@ export async function getPerformanceStats() {
 
   const profitThisMonth = monthSales.reduce((sum, s) => {
     const cost =
-      s.vehicle.purchasePrice + s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0);
+      s.vehicle.purchasePrice +
+      s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+      // Consignado: devolução ao proprietário é custo da venda.
+      (s.ownerRefundAmount || 0);
     return sum + (s.totalAmount - cost);
   }, 0);
 

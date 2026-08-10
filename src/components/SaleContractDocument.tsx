@@ -74,7 +74,9 @@ export type SaleContractData = {
   tradeIn: TradeIn;
   // Parcelamento informado ao comprador (só informativo, preenchido na venda).
   installmentsInfo: { count: number; amount: number } | null;
-  notes: string | null;
+  // Transferência cobrada na venda: a loja recebeu por ela, então quem
+  // providencia (e paga) a transferência é a VENDEDORA — muda a cláusula.
+  transferCharged: boolean;
   backHref: string;
 };
 
@@ -301,12 +303,26 @@ export default function SaleContractDocument(d: SaleContractData) {
         </Clausula>
 
         <Clausula n={++n} titulo="Da transferência e dos débitos">
-          <p>
-            A transferência da propriedade junto ao órgão de trânsito (DETRAN) será providenciada pelo(a)
-            COMPRADOR(A) no prazo legal de 30 (trinta) dias, correndo por sua conta as despesas de
-            transferência. Os débitos (IPVA, licenciamento, multas) até a data deste contrato são de
-            responsabilidade da VENDEDORA; a partir desta data, do(a) COMPRADOR(A).
-          </p>
+          {d.transferCharged ? (
+            <p>
+              A transferência da propriedade junto ao órgão de trânsito (DETRAN) será providenciada
+              pela VENDEDORA, no prazo legal de 30 (trinta) dias, correndo por sua conta as despesas
+              de transferência, já incluídas no valor desta venda. Cabe ao(à) COMPRADOR(A), que
+              detém a posse do veículo, apresentá-lo à vistoria do DETRAN no prazo e local indicados
+              pela VENDEDORA, bem como fornecer os documentos necessários; eventual atraso, multa ou
+              despesa decorrente do descumprimento desta obrigação correrá por conta do(a)
+              COMPRADOR(A). Os débitos (IPVA, licenciamento, multas) até a data deste contrato são
+              de responsabilidade da VENDEDORA; a partir desta data, do(a) COMPRADOR(A).
+            </p>
+          ) : (
+            <p>
+              A transferência da propriedade junto ao órgão de trânsito (DETRAN) será providenciada
+              pelo(a) COMPRADOR(A) no prazo legal de 30 (trinta) dias, correndo por sua conta as
+              despesas de transferência. Os débitos (IPVA, licenciamento, multas) até a data deste
+              contrato são de responsabilidade da VENDEDORA; a partir desta data, do(a)
+              COMPRADOR(A).
+            </p>
+          )}
         </Clausula>
 
         <Clausula n={++n} titulo="Do foro">
@@ -318,11 +334,12 @@ export default function SaleContractDocument(d: SaleContractData) {
           </p>
         </Clausula>
 
-        {d.notes ? (
-          <Clausula n={++n} titulo="Das observações">
-            <p className="whitespace-pre-wrap">{d.notes}</p>
-          </Clausula>
-        ) : null}
+        {/*
+          As observações da venda NÃO saem no contrato. O campo é de controle
+          interno da loja ("fulano fez a transferência", "cliente vai trazer o
+          documento") e virava cláusula assinada, o que não é o que ele é. Elas
+          continuam no documento da venda e na ficha, que são internos.
+        */}
 
         <p className="mb-8 mt-6 text-sm">
           E, por estarem assim justas e contratadas, as partes assinam o presente instrumento em duas

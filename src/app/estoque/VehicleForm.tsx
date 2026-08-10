@@ -2,18 +2,19 @@
 
 import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { isChassiPartial, CHASSI_LENGTH } from "@/lib/vehicle-doc";
+import DebtItemsField from "@/components/DebtItemsField";
+import type { VehicleDebtItem } from "@/lib/vehicle-debts";
 import {
   createVehicleAction,
   updateVehicleAction,
   lookupPlateAction,
   type VehicleFormState,
 } from "./actions";
-import { quickCreateSupplierAction } from "@/app/fornecedores/actions";
-import { findPersonByDocument } from "@/app/person-lookup";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
-import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
+import NewSupplierInline from "@/components/NewSupplierInline";
 
 type Supplier = { id: string; name: string };
 
@@ -33,6 +34,8 @@ type VehicleData = {
   transmission: string | null;
   purchasePrice: number;
   salePrice: number;
+  consigned?: boolean;
+  ownerRefundAmount?: number;
   entryDate: Date;
   notes: string | null;
   supplierId: string | null;
@@ -43,6 +46,7 @@ type VehicleData = {
   payoffAmount?: number;
   payoffTo?: string | null;
   debtsAmount?: number;
+  debtsItems?: VehicleDebtItem[];
 };
 
 const initialState: VehicleFormState = {};
@@ -64,9 +68,13 @@ export default function VehicleForm({
     Boolean((vehicle?.payoffAmount ?? 0) > 0 || (vehicle?.debtsAmount ?? 0) > 0),
   );
   const [negociado, setNegociado] = useState<number>(vehicle?.purchasePrice ?? 0);
+  const [consigned, setConsigned] = useState<boolean>(Boolean(vehicle?.consigned));
+  const [ownerRefund, setOwnerRefund] = useState<number>(vehicle?.ownerRefundAmount ?? 0);
   const [payoff, setPayoff] = useState<number>(vehicle?.payoffAmount ?? 0);
   const [debts, setDebts] = useState<number>(vehicle?.debtsAmount ?? 0);
   const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
+  // Consignado: líquido a devolver ao proprietário = acertado − quitação − débitos.
+  const consignedLiquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
   const formRef = useRef<HTMLFormElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
@@ -76,80 +84,6 @@ export default function VehicleForm({
   const [supplierList, setSupplierList] = useState(suppliers);
   const [supplierId, setSupplierId] = useState(vehicle?.supplierId || "");
   const [showNewSupplier, setShowNewSupplier] = useState(false);
-  const [savingSupplier, startSupplier] = useTransition();
-  const [supplierMsg, setSupplierMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
-  const [newSupplier, setNewSupplier] = useState({
-    name: "",
-    document: "",
-    phone: "",
-    email: "",
-    address: "",
-  });
-  const [alsoCustomer, setAlsoCustomer] = useState(false);
-
-  // Se a pessoa já for cliente (mesmo CPF/CNPJ), traz os dados ao sair do campo.
-  function handleSupplierDocBlur() {
-    if (!newSupplier.document.trim() || newSupplier.name.trim()) return;
-    startSupplier(async () => {
-      const r = await findPersonByDocument(newSupplier.document);
-      if (!r.found) return;
-      setNewSupplier((prev) => ({
-        ...prev,
-        name: r.data.name || prev.name,
-        phone: r.data.phone || prev.phone,
-        email: r.data.email || prev.email,
-        address: r.data.address || prev.address,
-      }));
-      setSupplierMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos.` });
-    });
-  }
-
-  function handleSupplierCnpj() {
-    if (!newSupplier.document.trim()) {
-      setSupplierMsg({ tone: "err", text: "Digite o CNPJ antes de buscar." });
-      return;
-    }
-    setSupplierMsg(null);
-    startSupplier(async () => {
-      const result = await lookupCnpjAction(newSupplier.document);
-      if (!result.ok) {
-        setSupplierMsg({ tone: "err", text: result.error });
-        return;
-      }
-      setNewSupplier((prev) => ({
-        ...prev,
-        name: result.data.name || prev.name,
-        phone: result.data.phone || prev.phone,
-        email: result.data.email || prev.email,
-        address: result.data.address || prev.address,
-      }));
-      setSupplierMsg({ tone: "ok", text: `Dados encontrados: ${result.data.name}.` });
-    });
-  }
-
-  function handleCreateSupplier() {
-    setSupplierMsg(null);
-    startSupplier(async () => {
-      const result = await quickCreateSupplierAction({ ...newSupplier, alsoCustomer });
-      if (!result.ok) {
-        setSupplierMsg({ tone: "err", text: result.error });
-        return;
-      }
-      setSupplierList((prev) =>
-        prev.some((s) => s.id === result.id) ? prev : [...prev, { id: result.id, name: result.name }],
-      );
-      setSupplierId(result.id);
-      setShowNewSupplier(false);
-      setNewSupplier({ name: "", document: "", phone: "", email: "", address: "" });
-      setAlsoCustomer(false);
-      setSupplierMsg({
-        tone: "ok",
-        text: result.existed
-          ? `Esse CPF/CNPJ já estava cadastrado — fornecedor "${result.name}" selecionado.`
-          : `Fornecedor "${result.name}" cadastrado e selecionado.`,
-      });
-    });
-  }
 
   function setField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
@@ -247,7 +181,8 @@ export default function VehicleForm({
         </Field>
         <p className="mt-2 text-xs text-slate-500">
           Digite a placa e clique em buscar: marca, modelo, ano, cor, chassi e o valor FIPE são
-          preenchidos automaticamente.
+          preenchidos automaticamente. O chassi vem <strong>mascarado</strong> — complete-o com o
+          documento do carro, senão a venda dele fica travada.
         </p>
         {lookupMsg ? (
           <p
@@ -340,7 +275,20 @@ export default function VehicleForm({
           <Input type="number" name="modelYear" defaultValue={vehicle?.modelYear ?? new Date().getFullYear()} required />
         </Field>
         <Field label="Chassi (VIN)">
-          <Input name="chassi" defaultValue={vehicle?.chassi || ""} />
+          {/* Não-controlado de propósito: o botão "Buscar dados pela placa"
+              escreve direto no elemento (setField), sem passar pelo React. */}
+          <Input
+            name="chassi"
+            defaultValue={vehicle?.chassi || ""}
+            className="uppercase"
+            placeholder={`${CHASSI_LENGTH} caracteres`}
+          />
+          {isChassiPartial(vehicle?.chassi) ? (
+            <p className="mt-1 text-[11px] text-amber-700">
+              Chassi incompleto no cadastro — a busca pela placa devolve mascarado. Copie os{" "}
+              {CHASSI_LENGTH} caracteres do documento: sem eles a venda deste carro fica travada.
+            </p>
+          ) : null}
         </Field>
         <Field label="Cor">
           <Input name="color" defaultValue={vehicle?.color || ""} />
@@ -376,29 +324,113 @@ export default function VehicleForm({
         </Field>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        <Field label="Preço de compra (valor negociado)" required>
-          <Input
-            type="number"
-            step="0.01"
-            min={0}
-            name="purchasePrice"
-            defaultValue={vehicle?.purchasePrice}
-            onChange={(e) => setNegociado(Number(e.target.value) || 0)}
-            required
+      <div className="rounded-lg border border-violet-200 bg-violet-50/60 p-4">
+        <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
+          <input
+            type="checkbox"
+            name="consigned"
+            checked={consigned}
+            onChange={(e) => setConsigned(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
           />
-        </Field>
+          Veículo consignado (de terceiro)
+        </label>
+        {consigned ? (
+          <div className="mt-3 space-y-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Valor acertado com o proprietário (R$)" required>
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="ownerRefundAmount"
+                  value={ownerRefund || ""}
+                  onChange={(e) => setOwnerRefund(Number(e.target.value) || 0)}
+                  placeholder="0,00"
+                  required
+                />
+              </Field>
+              <Field label="Quitação de financiamento (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="payoffAmount"
+                  value={payoff || ""}
+                  onChange={(e) => setPayoff(Number(e.target.value) || 0)}
+                  placeholder="0,00 (se houver)"
+                />
+              </Field>
+              <Field label="Banco / financeira da quitação">
+                <BankInput name="payoffTo" defaultValue={vehicle?.payoffTo || ""} placeholder="Ex.: Banco XPTO" />
+              </Field>
+              <Field label="Débitos do veículo (R$)">
+                <Input
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  name="debtsAmount"
+                  value={debts || ""}
+                  onChange={(e) => setDebts(Number(e.target.value) || 0)}
+                  placeholder="IPVA, multas, licenciamento"
+                />
+                <DebtItemsField
+                  name="debtsItems"
+                  initialItems={vehicle?.debtsItems ?? []}
+                  agreed={debts}
+                />
+              </Field>
+            </div>
+            <div className="rounded-lg border border-violet-300 bg-white p-3 text-sm">
+              <p className="text-slate-600">
+                Valor acertado <strong>{formatCurrency(ownerRefund)}</strong> − quitação{" "}
+                <strong>{formatCurrency(payoff)}</strong> − débitos{" "}
+                <strong>{formatCurrency(debts)}</strong> ={" "}
+                <strong className="text-emerald-700">líquido ao proprietário {formatCurrency(consignedLiquido)}</strong>
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                O carro não é patrimônio da loja (custo de compra 0). Selecione o{" "}
+                <strong>proprietário</strong> abaixo como fornecedor. Ao vender, a loja paga a
+                quitação (ao banco) e os débitos (aos órgãos) e o <strong>líquido</strong> vira
+                conta a pagar ao dono (ou aporte de capital).
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-1 text-xs text-slate-500">
+            Marque quando o veículo pertence a um terceiro e a loja só o vende por consignação —
+            gera dois contratos de compra e venda e o valor a devolver ao dono no fechamento.
+          </p>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {consigned ? (
+          <input type="hidden" name="purchasePrice" value="0" />
+        ) : (
+          <Field label="Preço de compra (valor negociado)" required>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              name="purchasePrice"
+              defaultValue={vehicle?.purchasePrice}
+              onChange={(e) => setNegociado(Number(e.target.value) || 0)}
+              required
+            />
+          </Field>
+        )}
         <Field label="Preço de venda (anúncio)" required>
           <Input type="number" step="0.01" min={0} name="salePrice" defaultValue={vehicle?.salePrice} required />
         </Field>
         <div>
-          <Field label="Fornecedor de origem">
+          <Field label={consigned ? "Proprietário (consignante)" : "Fornecedor de origem"} required={consigned}>
             <Select
               name="supplierId"
               value={supplierId}
               onChange={(e) => setSupplierId(e.target.value)}
             >
-              <option value="">Sem fornecedor / particular</option>
+              <option value="">{consigned ? "Selecione o proprietário" : "Sem fornecedor / particular"}</option>
               {supplierList.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name}
@@ -413,79 +445,21 @@ export default function VehicleForm({
           >
             {showNewSupplier ? "✕ Cancelar novo fornecedor" : "+ Cadastrar novo fornecedor"}
           </button>
-          {supplierMsg ? (
-            <p
-              className={`mt-1 text-sm font-medium ${
-                supplierMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"
-              }`}
-            >
-              {supplierMsg.text}
-            </p>
+          {showNewSupplier ? (
+            <NewSupplierInline
+              onCreated={(name, id) => {
+                setSupplierList((prev) =>
+                  prev.some((s) => s.id === id) ? prev : [...prev, { id, name }],
+                );
+                setSupplierId(id);
+                setShowNewSupplier(false);
+              }}
+            />
           ) : null}
         </div>
       </div>
 
-      {showNewSupplier ? (
-        <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-4">
-          <p className="mb-3 text-sm font-medium text-slate-700">Novo fornecedor</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <Field label="CPF / CNPJ">
-              <div className="flex flex-wrap gap-2">
-                <Input
-                  value={newSupplier.document}
-                  onChange={(e) => setNewSupplier((p) => ({ ...p, document: e.target.value }))}
-                  onBlur={handleSupplierDocBlur}
-                  placeholder="00.000.000/0000-00"
-                  className="max-w-[200px]"
-                />
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleSupplierCnpj}
-                  disabled={savingSupplier}
-                >
-                  🔍 Buscar CNPJ
-                </Button>
-              </div>
-            </Field>
-            <Field label="Nome" required>
-              <Input
-                value={newSupplier.name}
-                onChange={(e) => setNewSupplier((p) => ({ ...p, name: e.target.value }))}
-                placeholder="Nome ou razão social"
-              />
-            </Field>
-            <Field label="Telefone">
-              <Input
-                value={newSupplier.phone}
-                onChange={(e) => setNewSupplier((p) => ({ ...p, phone: e.target.value }))}
-              />
-            </Field>
-          </div>
-          <label className="mt-3 flex items-center gap-2 text-sm text-slate-700">
-            <input
-              type="checkbox"
-              checked={alsoCustomer}
-              onChange={(e) => setAlsoCustomer(e.target.checked)}
-              className="h-4 w-4 rounded border-slate-300"
-            />
-            Cadastrar também como <strong>cliente</strong> (mesma pessoa)
-          </label>
-          <Button
-            type="button"
-            onClick={handleCreateSupplier}
-            disabled={savingSupplier}
-            className="mt-3"
-          >
-            {savingSupplier ? "Salvando..." : "Salvar fornecedor"}
-          </Button>
-          <p className="mt-2 text-xs text-slate-500">
-            O fornecedor é salvo no cadastro geral e já fica selecionado neste veículo. Endereço e
-            outros dados podem ser completados depois em Cadastros → Fornecedores.
-          </p>
-        </div>
-      ) : null}
-
+      {!consigned ? (
       <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-4">
         <label className="flex items-center gap-2 text-sm font-medium text-slate-700">
           <input
@@ -523,6 +497,11 @@ export default function VehicleForm({
                   onChange={(e) => setDebts(Number(e.target.value) || 0)}
                   placeholder="IPVA, multas, licenciamento"
                 />
+                <DebtItemsField
+                  name="debtsItems"
+                  initialItems={vehicle?.debtsItems ?? []}
+                  agreed={debts}
+                />
               </Field>
             </div>
             <div className="mt-3 rounded-lg border border-amber-300 bg-white p-3 text-sm">
@@ -547,7 +526,9 @@ export default function VehicleForm({
           </p>
         )}
       </div>
+      ) : null}
 
+      {!consigned ? (
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <p className="mb-3 text-sm font-medium text-slate-700">
           Forma de aquisição {repasse ? "(do líquido ao vendedor)" : "(como o veículo será pago)"}
@@ -617,6 +598,7 @@ export default function VehicleForm({
           </p>
         ) : null}
       </div>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" defaultValue={vehicle?.notes || ""} rows={3} />

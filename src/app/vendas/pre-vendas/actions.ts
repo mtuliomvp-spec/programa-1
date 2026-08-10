@@ -8,6 +8,8 @@ import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { chassiOrNull, renavamOrNull, isChassiComplete } from "@/lib/vehicle-doc";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 import { saleSchema, registerSaleCore, assertNoConflictingPreSale, type SaleFormState, type SaleData } from "../sale-core";
 
 /**
@@ -67,10 +69,14 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     transferCharged: Boolean(d.transferCharged),
     transferAmount: Math.max(0, d.transferAmount || 0),
     takeReturnCommission: Boolean(d.takeReturnCommission),
+    insuranceSold: d.paymentMethod === "FINANCIADO" && Boolean(d.insuranceSold),
     viaPaidTraffic: Boolean(d.viaPaidTraffic),
     installmentsInfoCount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoCount ?? null : null,
     installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
     notes: d.notes || null,
+    ownerRefundToCapital: Boolean(d.ownerRefundToCapital),
+    ownerRefundBeneficiaryId: d.ownerRefundToCapital ? d.ownerRefundBeneficiaryId || null : null,
+    commissionToCapital: Boolean(d.commissionToCapital),
     buyerBankName: d.buyerBankName || null,
     buyerBankAgency: d.buyerBankAgency || null,
     buyerBankAccount: d.buyerBankAccount || null,
@@ -92,8 +98,39 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     tiPayoff: d.tradeIn ? d.tiPayoff ?? null : null,
     tiPayoffTo: d.tradeIn ? d.tiPayoffTo || null : null,
     tiDebts: d.tradeIn ? d.tiDebts ?? null : null,
+    tiDebtsItems: d.tradeIn ? d.tiDebtsItems : [],
     tiSupplierName: d.tradeIn ? d.tiSupplierName || null : null,
   };
+
+  // Documentos do veículo digitados no formulário (só aparecem quando faltam):
+  // vão para a FICHA do veículo, não para a pré-venda — é dado cadastral do
+  // carro, e é lá que a trava do registro da venda vai procurar. Só grava o que
+  // está em branco, para não sobrescrever dado já conferido.
+  const chassiInput = chassiOrNull(String(formData.get("vehicleChassi") || ""));
+  const renavamInput = renavamOrNull(String(formData.get("vehicleRenavam") || ""));
+  if (chassiInput || renavamInput) {
+    const atual = await prisma.vehicle.findUnique({
+      where: { id: d.vehicleId },
+      select: { chassi: true, renavam: true },
+    });
+    const docs: { chassi?: string; renavam?: string } = {};
+    // Chassi: sobrescreve também quando o cadastrado está INCOMPLETO — é o caso
+    // do mascarado que a consulta por placa devolve (ex.: *****39578).
+    if (chassiInput && !isChassiComplete(atual?.chassi)) docs.chassi = chassiInput;
+    if (renavamInput && !atual?.renavam) docs.renavam = renavamInput;
+    if (Object.keys(docs).length) {
+      try {
+        await prisma.vehicle.update({ where: { id: d.vehicleId }, data: docs });
+      } catch {
+        // Índice parcial de chassi entre fichas ativas (allow_rebuy_plate).
+        return {
+          error:
+            "Já existe outro veículo ativo no estoque com esse chassi. Confira o número antes de continuar.",
+        };
+      }
+      revalidatePath(`/estoque/${d.vehicleId}`);
+    }
+  }
 
   let id: string;
   if (preSaleId) {
@@ -139,10 +176,14 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     transferCharged: pre.transferCharged,
     transferAmount: pre.transferAmount ?? 0,
     takeReturnCommission: pre.takeReturnCommission,
+    insuranceSold: pre.insuranceSold,
     viaPaidTraffic: pre.viaPaidTraffic,
     installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
     installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
     notes: pre.notes ?? undefined,
+    ownerRefundToCapital: pre.ownerRefundToCapital,
+    ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
+    commissionToCapital: pre.commissionToCapital,
     buyerBankName: pre.buyerBankName ?? undefined,
     buyerBankAgency: pre.buyerBankAgency ?? undefined,
     buyerBankAccount: pre.buyerBankAccount ?? undefined,
@@ -164,6 +205,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiPayoff: pre.tiPayoff ?? undefined,
     tiPayoffTo: pre.tiPayoffTo ?? undefined,
     tiDebts: pre.tiDebts ?? undefined,
+    tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
     tiSupplierName: pre.tiSupplierName ?? undefined,
   };
 
@@ -193,6 +235,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/contas");
+  revalidatePath("/capital");
   revalidatePath("/");
   redirect(`/vendas/${saleId}`);
 }

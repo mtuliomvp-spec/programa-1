@@ -1,9 +1,12 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
+import { timed } from "@/lib/perf";
+import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME, type AccountWithBalance } from "@/lib/accounts";
+
+type AccountsInput = AccountWithBalance[] | Promise<AccountWithBalance[]>;
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getProfitLossStatement } from "@/lib/reports";
-import { ensureVehicleFuelCosts } from "@/lib/structural";
+import { ensureVehicleFuelCostsThrottled } from "@/lib/structural";
 
 /**
  * "Farol" de integridade do financeiro, no estilo Agrasty. Dois checks que
@@ -49,6 +52,10 @@ export type BooksHealth = {
     equacao: number;
     lucroPrejuizo: number;
     diff: number;
+    // Composição de cada lado, para localizar a origem de uma divergência sem
+    // precisar de acesso ao banco (cada linha já com o sinal usado na soma).
+    fontesEquacao: { label: string; value: number }[];
+    fontesResultado: { label: string; value: number }[];
   };
   allOk: boolean;
   // Trava real de novos lançamentos: saldos + Lucro/Prejuízo (Banco Neutro ≠ 0 não bloqueia).
@@ -57,13 +64,29 @@ export type BooksHealth = {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export async function getBooksHealth(): Promise<BooksHealth> {
+/**
+ * @param preloadedAccounts saldos já pedidos por quem chama (a tela de Contas
+ * também os mostra) — array pronto ou promessa em voo. Sem isso, a mesma soma
+ * era calculada de novo aqui dentro.
+ */
+export async function getBooksHealth(
+  preloadedAccounts?: AccountsInput,
+): Promise<BooksHealth> {
+  return timed("farol (assertBooksBalanced)", () => booksHealth(preloadedAccounts));
+}
+
+async function booksHealth(preloadedAccounts?: AccountsInput): Promise<BooksHealth> {
   // Garante que o combustível de veículo tenha VehicleCost (senão some da DRE e
   // faz o Check 2 divergir por um furo de escrituração, não por erro real).
-  await ensureVehicleFuelCosts();
+  await ensureVehicleFuelCostsThrottled();
+  // Os saldos por conta são pedidos UMA vez e a promessa é repassada: a equação
+  // patrimonial usa a mesma soma, e pedi-la de novo dobrava as consultas de
+  // saldo em toda gravação do sistema (o farol roda antes de cada uma).
+  // Repassar a promessa (e não o array pronto) mantém tudo em paralelo.
+  const accountsPromise = preloadedAccounts ?? getAccountsWithBalances();
   const [accounts, pat, pl, recSemConta, paySemConta] = await Promise.all([
-    getAccountsWithBalances(),
-    getPatrimonialStats(),
+    accountsPromise,
+    getPatrimonialStats(accountsPromise),
     getProfitLossStatement(LIFETIME_MONTHS),
     // Dinheiro recebido/pago SEM conta financeira. Transações internas da troca
     // já passam pelo Banco Neutro, então não aparecem aqui (têm conta).
@@ -110,9 +133,37 @@ export async function getBooksHealth(): Promise<BooksHealth> {
   const check2Diff = round2(equacao - lucroPrejuizo);
   const check2Ok = drInternoOk && Math.abs(check2Diff) <= TOLERANCE;
 
+  // Composição dos dois lados (sinal já aplicado): compara-se linha a linha
+  // para achar de onde veio uma divergência.
+  const fontesEquacao = [
+    { label: "Caixa (contas financeiras)", value: pat.saldoCaixa },
+    { label: "Estoque de veículos (pago)", value: pat.estoqueVeiculosPago },
+    { label: "A receber de vendas", value: pat.veiculosAReceber },
+    { label: "Almoxarifado (peças)", value: pat.almoxarifado },
+    { label: "Consórcios", value: pat.consorcios },
+    { label: "Sinais recebidos (adiantamentos)", value: -pat.sinaisRecebidos },
+    { label: "Devolução ao cliente (a pagar)", value: -pat.devolucoesClientes },
+    { label: "Devolução ao proprietário (a pagar)", value: -pat.devolucoesProprietario },
+    { label: "A pagar de veículos vendidos", value: -pat.veiculosAPagarPosVenda },
+    { label: "Peças a pagar", value: -pat.pecasAPagar },
+    { label: "Comissões e custos das vendas (a pagar)", value: -pat.comissoesAPagar },
+    { label: "Capital dos sócios (aportes − retiradas)", value: -pat.saldoCapital },
+  ].filter((f) => Math.abs(f.value) > 0.004);
+  const fontesResultado = [
+    { label: "Lucro bruto das vendas (veículos e peças)", value: pl.lucroBruto },
+    { label: "Despesas operacionais", value: -pl.despesas },
+    { label: "Comissões", value: -pl.comissoes },
+    { label: "Custos pós-venda", value: -pl.posVenda },
+    { label: "Transferências DETRAN", value: -pl.transferencias },
+    { label: "Retornos de financiamento", value: pl.retornos },
+    { label: "Outras receitas", value: pl.outrasReceitas },
+    { label: "Saldo inicial de contas cadastradas", value: pl.saldosIniciais },
+    { label: "Fechamentos mensais (transferidos ao capital)", value: -pl.fechamentos },
+  ].filter((f) => Math.abs(f.value) > 0.004);
+
   return {
     check1: { ok: check1Ok, saldosOk, contasTotal, caixaGeral, extrato, baixasSemConta, bancoNeutro, itens },
-    check2: { ok: check2Ok, equacao, lucroPrejuizo, diff: check2Diff },
+    check2: { ok: check2Ok, equacao, lucroPrejuizo, diff: check2Diff, fontesEquacao, fontesResultado },
     allOk: check1Ok && check2Ok,
     // O que realmente bloqueia novos lançamentos (o Banco Neutro ≠ 0 não trava).
     blockingOk: saldosOk && check2Ok,

@@ -15,6 +15,7 @@ const kindMeta: Record<string, { label: string; tone: "info" | "success" | "warn
   POS_VENDA: { label: "Pós-venda", tone: "danger" },
   RETORNO: { label: "Retorno financ.", tone: "success" },
   RECEITA: { label: "Outra receita", tone: "success" },
+  SALDO_INICIAL: { label: "Saldo inicial", tone: "default" },
   FECHAMENTO: { label: "Fechamento", tone: "default" },
 };
 
@@ -136,7 +137,7 @@ export default async function LucroPrejuizoPage({
                 </LinkButton>
               );
             })}
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />
@@ -177,6 +178,9 @@ export default async function LucroPrejuizoPage({
           {s.outrasReceitas > 0 ? (
             <Row label="Outras receitas (avulsas)" value={s.outrasReceitas} kind="sub" />
           ) : null}
+          {s.saldosIniciais !== 0 ? (
+            <Row label="Saldo inicial de contas cadastradas" value={s.saldosIniciais} kind="sub" />
+          ) : null}
           <Row label={lucro ? "( = ) Lucro líquido" : "( = ) Prejuízo líquido"} value={s.lucroLiquido} kind="final" />
         </div>
       </Card>
@@ -186,7 +190,11 @@ export default async function LucroPrejuizoPage({
           title="Extrato do resultado"
           description="Os lançamentos que geraram o lucro/prejuízo. Em veículos e peças entra só a margem (venda − custo)."
         />
-        <form className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden">
+        {/* key: recria os campos ao limpar o filtro (ver ReportToolbar). */}
+        <form
+          key={`${q}|${tipoFilter}|${de ?? ""}|${ate ?? ""}|${min ?? ""}|${max ?? ""}`}
+          className="flex flex-wrap items-end gap-2 border-b border-slate-100 px-5 py-3 print:hidden"
+        >
           {mes ? <input type="hidden" name="mes" value={mes} /> : null}
           <div className="min-w-[200px] flex-1">
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">

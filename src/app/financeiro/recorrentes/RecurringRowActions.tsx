@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useTransition } from "react";
 import { toggleRecurringAction, deleteRecurringAction } from "./actions";
 
@@ -8,6 +9,9 @@ export default function RecurringRowActions({ id, active }: { id: string; active
 
   return (
     <div className="flex items-center justify-end gap-3 text-sm font-medium">
+      <Link href={`/financeiro/recorrentes/${id}/editar`} className="text-slate-600 hover:underline">
+        Editar
+      </Link>
       <button
         type="button"
         disabled={pending}

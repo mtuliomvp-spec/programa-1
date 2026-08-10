@@ -42,7 +42,7 @@ export default async function DrePage({
             <LinkButton href="/relatorios/dre?meses=12" variant={months === 12 ? "primary" : "secondary"}>
               12 meses
             </LinkButton>
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />

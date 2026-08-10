@@ -30,7 +30,7 @@ export default async function DespesasPage({
                 {m} meses
               </LinkButton>
             ))}
-            <PrintButton />
+            <PrintButton mode="table" />
           </div>
         }
       />
@@ -51,7 +51,7 @@ export default async function DespesasPage({
               {rows.map((r) => {
                 const pct = total > 0 ? (r.total / total) * 100 : 0;
                 return (
-                  <div key={r.category}>
+                  <div key={r.label}>
                     <div className="mb-1 flex items-baseline justify-between gap-3 text-sm">
                       <span className="font-medium text-slate-800">{r.label}</span>
                       <span className="tabular-nums text-slate-600">
@@ -82,7 +82,7 @@ export default async function DespesasPage({
               </Thead>
               <tbody>
                 {rows.map((r) => (
-                  <Tr key={r.category}>
+                  <Tr key={r.label}>
                     <Td className="font-medium text-slate-900">{r.label}</Td>
                     <Td className="text-right tabular-nums">{r.count}</Td>
                     <Td className="text-right tabular-nums text-emerald-600">{formatCurrency(r.paid)}</Td>

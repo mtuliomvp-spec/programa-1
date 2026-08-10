@@ -8,16 +8,19 @@ import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
 import {
-  createManualPayable,
+  createManualPayable, createInstallmentPayables,
   markPayablePaid,
   splitInstallments,
   addMonths,
   addDays,
+  resolveSupplierByName,
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
+import { resolveDespesaCategory } from "@/lib/categories";
+import { nextRequestSeq } from "@/lib/purchase-requests";
 
 export type ComprasFormState = { error?: string; success?: string };
 
@@ -35,13 +38,13 @@ const createSchema = z.object({
   estimatedAmount: z.coerce.number().min(0).optional(),
   dueDate: z.string().optional(),
   documentNumber: z.string().optional(),
-  category: z.enum(["COMPRA_PECA", "DESPESA_OPERACIONAL", "COMBUSTIVEL", "OUTROS"]).default("OUTROS"),
+  categoryLabel: z.string().optional(),
   // À vista ou parcelado em N vezes (mensal ou a cada X dias).
   paymentMode: z.enum(["A_VISTA", "PARCELADO"]).default("A_VISTA"),
   installmentsCount: z.coerce.number().int().min(0).default(0),
   installmentPeriod: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   installmentDays: z.coerce.number().int().min(1).default(30),
-  supplierId: z.string().optional(),
+  supplierName: z.string().optional(),
   structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
@@ -82,11 +85,16 @@ export async function createRequestAction(
     };
   }
 
+  // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
+  const cat = await resolveDespesaCategory(parsed.data.categoryLabel || "Outros");
+  // Fornecedor por nome (campo com digitação livre): reaproveita ou cadastra.
+  const supplierNameCreate = (parsed.data.supplierName || "").trim();
+  const supplierIdCreate = supplierNameCreate ? await resolveSupplierByName(supplierNameCreate) : null;
+
   // Numeração por ano: 0001/2026, reiniciando a cada ano.
   const year = new Date().getFullYear();
   await prisma.$transaction(async (tx) => {
-    const last = await tx.purchaseRequest.aggregate({ where: { year }, _max: { seq: true } });
-    const seq = (last._max.seq ?? 0) + 1;
+    const seq = await nextRequestSeq(tx, year);
     const flow = parsed.data.structuralKey || "ADMINISTRATIVO";
     const created = await tx.purchaseRequest.create({
       data: {
@@ -95,11 +103,16 @@ export async function createRequestAction(
         estimatedAmount: parsed.data.estimatedAmount || null,
         dueDate: parsed.data.dueDate ? parseDateInput(parsed.data.dueDate) : null,
         documentNumber: parsed.data.documentNumber?.trim() || null,
-        category: parsed.data.category,
+        category: cat.category,
+        categoryLabel: cat.label,
         installmentsCount,
         installmentPeriod: parcelado ? parsed.data.installmentPeriod : null,
         installmentDays: parsed.data.installmentDays,
-        supplierId: parsed.data.supplierId || null,
+        supplierId: supplierIdCreate,
+        // A solicitação GUARDA o fluxo escolhido, mesmo em "Veículos" sem a
+        // placa: é uma intenção ("este gasto é de um carro, qual eu digo
+        // depois"). Quem normaliza é a conta a pagar, na aprovação — e a
+        // aprovação exige a placa (ver generateEspelho).
         structuralKey: flow,
         // Guarda o destino conforme o fluxo escolhido (leva até a conta a pagar).
         vehicleId: flow === "VEICULOS" ? parsed.data.vehicleId || null : null,
@@ -130,7 +143,8 @@ type RequestForEspelho = {
   estimatedAmount: number | null;
   dueDate: Date | null;
   documentNumber: string | null;
-  category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "OUTROS";
+  category: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS";
+  categoryLabel: string | null;
   installmentsCount: number;
   installmentPeriod: string | null;
   installmentDays: number;
@@ -152,34 +166,63 @@ async function generateEspelho(request: RequestForEspelho): Promise<string | nul
   if (flowKey === "CAPITAL" && !request.capitalBeneficiaryId) {
     throw new Error("Escolha o beneficiário do capital antes de aprovar.");
   }
+  // Espelha a guarda do Capital. Sem a placa, o custo cairia no Administrativo
+  // e não entraria no carro — e depois de aprovada e paga não dá mais para
+  // corrigir por esta tela.
+  if (flowKey === "VEICULOS" && !request.vehicleId) {
+    throw new Error(
+      "Informe a placa do veículo antes de aprovar — ou troque o fluxo para Administrativo.",
+    );
+  }
 
   const count = request.installmentsCount > 1 ? request.installmentsCount : 1;
   const firstDue = request.dueDate ?? new Date();
   const amounts = count > 1 ? splitInstallments(amount, count) : [amount];
-  const label = `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}`;
+  // A justificativa entra na própria descrição: é ela que aparece na lista de
+  // Contas a pagar e na ficha do veículo ("Compra 0011/2026: Sandero — Lavagem
+  // e higienização"). Quebras de linha viram espaço para não sujar a lista.
+  const justificativa = request.details?.replace(/\s+/g, " ").trim();
+  const label =
+    `Compra ${formatRequestNumber(request.seq, request.year)}: ${request.description}` +
+    (justificativa ? ` — ${justificativa}` : "");
 
-  let firstPayableId: string | null = null;
-  for (let i = 0; i < amounts.length; i++) {
-    const payable = await createManualPayable({
-      description: count > 1 ? `${label} - Parcela ${i + 1}/${count}` : label,
-      category: request.category,
-      documentNumber: request.documentNumber,
-      amount: amounts[i],
-      dueDate:
-        request.installmentPeriod === "DIAS"
-          ? addDays(firstDue, i * request.installmentDays)
-          : addMonths(firstDue, i),
-      supplierId: request.supplierId,
-      structuralKey: flowKey,
-      vehicleId: flowKey === "VEICULOS" ? request.vehicleId : null,
-      capitalBeneficiaryId: flowKey === "CAPITAL" ? request.capitalBeneficiaryId : null,
-      notes: request.details,
-      alreadyPaid: false,
-      purchaseRequestId: request.id,
+  const dueDateOf = (i: number) =>
+    request.installmentPeriod === "DIAS"
+      ? addDays(firstDue, i * request.installmentDays)
+      : addMonths(firstDue, i);
+  const destino = {
+    category: request.category,
+    categoryLabel: request.categoryLabel,
+    documentNumber: request.documentNumber,
+    supplierId: request.supplierId,
+    structuralKey: flowKey,
+    vehicleId: flowKey === "VEICULOS" ? request.vehicleId : null,
+    capitalBeneficiaryId: flowKey === "CAPITAL" ? request.capitalBeneficiaryId : null,
+    notes: request.details,
+    purchaseRequestId: request.id,
+  };
+
+  if (count > 1) {
+    // Parcelado: todas as parcelas num lote só (nascem pendentes).
+    const ids = await createInstallmentPayables({
+      ...destino,
+      parcels: amounts.map((amount, i) => ({
+        description: `${label} - Parcela ${i + 1}/${count}`,
+        amount,
+        dueDate: dueDateOf(i),
+      })),
     });
-    if (i === 0) firstPayableId = payable.id;
+    return ids[0] ?? null;
   }
-  return firstPayableId;
+
+  const payable = await createManualPayable({
+    ...destino,
+    description: label,
+    amount: amounts[0],
+    dueDate: firstDue,
+    alreadyPaid: false,
+  });
+  return payable.id;
 }
 
 /** Remove os títulos pendentes do espelho (para regerar ou excluir). */
@@ -231,6 +274,9 @@ export async function updateRequestAction(
   }
 
   const flow = d.structuralKey || "ADMINISTRATIVO";
+  const cat = await resolveDespesaCategory(d.categoryLabel || "Outros");
+  const supplierNameUpdate = (d.supplierName || "").trim();
+  const supplierIdUpdate = supplierNameUpdate ? await resolveSupplierByName(supplierNameUpdate) : null;
   const updated = await prisma.purchaseRequest.update({
     where: { id: d.id },
     data: {
@@ -239,11 +285,14 @@ export async function updateRequestAction(
       estimatedAmount: d.estimatedAmount || null,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
       documentNumber: d.documentNumber?.trim() || null,
-      category: d.category,
+      category: cat.category,
+      categoryLabel: cat.label,
       installmentsCount,
       installmentPeriod: parcelado ? d.installmentPeriod : null,
       installmentDays: d.installmentDays,
-      supplierId: d.supplierId || null,
+      supplierId: supplierIdUpdate,
+      // Como no create: a solicitação guarda a intenção; a normalização
+      // "Veículos sem carro vira Administrativo" acontece no título.
       structuralKey: flow,
       vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
@@ -253,8 +302,27 @@ export async function updateRequestAction(
   // Aprovada: regera o espelho em Contas a pagar com os valores atualizados.
   if (existing.status === "APROVADA") {
     try {
+      // Se o espelho estava dentro de um combo ainda não pago, guarda o vínculo
+      // para devolver os títulos regerados ao MESMO combo (senão a edição
+      // derrubaria a compra do borderô sem ninguém perceber).
+      const prevCombo = await prisma.payable.findFirst({
+        where: {
+          purchaseRequestId: updated.id,
+          status: { not: "PAGO" },
+          paymentCombo: { status: { in: ["ABERTO", "SOLICITADO"] } },
+        },
+        select: { paymentComboId: true },
+      });
       await clearPendingEspelho(updated.id);
       const firstPayableId = await generateEspelho(updated);
+      if (prevCombo?.paymentComboId) {
+        await prisma.payable.updateMany({
+          where: { purchaseRequestId: updated.id, status: { not: "PAGO" } },
+          data: { paymentComboId: prevCombo.paymentComboId },
+        });
+        revalidatePath("/financeiro/combos");
+        revalidatePath(`/financeiro/combos/${prevCombo.paymentComboId}`);
+      }
       await prisma.purchaseRequest.update({
         where: { id: updated.id },
         data: { finalAmount: updated.estimatedAmount, payableId: firstPayableId },

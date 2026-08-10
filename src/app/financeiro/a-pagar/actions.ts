@@ -4,15 +4,20 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, updateManualPayable, resolveSupplierByName, splitInstallments, addMonths, addDays } from "@/lib/finance";
+import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays , correctPaymentDate } from "@/lib/finance";
+import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
-import { assertCan } from "@/lib/guards";
+import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
+import { isStructuralKey } from "@/lib/structural-flows";
+import { getNeutralAccountId } from "@/lib/accounts";
+import { resolveDespesaCategory } from "@/lib/categories";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
+const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 /** Converte texto de valor ("1.234,50" ou "1234.5") em número (ou NaN). */
 function parseAmountInput(v: string): number {
@@ -20,16 +25,40 @@ function parseAmountInput(v: string): number {
 }
 
 /**
- * Baixa a comissão de um vendedor podendo pagar um valor MAIOR que a comissão:
- * o excedente vira uma RETIRADA de capital do beneficiário vinculado ao vendedor
- * (o Payable do excedente carrega capitalBeneficiaryId e, ao ser pago, gera a
- * retirada via syncPayableCapital). Sem checagem de capital livre — o aviso
- * (pode ficar negativo) é dado na tela.
+ * Título dentro de combo SOLICITADO não pode ser baixado individualmente: o
+ * combo é um pagamento único (quitado inteiro pelo borderô ou pelo card no
+ * Contas a pagar). Lança erro citando o primeiro título travado.
  */
-export async function payCommissionWithExcessAction(
+async function assertNotInSolicitedCombo(ids: string[]): Promise<void> {
+  if (!ids.length) return;
+  const locked = await prisma.payable.findFirst({
+    where: { id: { in: ids }, paymentCombo: { status: "SOLICITADO" } },
+    select: { description: true, paymentCombo: { select: { name: true } } },
+  });
+  if (locked) {
+    throw new Error(
+      `O título "${locked.description}" está no combo "${locked.paymentCombo?.name}" aguardando pagamento — o combo é pago de uma vez só, pelo borderô ou pelo card de combos no Contas a pagar.`,
+    );
+  }
+}
+
+/**
+ * Baixa a comissão de um vendedor informando o VALOR PAGO A ELE (líquido em
+ * dinheiro). A diferença em relação à comissão é acertada no capital do
+ * beneficiário vinculado ao vendedor:
+ *
+ *  - pago > comissão → o EXCEDENTE vira uma RETIRADA de capital (Payable com
+ *    capitalBeneficiaryId → syncPayableCapital gera a retirada);
+ *  - pago < comissão → a DIFERENÇA (limitada ao saldo devedor) cobre o saldo
+ *    devedor do vendedor como um APORTE. O acerto passa pelo Banco Neutro (par
+ *    Payable/Receivable que se anula) e NÃO toca o caixa real — só o líquido é
+ *    pago na conta escolhida. Assim a equação patrimonial não diverge.
+ *  - pago = comissão → baixa simples.
+ */
+export async function settleCommissionAction(
   payableId: string,
   accountId: string,
-  totalPagoInput: string,
+  payoutInput: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("financeiro", "pagar");
@@ -39,6 +68,11 @@ export async function payCommissionWithExcessAction(
     return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
   }
   if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
+  try {
+    await assertNotInSolicitedCombo([payableId]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Título em combo solicitado." };
+  }
   // A baixa usa sempre a data de trabalho do caixa aberto.
   const date = await getCashboxWorkDate();
   try {
@@ -49,25 +83,43 @@ export async function payCommissionWithExcessAction(
 
   const payable = await prisma.payable.findUnique({
     where: { id: payableId },
-    select: { id: true, category: true, status: true, amount: true, beneficiaryUserId: true },
+    select: {
+      id: true,
+      category: true,
+      status: true,
+      amount: true,
+      beneficiaryUserId: true,
+      saleId: true,
+      costCenterId: true,
+      description: true,
+      notes: true,
+    },
   });
   if (!payable) return { ok: false, error: "Título não encontrado." };
   if (payable.status === "PAGO") return { ok: false, error: "Este título já está pago." };
   if (payable.category !== "COMISSAO" || !payable.beneficiaryUserId) {
-    return { ok: false, error: "Pagamento com excedente só vale para comissões de um vendedor." };
+    return { ok: false, error: "Esta baixa só vale para comissões de um vendedor." };
   }
 
-  const total = parseAmountInput(totalPagoInput);
-  if (!Number.isFinite(total) || total <= 0) return { ok: false, error: "Informe o valor total pago." };
+  const payout = parseAmountInput(payoutInput);
+  if (!Number.isFinite(payout) || payout < 0) return { ok: false, error: "Informe o valor pago ao vendedor." };
   const comissao = payable.amount;
-  const excedente = round2(total - comissao);
-  if (excedente < 0) {
-    return { ok: false, error: "O valor total não pode ser menor que a comissão." };
-  }
+  const diff = round2(comissao - payout); // > 0 abate no capital; < 0 excedente (retirada)
 
-  // Se há excedente, o vendedor precisa estar vinculado a um beneficiário.
+  const done = () => {
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/capital");
+    revalidatePath("/minhas-comissoes");
+    revalidatePath("/");
+    return { ok: true as const };
+  };
+
+  // Qualquer acerto de capital exige o vendedor vinculado a um beneficiário.
   let beneficiary: { id: string; name: string } | null = null;
-  if (excedente > 0.005) {
+  if (Math.abs(diff) > 0.005) {
     beneficiary = await prisma.capitalBeneficiary.findUnique({
       where: { userId: payable.beneficiaryUserId },
       select: { id: true, name: true },
@@ -75,16 +127,15 @@ export async function payCommissionWithExcessAction(
     if (!beneficiary) {
       return {
         ok: false,
-        error: "Este vendedor não está vinculado a um beneficiário do capital — não é possível debitar o excedente.",
+        error: "Este vendedor não está vinculado a um beneficiário do capital — não é possível acertar o capital.",
       };
     }
   }
 
-  // 1) paga a comissão pelo próprio valor.
-  await markPayablePaid(payableId, date, accountId);
-
-  // 2) excedente → conta a pagar (fluxo Capital) já paga → vira RETIRADA.
-  if (beneficiary) {
+  // Excedente: paga mais que a comissão → o excedente vira RETIRADA de capital.
+  if (diff < -0.005 && beneficiary) {
+    const excedente = round2(-diff);
+    await markPayablePaid(payableId, date, accountId);
     const capitalCenterId = await structuralCenterId("CAPITAL");
     const extra = await prisma.payable.create({
       data: {
@@ -99,21 +150,120 @@ export async function payCommissionWithExcessAction(
       },
     });
     await markPayablePaid(extra.id, date, accountId);
+    return done();
   }
 
-  revalidatePath("/financeiro/a-pagar");
-  revalidatePath("/financeiro/fluxo-caixa");
-  revalidatePath("/financeiro/livro-caixa");
-  revalidatePath("/financeiro/contas");
-  revalidatePath("/capital");
-  revalidatePath("/");
-  return { ok: true };
+  // Aplicar no capital: paga menos que a comissão → a diferença vira APORTE no
+  // capital do vendedor (via Banco Neutro, sem tocar o caixa real). Vale com ou
+  // sem saldo devedor — o vendedor pode deixar a comissão (inteira ou parte)
+  // como capital.
+  if (diff > 0.005 && beneficiary) {
+    const abate = diff;
+    const [capitalCenterId, neutralAccountId] = await Promise.all([
+      structuralCenterId("CAPITAL"),
+      getNeutralAccountId(),
+    ]);
+    // Quando NÃO se paga nada ao vendedor (payout 0 = tudo no capital), não faz
+    // sentido gerar uma linha de comissão de R$ 0 "líquido ao vendedor": o
+    // próprio título vira o "aplicado no capital". Só divide em duas linhas
+    // quando há um líquido de fato pago em dinheiro (payout > 0).
+    const applyAll = payout <= 0.005;
+    // Observação na Ordem de pagamento: a comissão bruta, o quanto foi aplicado
+    // no capital e (quando houver) o líquido pago ao vendedor.
+    const breakdownNote = applyAll
+      ? `Comissão bruta ${brl(comissao)}. Aplicado ${brl(abate)} no capital de ${beneficiary.name}.`
+      : `Comissão bruta ${brl(comissao)}. Aplicado ${brl(abate)} no capital de ${beneficiary.name}. Líquido pago ao vendedor ${brl(payout)}.`;
+    const liquidoNotes = [payable.notes?.trim() || null, breakdownNote].filter(Boolean).join(" — ");
+    await prisma.$transaction(async (tx) => {
+      if (applyAll) {
+        // 1) Tudo no capital: o próprio título vira o "aplicado no capital",
+        //    PAGO no Banco Neutro (não toca o caixa real). Sem linha de R$ 0.
+        await tx.payable.update({
+          where: { id: payableId },
+          data: {
+            amount: abate,
+            status: "PAGO",
+            paymentDate: date,
+            accountId: neutralAccountId,
+            description: `${payable.description} (aplicado no capital)`,
+            notes: liquidoNotes,
+          },
+        });
+      } else {
+        // 1) O próprio título da comissão vira o líquido pago ao vendedor (conta real).
+        await tx.payable.update({
+          where: { id: payableId },
+          data: {
+            amount: payout,
+            status: "PAGO",
+            paymentDate: date,
+            accountId,
+            description: `${payable.description} (líquido ao vendedor)`,
+            notes: liquidoNotes,
+          },
+        });
+        // 2) Parte aplicada no capital: comissão PAGA no Banco Neutro (não passa
+        //    pelo caixa real).
+        await tx.payable.create({
+          data: {
+            costCenterId: payable.costCenterId,
+            description: `${payable.description} (aplicado no capital)`,
+            category: "COMISSAO",
+            amount: abate,
+            dueDate: date,
+            paymentDate: date,
+            status: "PAGO",
+            accountId: neutralAccountId,
+            saleId: payable.saleId,
+            beneficiaryUserId: payable.beneficiaryUserId,
+          },
+        });
+      }
+      // 3) Aporte do vendedor: Receivable RECEBIDO no Banco Neutro (centro
+      //    Capital) + CapitalTransaction APORTE. O par com o payable acima zera o
+      //    Banco Neutro; o aporte eleva o capital do vendedor. Ambos carregam o
+      //    saleId da comissão: se a venda for cancelada, cancelVehicleSale apaga
+      //    o par inteiro (senão o recebível ficaria órfão no Banco Neutro,
+      //    divergindo o Check 1).
+      const receivable = await tx.receivable.create({
+        data: {
+          costCenterId: capitalCenterId,
+          description: `Aporte de comissão no capital - ${beneficiary!.name}`,
+          category: "OUTROS",
+          amount: abate,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId: neutralAccountId,
+          capitalBeneficiaryId: beneficiary!.id,
+          saleId: payable.saleId,
+        },
+      });
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId: beneficiary!.id,
+          kind: "APORTE",
+          amount: abate,
+          date,
+          description: `Aporte da ${payable.description}`,
+          receivableId: receivable.id,
+          saleId: payable.saleId,
+        },
+      });
+    });
+    return done();
+  }
+
+  // Valor igual à comissão: baixa simples.
+  await markPayablePaid(payableId, date, accountId);
+  return done();
 }
 
 export async function markPaidAction(id: string, accountId?: string) {
   await assertCan("financeiro", "pagar");
   await assertBooksBalanced();
   await assertCashboxOpen();
+  await assertNotInSolicitedCombo([id]);
   await markPayablePaid(id, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -143,6 +293,7 @@ export async function payBatchAction(
   const date = await getCashboxWorkDate();
   try {
     await assertMonthOpen(date);
+    await assertNotInSolicitedCombo(ids);
   } catch (e) {
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -182,6 +333,43 @@ export async function setPayableSupplierAction(
   return { ok: true };
 }
 
+/**
+ * Corrige a data de um pagamento já feito. Ação de CORREÇÃO: não exige caixa
+ * aberto (a data do caixa é justamente o que estava errado) nem farol verde.
+ * Os dois meses envolvidos têm de estar abertos — mover um valor para dentro
+ * ou para fora de um mês encerrado bagunçaria o fechamento. Move junto o que
+ * está ligado por chave estrangeira: a movimentação de capital e o custo de
+ * veículo gerados por este título.
+ */
+export async function correctPaymentDateAction(
+  id: string,
+  dateInput: string,
+): Promise<{ ok: boolean; movedCapital?: boolean; movedVehicleCost?: boolean; error?: string }> {
+  if (!dateInput) return { ok: false, error: "Escolha a data." };
+  try {
+    await assertCan("financeiro", "corrigirdata");
+    const newDate = parseDateInput(dateInput);
+    const current = await prisma.payable.findUnique({
+      where: { id },
+      select: { paymentDate: true },
+    });
+    if (current?.paymentDate) await assertMonthOpen(current.paymentDate);
+    await assertMonthOpen(newDate);
+    const res = await correctPaymentDate(id, newDate);
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/capital");
+    revalidatePath("/estoque");
+    revalidatePath("/relatorios/lucro-veiculos");
+    revalidatePath("/");
+    return { ok: true, movedCapital: res.movedCapital, movedVehicleCost: res.movedVehicleCost };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível corrigir a data." };
+  }
+}
+
 export async function markPendingAction(id: string) {
   await assertCan("financeiro", "pagar");
   await markPayablePending(id);
@@ -211,17 +399,6 @@ const manualSchema = z.object({
   alreadyPaid: z.coerce.boolean().optional(),
 });
 
-const KNOWN_CATEGORIES: Record<string, "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "OUTROS"> = {
-  outros: "OUTROS",
-  "despesa operacional": "DESPESA_OPERACIONAL",
-  comissão: "COMISSAO",
-  comissao: "COMISSAO",
-  salário: "SALARIO",
-  salario: "SALARIO",
-  combustível: "COMBUSTIVEL",
-  combustivel: "COMBUSTIVEL",
-};
-
 export type ManualPayableState = { error?: string };
 
 export async function createManualPayableAction(
@@ -250,16 +427,14 @@ export async function createManualPayableAction(
   const isCapital = d.structuralKey === "CAPITAL";
   const supplierName = (d.supplierName || "").trim();
 
-  // Toda conta precisa de categoria; e de fornecedor (ou, no Capital, do
-  // beneficiário do capital).
+  // Toda conta precisa de categoria; e de fornecedor — exceto no Capital, onde
+  // o fornecedor é opcional (o valor pode ter sido pago ao próprio beneficiário).
   if (!label) return { error: "Informe a categoria." };
   if (isCapital && !d.capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
-  if (!supplierName) return { error: "Informe o fornecedor." };
+  if (!supplierName && !isCapital) return { error: "Informe o fornecedor." };
 
-  // Categoria nova é cadastrada para reaproveitar.
-  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
-    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
-  }
+  // Resolve a categoria (rótulo canônico + enum); cria custom se for nova.
+  const cat = await resolveDespesaCategory(label);
 
   // Parcelamento: N títulos mensais a partir do 1º vencimento. "Já foi pago"
   // só vale à vista (parcelas futuras nascem pendentes).
@@ -268,29 +443,43 @@ export async function createManualPayableAction(
   if (parcelado && count < 2) return { error: "Informe o número de parcelas (2 ou mais)." };
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
-  // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
-  const supplierId = await resolveSupplierByName(supplierName);
+  // No Capital pode ficar vazio — o pagamento foi ao próprio beneficiário.
+  const supplierId = supplierName ? await resolveSupplierByName(supplierName) : null;
 
   const firstDue = parseDateInput(d.dueDate);
   const amounts = count > 1 ? splitInstallments(d.amount, count) : [d.amount];
-  for (let i = 0; i < amounts.length; i++) {
+  const dueDateOf = (i: number) =>
+    d.installmentPeriod === "DIAS" ? addDays(firstDue, i * d.installmentDays) : addMonths(firstDue, i);
+  const destino = {
+    category: cat.category,
+    categoryLabel: cat.label,
+    documentNumber: d.documentNumber?.trim() || null,
+    supplierId,
+    costCenterId: isCapital ? null : d.costCenterId || null,
+    structuralKey: d.structuralKey,
+    vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
+    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
+    notes: d.notes || null,
+  };
+
+  if (count > 1) {
+    // Parcelado: todas as parcelas de uma vez só (nascem pendentes). Criar uma a
+    // uma deixava lançamentos longos — 360 parcelas — insuportavelmente lentos.
+    await createInstallmentPayables({
+      ...destino,
+      parcels: amounts.map((amount, i) => ({
+        description: `${d.description} - Parcela ${i + 1}/${count}`,
+        amount,
+        dueDate: dueDateOf(i),
+      })),
+    });
+  } else {
     await createManualPayable({
-      description: count > 1 ? `${d.description} - Parcela ${i + 1}/${count}` : d.description,
-      category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-      categoryLabel: label,
-      documentNumber: d.documentNumber?.trim() || null,
-      amount: amounts[i],
-      dueDate:
-        d.installmentPeriod === "DIAS"
-          ? addDays(firstDue, i * d.installmentDays)
-          : addMonths(firstDue, i),
-      supplierId,
-      costCenterId: isCapital ? null : d.costCenterId || null,
-      structuralKey: d.structuralKey,
-      vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
-      capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
-      notes: d.notes || null,
-      alreadyPaid: !parcelado && Boolean(d.alreadyPaid),
+      ...destino,
+      description: d.description,
+      amount: amounts[0],
+      dueDate: firstDue,
+      alreadyPaid: Boolean(d.alreadyPaid),
     });
   }
 
@@ -361,7 +550,11 @@ export async function updatePayableAction(
   formData: FormData,
 ): Promise<EditPayableState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+      ["combos", "criar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -369,43 +562,93 @@ export async function updatePayableAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
 
-  const current = await prisma.payable.findUnique({ where: { id: d.id }, select: { status: true } });
+  const current = await prisma.payable.findUnique({
+    where: { id: d.id },
+    select: {
+      status: true,
+      saleId: true,
+      recurringId: true,
+      dueDate: true,
+      category: true,
+      amount: true,
+      vehicleId: true,
+      costCenter: { select: { key: true } },
+    },
+  });
   if (!current) return { error: "Título não encontrado." };
   if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de editar." };
 
   const label = (d.categoryLabel || "").trim();
   if (!label) return { error: "Informe a categoria." };
 
-  const flow = d.structuralKey || "ADMINISTRATIVO";
-  const vehicleId = flow === "VEICULOS" ? d.vehicleId || null : null;
-  const capitalBeneficiaryId = flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
-  if (flow === "CAPITAL" && !capitalBeneficiaryId) return { error: "Escolha o beneficiário do capital." };
-
-  if (!KNOWN_CATEGORIES[label.toLowerCase()]) {
-    await prisma.launchCategory.upsert({ where: { name: label }, update: {}, create: { name: label } });
+  // Título gerado por uma venda (comissão do vendedor, indicação, transferência
+  // DETRAN): o DESTINO CONTÁBIL fica travado. Esse custo já foi reconhecido no
+  // resultado na data da venda, e o carro já está ligado a ele pela própria
+  // venda. Atrelar o veículo aqui criaria um custo pós-venda no carro e o mesmo
+  // gasto contaria duas vezes; mandar para o Capital viraria retirada de sócio.
+  // Nos dois casos o farol quebraria. Descrição, valor, vencimento, fornecedor
+  // (o despachante, por exemplo) e o nome da categoria seguem livres.
+  const saleGenerated = Boolean(current.saleId);
+  // Título que É a compra do carro: o valor vem do "preço de compra" do veículo
+  // e o carro já está ligado a ele. Salvar por aqui sem trava criava um custo do
+  // veículo com o próprio preço de compra (o mesmo dinheiro contado 2×) e
+  // rebaixava a categoria para OUTROS, soltando o título de
+  // regenerateVehicleAcquisitionPayables (que passaria a criar um 2º título).
+  const isAcquisition = isVehiclePurchase(current.category);
+  const locked = saleGenerated || isAcquisition;
+  const currentFlow = isStructuralKey(current.costCenter?.key)
+    ? current.costCenter.key
+    : "ADMINISTRATIVO";
+  const flow = locked ? currentFlow : d.structuralKey || "ADMINISTRATIVO";
+  // Na compra do carro o vínculo com o veículo PRECISA continuar (é o título
+  // de aquisição dele); no título gerado por venda, o vínculo é pela venda.
+  const vehicleId = isAcquisition
+    ? current.vehicleId
+    : !saleGenerated && flow === "VEICULOS"
+      ? d.vehicleId || null
+      : null;
+  const capitalBeneficiaryId = !locked && flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null;
+  if (!locked && flow === "CAPITAL" && !capitalBeneficiaryId) {
+    return { error: "Escolha o beneficiário do capital." };
   }
+
+  const cat = await resolveDespesaCategory(label);
+  // Pelo mesmo motivo, a CATEGORIA INTERNA desses títulos fica travada: é ela
+  // que diz à equação patrimonial que aquilo é custo daquela venda (ou a compra
+  // do carro). O nome exibido pode ser trocado à vontade.
+  const category = locked ? current.category : cat.category;
+  // O valor da compra do carro é o preço de compra do veículo — muda no Estoque.
+  const amount = isAcquisition ? current.amount : d.amount;
 
   await updateManualPayable({
     id: d.id,
     description: d.description,
-    category: KNOWN_CATEGORIES[label.toLowerCase()] || "OUTROS",
-    categoryLabel: label,
+    category,
+    categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
-    amount: d.amount,
-    dueDate: parseDateInput(d.dueDate),
+    amount,
+    // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
+    // que já tem título — mudar a data aqui liberaria o dia original e faria
+    // nascer um título duplicado.
+    dueDate: current.recurringId ? current.dueDate : parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
     notes: d.notes?.trim() || null,
     structuralKey: flow,
     vehicleId,
     capitalBeneficiaryId,
   });
+  // Fatura de cartão: o valor do título é a soma dos lançamentos — se o valor
+  // digitado divergir, a sincronização corrige (e realinha custos por item).
+  await syncCardInvoiceDerived(d.id);
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/estoque");
   revalidatePath("/capital");
   revalidatePath("/");
-  redirect("/financeiro/a-pagar");
+  // Volta para a origem (ex.: o combo), se for caminho interno do financeiro.
+  const rt = String(formData.get("returnTo") || "");
+  redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
 }
 
 export type DeletePayablesResult = { ok: boolean; deleted: number; skipped: number; error?: string };
@@ -423,20 +666,24 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
     return { ok: false, deleted: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
   }
 
-  let deleted = 0;
-  let skipped = 0;
-  for (const id of ids) {
-    const p = await prisma.payable.findUnique({ where: { id }, select: ORIGIN_SELECT });
-    if (!p || originBlockReason(p)) {
-      skipped += 1;
-      continue;
-    }
+  // Valida todos de uma vez e apaga em lote: título a título, excluir dezenas de
+  // linhas levava centenas de idas ao banco (a checagem é só em memória).
+  const rows = await prisma.payable.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, ...ORIGIN_SELECT },
+  });
+  const okIds = rows.filter((p) => !originBlockReason(p)).map((p) => p.id);
+  const deleted = okIds.length;
+  const skipped = ids.length - deleted;
+
+  if (okIds.length) {
     await prisma.$transaction([
-      prisma.vehicleCost.deleteMany({ where: { payableId: id } }),
-      prisma.capitalTransaction.deleteMany({ where: { payableId: id } }),
-      prisma.payable.delete({ where: { id } }),
+      // O custo do veículo perderia o vínculo (SetNull) e a movimentação de
+      // capital não tem cascade — os dois saem junto com o título.
+      prisma.vehicleCost.deleteMany({ where: { payableId: { in: okIds } } }),
+      prisma.capitalTransaction.deleteMany({ where: { payableId: { in: okIds } } }),
+      prisma.payable.deleteMany({ where: { id: { in: okIds } } }),
     ]);
-    deleted += 1;
   }
 
   revalidatePath("/financeiro/a-pagar");

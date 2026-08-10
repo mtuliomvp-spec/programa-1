@@ -4,6 +4,8 @@ import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } 
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { chassiOrNull } from "@/lib/vehicle-doc";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
  *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
@@ -48,6 +50,8 @@ export const saleSchema = z.object({
   transferAmount: z.coerce.number().min(0).default(0),
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira.
   takeReturnCommission: z.coerce.boolean().optional(),
+  // Seguro vendido junto ao financiamento: só marca (valor e data vêm depois).
+  insuranceSold: z.coerce.boolean().optional(),
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
   viaPaidTraffic: z.coerce.boolean().optional(),
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
@@ -60,6 +64,14 @@ export const saleSchema = z.object({
     .optional()
     .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
+  // Consignado: destino do valor a devolver ao proprietário. Por padrão vira
+  // conta a pagar ao dono; se `ownerRefundToCapital`, vira aporte no capital do
+  // beneficiário escolhido (o valor em si vem do veículo, travado no servidor).
+  ownerRefundToCapital: z.coerce.boolean().optional(),
+  ownerRefundBeneficiaryId: z.string().optional(),
+  // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga —
+  // só surte efeito se o vendedor for beneficiário do capital (resolvido no motor).
+  commissionToCapital: z.coerce.boolean().optional(),
   // Dados bancários do comprador — usados quando há devolução ao cliente (as
   // entradas superam o preço); constam no contrato para o pagamento.
   buyerBankName: z.string().optional(),
@@ -87,6 +99,11 @@ export const saleSchema = z.object({
   tiPayoff: z.coerce.number().min(0).optional(),
   tiPayoffTo: z.string().optional(),
   tiDebts: z.coerce.number().min(0).optional(),
+  // Detalhamento dos débitos (JSON do formulário): cada linha vira um título.
+  tiDebtsItems: z
+    .string()
+    .optional()
+    .transform((v) => parseDebtItems(v)),
   tiSupplierName: z.string().optional(),
 });
 
@@ -177,6 +194,31 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     financerName = acc?.name ?? null;
   }
 
+  // Consignado: o valor a devolver ao proprietário é travado a partir do veículo
+  // (não do formulário). Se o destino for o capital, exige um beneficiário válido.
+  const sellVehicleConsign = await prisma.vehicle.findUnique({
+    where: { id: d.vehicleId },
+    select: { consigned: true, ownerRefundAmount: true },
+  });
+  const consigned = Boolean(sellVehicleConsign?.consigned);
+  const ownerRefundAmount = consigned ? sellVehicleConsign?.ownerRefundAmount ?? 0 : 0;
+  const ownerRefundToCapital = consigned && Boolean(d.ownerRefundToCapital);
+  let ownerRefundBeneficiaryId: string | null = null;
+  if (ownerRefundToCapital && ownerRefundAmount > 0) {
+    const beneficiaryId = (d.ownerRefundBeneficiaryId || "").trim();
+    if (!beneficiaryId) {
+      throw new Error("Para aplicar a devolução no capital, selecione o beneficiário.");
+    }
+    const beneficiary = await prisma.capitalBeneficiary.findUnique({
+      where: { id: beneficiaryId },
+      select: { id: true },
+    });
+    if (!beneficiary) {
+      throw new Error("Beneficiário do capital não encontrado.");
+    }
+    ownerRefundBeneficiaryId = beneficiary.id;
+  }
+
   let tradeInAmount = 0;
   let tradeInLabel: string | null = null;
   let tradeInVehicleId: string | null = null;
@@ -187,6 +229,9 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     }
     const payoff = d.tiPayoff ?? 0;
     const debts = d.tiDebts ?? 0;
+    // As guias reais podem não bater com o acordado: a diferença vira custo
+    // (ou desconto) do veículo, tratada em createAcquisitionPayables.
+    const debtItems = d.tiDebtsItems ?? [];
     const liquido = Math.max(0, Math.round((negociado - payoff - debts) * 100) / 100);
     if (liquido > d.totalAmount) {
       throw new Error("O líquido do veículo da troca é maior que o valor da venda. Ajuste os valores.");
@@ -212,7 +257,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       manufactureYear: d.tiManufactureYear ?? d.tiModelYear ?? new Date().getFullYear(),
       modelYear: d.tiModelYear ?? d.tiManufactureYear ?? new Date().getFullYear(),
       plate: d.tiPlate.toUpperCase(),
-      chassi: d.tiChassi || null,
+      chassi: chassiOrNull(d.tiChassi),
       color: d.tiColor || null,
       km: d.tiKm ?? 0,
       fuel: d.tiFuel || null,
@@ -227,6 +272,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       payoffAmount: payoff,
       payoffTo: d.tiPayoffTo || null,
       debtsAmount: debts,
+      debtsItems: debtItems,
       liquidoSettledByTrade: true,
       tradeNote: `Recebido em troca de ${customer?.name ?? "cliente"} na venda ${
         sellVehicle ? `${sellVehicle.brand} ${sellVehicle.model} - ${sellVehicle.plate}` : ""
@@ -262,6 +308,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       transferCharged: Boolean(d.transferCharged),
       transferAmount: Math.max(0, d.transferAmount || 0),
       takeReturnCommission: Boolean(d.takeReturnCommission),
+      insuranceSold: d.paymentMethod === "FINANCIADO" && Boolean(d.insuranceSold),
       viaPaidTraffic: Boolean(d.viaPaidTraffic),
       installmentsInfoCount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoCount ?? null : null,
       installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
@@ -278,6 +325,11 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       tradeInAmount,
       tradeInLabel,
       tradeInVehicleId,
+      consigned,
+      ownerRefundAmount,
+      ownerRefundToCapital,
+      ownerRefundBeneficiaryId,
+      commissionToCapital: Boolean(d.commissionToCapital),
     });
     return sale.id;
   } catch (err) {

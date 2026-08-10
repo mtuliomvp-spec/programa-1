@@ -27,10 +27,13 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
     key: "financeiro",
     label: "Financeiro",
     // Cuida de todo o financeiro (lançar, pagar, receber, contas, conciliação),
-    // vê estoque/vendas/cadastros e os relatórios.
+    // vê estoque/vendas/cadastros, o resultado dos veículos e os relatórios.
     permissions: [
       "dashboard.visualizar",
       "estoque.visualizar",
+      "estoque.lucro",
+      "estoque.vercusto",
+      "estoque.pdfcusto",
       "vendas.visualizar",
       "cadastros.visualizar",
       "relatorios.visualizar",
@@ -38,6 +41,8 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
       "financeiro.criar",
       "financeiro.pagar",
       "financeiro.receber",
+      "financeiro.desconto",
+      "financeiro.corrigirdata",
       "financeiro.contas",
       "financeiro.conciliar",
       "compras.visualizar",

@@ -1,10 +1,15 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireAction } from "@/lib/guards";
+import { requireActionAny } from "@/lib/guards";
+import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
+import CardInvoiceItems from "./CardInvoiceItems";
+import ImportFaturaPdf from "./ImportFaturaPdf";
 
 export const dynamic = "force-dynamic";
+// A importação de fatura em PDF chama a IA e pode levar minutos.
+export const maxDuration = 300;
 
 const categoryLabelByEnum: Record<string, string> = {
   COMPRA_VEICULO: "Compra de veículo",
@@ -14,26 +19,45 @@ const categoryLabelByEnum: Record<string, string> = {
   SALARIO: "Salário",
   COMBUSTIVEL: "Combustível",
   DEVOLUCAO_CLIENTE: "Devolução ao cliente",
+  DEVOLUCAO_PROPRIETARIO: "Devolução ao proprietário",
   OUTROS: "Outros",
 };
 
 export default async function EditarPayablePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ returnTo?: string }>;
 }) {
-  await requireAction("financeiro", "criar");
+  await requireActionAny([
+    ["financeiro", "criar"],
+    ["financeiro", "editar"],
+    ["combos", "criar"],
+  ]);
   const { id } = await params;
+  const { returnTo } = await searchParams;
+  // Destino seguro de retorno (só caminhos internos do financeiro).
+  const safeReturn = returnTo && returnTo.startsWith("/financeiro/") ? returnTo : "/financeiro/a-pagar";
 
   const payable = await prisma.payable.findUnique({
     where: { id },
-    include: { costCenter: { select: { key: true } } },
+    include: {
+      costCenter: { select: { key: true } },
+      cardItems: {
+        orderBy: { createdAt: "asc" },
+        include: {
+          vehicle: { select: { brand: true, model: true, plate: true } },
+          capitalBeneficiary: { select: { name: true } },
+        },
+      },
+    },
   });
   if (!payable) notFound();
   // Título pago não é editável (reverter antes); os demais podem.
-  if (payable.status === "PAGO") redirect("/financeiro/a-pagar");
+  if (payable.status === "PAGO") redirect(safeReturn);
 
-  const [suppliers, stockVehicles, beneficiaries] = await Promise.all([
+  const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -44,6 +68,7 @@ export default async function EditarPayablePage({
       orderBy: { name: "asc" },
       select: { id: true, name: true },
     }),
+    listCategoryNames("DESPESA"),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -64,11 +89,48 @@ export default async function EditarPayablePage({
       <PageHeader
         title={`Editar título ${String(payable.orderNumber).padStart(4, "0")}`}
         action={
-          <LinkButton href="/financeiro/a-pagar" variant="secondary">
+          <LinkButton href={safeReturn} variant="secondary">
             ← Voltar
           </LinkButton>
         }
       />
+      {payable.cardInvoice ? (
+        <Card className="mb-4">
+          <CardHeader
+            title="💳 Lançamentos da fatura"
+            description="Digite os itens como estão na fatura do cartão — cada um no seu fluxo. O valor do título é sempre a soma dos lançamentos."
+            action={
+              payable.cardItems.length > 0 ? (
+                <LinkButton href={`/financeiro/a-pagar/${payable.id}/fatura`} variant="secondary">
+                  🔎 Filtrar / gerar PDF
+                </LinkButton>
+              ) : null
+            }
+          />
+          <div className="p-5">
+            <ImportFaturaPdf payableId={payable.id} hasItems={payable.cardItems.length > 0} />
+            <CardInvoiceItems
+              payableId={payable.id}
+              // Título pago nem chega aqui (redirect acima) — sempre editável.
+              editable
+              items={payable.cardItems.map((i) => ({
+                id: i.id,
+                description: i.description,
+                amount: i.amount,
+                structuralKey: i.structuralKey,
+                vehicleId: i.vehicleId,
+                capitalBeneficiaryId: i.capitalBeneficiaryId,
+                who: i.vehicle
+                  ? `${i.vehicle.brand} ${i.vehicle.model} · ${i.vehicle.plate}`
+                  : i.capitalBeneficiary?.name || null,
+              }))}
+              vehicles={vehicles}
+              beneficiaries={beneficiaries.map((b) => ({ id: b.id, label: b.name }))}
+            />
+          </div>
+        </Card>
+      ) : null}
+
       <Card>
         <CardHeader title="Dados do título" />
         <div className="p-5">
@@ -85,10 +147,19 @@ export default async function EditarPayablePage({
               structuralKey: flow,
               vehicleId: payable.vehicleId,
               capitalBeneficiaryId: payable.capitalBeneficiaryId,
+              // Título gerado por uma venda: o destino contábil é travado (o
+              // custo já pertence àquela venda).
+              saleId: payable.saleId,
+              // Título da COMPRA do carro: valor e destino vêm do cadastro do
+              // veículo (mexer aqui contaria o mesmo dinheiro duas vezes).
+              isAcquisition: payable.category === "COMPRA_VEICULO",
+              fromRecurring: Boolean(payable.recurringId),
             }}
             suppliers={suppliers}
             vehicles={vehicles}
             beneficiaries={beneficiaries}
+            categories={categories}
+            returnTo={safeReturn}
           />
         </div>
       </Card>

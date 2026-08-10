@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import BrandMark from "@/components/BrandMark";
 import LoginForm from "./LoginForm";
@@ -46,6 +47,18 @@ export default async function LoginPage({
   const userCount = await prisma.user.count();
   const isSetup = userCount === 0;
 
+  // Localização da loja (Parâmetros) para abrir no Waze/Google Maps/Apple Maps.
+  const company = await prisma.companySettings.findUnique({
+    where: { id: "company" },
+    select: { address: true, city: true, uf: true, phone: true },
+  });
+  const fullAddress = company
+    ? [company.address, company.city ? `${company.city}${company.uf ? ` - ${company.uf}` : ""}` : null]
+        .filter(Boolean)
+        .join(", ")
+    : "";
+  const mapsQuery = encodeURIComponent(fullAddress);
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Cabeçalho */}
@@ -72,20 +85,60 @@ export default async function LoginPage({
           celular.
         </p>
         <div className="mx-auto mt-8 flex max-w-md flex-col gap-3">
-          <a
-            href="#entrar"
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-base font-semibold text-white shadow-md hover:bg-blue-600"
-          >
-            🔒 Entrar no sistema
-          </a>
-          <a
-            href="/vitrine"
-            className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-100"
-          >
-            🚗 Ver veículos à venda
-          </a>
-          <p className="text-sm text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
+          <div>
+            <a
+              href="#entrar"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-blue-700 px-6 py-3.5 text-base font-semibold text-white shadow-md hover:bg-blue-600"
+            >
+              🔒 Entrar no sistema
+            </a>
+            <p className="mt-1 text-xs text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
+          </div>
+          <div>
+            <Link
+              href="/vitrine"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-slate-300 bg-white px-6 py-3.5 text-base font-semibold text-slate-700 hover:bg-slate-100"
+            >
+              🚗 Ver veículos à venda
+            </Link>
+            <p className="mt-1 text-xs text-emerald-600">Aberto ao público — conheça nosso estoque</p>
+          </div>
         </div>
+
+        {/* Onde estamos: endereço da loja com atalhos de navegação, logo no topo */}
+        {fullAddress ? (
+          <div className="mx-auto mt-8 max-w-3xl">
+            <h2 className="text-xl font-bold text-slate-900">📍 Onde estamos</h2>
+            <p className="mt-2 text-sm leading-relaxed text-slate-600">{fullAddress}</p>
+            {company?.phone ? <p className="mt-1 text-sm text-slate-500">📞 {company.phone}</p> : null}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              <a
+                href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                🗺️ Google Maps
+              </a>
+              <a
+                href={`https://waze.com/ul?q=${mapsQuery}&navigate=yes`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                🚗 Waze
+              </a>
+              <a
+                href={`https://maps.apple.com/?q=${mapsQuery}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                🍎 Apple Maps
+              </a>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       {/* O que está incluído */}
@@ -120,7 +173,7 @@ export default async function LoginPage({
           <p className="mb-5 mt-1 text-sm text-slate-500">
             {isSetup
               ? "Primeiro acesso: crie o usuário dono do sistema. Só você poderá cadastrar outros usuários."
-              : "Use seu e-mail e senha cadastrados."}
+              : "Acesso restrito à equipe da MVP Veículos — use seu e-mail e senha cadastrados."}
           </p>
           <LoginForm isSetup={isSetup} next={params.next} />
         </div>

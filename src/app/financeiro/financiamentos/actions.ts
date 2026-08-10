@@ -1,9 +1,17 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { settleFinancing, settleReturn, reverseFinancing, reverseReturn } from "@/lib/finance";
+import {
+  settleFinancing,
+  settleReturn,
+  settleInsurance,
+  reverseFinancing,
+  reverseReturn,
+  reverseInsurance,
+} from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCan } from "@/lib/guards";
 
 export type SettleResult = { ok: boolean; error?: string };
@@ -20,7 +28,11 @@ export async function settleFinancingAction(saleId: string, accountId: string): 
     await assertCan("financeiro", "receber");
     await assertBooksBalanced();
     await assertCashboxOpen();
-    await settleFinancing(saleId, accountId, new Date());
+    // A baixa usa a data de trabalho do caixa aberto (como as demais baixas),
+    // não a data do clique — o movimento cai no dia do caixa.
+    const date = await getCashboxWorkDate();
+    await assertMonthOpen(date);
+    await settleFinancing(saleId, accountId, date);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar baixa." };
   }
@@ -65,9 +77,52 @@ export async function settleReturnAction(
     await assertCan("financeiro", "receber");
     await assertBooksBalanced();
     await assertCashboxOpen();
-    await settleReturn(saleId, accountId, actualAmount, new Date());
+    // Mesma regra da baixa do repasse: data de trabalho do caixa aberto.
+    const date = await getCashboxWorkDate();
+    await assertMonthOpen(date);
+    await settleReturn(saleId, accountId, actualAmount, date);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível receber o retorno." };
+  }
+  revalidateFinancing();
+  return { ok: true };
+}
+
+export async function settleInsuranceAction(
+  saleId: string,
+  accountId: string,
+  amount: number,
+  commission: number,
+): Promise<SettleResult> {
+  if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
+  if (!Number.isFinite(amount) || amount <= 0) {
+    return { ok: false, error: "Informe o valor recebido do seguro." };
+  }
+  try {
+    await assertCan("financeiro", "receber");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    // Mesma regra das demais baixas: data de trabalho do caixa aberto.
+    const date = await getCashboxWorkDate();
+    await assertMonthOpen(date);
+    await settleInsurance(saleId, accountId, amount, commission, date);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Não foi possível receber a comissão do seguro.",
+    };
+  }
+  revalidateFinancing();
+  return { ok: true };
+}
+
+export async function reverseInsuranceAction(saleId: string): Promise<SettleResult> {
+  try {
+    await assertCan("financeiro", "receber");
+    await assertBooksBalanced();
+    await reverseInsurance(saleId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar." };
   }
   revalidateFinancing();
   return { ok: true };

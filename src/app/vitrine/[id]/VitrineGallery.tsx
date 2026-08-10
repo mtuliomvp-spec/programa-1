@@ -64,7 +64,7 @@ export default function VitrineGallery({
         <button
           type="button"
           onClick={() => setOpenIndex(0)}
-          className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-slate-200"
+          className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800"
           aria-label="Ampliar foto"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -77,7 +77,7 @@ export default function VitrineGallery({
                 key={pid}
                 type="button"
                 onClick={() => setOpenIndex(i + 1)}
-                className="cursor-zoom-in overflow-hidden rounded-lg border border-slate-200"
+                className="cursor-zoom-in overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800"
                 aria-label={`Ampliar foto ${i + 2}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
