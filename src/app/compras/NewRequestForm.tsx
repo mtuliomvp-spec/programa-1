@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import SupplierInput from "@/components/SupplierInput";
@@ -13,18 +14,45 @@ import { createRequestAction, type ComprasFormState } from "./actions";
 type Option = { id: string; name: string };
 type Vehicle = { id: string; label: string };
 
-export default function NewRequestForm({
-  suppliers,
-  vehicles,
-  beneficiaries,
-  categories,
-}: {
+type FieldsProps = {
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
   categories: string[];
-}) {
+};
+
+export default function NewRequestForm(props: FieldsProps) {
   const [state, formAction, pending] = useActionState(createRequestAction, {} as ComprasFormState);
+
+  return (
+    <div className="space-y-3">
+      {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
+      {state.success ? (
+        <p className="text-sm text-emerald-700">
+          {state.success}{" "}
+          <Link href="/compras" className="font-medium underline">
+            Ver solicitações
+          </Link>
+        </p>
+      ) : null}
+      {/* `key` = token do sucesso: remonta (limpa) os campos só quando o envio deu
+          certo; num erro o token não muda, então o que foi digitado é preservado. */}
+      <RequestFields key={state.token ?? "form"} {...props} formAction={formAction} pending={pending} />
+    </div>
+  );
+}
+
+function RequestFields({
+  suppliers,
+  vehicles,
+  beneficiaries,
+  categories,
+  formAction,
+  pending,
+}: FieldsProps & {
+  formAction: (formData: FormData) => void;
+  pending: boolean;
+}) {
   const [flow, setFlow] = useState("ADMINISTRATIVO");
   const [parcelado, setParcelado] = useState(false);
   const [supplierNames, setSupplierNames] = useState<string[]>(suppliers.map((s) => s.name));
@@ -35,10 +63,6 @@ export default function NewRequestForm({
   // Trava síncrona contra envio duplicado: um `pending`/`preparing` de state pode
   // estar "velho" no closure em toques rápidos no celular, deixando passar 2 envios.
   const submittingRef = useRef(false);
-
-  useEffect(() => {
-    if (state.success) formRef.current?.reset();
-  }, [state.success]);
 
   // Libera a trava quando o envio termina (pending volta a false).
   useEffect(() => {
@@ -70,8 +94,6 @@ export default function NewRequestForm({
 
   return (
     <form ref={formRef} className="space-y-3">
-      {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
-      {state.success ? <p className="text-sm text-emerald-700">{state.success}</p> : null}
       <Field label="O que comprar" required>
         <Input name="description" required placeholder="Ex: 4 pneus aro 15" />
       </Field>

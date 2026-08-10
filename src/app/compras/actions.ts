@@ -22,7 +22,9 @@ import { formatRequestNumber, parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { nextRequestSeq } from "@/lib/purchase-requests";
 
-export type ComprasFormState = { error?: string; success?: string };
+// `token` muda a cada sucesso: o formulário usa como `key` para remontar (limpar)
+// os campos só quando o envio deu certo — sem limpar quando volta erro.
+export type ComprasFormState = { error?: string; success?: string; token?: string };
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 
@@ -129,7 +131,7 @@ export async function createRequestAction(
     }
   });
   revalidatePath("/compras");
-  return { success: "Solicitação registrada. Aguardando aprovação." };
+  return { success: "Solicitação registrada. Aguardando aprovação.", token: crypto.randomUUID() };
 }
 
 const updateSchema = createSchema.extend({ id: z.string().min(1) });
