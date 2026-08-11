@@ -44,6 +44,7 @@ export default async function EditarPayablePage({
     where: { id },
     include: {
       costCenter: { select: { key: true } },
+      vehicle: { select: { consigned: true } },
       cardItems: {
         orderBy: { createdAt: "asc" },
         include: {
@@ -153,6 +154,12 @@ export default async function EditarPayablePage({
               // Título da COMPRA do carro: valor e destino vêm do cadastro do
               // veículo (mexer aqui contaria o mesmo dinheiro duas vezes).
               isAcquisition: payable.category === "COMPRA_VEICULO",
+              // Repasse do consignado (quitação/débitos): o valor pode ser
+              // ajustado — a diferença vai para a Devolução ao proprietário.
+              consignedRepasse:
+                payable.category === "COMPRA_VEICULO" &&
+                !payable.saleId &&
+                Boolean(payable.vehicle?.consigned),
               fromRecurring: Boolean(payable.recurringId),
             }}
             suppliers={suppliers}

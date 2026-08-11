@@ -571,8 +571,10 @@ export async function updatePayableAction(
       dueDate: true,
       category: true,
       amount: true,
+      description: true,
       vehicleId: true,
       costCenter: { select: { key: true } },
+      vehicle: { select: { consigned: true, payoffAmount: true, debtsAmount: true } },
     },
   });
   if (!current) return { error: "Título não encontrado." };
@@ -595,6 +597,11 @@ export async function updatePayableAction(
   // rebaixava a categoria para OUTROS, soltando o título de
   // regenerateVehicleAcquisitionPayables (que passaria a criar um 2º título).
   const isAcquisition = isVehiclePurchase(current.category);
+  // Repasse do CONSIGNADO (quitação/débitos): o valor PODE ser ajustado depois da
+  // venda — a diferença vai para a Devolução ao proprietário (o acertado com o
+  // dono não muda: quitação + débitos + devolução continuam somando o mesmo, e o
+  // farol segue verde). O destino contábil continua travado como aquisição.
+  const consignedRepasse = isAcquisition && !current.saleId && Boolean(current.vehicle?.consigned);
   const locked = saleGenerated || isAcquisition;
   const currentFlow = isStructuralKey(current.costCenter?.key)
     ? current.costCenter.key
@@ -618,7 +625,38 @@ export async function updatePayableAction(
   // do carro). O nome exibido pode ser trocado à vontade.
   const category = locked ? current.category : cat.category;
   // O valor da compra do carro é o preço de compra do veículo — muda no Estoque.
-  const amount = isAcquisition ? current.amount : d.amount;
+  // Exceção: repasse do consignado, cujo ajuste flui para a devolução ao dono.
+  const amount = isAcquisition && !consignedRepasse ? current.amount : d.amount;
+
+  // Repasse do consignado com valor alterado: valida e prepara o ajuste da
+  // Devolução ao proprietário ANTES de gravar (tudo ou nada do ponto de vista
+  // do usuário — se a devolução não puder absorver, nada muda).
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const repasseDelta = consignedRepasse ? round2(d.amount - current.amount) : 0;
+  let devolucaoToAdjust: { id: string; amount: number } | null = null;
+  if (consignedRepasse && Math.abs(repasseDelta) > 0.005) {
+    const devolucao = await prisma.payable.findFirst({
+      where: {
+        vehicleId: current.vehicleId!,
+        category: "DEVOLUCAO_PROPRIETARIO",
+        status: { not: "PAGO" },
+      },
+      select: { id: true, amount: true },
+    });
+    if (!devolucao) {
+      return {
+        error:
+          "Não há Devolução ao proprietário pendente para absorver a diferença (ela pode já ter sido paga ou ter virado aporte de capital). Reverta/ajuste a devolução antes de mudar este valor.",
+      };
+    }
+    const novaDevolucao = round2(devolucao.amount - repasseDelta);
+    if (novaDevolucao < 0) {
+      return {
+        error: `A diferença deixaria a Devolução ao proprietário negativa (ela tem ${devolucao.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} pendente). Ajuste um valor menor.`,
+      };
+    }
+    devolucaoToAdjust = { id: devolucao.id, amount: novaDevolucao };
+  }
 
   await updateManualPayable({
     id: d.id,
@@ -637,6 +675,23 @@ export async function updatePayableAction(
     vehicleId,
     capitalBeneficiaryId,
   });
+  // Repasse do consignado: aplica a contrapartida — a devolução ao dono absorve
+  // a diferença e o campo do veículo (quitação/débitos) acompanha, para o
+  // detalhamento da venda continuar batendo com os títulos.
+  if (consignedRepasse && devolucaoToAdjust && current.vehicleId) {
+    const isPayoff = current.description.startsWith("Quitação do financiamento");
+    const vehicleData = isPayoff
+      ? { payoffAmount: round2(Math.max(0, (current.vehicle?.payoffAmount ?? 0) + repasseDelta)) }
+      : { debtsAmount: round2(Math.max(0, (current.vehicle?.debtsAmount ?? 0) + repasseDelta)) };
+    await prisma.$transaction([
+      prisma.payable.update({
+        where: { id: devolucaoToAdjust.id },
+        data: { amount: devolucaoToAdjust.amount },
+      }),
+      prisma.vehicle.update({ where: { id: current.vehicleId }, data: vehicleData }),
+    ]);
+  }
+
   // Fatura de cartão: o valor do título é a soma dos lançamentos — se o valor
   // digitado divergir, a sincronização corrige (e realinha custos por item).
   await syncCardInvoiceDerived(d.id);

@@ -29,6 +29,9 @@ type Payable = {
   saleId: string | null;
   /** É a compra do carro: valor e destino vêm do cadastro do veículo. */
   isAcquisition: boolean;
+  /** Repasse do consignado (quitação/débitos): o valor pode ser ajustado —
+   * a diferença vai automaticamente para a Devolução ao proprietário. */
+  consignedRepasse: boolean;
   /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
   fromRecurring: boolean;
 };
@@ -55,6 +58,8 @@ export default function EditPayableForm({
   const saleGenerated = Boolean(payable.saleId);
   // Compra do carro: além do destino, o VALOR vem do preço de compra do veículo.
   const isAcquisition = payable.isAcquisition;
+  // Repasse do consignado: o valor é editável (a diferença ajusta a devolução).
+  const amountLocked = isAcquisition && !payable.consignedRepasse;
   const locked = saleGenerated || isAcquisition;
 
   return (
@@ -77,7 +82,7 @@ export default function EditPayableForm({
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {isAcquisition ? (
+        {amountLocked ? (
           <Field label="Valor (R$)">
             {/* Travado: este é o preço de compra do carro — muda no Estoque. */}
             <input type="hidden" name="amount" value={payable.amount} />
@@ -91,6 +96,12 @@ export default function EditPayableForm({
         ) : (
           <Field label="Valor (R$)" required>
             <MoneyInput name="amount" defaultValue={payable.amount} required />
+            {payable.consignedRepasse ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Repasse do consignado: ao mudar o valor, a diferença ajusta automaticamente a{" "}
+                <strong>Devolução ao proprietário</strong> (o valor acertado com o dono não muda).
+              </p>
+            ) : null}
           </Field>
         )}
         {payable.fromRecurring ? (
@@ -112,7 +123,30 @@ export default function EditPayableForm({
         )}
       </div>
 
-      {isAcquisition ? (
+      {payable.consignedRepasse ? (
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
+          <p className="font-medium text-slate-800">🚗 Repasse do consignado</p>
+          <p className="mt-1">
+            Este título é a <strong>quitação/débitos</strong> descontados do valor acertado com o
+            proprietário do consignado. O <strong>valor pode ser ajustado</strong> mesmo depois da
+            venda: a diferença vai automaticamente para a <strong>Devolução ao proprietário</strong>{" "}
+            pendente (guia mais barata → sobra mais para o dono; mais cara → sobra menos). O valor
+            acertado e o lucro da venda não mudam.
+          </p>
+          <p className="mt-1">
+            O <strong>veículo</strong>, o <strong>fluxo</strong> e a <strong>categoria</strong>{" "}
+            continuam fixos. Fornecedor, vencimento, nº do documento e observações seguem livres.
+          </p>
+          {payable.vehicleId ? (
+            <Link
+              href={`/estoque/${payable.vehicleId}`}
+              className="mt-2 inline-block font-medium text-blue-700 hover:underline"
+            >
+              Ver o veículo →
+            </Link>
+          ) : null}
+        </div>
+      ) : isAcquisition ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
           <p className="font-medium text-slate-800">🚗 Compra do veículo</p>
           <p className="mt-1">
