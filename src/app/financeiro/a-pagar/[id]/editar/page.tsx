@@ -4,6 +4,7 @@ import { requireActionAny } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
+import SplitRepasseForm from "./SplitRepasseForm";
 import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 
@@ -128,6 +129,23 @@ export default async function EditarPayablePage({
               vehicles={vehicles}
               beneficiaries={beneficiaries.map((b) => ({ id: b.id, label: b.name }))}
             />
+          </div>
+        </Card>
+      ) : null}
+
+      {/* Débitos do repasse (consignado): pode ser aberto em várias guias, cada
+          uma pagável separada — a diferença ajusta a devolução ao proprietário. */}
+      {payable.category === "COMPRA_VEICULO" &&
+      !payable.saleId &&
+      payable.vehicle?.consigned &&
+      payable.description.startsWith("Débitos do veículo") ? (
+        <Card>
+          <CardHeader
+            title="🧾 Desmembrar em guias"
+            description="Transforme este título em vários — um por guia, cada um pago separadamente."
+          />
+          <div className="p-5">
+            <SplitRepasseForm payableId={payable.id} amount={payable.amount} returnTo={safeReturn} />
           </div>
         </Card>
       ) : null}

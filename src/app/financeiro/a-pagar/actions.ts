@@ -15,6 +15,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { isStructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
+import { parseDebtItems } from "@/lib/vehicle-debts";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -702,6 +703,139 @@ export async function updatePayableAction(
   revalidatePath("/capital");
   revalidatePath("/");
   // Volta para a origem (ex.: o combo), se for caminho interno do financeiro.
+  const rt = String(formData.get("returnTo") || "");
+  redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
+}
+
+export type SplitRepasseState = { error?: string };
+
+/**
+ * Desmembra o título "Débitos do veículo (repasse)" de um CONSIGNADO em várias
+ * guias (IPVA, multas, licenciamento...) — cada linha vira um título próprio,
+ * com o seu vencimento, pagável separadamente. Funciona mesmo DEPOIS da venda.
+ *
+ * Mesma lógica da edição de valor do repasse: a diferença entre a soma das
+ * guias e o valor DESCONTADO do dono (o título original) flui para a Devolução
+ * ao proprietário pendente — guias mais baratas → sobra mais para o dono; mais
+ * caras → sobra menos. O acertado e o lucro da venda não mudam (farol verde).
+ * O campo de débitos do veículo acompanha a soma real, para o detalhamento da
+ * venda continuar batendo com os títulos.
+ */
+export async function splitConsignedRepasseAction(
+  _prev: SplitRepasseState,
+  formData: FormData,
+): Promise<SplitRepasseState> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { error: "Título não informado." };
+  const items = parseDebtItems(formData.get("items")).filter((d) => d.amount > 0);
+  if (!items.length) return { error: "Informe ao menos uma guia com valor." };
+
+  const current = await prisma.payable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      saleId: true,
+      category: true,
+      amount: true,
+      dueDate: true,
+      description: true,
+      vehicleId: true,
+      costCenterId: true,
+      supplierId: true,
+      paymentComboId: true,
+      vehicle: { select: { consigned: true, debtsAmount: true, brand: true, model: true, plate: true } },
+    },
+  });
+  if (!current) return { error: "Título não encontrado." };
+  if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de desmembrar." };
+  if (
+    current.category !== "COMPRA_VEICULO" ||
+    current.saleId ||
+    !current.vehicleId ||
+    !current.vehicle?.consigned ||
+    !current.description.startsWith("Débitos do veículo")
+  ) {
+    return { error: "Só o título de débitos do repasse de um consignado pode ser desmembrado." };
+  }
+  if (current.paymentComboId) {
+    return { error: "Este título está num combo de pagamento. Remova-o do combo antes de desmembrar." };
+  }
+
+  const total = round2(items.reduce((s, d) => s + d.amount, 0));
+  const delta = round2(total - current.amount);
+
+  // Diferença entre as guias e o descontado: a devolução ao dono absorve — as
+  // mesmas guardas da edição de valor (precisa existir e não pode ficar negativa).
+  let devolucaoToAdjust: { id: string; amount: number } | null = null;
+  if (Math.abs(delta) > 0.005) {
+    const devolucao = await prisma.payable.findFirst({
+      where: {
+        vehicleId: current.vehicleId,
+        category: "DEVOLUCAO_PROPRIETARIO",
+        status: { not: "PAGO" },
+      },
+      select: { id: true, amount: true },
+    });
+    if (!devolucao) {
+      return {
+        error:
+          "Não há Devolução ao proprietário pendente para absorver a diferença (ela pode já ter sido paga ou ter virado aporte de capital). Reverta/ajuste a devolução, ou desmembre com a soma igual ao valor do título.",
+      };
+    }
+    const novaDevolucao = round2(devolucao.amount - delta);
+    if (novaDevolucao < 0) {
+      return {
+        error: `A diferença deixaria a Devolução ao proprietário negativa (ela tem ${brl(devolucao.amount)} pendente). Ajuste as guias.`,
+      };
+    }
+    devolucaoToAdjust = { id: devolucao.id, amount: novaDevolucao };
+  }
+
+  const repasseLabel = `${current.vehicle.brand} ${current.vehicle.model} - placa ${current.vehicle.plate}`;
+  await prisma.$transaction(async (tx) => {
+    for (const item of items) {
+      await tx.payable.create({
+        data: {
+          description: `Débitos do veículo: ${item.description || "sem descrição"} ${repasseLabel}`,
+          category: "COMPRA_VEICULO",
+          amount: item.amount,
+          dueDate: item.dueDate ? parseDateInput(item.dueDate) : current.dueDate,
+          status: "PENDENTE",
+          vehicleId: current.vehicleId,
+          supplierId: current.supplierId,
+          costCenterId: current.costCenterId,
+        },
+      });
+    }
+    await tx.payable.delete({ where: { id } });
+    if (devolucaoToAdjust) {
+      await tx.payable.update({
+        where: { id: devolucaoToAdjust.id },
+        data: { amount: devolucaoToAdjust.amount },
+      });
+    }
+    if (Math.abs(delta) > 0.005) {
+      await tx.vehicle.update({
+        where: { id: current.vehicleId! },
+        data: { debtsAmount: round2(Math.max(0, (current.vehicle?.debtsAmount ?? 0) + delta)) },
+      });
+    }
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/estoque");
+  revalidatePath("/vendas");
+  revalidatePath("/");
   const rt = String(formData.get("returnTo") || "");
   redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
 }

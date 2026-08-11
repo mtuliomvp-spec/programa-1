@@ -1298,7 +1298,38 @@ async function vehicleSale(input: {
           },
         });
       }
-      if (debts > 0) {
+      // Débitos detalhados (IPVA, multa, licenciamento...): um título por guia,
+      // cada um com o seu vencimento — igual à compra de estoque. A soma REAL
+      // das guias é o que a loja de fato paga; se divergir do descontado
+      // (debtsAmount), a diferença NÃO vira custo (o custo do consignado é o
+      // acertado): ela flui para o líquido ao dono — guias mais baratas, sobra
+      // mais; mais caras, sobra menos. O campo do veículo acompanha o real para
+      // o detalhamento da venda bater com os títulos.
+      const debtItems = parseDebtItems(vehicle.debtsItems).filter((d) => d.amount > 0);
+      const debtsReal = debtItems.length
+        ? Math.round(debtItems.reduce((s, d) => s + d.amount, 0) * 100) / 100
+        : debts;
+      if (debtItems.length) {
+        for (const item of debtItems) {
+          await tx.payable.create({
+            data: {
+              description: `Débitos do veículo: ${item.description || "sem descrição"} ${repasseLabel}`,
+              category: "COMPRA_VEICULO",
+              amount: item.amount,
+              dueDate: item.dueDate ? parseDateInput(item.dueDate) : input.saleDate,
+              status: "PENDENTE",
+              vehicleId: input.vehicleId,
+              costCenterId: veiculosCenterId,
+            },
+          });
+        }
+        if (Math.abs(debtsReal - debts) > 0.005) {
+          await tx.vehicle.update({
+            where: { id: input.vehicleId },
+            data: { debtsAmount: debtsReal },
+          });
+        }
+      } else if (debts > 0) {
         await tx.payable.create({
           data: {
             description: `Débitos do veículo (repasse) ${repasseLabel}`,
@@ -1311,8 +1342,8 @@ async function vehicleSale(input: {
           },
         });
       }
-      // Líquido ao proprietário = valor acertado − quitação − débitos.
-      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
+      // Líquido ao proprietário = valor acertado − quitação − débitos (reais).
+      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debtsReal) * 100) / 100);
       if (liquido > 0) {
         // Nome do proprietário (consignante) para constar nos documentos.
         const owner = vehicle.supplierId

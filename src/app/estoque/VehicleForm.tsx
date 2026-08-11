@@ -378,6 +378,7 @@ export default function VehicleForm({
                   name="debtsItems"
                   initialItems={vehicle?.debtsItems ?? []}
                   agreed={debts}
+                  mode="devolucao"
                 />
               </Field>
             </div>
