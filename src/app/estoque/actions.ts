@@ -8,6 +8,7 @@ import {
   addVehicleCostWithPayable,
   createVehicleWithPayable,
   deleteVehicleCost,
+  detachVehicleCost,
   receiveVehicleAdvance,
 } from "@/lib/finance";
 import {
@@ -484,6 +485,16 @@ export async function addVehicleCostAction(
 export async function deleteVehicleCostAction(costId: string, vehicleId: string) {
   await assertCan("estoque", "custos");
   await deleteVehicleCost(costId);
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/");
+}
+
+/** Remove o custo do veículo mantendo a conta a pagar (volta ao a-pagar, Administrativo). */
+export async function detachVehicleCostAction(costId: string, vehicleId: string) {
+  await assertCan("estoque", "custos");
+  await detachVehicleCost(costId);
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/estoque");
   revalidatePath("/financeiro/a-pagar");

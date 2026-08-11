@@ -525,6 +525,33 @@ export async function deleteVehicleCost(costId: string) {
   });
 }
 
+/**
+ * Remove o custo do veículo MANTENDO a conta a pagar vinculada: o título perde o
+ * vínculo com o carro e volta ao Contas a pagar como lançamento administrativo
+ * (título sem veículo não fica no fluxo Veículos). Para desfazer um vínculo
+ * errado sem perder o título — a exclusão de verdade é deleteVehicleCost.
+ */
+export async function detachVehicleCost(costId: string) {
+  const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
+  return prisma.$transaction(async (tx) => {
+    const cost = await tx.vehicleCost.findUniqueOrThrow({
+      where: { id: costId },
+    });
+    if (cost.cardItemId) {
+      throw new Error(
+        "Este custo vem de um lançamento da fatura do cartão — ajuste o lançamento dentro do título da fatura.",
+      );
+    }
+    await tx.vehicleCost.delete({ where: { id: costId } });
+    if (cost.payableId) {
+      await tx.payable.update({
+        where: { id: cost.payableId },
+        data: { vehicleId: null, costCenterId: adminCenterId },
+      });
+    }
+  });
+}
+
 // ---------------------------------------------------------------------------
 // Peças -> Contas a Pagar (entrada de estoque / compra)
 // ---------------------------------------------------------------------------
