@@ -129,9 +129,9 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
               />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium text-slate-800">{r.description}</span>
-                <span className="block truncate text-xs text-slate-400">
-                  {subtitle(r)} · vence {formatDate(r.dueDate)}
-                </span>
+                <span className="block truncate text-xs text-slate-400">{subtitle(r)}</span>
+                {/* Data em linha própria: não é cortada pelo truncate do fornecedor. */}
+                <span className="block text-xs text-slate-400">vence {formatDate(r.dueDate)}</span>
               </span>
               <span className="tabular-nums text-slate-700">{formatCurrency(r.amount)}</span>
               <Link
