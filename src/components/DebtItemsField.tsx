@@ -26,12 +26,21 @@ export default function DebtItemsField({
   name,
   initialItems = [],
   agreed,
+  mode = "custo",
+  startOpen = false,
 }: {
   /** Nome do hidden com o JSON (ex.: "tiDebtsItems" / "debtsItems"). */
   name: string;
   initialItems?: VehicleDebtItem[];
   /** Total acordado com o antigo dono, para comparar com as guias. */
   agreed: number;
+  /**
+   * Para onde vai a diferença guias × acordado: "custo" (compra/troca — vira
+   * custo do veículo) ou "devolucao" (consignado — ajusta a devolução ao dono).
+   */
+  mode?: "custo" | "devolucao";
+  /** Abre a lista de guias já expandida (sem o botão "detalhar"). */
+  startOpen?: boolean;
 }) {
   const [items, setItems] = useState<DebtRow[]>(
     initialItems.map((d) => ({
@@ -40,7 +49,7 @@ export default function DebtItemsField({
       dueDate: d.dueDate ?? "",
     })),
   );
-  const [open, setOpen] = useState(initialItems.length > 0);
+  const [open, setOpen] = useState(initialItems.length > 0 || startOpen);
 
   const rows: DebtRow[] = [...items, { description: "", amount: "", dueDate: "" }];
   const total = Math.round(items.reduce((s, d) => s + (Number(d.amount) || 0), 0) * 100) / 100;
@@ -145,9 +154,13 @@ export default function DebtItemsField({
             <p
               className={`pt-1 text-[11px] font-medium ${diff > 0 ? "text-amber-700" : "text-emerald-700"}`}
             >
-              {diff > 0
-                ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
-                : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
+              {mode === "devolucao"
+                ? diff > 0
+                  ? `${formatCurrency(diff)} acima do descontado — sai da devolução ao proprietário.`
+                  : `${formatCurrency(-diff)} abaixo do descontado — volta para a devolução ao proprietário.`
+                : diff > 0
+                  ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
+                  : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
             </p>
           ) : null}
         </div>
