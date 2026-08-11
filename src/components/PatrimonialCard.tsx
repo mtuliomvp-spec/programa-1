@@ -38,16 +38,19 @@ export default function PatrimonialCard({
   icon?: string;
   sub?: string;
   subItems?: { label: string; value: number }[];
-  redItem?: { label: string; value: number };
-  redItems?: { label: string; value: number }[];
+  redItem?: { label: string; value: number; href?: string };
+  redItems?: { label: string; value: number; href?: string }[];
   formula?: string;
   href?: string;
 }) {
-  const reds = [...(redItem ? [redItem] : []), ...(redItems ?? [])];
-  const inner = (
-    <div
-      className={`h-full rounded-xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${border[tone]} ${href ? "transition-shadow hover:shadow-md" : ""}`}
-    >
+  const reds = [...(redItem ? [redItem] : []), ...(redItems ?? [])].filter((r) => r.value > 0);
+  // Linha vermelha com link próprio: o card não pode ser um único <a> (link
+  // dentro de link é inválido) — o cabeçalho vira o link do card e cada linha
+  // com href vira o seu.
+  const hasRowLinks = reds.some((r) => r.href);
+
+  const header = (
+    <>
       <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
         {icon ? <span aria-hidden className="text-lg">{icon}</span> : null}
@@ -65,15 +68,59 @@ export default function PatrimonialCard({
           ))}
         </p>
       ) : null}
-      {reds
-        .filter((r) => r.value > 0)
-        .map((r) => (
-          <p key={r.label} className="mt-1 text-xs font-semibold text-rose-600">
-            {r.label}: {formatCurrency(r.value)}
-          </p>
-        ))}
+    </>
+  );
+
+  const rows = reds.map((r) =>
+    r.href ? (
+      <p key={r.label} className="mt-1 text-xs font-semibold text-rose-600">
+        <Link
+          href={r.href}
+          className="underline decoration-rose-300 underline-offset-2 hover:decoration-rose-600"
+          title="Ver os títulos que compõem este valor"
+        >
+          {r.label}: {formatCurrency(r.value)}
+        </Link>
+      </p>
+    ) : (
+      <p key={r.label} className="mt-1 text-xs font-semibold text-rose-600">
+        {r.label}: {formatCurrency(r.value)}
+      </p>
+    ),
+  );
+
+  const tail = (
+    <>
       {sub ? <p className="mt-1 text-xs text-slate-400">{sub}</p> : null}
       {formula ? <p className="mt-2 text-[11px] leading-tight text-slate-400">{formula}</p> : null}
+    </>
+  );
+
+  if (hasRowLinks) {
+    return (
+      <div
+        className={`h-full rounded-xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${border[tone]}`}
+      >
+        {href ? (
+          <Link href={href} className="block transition-opacity hover:opacity-80">
+            {header}
+          </Link>
+        ) : (
+          header
+        )}
+        {rows}
+        {tail}
+      </div>
+    );
+  }
+
+  const inner = (
+    <div
+      className={`h-full rounded-xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${border[tone]} ${href ? "transition-shadow hover:shadow-md" : ""}`}
+    >
+      {header}
+      {rows}
+      {tail}
     </div>
   );
   return href ? (

@@ -134,7 +134,11 @@ export default async function DashboardPage() {
             { label: "Pendente receber", value: pat.veiculosAReceber },
             { label: "Devolução ao cliente (a pagar)", value: pat.devolucoesClientes },
             { label: "Devolução ao proprietário (a pagar)", value: pat.devolucoesProprietario },
-            { label: "A pagar de veículos vendidos", value: pat.veiculosAPagarPosVenda },
+            {
+              label: "A pagar de veículos vendidos",
+              value: pat.veiculosAPagarPosVenda,
+              href: "/financeiro/a-pagar?vendidos=1",
+            },
             { label: "Comissões e custos das vendas (a pagar)", value: pat.comissoesAPagar },
           ]}
           href="/estoque"
