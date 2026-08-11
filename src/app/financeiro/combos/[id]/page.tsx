@@ -59,7 +59,13 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   ]);
   const cashboxDate = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
-  const total = combo.payables.reduce((s, p) => s + p.amount, 0);
+  // Enquanto o combo não foi pago, um título pode ter sido quitado por fora (na
+  // tela de Contas a pagar). Esse título já pago não deve mais aparecer nem
+  // somar no combo em aberto — o pagamento do combo já ignora os pagos. Num
+  // combo PAGO, todos os títulos são o registro do que foi quitado (mantém).
+  const comboPayables =
+    combo.status === "PAGO" ? combo.payables : combo.payables.filter((p) => p.status !== "PAGO");
+  const total = comboPayables.reduce((s, p) => s + p.amount, 0);
   const info = statusInfo[combo.status];
   const bene = combo.user;
 
@@ -200,7 +206,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
 
           <section className="mb-4">
             <h2 className="mb-1 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Títulos do combo</h2>
-            {combo.payables.length === 0 ? (
+            {comboPayables.length === 0 ? (
               <p className="py-3 text-sm text-slate-500">Nenhum título neste combo ainda.</p>
             ) : (
               <Table>
@@ -214,7 +220,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                   </Tr>
                 </Thead>
                 <tbody>
-                  {combo.payables.map((p) => (
+                  {comboPayables.map((p) => (
                     <Tr key={p.id}>
                       <Td className="font-medium text-slate-900">{p.description}</Td>
                       <Td className="text-slate-600">{p.supplier?.name || p.beneficiaryUser?.name || "—"}</Td>
