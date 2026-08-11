@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } from "@/lib/finance";
 import { assertMonthOpen } from "@/lib/monthly-closing";
+import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { chassiOrNull } from "@/lib/vehicle-doc";
@@ -152,6 +153,10 @@ export async function assertNoConflictingPreSale(
 export async function registerSaleCore(d: SaleData): Promise<string> {
   // Trava do fechamento mensal: não registrar venda com data em mês já fechado.
   await assertMonthOpen(parseDateInput(d.saleDate));
+  // O fechamento MOVIMENTA o caixa (entrada recebida, repasses, troco): a data
+  // da venda precisa ser a data de trabalho do caixa aberto — a mesma regra de
+  // toda baixa. Sem isso o movimento cai fora do dia do caixa.
+  await assertCashDateIsWorkDate(parseDateInput(d.saleDate));
 
   // Trava: não vender um veículo pré-vendido para outro cliente sem cancelar a
   // pré-venda antes (a conversão da própria pré-venda usa o mesmo cliente, então

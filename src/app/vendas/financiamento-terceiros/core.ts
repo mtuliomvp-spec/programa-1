@@ -2,6 +2,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance";
 import { assertMonthOpen } from "@/lib/monthly-closing";
+import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { findCustomerByIdentity } from "@/lib/person-dedupe";
@@ -288,6 +289,11 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     return pre.convertedSaleId;
   }
   await assertMonthOpen(pre.saleDate);
+  // A conclusão MOVIMENTA o caixa (repasse da financeira, devolução): a data da
+  // operação precisa ser a data de trabalho do caixa aberto — a mesma regra de
+  // toda baixa. Se a pré-venda for de outro dia, ajuste a data nela (Editar) ou
+  // abra o caixa na data desejada.
+  await assertCashDateIsWorkDate(pre.saleDate);
 
   const F = pre.financingAmount;
   const D = pre.refundAmount;
