@@ -88,7 +88,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   return (
     <div>
       <div className="mb-3 flex flex-wrap items-end gap-2">
-        <div className="min-w-[220px] flex-1">
+        <div className="min-w-[220px] flex-1 basis-full sm:basis-auto">
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
@@ -96,19 +96,19 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
             className="h-11 text-base"
           />
         </div>
-        <Select value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} className="h-11 w-48">
+        <Select value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} className="h-11 w-full sm:w-48">
           <option value="">Todos os fornecedores</option>
           {supplierOptions.map((s) => (
             <option key={s} value={s}>{s}</option>
           ))}
         </Select>
-        <Select value={beneficiario} onChange={(e) => setBeneficiario(e.target.value)} className="h-11 w-48">
+        <Select value={beneficiario} onChange={(e) => setBeneficiario(e.target.value)} className="h-11 w-full sm:w-48">
           <option value="">Todos os beneficiários</option>
           {beneficiaryOptions.map((b) => (
             <option key={b} value={b}>{b}</option>
           ))}
         </Select>
-        <Select value={veiculo} onChange={(e) => setVeiculo(e.target.value)} className="h-11 w-52">
+        <Select value={veiculo} onChange={(e) => setVeiculo(e.target.value)} className="h-11 w-full sm:w-52">
           <option value="">Todos os veículos</option>
           {vehicleOptions.map((v) => (
             <option key={v} value={v}>{v}</option>

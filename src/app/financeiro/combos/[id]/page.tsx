@@ -125,11 +125,14 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
       : [];
 
   return (
-    <div className="mx-auto max-w-3xl">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
-        <LinkButton href="/financeiro/combos" variant="secondary">← Voltar</LinkButton>
-        <PrintButton title={`Bordero ${combo.name}`} rootSelector="#bordero" />
-      </div>
+    <div className="mx-auto max-w-5xl">
+      {/* O borderô é documento (impressão) — fica em largura de página; só a área
+          de trabalho "Adicionar títulos" abaixo usa a largura maior da tela. */}
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 print:hidden">
+          <LinkButton href="/financeiro/combos" variant="secondary">← Voltar</LinkButton>
+          <PrintButton title={`Bordero ${combo.name}`} rootSelector="#bordero" />
+        </div>
 
       <Card className="p-6 sm:p-8">
         <main id="bordero">
@@ -306,6 +309,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           cashboxDate={cashboxDate}
         />
       </Card>
+      </div>
 
       {comboEditavel && canManage ? (
         <Card className="mt-4 print:hidden">
