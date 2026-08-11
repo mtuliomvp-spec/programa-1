@@ -36,9 +36,10 @@ export default function DebtItemsField({
   agreed: number;
   /**
    * Para onde vai a diferença guias × acordado: "custo" (compra/troca — vira
-   * custo do veículo) ou "devolucao" (consignado — ajusta a devolução ao dono).
+   * custo do veículo), "devolucao" (consignado — ajusta a devolução ao dono) ou
+   * "exato" (a soma PRECISA bater com o total — nada absorve diferença).
    */
-  mode?: "custo" | "devolucao";
+  mode?: "custo" | "devolucao" | "exato";
   /** Abre a lista de guias já expandida (sem o botão "detalhar"). */
   startOpen?: boolean;
 }) {
@@ -99,14 +100,16 @@ export default function DebtItemsField({
       ) : (
         <div className="mt-2 rounded-lg border border-slate-200 bg-white p-2">
           <p className="mb-1 text-[11px] text-slate-500">
-            Cada linha vira uma conta a pagar. Sem data, vence junto com a compra.
+            {mode === "exato"
+              ? "Cada linha vira uma conta a pagar. Sem data, vence na data do título."
+              : "Cada linha vira uma conta a pagar. Sem data, vence junto com a compra."}
           </p>
           {rows.map((row, i) => (
             <div key={i} className="mb-1.5 flex flex-wrap items-center gap-1.5">
               <Input
                 value={row.description}
                 onChange={(e) => setField(i, "description", e.target.value)}
-                placeholder="Ex.: IPVA 2026"
+                placeholder={mode === "exato" ? "Ex.: 1ª parte" : "Ex.: IPVA 2026"}
                 className="min-w-0 flex-1"
               />
               <Input
@@ -147,20 +150,37 @@ export default function DebtItemsField({
               voltar para valor único
             </button>
             <span className="font-medium text-slate-700">
-              Guias somam {formatCurrency(total)}
+              {mode === "exato" ? "Linhas somam" : "Guias somam"} {formatCurrency(total)}
             </span>
           </div>
           {items.length && Math.abs(diff) > 0.005 ? (
             <p
-              className={`pt-1 text-[11px] font-medium ${diff > 0 ? "text-amber-700" : "text-emerald-700"}`}
+              className={`pt-1 text-[11px] font-medium ${
+                mode === "exato"
+                  ? diff > 0
+                    ? "text-rose-600"
+                    : "text-amber-700"
+                  : diff > 0
+                    ? "text-amber-700"
+                    : "text-emerald-700"
+              }`}
             >
-              {mode === "devolucao"
+              {mode === "exato"
                 ? diff > 0
-                  ? `${formatCurrency(diff)} acima do descontado — sai da devolução ao proprietário.`
-                  : `${formatCurrency(-diff)} abaixo do descontado — volta para a devolução ao proprietário.`
-                : diff > 0
-                  ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
-                  : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
+                  ? `${formatCurrency(diff)} acima do valor do título — a soma precisa ser igual.`
+                  : `Faltam ${formatCurrency(-diff)} para fechar o valor do título.`
+                : mode === "devolucao"
+                  ? diff > 0
+                    ? `${formatCurrency(diff)} acima do descontado — sai da devolução ao proprietário.`
+                    : `${formatCurrency(-diff)} abaixo do descontado — volta para a devolução ao proprietário.`
+                  : diff > 0
+                    ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
+                    : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
+            </p>
+          ) : null}
+          {mode === "exato" && items.length && Math.abs(diff) <= 0.005 ? (
+            <p className="pt-1 text-[11px] font-medium text-emerald-700">
+              Soma confere com o valor do título. ✓
             </p>
           ) : null}
         </div>

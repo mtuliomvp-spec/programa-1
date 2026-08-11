@@ -840,6 +840,106 @@ export async function splitConsignedRepasseAction(
   redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
 }
 
+/**
+ * Categorias que podem ser desmembradas em vários títulos com a MESMA soma:
+ * devoluções geradas por venda (excedente do financiamento ao cliente e líquido
+ * ao consignante). O valor total é ancorado na venda — por isso a soma precisa
+ * bater exatamente; o que se ganha é pagar em partes, cada uma com a sua data.
+ * Os títulos-filhos mantêm categoria e veículo, então o cancelamento da venda
+ * (que limpa por categoria+veículo) e a equação patrimonial seguem intactos.
+ */
+const SPLIT_SAME_TOTAL_CATEGORIES = ["DEVOLUCAO_CLIENTE", "DEVOLUCAO_PROPRIETARIO"] as const;
+
+export type SplitSameTotalState = { error?: string };
+
+/**
+ * Desmembra um título de devolução (cliente/proprietário) em vários títulos —
+ * cada linha com valor e vencimento próprios, paga separadamente. A soma das
+ * linhas PRECISA ser igual ao valor do título original: nada aqui muda o quanto
+ * é devido (isso vem da venda), só COMO será pago.
+ */
+export async function splitSameTotalAction(
+  _prev: SplitSameTotalState,
+  formData: FormData,
+): Promise<SplitSameTotalState> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const id = String(formData.get("id") || "");
+  if (!id) return { error: "Título não informado." };
+  const items = parseDebtItems(formData.get("items")).filter((d) => d.amount > 0);
+  if (items.length < 2) return { error: "Informe ao menos duas linhas com valor — desmembrar é dividir em partes." };
+
+  const current = await prisma.payable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      category: true,
+      amount: true,
+      dueDate: true,
+      description: true,
+      vehicleId: true,
+      saleId: true,
+      supplierId: true,
+      costCenterId: true,
+      capitalBeneficiaryId: true,
+      notes: true,
+      paymentComboId: true,
+    },
+  });
+  if (!current) return { error: "Título não encontrado." };
+  if (current.status === "PAGO") return { error: "Título já pago. Reverta antes de desmembrar." };
+  if (!(SPLIT_SAME_TOTAL_CATEGORIES as readonly string[]).includes(current.category)) {
+    return { error: "Este título não pode ser desmembrado por aqui." };
+  }
+  if (current.paymentComboId) {
+    return { error: "Este título está num combo de pagamento. Remova-o do combo antes de desmembrar." };
+  }
+
+  const total = round2(items.reduce((s, d) => s + d.amount, 0));
+  const diff = round2(total - current.amount);
+  if (Math.abs(diff) > 0.005) {
+    return {
+      error: `A soma das linhas (${brl(total)}) precisa ser igual ao valor do título (${brl(current.amount)}) — o total devido vem da venda e não muda aqui. Diferença: ${brl(diff)}.`,
+    };
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const [i, item] of items.entries()) {
+      await tx.payable.create({
+        data: {
+          description: item.description
+            ? `${item.description} - ${current.description}`
+            : `${current.description} (${i + 1}/${items.length})`,
+          category: current.category,
+          amount: item.amount,
+          dueDate: item.dueDate ? parseDateInput(item.dueDate) : current.dueDate,
+          status: "PENDENTE",
+          vehicleId: current.vehicleId,
+          saleId: current.saleId,
+          supplierId: current.supplierId,
+          costCenterId: current.costCenterId,
+          capitalBeneficiaryId: current.capitalBeneficiaryId,
+          notes: current.notes,
+        },
+      });
+    }
+    await tx.payable.delete({ where: { id } });
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/");
+  const rt = String(formData.get("returnTo") || "");
+  redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
+}
+
 export type DeletePayablesResult = { ok: boolean; deleted: number; skipped: number; error?: string };
 
 /**

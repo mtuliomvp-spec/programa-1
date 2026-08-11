@@ -5,6 +5,7 @@ import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
 import SplitRepasseForm from "./SplitRepasseForm";
+import SplitSameTotalForm from "./SplitSameTotalForm";
 import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 
@@ -146,6 +147,21 @@ export default async function EditarPayablePage({
           />
           <div className="p-5">
             <SplitRepasseForm payableId={payable.id} amount={payable.amount} returnTo={safeReturn} />
+          </div>
+        </Card>
+      ) : null}
+
+      {/* Devoluções geradas por venda (excedente do financiamento ao cliente /
+          líquido ao consignante): podem ser pagas em partes — o desmembramento
+          exige a MESMA soma, porque o total devido vem da venda. */}
+      {payable.category === "DEVOLUCAO_CLIENTE" || payable.category === "DEVOLUCAO_PROPRIETARIO" ? (
+        <Card>
+          <CardHeader
+            title="🧾 Desmembrar título"
+            description="Divida em vários títulos para pagar em partes — a soma precisa ser igual ao valor original."
+          />
+          <div className="p-5">
+            <SplitSameTotalForm payableId={payable.id} amount={payable.amount} returnTo={safeReturn} />
           </div>
         </Card>
       ) : null}
