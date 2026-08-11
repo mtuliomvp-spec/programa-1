@@ -2,7 +2,12 @@
 
 import Link from "next/link";
 import { useActionState, useState, useTransition } from "react";
-import { addVehicleCostAction, deleteVehicleCostAction, type CostFormState } from "../actions";
+import {
+  addVehicleCostAction,
+  deleteVehicleCostAction,
+  detachVehicleCostAction,
+  type CostFormState,
+} from "../actions";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { VEHICLE_COST_CATEGORY_LABEL } from "@/lib/labels";
 import { Badge, Button, Field, Input, Select } from "@/components/ui";
@@ -144,30 +149,72 @@ export default function VehicleCosts({
                 </div>
               </div>
               {confirmingId === c.id ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
-                  <span className="text-xs text-rose-700">
-                    Excluir este custo? A conta a pagar vinculada também será removida.
-                  </span>
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() => {
-                      setConfirmingId(null);
-                      startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                    }}
-                    className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
-                  >
-                    {deleting ? "Excluindo..." : "Sim, excluir"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={deleting}
-                    onClick={() => setConfirmingId(null)}
-                    className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
-                  >
-                    Voltar
-                  </button>
-                </div>
+                c.payableId ? (
+                  <div className="mt-2 space-y-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                    <p className="text-xs text-rose-700">
+                      Este custo tem uma <strong>conta a pagar vinculada</strong>. O que fazer com ela?
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => {
+                          setConfirmingId(null);
+                          startDelete(() => detachVehicleCostAction(c.id, vehicleId));
+                        }}
+                        className="rounded-md bg-blue-600 px-3 py-1 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+                      >
+                        {deleting ? "Removendo..." : "Remover do veículo (mantém a conta a pagar)"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => {
+                          setConfirmingId(null);
+                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
+                        }}
+                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+                      >
+                        {deleting ? "Excluindo..." : "Excluir custo e conta a pagar"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => setConfirmingId(null)}
+                        className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                    <p className="text-[11px] text-rose-600/80">
+                      &quot;Remover do veículo&quot;: o custo sai do carro e o título volta ao Contas a
+                      pagar (fluxo Administrativo). &quot;Excluir&quot;: some dos dois lugares.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                    <span className="text-xs text-rose-700">Excluir este custo?</span>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => {
+                        setConfirmingId(null);
+                        startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
+                      }}
+                      className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+                    >
+                      {deleting ? "Excluindo..." : "Sim, excluir"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deleting}
+                      onClick={() => setConfirmingId(null)}
+                      className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      Voltar
+                    </button>
+                  </div>
+                )
               ) : null}
               {expanded === c.id ? (
                 <div className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
