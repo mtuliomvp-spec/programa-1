@@ -31,9 +31,9 @@ const categoryLabel = {
 export default async function ContasAPagarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string; p?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string; vendidos?: string; p?: string }>;
 }) {
-  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, p: pParam } = await searchParams;
+  const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, vendidos, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
   const [canPagar, canManage, canCombo, canPayCombo, canEditOnly, canFixDate] = await Promise.all([
     userCan("financeiro", "pagar"),
@@ -74,7 +74,9 @@ export default async function ContasAPagarPage({
           supplierId: true,
           supplier: { select: { id: true, name: true } },
           vehicleId: true,
-          vehicle: { select: { id: true, brand: true, model: true, plate: true } },
+          vehicle: { select: { id: true, brand: true, model: true, plate: true, status: true } },
+          // Para o filtro "vendidos" (linha do painel): custo pré-venda de carro vendido.
+          vehicleCost: { select: { postSale: true } },
           account: { select: { name: true } },
           beneficiaryUser: { select: { id: true, name: true } },
           capitalBeneficiary: { select: { id: true, name: true } },
@@ -155,6 +157,15 @@ export default async function ContasAPagarPage({
     }
     if (fornecedor && p.supplierId !== fornecedor) return false;
     if (veiculo && p.vehicleId !== veiculo) return false;
+    // Linha "A pagar de veículos vendidos" do painel: títulos em aberto de carro
+    // já VENDIDO — quitação da compra (COMPRA_VEICULO) ou custo pré-venda
+    // vinculado. Espelha o cálculo do lucro patrimonial.
+    if (vendidos) {
+      if (p.effective === "PAGO") return false;
+      if (p.vehicle?.status !== "VENDIDO") return false;
+      const custoPreVenda = p.vehicleCost ? !p.vehicleCost.postSale : false;
+      if (p.category !== "COMPRA_VEICULO" && !custoPreVenda) return false;
+    }
     if (beneficiario) {
       const [kind, bid] = [beneficiario.slice(0, 2), beneficiario.slice(2)];
       if (kind === "u:" && p.beneficiaryUserId !== bid) return false;
@@ -270,7 +281,7 @@ export default async function ContasAPagarPage({
   // Link de outra página preservando busca e filtros.
   const pageHref = (n: number) => {
     const sp = new URLSearchParams();
-    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max, fornecedor, beneficiario, veiculo })) {
+    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max, fornecedor, beneficiario, veiculo, vendidos })) {
       if (v) sp.set(k, String(v));
     }
     if (n > 1) sp.set("p", String(n));
@@ -312,7 +323,7 @@ export default async function ContasAPagarPage({
         ate={ate}
         min={min}
         max={max}
-        filtersKey={`${statusFilter ?? ""}|${fornecedor ?? ""}|${beneficiario ?? ""}|${veiculo ?? ""}`}
+        filtersKey={`${statusFilter ?? ""}|${fornecedor ?? ""}|${beneficiario ?? ""}|${veiculo ?? ""}|${vendidos ?? ""}`}
         extra={
           <>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -361,6 +372,22 @@ export default async function ContasAPagarPage({
           </>
         }
       />
+
+      {vendidos ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm text-rose-800">
+            🚗 Mostrando os títulos em aberto de <strong>veículos já vendidos</strong> — a linha
+            vermelha &quot;A pagar de veículos vendidos&quot; do painel. Total:{" "}
+            <strong className="tabular-nums">
+              {formatCurrency(filtered.reduce((s, p) => s + p.amount, 0))}
+            </strong>
+            . Marque e pague em lote abaixo.
+          </p>
+          <LinkButton href="/financeiro/a-pagar" variant="secondary">
+            Limpar filtro
+          </LinkButton>
+        </div>
+      ) : null}
 
       {statusFilter !== "PAGO" ? (
         <SolicitedCombosCard
