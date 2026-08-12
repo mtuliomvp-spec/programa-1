@@ -71,6 +71,47 @@ function isoDay(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * Repasse do financiamento / retorno da financeira "RECEBIDO" na conta DA
+ * FINANCEIRA mas ainda não transferido para a empresa (financerSettledAt /
+ * returnSettledAt vazios na venda): para a CONCILIAÇÃO isso é PENDENTE — o
+ * dinheiro ainda não andou no banco da empresa. Sem esta checagem a linha do
+ * extrato aparecia como "Já baixada" com o recebimento ainda em aberto na tela
+ * de Financiamentos. A confirmação faz a baixa de verdade via
+ * settleFinancing/settleReturn (ver settleReceivable).
+ */
+type ReceivableFinInfo = {
+  accountId: string | null;
+  category: string;
+  sale: {
+    financerAccountId: string | null;
+    financedAmount: number | null;
+    financerSettledAt: Date | null;
+    returnNet: number | null;
+    returnSettledAt: Date | null;
+  } | null;
+};
+const RECEIVABLE_FIN_SELECT = {
+  accountId: true,
+  category: true,
+  sale: {
+    select: {
+      financerAccountId: true,
+      financedAmount: true,
+      financerSettledAt: true,
+      returnNet: true,
+      returnSettledAt: true,
+    },
+  },
+} as const;
+function pendingAtFinancer(rec: ReceivableFinInfo): boolean {
+  const s = rec.sale;
+  if (!s || !s.financerAccountId || rec.accountId !== s.financerAccountId) return false;
+  if (rec.category === "VENDA_VEICULO") return !s.financerSettledAt && (s.financedAmount ?? 0) > 0;
+  if (rec.category === "RETORNO_FINANCEIRA") return !s.returnSettledAt && (s.returnNet ?? 0) > 0;
+  return false;
+}
+
 export async function parseAndMatchAction(formData: FormData): Promise<ReconcileResult> {
   try {
     await assertCan("financeiro", "conciliar");
@@ -128,6 +169,7 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
         reconciledAt: true,
         bankRef: true,
         customer: { select: { name: true } },
+        ...RECEIVABLE_FIN_SELECT,
       },
     }),
   ]);
@@ -154,7 +196,11 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
           ? (c as { paymentDate?: Date | null }).paymentDate
           : (c as { receivedDate?: Date | null }).receivedDate;
         const refDate = settledDate ?? c.dueDate;
-        return { c, diff: dayDiff(refDate, txn.date), settled: Boolean(settledDate) };
+        // Repasse/retorno parado na conta da financeira: ainda pendente de
+        // verdade — a confirmação fará a transferência para a conta da empresa.
+        const settled =
+          Boolean(settledDate) && (isOut || !pendingAtFinancer(c as unknown as ReceivableFinInfo));
+        return { c, diff: dayDiff(refDate, txn.date), settled };
       })
       .filter((x) => x.diff <= MATCH_WINDOW_DAYS)
       .sort((a, b) => Number(b.settled) - Number(a.settled) || a.diff - b.diff);
@@ -273,6 +319,7 @@ export async function searchTitlesAction(input: {
       dueDate: true,
       receivedDate: true,
       customer: { select: { name: true } },
+      ...RECEIVABLE_FIN_SELECT,
     },
   });
   return {
@@ -282,7 +329,7 @@ export async function searchTitlesAction(input: {
       description: r.description,
       amount: r.amount,
       date: isoDay(r.dueDate),
-      settled: Boolean(r.receivedDate),
+      settled: Boolean(r.receivedDate) && !pendingAtFinancer(r),
       who: r.customer?.name ?? null,
     })),
   };
