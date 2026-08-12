@@ -8,6 +8,7 @@ import CreateEntryForm from "./CreateEntryForm";
 import {
   parseAndMatchAction,
   confirmMatchesAction,
+  unreconcileAction,
   type BankTxn,
   type MatchCandidate,
   type MatchRow,
@@ -110,6 +111,28 @@ export default function ReconcileClient({
           ) ?? null,
       );
       setSelected(new Set());
+    });
+  }
+
+  function handleUnreconcile(fitId: string) {
+    startTransition(async () => {
+      const res = await unreconcileAction(fitId);
+      if (!res.ok) {
+        setMessage({ tone: "err", text: res.error || "Não foi possível desconciliar." });
+        return;
+      }
+      // A linha volta como "sem correspondência": dali o usuário escolhe o
+      // título certo (o picker agora só lista pendentes) ou lança a conta.
+      setRows(
+        (prev) =>
+          prev?.map((r) =>
+            r.txn.fitId === fitId ? { ...r, status: "sem_match" as const, matches: [] } : r,
+          ) ?? null,
+      );
+      setMessage({
+        tone: "ok",
+        text: "Linha desconciliada — nenhuma baixa foi desfeita. Ela voltou para 'Sem correspondência': escolha o título certo ou lance a conta.",
+      });
     });
   }
 
@@ -339,10 +362,66 @@ export default function ReconcileClient({
           </Card>
 
           {already.length > 0 ? (
-            <Card className="px-5 py-4">
-              <p className="text-sm text-slate-500">
-                {already.length} transação(ões) do extrato já estavam conciliadas anteriormente.
-              </p>
+            <Card>
+              <CardHeader
+                title={`4. Já conciliadas (${already.length})`}
+                description="Linhas do extrato conciliadas anteriormente. Se alguma casou com o título errado, desconcilie — a marca é removida (nenhuma baixa é desfeita) e a linha volta para 'Sem correspondência' para ser casada de novo."
+              />
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th>Data</Th>
+                    <Th>Descrição no banco</Th>
+                    <Th className="text-right">Valor</Th>
+                    <Th>Conciliada com</Th>
+                    <Th />
+                  </Tr>
+                </Thead>
+                <tbody>
+                  {already.map((r) => (
+                    <Tr key={r.txn.fitId}>
+                      <Td className="whitespace-nowrap">{formatDate(r.txn.date)}</Td>
+                      <Td className="max-w-[280px] text-slate-700">
+                        {txtCell(r.txn.memo, "block break-words")}
+                      </Td>
+                      <Td
+                        className={`text-right tabular-nums ${
+                          r.txn.amount < 0 ? "text-rose-600" : "text-emerald-600"
+                        }`}
+                      >
+                        {formatCurrency(r.txn.amount)}
+                      </Td>
+                      <Td className="max-w-[280px]">
+                        {r.matches.length ? (
+                          <ul className="space-y-1">
+                            {r.matches.map((m) => (
+                              <li key={m.id} className="text-slate-900">
+                                {txtCell(m.description, "block break-words")}
+                                <span className="text-xs text-slate-500">
+                                  {formatCurrency(m.amount)} · {formatDate(m.date)}
+                                  {m.who ? ` · ${m.who}` : ""}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
+                        ) : (
+                          <span className="text-xs text-slate-400">—</span>
+                        )}
+                      </Td>
+                      <Td>
+                        <button
+                          type="button"
+                          disabled={pending}
+                          onClick={() => handleUnreconcile(r.txn.fitId)}
+                          className="whitespace-nowrap text-sm font-medium text-rose-700 hover:underline disabled:opacity-50"
+                        >
+                          Desconciliar
+                        </button>
+                      </Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
             </Card>
           ) : null}
         </>

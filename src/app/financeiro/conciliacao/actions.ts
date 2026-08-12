@@ -179,12 +179,44 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
   const reconciledRefs = new Set(
     [...payables, ...receivables].map((r) => r.bankRef).filter(Boolean) as string[],
   );
+  // Quais títulos carregam a marca de cada linha já conciliada — para a tela
+  // mostrar COM O QUE a linha foi casada (e permitir desconciliar se foi com o
+  // título errado).
+  const byRef = new Map<string, MatchCandidate[]>();
+  for (const p of payables) {
+    if (!p.bankRef) continue;
+    const list = byRef.get(p.bankRef) ?? [];
+    list.push({
+      kind: "payable",
+      id: p.id,
+      description: p.description,
+      amount: p.amount,
+      date: isoDay(p.dueDate),
+      settled: Boolean(p.paymentDate),
+      who: p.supplier?.name ?? null,
+    });
+    byRef.set(p.bankRef, list);
+  }
+  for (const r of receivables) {
+    if (!r.bankRef) continue;
+    const list = byRef.get(r.bankRef) ?? [];
+    list.push({
+      kind: "receivable",
+      id: r.id,
+      description: r.description,
+      amount: r.amount,
+      date: isoDay(r.dueDate),
+      settled: Boolean(r.receivedDate),
+      who: r.customer?.name ?? null,
+    });
+    byRef.set(r.bankRef, list);
+  }
   const used = new Set<string>();
   const rows: MatchRow[] = [];
 
   for (const txn of txns.sort((a, b) => a.date.localeCompare(b.date))) {
     if (reconciledRefs.has(txn.fitId)) {
-      rows.push({ txn, status: "ja_conciliado", matches: [] });
+      rows.push({ txn, status: "ja_conciliado", matches: byRef.get(txn.fitId) ?? [] });
       continue;
     }
 
@@ -258,6 +290,39 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
   }
 
   return { rows };
+}
+
+/**
+ * Remove a MARCA de conciliação de uma linha do extrato (reconciledAt/bankRef
+ * dos títulos que a carregam). NÃO desfaz baixa nenhuma — o dinheiro fica onde
+ * está; a linha só volta a aparecer como pendente na análise para ser casada de
+ * novo (com o título certo). É o reparo para conciliações feitas com o título
+ * errado, como o casamento antigo que preferia título já baixado de outro dia.
+ */
+export async function unreconcileAction(
+  fitId: string,
+): Promise<{ ok: boolean; cleared: number; error?: string }> {
+  try {
+    await assertCan("financeiro", "conciliar");
+  } catch (e) {
+    return { ok: false, cleared: 0, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!fitId) return { ok: false, cleared: 0, error: "Linha do extrato não informada." };
+
+  const [p, r] = await prisma.$transaction([
+    prisma.payable.updateMany({
+      where: { bankRef: fitId },
+      data: { reconciledAt: null, bankRef: null },
+    }),
+    prisma.receivable.updateMany({
+      where: { bankRef: fitId },
+      data: { reconciledAt: null, bankRef: null },
+    }),
+  ]);
+  const cleared = p.count + r.count;
+  if (!cleared) return { ok: false, cleared: 0, error: "Nenhum título conciliado com esta linha." };
+  revalidateAll();
+  return { ok: true, cleared };
 }
 
 // ---------------------------------------------------------------------------
