@@ -84,6 +84,7 @@ type ReceivableFinInfo = {
   accountId: string | null;
   category: string;
   sale: {
+    id: string;
     financerAccountId: string | null;
     financedAmount: number | null;
     financerSettledAt: Date | null;
@@ -96,6 +97,7 @@ const RECEIVABLE_FIN_SELECT = {
   category: true,
   sale: {
     select: {
+      id: true,
       financerAccountId: true,
       financedAmount: true,
       financerSettledAt: true,
@@ -203,9 +205,33 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
         return { c, diff: dayDiff(refDate, txn.date), settled };
       })
       .filter((x) => x.diff <= MATCH_WINDOW_DAYS)
-      .sort((a, b) => Number(b.settled) - Number(a.settled) || a.diff - b.diff);
+      // Data mais próxima primeiro; empate → o já baixado (pura conciliação).
+      // A ordem inversa (baixado primeiro) roubava o lugar do título certo:
+      // tarifas recorrentes de mesmo valor faziam a linha casar com um título
+      // PAGO de dias atrás e aparecer "Já baixada" com o do dia ainda pendente.
+      .sort((a, b) => a.diff - b.diff || Number(b.settled) - Number(a.settled));
 
-    const best = candidates[0];
+    let best = candidates[0];
+
+    // Retorno da financeira: o banco costuma pagar centavos/reais diferente do
+    // programado (arredondamentos e retenções da financeira) — o valor exato
+    // nunca casa. Para entrada sem match exato, procura um retorno ainda parado
+    // na conta da financeira com valor próximo (1% ou R$ 2). A confirmação
+    // baixa pelo VALOR DO EXTRATO via settleReturn, que registra a diferença.
+    if (!best && !isOut) {
+      const near = receivables
+        .filter(
+          (r) =>
+            !used.has(r.id) &&
+            !r.reconciledAt &&
+            r.category === "RETORNO_FINANCEIRA" &&
+            pendingAtFinancer(r) &&
+            Math.abs(r.amount - target) <= Math.max(2, r.amount * 0.01) &&
+            dayDiff(r.dueDate, txn.date) <= MATCH_WINDOW_DAYS,
+        )
+        .sort((a, b) => Math.abs(a.amount - target) - Math.abs(b.amount - target));
+      if (near[0]) best = { c: near[0], diff: dayDiff(near[0].dueDate, txn.date), settled: false };
+    }
     if (best) {
       used.add(best.c.id);
       const who = isOut
@@ -380,9 +406,30 @@ export async function confirmMatchesAction(
       const when = new Date(`${item.date}T12:00:00Z`);
       await assertMonthOpen(when);
 
+      const total = Math.abs(item.amount);
+
+      // Retorno da financeira sozinho na linha: a financeira paga centavos/reais
+      // diferente do programado, então a igualdade exata não vale aqui. A baixa
+      // usa o VALOR DO EXTRATO — settleReturn transfere o programado e registra
+      // a diferença (crédito administrativo ou falta via Banco Neutro).
+      if (item.kind === "receivable" && item.ids.length === 1) {
+        const rec = await prisma.receivable.findUnique({
+          where: { id: item.ids[0] },
+          select: { id: true, ...RECEIVABLE_FIN_SELECT },
+        });
+        if (rec && rec.category === "RETORNO_FINANCEIRA" && pendingAtFinancer(rec) && account) {
+          await settleReturn(rec.sale!.id, account, total, when);
+          await prisma.receivable.update({
+            where: { id: rec.id },
+            data: { reconciledAt: new Date(), bankRef: item.fitId },
+          });
+          done++;
+          continue;
+        }
+      }
+
       // A soma dos títulos precisa fechar EXATO com a linha do banco — senão o
       // extrato e o sistema passam a contar valores diferentes.
-      const total = Math.abs(item.amount);
       const titles =
         item.kind === "payable"
           ? await prisma.payable.findMany({
