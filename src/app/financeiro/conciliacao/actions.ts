@@ -289,6 +289,10 @@ export async function searchTitlesAction(input: {
     const rows = await prisma.payable.findMany({
       where: {
         reconciledAt: null,
+        // Só pendentes: título já baixado não deve ser sugerido na escolha —
+        // a baixa dele já aconteceu por outro caminho, e marcá-lo aqui só
+        // serviria para conciliação pura (raro) com risco de confusão.
+        paymentDate: null,
         ...(q
           ? {
               OR: [
@@ -337,7 +341,8 @@ export async function searchTitlesAction(input: {
         : { dueDate: { gte, lte } }),
     },
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
-    take: 100,
+    // Margem para o filtro de pendentes abaixo (o corte fica no map final).
+    take: 300,
     select: {
       id: true,
       description: true,
@@ -349,15 +354,21 @@ export async function searchTitlesAction(input: {
     },
   });
   return {
-    items: rows.map((r) => ({
-      kind: "receivable" as const,
-      id: r.id,
-      description: r.description,
-      amount: r.amount,
-      date: isoDay(r.dueDate),
-      settled: Boolean(r.receivedDate) && !pendingAtFinancer(r),
-      who: r.customer?.name ?? null,
-    })),
+    items: rows
+      // Só pendentes (como nas saídas). O filtro é aqui e não no where porque o
+      // repasse/retorno "recebido" NA CONTA DA FINANCEIRA ainda está pendente
+      // de verdade (aguarda a transferência) e precisa continuar aparecendo.
+      .filter((r) => !r.receivedDate || pendingAtFinancer(r))
+      .slice(0, 100)
+      .map((r) => ({
+        kind: "receivable" as const,
+        id: r.id,
+        description: r.description,
+        amount: r.amount,
+        date: isoDay(r.dueDate),
+        settled: false,
+        who: r.customer?.name ?? null,
+      })),
   };
 }
 
