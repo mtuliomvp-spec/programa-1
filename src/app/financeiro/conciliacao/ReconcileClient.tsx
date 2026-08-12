@@ -237,6 +237,9 @@ export default function ReconcileClient({
                                 {txtCell(m.description, "block break-words font-medium")}
                                 <span className="text-xs text-slate-500">
                                   {formatCurrency(m.amount)}
+                                  {/* Data do título: deixa visível quando o casamento
+                                      pegou um título de outro dia (é só trocar). */}
+                                  {` · ${formatDate(m.date)}`}
                                   {m.who ? ` · ${m.who}` : ""}
                                 </span>
                               </li>
