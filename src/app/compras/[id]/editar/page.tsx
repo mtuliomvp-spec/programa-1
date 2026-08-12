@@ -1,6 +1,7 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAction } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { formatRequestNumber } from "@/lib/format";
 import { listCategoryNames, CATEGORIA_PAGAR_LABEL } from "@/lib/categories";
@@ -26,6 +27,19 @@ export default async function EditarSolicitacaoPage({
     request.status === "PENDENTE" ||
     (request.status === "APROVADA" && !request.payables.some((p) => p.status === "PAGO"));
   if (!podeEditar) redirect(`/compras/${id}`);
+
+  // Troca de solicitante: só o ADMIN vê o campo (a action valida de novo).
+  const sessionUser = await getSessionUser();
+  const isAdmin = sessionUser?.role === "ADMIN";
+  const requesters = isAdmin
+    ? (
+        await prisma.user.findMany({
+          where: { active: true },
+          orderBy: { name: "asc" },
+          select: { name: true },
+        })
+      ).map((u) => u.name)
+    : null;
 
   const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -72,7 +86,9 @@ export default async function EditarSolicitacaoPage({
               vehicleId: request.vehicleId,
               capitalBeneficiaryId: request.capitalBeneficiaryId,
               supplierName: request.supplier?.name ?? "",
+              requestedBy: request.requestedBy,
             }}
+            requesters={requesters}
             suppliers={suppliers}
             vehicles={vehicles}
             beneficiaries={beneficiaries}

@@ -28,16 +28,20 @@ type Request = {
   vehicleId: string | null;
   capitalBeneficiaryId: string | null;
   supplierName: string;
+  requestedBy: string;
 };
 
 export default function EditRequestForm({
   request,
+  requesters,
   suppliers,
   vehicles,
   beneficiaries,
   categories,
 }: {
   request: Request;
+  /** Nomes de usuários para trocar o solicitante — só o ADMIN recebe (nulo esconde o campo). */
+  requesters: string[] | null;
   suppliers: Option[];
   vehicles: Vehicle[];
   beneficiaries: Option[];
@@ -85,6 +89,25 @@ export default function EditRequestForm({
     <form ref={formRef} className="space-y-3">
       <input type="hidden" name="id" value={request.id} />
       {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
+
+      {requesters ? (
+        <Field label="Solicitante">
+          <Select name="requestedBy" defaultValue={request.requestedBy}>
+            {/* Solicitante atual pode ser um usuário desativado: mantém na lista. */}
+            {(requesters.includes(request.requestedBy)
+              ? requesters
+              : [request.requestedBy, ...requesters]
+            ).map((name) => (
+              <option key={name} value={name}>
+                {name}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-slate-400">
+            Visível só para o administrador — transfere a solicitação para outro usuário.
+          </p>
+        </Field>
+      ) : null}
 
       <Field label="O que comprar" required>
         <Input name="description" required defaultValue={request.description} placeholder="Ex: 4 pneus aro 15" />

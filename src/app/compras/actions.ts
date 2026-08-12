@@ -134,7 +134,11 @@ export async function createRequestAction(
   return { success: "Solicitação registrada. Aguardando aprovação.", token: crypto.randomUUID() };
 }
 
-const updateSchema = createSchema.extend({ id: z.string().min(1) });
+const updateSchema = createSchema.extend({
+  id: z.string().min(1),
+  // Troca de solicitante: só o ADMIN pode (validado na action, não aqui).
+  requestedBy: z.string().optional(),
+});
 
 type RequestForEspelho = {
   id: string;
@@ -249,8 +253,9 @@ export async function updateRequestAction(
   _prev: ComprasFormState,
   formData: FormData,
 ): Promise<ComprasFormState> {
+  let editor: Awaited<ReturnType<typeof requireCompras>>;
   try {
-    await requireCompras();
+    editor = await requireCompras();
     await assertCan("compras", "criar");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem acesso ao módulo de compras." };
@@ -273,6 +278,23 @@ export async function updateRequestAction(
   }
   if (existing.status === "APROVADA" && existing.payables.some((p) => p.status === "PAGO")) {
     return { error: "Já há pagamento nesta compra. Reverta o título antes de editar." };
+  }
+
+  // Troca de solicitante: só o ADMIN, e apontando para um usuário real — o nome
+  // é o vínculo da solicitação com quem pediu (listagem/aprovação), então texto
+  // livre viraria solicitante-fantasma. Sem mudança, nada a validar.
+  const newRequestedBy = (d.requestedBy || "").trim();
+  let requestedByUpdate: { requestedBy: string } | undefined;
+  if (newRequestedBy && newRequestedBy !== existing.requestedBy) {
+    if (editor.role !== "ADMIN") {
+      return { error: "Só o administrador pode mudar o solicitante." };
+    }
+    const target = await prisma.user.findFirst({
+      where: { name: newRequestedBy },
+      select: { name: true },
+    });
+    if (!target) return { error: "Solicitante não encontrado entre os usuários." };
+    requestedByUpdate = { requestedBy: target.name };
   }
 
   const flow = d.structuralKey || "ADMINISTRATIVO";
@@ -298,6 +320,7 @@ export async function updateRequestAction(
       structuralKey: flow,
       vehicleId: flow === "VEICULOS" ? d.vehicleId || null : null,
       capitalBeneficiaryId: flow === "CAPITAL" ? d.capitalBeneficiaryId || null : null,
+      ...requestedByUpdate,
     },
   });
 
