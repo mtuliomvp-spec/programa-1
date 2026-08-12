@@ -236,7 +236,12 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
           Boolean(settledDate) && (isOut || !pendingAtFinancer(c as unknown as ReceivableFinInfo));
         return { c, diff: dayDiff(refDate, txn.date), settled };
       })
-      .filter((x) => x.diff <= MATCH_WINDOW_DAYS)
+      // Título JÁ BAIXADO só é o par da linha se a baixa for do mesmo dia (D+1
+      // no máximo): dinheiro anda no dia. Um título pago dias antes é OUTRO
+      // dinheiro — tarifas recorrentes de mesmo valor caíam nessa armadilha
+      // (linha de 10/08 casada com a tarifa paga em 07/08). Pendentes mantêm a
+      // janela cheia (vencimento desliza mesmo).
+      .filter((x) => x.diff <= (x.settled ? 1 : MATCH_WINDOW_DAYS))
       // Data mais próxima primeiro; empate → o já baixado (pura conciliação).
       // A ordem inversa (baixado primeiro) roubava o lugar do título certo:
       // tarifas recorrentes de mesmo valor faziam a linha casar com um título
