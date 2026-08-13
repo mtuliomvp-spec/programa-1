@@ -47,6 +47,7 @@ export default async function NovaVendaPage({
         ownerRefundToCapital: pre.ownerRefundToCapital,
         ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
         commissionToCapital: pre.commissionToCapital,
+        capitalPayerBeneficiaryId: pre.capitalPayerBeneficiaryId ?? undefined,
         buyerBankName: pre.buyerBankName ?? undefined,
         buyerBankAgency: pre.buyerBankAgency ?? undefined,
         buyerBankAccount: pre.buyerBankAccount ?? undefined,

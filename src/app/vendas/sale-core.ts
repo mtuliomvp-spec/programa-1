@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
-import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName } from "@/lib/finance";
+import { registerVehicleSale, createVehicleWithPayable, resolveSupplierByName, settleReceivableFromCapital } from "@/lib/finance";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
@@ -73,6 +73,10 @@ export const saleSchema = z.object({
   // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga —
   // só surte efeito se o vendedor for beneficiário do capital (resolvido no motor).
   commissionToCapital: z.coerce.boolean().optional(),
+  // Venda paga com o CAPITAL de um sócio: no fechamento, o valor a receber é
+  // baixado no Banco Neutro e vira retirada do capital dele (o cliente do
+  // contrato pode ser qualquer pessoa — o sócio é só quem paga).
+  capitalPayerBeneficiaryId: z.string().optional(),
   // Dados bancários do comprador — usados quando há devolução ao cliente (as
   // entradas superam o preço); constam no contrato para o pagamento.
   buyerBankName: z.string().optional(),
@@ -174,6 +178,13 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
 
   if (d.paymentMethod === "FINANCIADO" && d.financedAmount != null && d.financedAmount > d.totalAmount) {
     throw new Error("O valor financiado não pode ser maior que o valor total da venda.");
+  }
+
+  // Pago com o capital de um sócio: não há parcelas ao comprador — o contrato
+  // registra 1x o total (quitado no fechamento via capital).
+  if (d.capitalPayerBeneficiaryId) {
+    d.installmentsInfoCount = 1;
+    d.installmentsInfoAmount = d.totalAmount;
   }
 
   // Parcelamento informado ao comprador: obrigatório quando há parcelas (não à
@@ -289,6 +300,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     tradeInVehicleId = tradeVehicle.id;
   }
 
+  let registeredSaleId: string;
   try {
     // Vendedor é um usuário do sistema; grava o id (para dados bancários da
     // comissão) e o nome como "foto" (documentos, DRE).
@@ -336,7 +348,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       ownerRefundBeneficiaryId,
       commissionToCapital: Boolean(d.commissionToCapital),
     });
-    return sale.id;
+    registeredSaleId = sale.id;
   } catch (err) {
     // A venda falhou DEPOIS de o veículo da troca ter sido criado (em outra
     // transação). Desfaz a troca para não deixar o carro "órfão" no estoque —
@@ -344,4 +356,27 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     if (tradeInVehicleId) await undoTradeInVehicle(tradeInVehicleId);
     throw err;
   }
+
+  // Venda paga com o capital de um sócio: baixa o que ficou a receber abatendo
+  // do capital (recebível no Banco Neutro + retirada paga no mesmo neutro).
+  // FORA do try acima de propósito: a venda já está registrada — se o abate
+  // falhar, nada é desfeito (nem a troca) e o erro orienta a concluir pelo
+  // Contas a receber.
+  if (d.capitalPayerBeneficiaryId) {
+    try {
+      const pendentes = await prisma.receivable.findMany({
+        where: { saleId: registeredSaleId, status: "PENDENTE" },
+        orderBy: { dueDate: "asc" },
+        select: { id: true },
+      });
+      for (const p of pendentes) {
+        await settleReceivableFromCapital(p.id, d.capitalPayerBeneficiaryId, parseDateInput(d.saleDate));
+      }
+    } catch (err) {
+      throw new Error(
+        `A venda foi registrada, mas não foi possível abater do capital do sócio: ${err instanceof Error ? err.message : "erro desconhecido"}. Conclua pelo Contas a receber (botão "No capital") — não registre a venda de novo.`,
+      );
+    }
+  }
+  return registeredSaleId;
 }
