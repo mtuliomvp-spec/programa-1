@@ -4,7 +4,9 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount, correctReceivedDate } from "@/lib/finance";
+import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount, correctReceivedDate, markPayablePaid } from "@/lib/finance";
+import { getNeutralAccountId } from "@/lib/accounts";
+import { structuralCenterId } from "@/lib/structural";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
@@ -21,6 +23,85 @@ export async function markReceivedAction(id: string, accountId?: string) {
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
   revalidatePath("/");
+}
+
+/**
+ * Recebe um título ABATENDO DO CAPITAL de um sócio — a rotina de vender um
+ * veículo (ou qualquer cobrança) para um sócio pagando com o saldo dele.
+ *
+ * Mecânica (a mesma da comissão "aplicada no capital", invertida): o título é
+ * recebido no BANCO NEUTRO e nasce uma retirada de capital PAGA no mesmo
+ * neutro — o par se anula (nenhum dinheiro real se move), a receita da venda é
+ * reconhecida e o capital do sócio diminui, como se ele tivesse sacado o valor
+ * e pago a compra em dinheiro. A retirada nasce de syncPayableCapital (título
+ * com capitalBeneficiaryId pago), então reverter o título da retirada desfaz o
+ * lançamento de capital junto — o farol continua verde nos dois sentidos.
+ */
+export async function receiveFromCapitalAction(
+  id: string,
+  beneficiaryId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "receber");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  if (!beneficiaryId) return { ok: false, error: "Escolha o sócio que vai pagar com o capital." };
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const r = await prisma.receivable.findUnique({
+    where: { id },
+    select: { status: true, amount: true, description: true },
+  });
+  if (!r) return { ok: false, error: "Título não encontrado." };
+  if (r.status === "RECEBIDO") return { ok: false, error: "Este título já foi recebido." };
+  const beneficiary = await prisma.capitalBeneficiary.findUnique({
+    where: { id: beneficiaryId },
+    select: { name: true, active: true },
+  });
+  if (!beneficiary || !beneficiary.active) {
+    return { ok: false, error: "Sócio (beneficiário do capital) não encontrado ou inativo." };
+  }
+
+  try {
+    const [neutralAccountId, capitalCenterId] = await Promise.all([
+      getNeutralAccountId(),
+      structuralCenterId("CAPITAL"),
+    ]);
+    // Recebe pelo caminho oficial (farol, capital e demais sync inclusos)...
+    await markReceivableReceived(id, date, neutralAccountId);
+    // ...e a contrapartida: retirada do sócio paga no mesmo Banco Neutro.
+    const retirada = await prisma.payable.create({
+      data: {
+        costCenterId: capitalCenterId,
+        description: `Abatido do capital — ${beneficiary.name} — ${r.description}`,
+        category: "OUTROS",
+        amount: r.amount,
+        dueDate: date,
+        status: "PENDENTE",
+        capitalBeneficiaryId: beneficiaryId,
+        notes: "Título recebido abatendo do capital do sócio (par no Banco Neutro — sem dinheiro em caixa).",
+      },
+    });
+    await markPayablePaid(retirada.id, date, neutralAccountId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível abater do capital." };
+  }
+
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/capital");
+  revalidatePath("/");
+  return { ok: true };
 }
 
 /**

@@ -41,6 +41,7 @@ const statusLabel = { PENDENTE: "Pendente", RECEBIDO: "Recebido", ATRASADO: "Atr
 export default function ReceivablesTable({
   rows,
   accounts,
+  beneficiaries = [],
   canReceber = true,
   canManage = false,
   canEdit,
@@ -50,6 +51,8 @@ export default function ReceivablesTable({
 }: {
   rows: ReceivableRow[];
   accounts: Account[];
+  /** Sócios ativos — habilita o "No capital" (receber abatendo do capital). */
+  beneficiaries?: Account[];
   canReceber?: boolean;
   canManage?: boolean;
   canEdit?: boolean;
@@ -197,6 +200,7 @@ export default function ReceivablesTable({
                       status={r.status}
                       amount={r.amount}
                       accounts={accounts}
+                      beneficiaries={beneficiaries}
                       canReceber={canReceber}
                       canDiscount={canDiscount}
                       hasVehicle={r.hasVehicle}

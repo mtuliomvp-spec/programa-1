@@ -35,7 +35,7 @@ export default async function ContasAReceberPage({
   const canEdit = canManage || canEditOnly;
   await ensureRecurringGeneratedForPage();
 
-  const [receivables, accounts, cashbox] = await timed("tela: contas a receber", () =>
+  const [receivables, accounts, cashbox, beneficiaries] = await timed("tela: contas a receber", () =>
     Promise.all([
       // `select` enxuto: só o que a tabela mostra (o include trazia a linha
       // inteira do cliente por título).
@@ -62,6 +62,12 @@ export default async function ContasAReceberPage({
       }),
       getActiveAccounts(),
       getCashboxState(),
+      // Sócios ativos — para receber um título abatendo do capital ("No capital").
+      prisma.capitalBeneficiary.findMany({
+        where: { active: true },
+        orderBy: { name: "asc" },
+        select: { id: true, name: true },
+      }),
     ]),
   );
   // Data em que as baixas vão cair (data de trabalho do caixa aberto).
@@ -185,6 +191,7 @@ export default async function ContasAReceberPage({
             <ReceivablesTable
               rows={pageRows}
               accounts={accounts}
+              beneficiaries={beneficiaries}
               canReceber={canReceber}
               canManage={canManage}
               canEdit={canEdit}
