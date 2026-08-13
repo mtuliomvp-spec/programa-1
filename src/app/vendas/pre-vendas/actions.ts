@@ -29,6 +29,13 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
   const d = parsed.data;
   const preSaleId = String(formData.get("preSaleId") || "").trim();
 
+  // Pago com o capital de um sócio: não há parcelas ao comprador — o contrato
+  // registra 1x o total (quitado no fechamento via capital).
+  if (d.capitalPayerBeneficiaryId) {
+    d.installmentsInfoCount = 1;
+    d.installmentsInfoAmount = d.totalAmount;
+  }
+
   // Parcelamento informado ao comprador: obrigatório quando há parcelas.
   if (d.paymentMethod !== "A_VISTA") {
     if (!d.installmentsInfoCount || d.installmentsInfoCount < 1 || !d.installmentsInfoAmount || d.installmentsInfoAmount <= 0) {
@@ -77,6 +84,8 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     ownerRefundToCapital: Boolean(d.ownerRefundToCapital),
     ownerRefundBeneficiaryId: d.ownerRefundToCapital ? d.ownerRefundBeneficiaryId || null : null,
     commissionToCapital: Boolean(d.commissionToCapital),
+    // Venda paga com o capital de um sócio (abatida na conversão).
+    capitalPayerBeneficiaryId: d.capitalPayerBeneficiaryId || null,
     buyerBankName: d.buyerBankName || null,
     buyerBankAgency: d.buyerBankAgency || null,
     buyerBankAccount: d.buyerBankAccount || null,
@@ -184,6 +193,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     ownerRefundToCapital: pre.ownerRefundToCapital,
     ownerRefundBeneficiaryId: pre.ownerRefundBeneficiaryId ?? undefined,
     commissionToCapital: pre.commissionToCapital,
+    capitalPayerBeneficiaryId: pre.capitalPayerBeneficiaryId ?? undefined,
     buyerBankName: pre.buyerBankName ?? undefined,
     buyerBankAgency: pre.buyerBankAgency ?? undefined,
     buyerBankAccount: pre.buyerBankAccount ?? undefined,

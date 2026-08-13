@@ -1427,6 +1427,21 @@ export async function cancelVehicleSale(saleId: string) {
     //     passo 2 e a movimentação de capital no passo 2d — o trio some junto.
     await tx.payable.deleteMany({ where: { saleId, category: "COMISSAO" } });
 
+    // 2c-bis) Venda paga com o capital de um sócio: o recebível (RECEBIDO no
+    //     Banco Neutro) cai no passo 2 — a retirada-par (PAGA no mesmo neutro)
+    //     precisa sair junto, senão o neutro trava desbalanceado e o capital do
+    //     sócio não volta. O lançamento de capital está ligado ao título
+    //     (payableId, sem cascade), então sai primeiro.
+    const capitalPairs = await tx.payable.findMany({
+      where: { saleId, capitalBeneficiaryId: { not: null }, category: "OUTROS" },
+      select: { id: true },
+    });
+    if (capitalPairs.length) {
+      const ids = capitalPairs.map((p) => p.id);
+      await tx.capitalTransaction.deleteMany({ where: { payableId: { in: ids } } });
+      await tx.payable.deleteMany({ where: { id: { in: ids } } });
+    }
+
     // 2d) Consignado: reverte a devolução ao proprietário. Se foi paga ao dono,
     //     apaga a conta a pagar (se já quitada, o dinheiro volta ao caixa). Se
     //     foi aplicada no capital, apaga o aporte (baixa o saldo de capital).
@@ -1787,6 +1802,58 @@ async function receivableReceived(id: string, receivedDate: Date, accountId?: st
   });
   await syncReceivableCapital(id);
   return updated;
+}
+
+/**
+ * Recebe um título ABATENDO DO CAPITAL de um sócio: o título é baixado no
+ * BANCO NEUTRO e nasce uma retirada de capital PAGA no mesmo neutro — o par se
+ * anula (nenhum dinheiro real se move), a receita é reconhecida e o capital do
+ * sócio diminui, como se ele tivesse sacado o valor e pago em dinheiro. É a
+ * rotina de vender um veículo pago com o capital de um sócio (o cliente do
+ * contrato pode ser qualquer pessoa — o sócio é só quem paga).
+ *
+ * A retirada herda o saleId do título: se a venda for cancelada, o
+ * cancelamento apaga o par inteiro (recebível + retirada + lançamento de
+ * capital) e o neutro segue zerado.
+ */
+export async function settleReceivableFromCapital(
+  receivableId: string,
+  beneficiaryId: string,
+  date: Date,
+) {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: receivableId },
+    select: { status: true, amount: true, description: true, saleId: true },
+  });
+  if (r.status === "RECEBIDO") throw new Error("Este título já foi recebido.");
+  const beneficiary = await prisma.capitalBeneficiary.findUniqueOrThrow({
+    where: { id: beneficiaryId },
+    select: { name: true, active: true },
+  });
+  if (!beneficiary.active) throw new Error("Sócio (beneficiário do capital) inativo.");
+
+  const [neutralAccountId, capitalCenterId] = await Promise.all([
+    getNeutralAccountId(),
+    structuralCenterId("CAPITAL"),
+  ]);
+  // Recebe pelo caminho oficial (sync de capital e compras inclusos)...
+  await markReceivableReceived(receivableId, date, neutralAccountId);
+  // ...e a contrapartida: retirada do sócio paga no mesmo Banco Neutro.
+  const retirada = await prisma.payable.create({
+    data: {
+      costCenterId: capitalCenterId,
+      description: `Abatido do capital — ${beneficiary.name} — ${r.description}`,
+      category: "OUTROS",
+      amount: r.amount,
+      dueDate: date,
+      status: "PENDENTE",
+      capitalBeneficiaryId: beneficiaryId,
+      saleId: r.saleId,
+      notes:
+        "Título recebido abatendo do capital do sócio (par no Banco Neutro — sem dinheiro em caixa).",
+    },
+  });
+  await markPayablePaid(retirada.id, date, neutralAccountId);
 }
 
 export async function markReceivablePending(id: string) {

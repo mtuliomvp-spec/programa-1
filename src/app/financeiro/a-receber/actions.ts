@@ -4,9 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount, correctReceivedDate, markPayablePaid } from "@/lib/finance";
-import { getNeutralAccountId } from "@/lib/accounts";
-import { structuralCenterId } from "@/lib/structural";
+import { markReceivableReceived, markReceivablePending, createManualReceivable, updateManualReceivable, receiveReceivable, receiveWithDiscount, correctReceivedDate, settleReceivableFromCapital } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
@@ -71,26 +69,7 @@ export async function receiveFromCapitalAction(
   }
 
   try {
-    const [neutralAccountId, capitalCenterId] = await Promise.all([
-      getNeutralAccountId(),
-      structuralCenterId("CAPITAL"),
-    ]);
-    // Recebe pelo caminho oficial (farol, capital e demais sync inclusos)...
-    await markReceivableReceived(id, date, neutralAccountId);
-    // ...e a contrapartida: retirada do sócio paga no mesmo Banco Neutro.
-    const retirada = await prisma.payable.create({
-      data: {
-        costCenterId: capitalCenterId,
-        description: `Abatido do capital — ${beneficiary.name} — ${r.description}`,
-        category: "OUTROS",
-        amount: r.amount,
-        dueDate: date,
-        status: "PENDENTE",
-        capitalBeneficiaryId: beneficiaryId,
-        notes: "Título recebido abatendo do capital do sócio (par no Banco Neutro — sem dinheiro em caixa).",
-      },
-    });
-    await markPayablePaid(retirada.id, date, neutralAccountId);
+    await settleReceivableFromCapital(id, beneficiaryId, date);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível abater do capital." };
   }

@@ -659,6 +659,10 @@ model PreSale {
   ownerRefundBeneficiaryId String?
   // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga.
   commissionToCapital      Boolean  @default(false)
+  // Venda paga com o CAPITAL de um sócio: no fechamento, o valor é recebido no
+  // Banco Neutro e vira retirada do capital dele — independente de quem é o
+  // cliente/nome no contrato.
+  capitalPayerBeneficiaryId String?
   // Token público para a verificação da ficha via QR Code (página /verificar).
   publicToken       String         @unique @default(uuid())
   status            StatusPreVenda @default(ABERTA)

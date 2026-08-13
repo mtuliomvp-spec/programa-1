@@ -54,6 +54,8 @@ export type SaleFormInitial = {
   saleDate?: string;
   totalAmount?: number;
   paymentMethod?: "A_VISTA" | "PARCELADO" | "FINANCIADO";
+  /** Venda paga com o capital de um sócio (abatida no fechamento). */
+  capitalPayerBeneficiaryId?: string;
   downPayment?: number;
   installmentsCount?: number;
   financerAccountId?: string;
@@ -178,8 +180,13 @@ export default function SaleForm({
       cancelled = true;
     };
   }, [vehicleId, customerId, preSaleId]);
-  const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO" | "FINANCIADO">(
-    initial?.paymentMethod || "A_VISTA",
+  // "CAPITAL_SOCIO" é opção só da tela: no envio vira PARCELADO 1x sem entrada
+  // + capitalPayerBeneficiaryId (o servidor abate do capital no fechamento).
+  const [paymentMethod, setPaymentMethod] = useState<
+    "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CAPITAL_SOCIO"
+  >(initial?.capitalPayerBeneficiaryId ? "CAPITAL_SOCIO" : initial?.paymentMethod || "A_VISTA");
+  const [capitalPayerId, setCapitalPayerId] = useState<string>(
+    initial?.capitalPayerBeneficiaryId || "",
   );
 
   const selectedVehicle = useMemo(() => vehicles.find((v) => v.id === vehicleId), [vehicles, vehicleId]);
@@ -316,7 +323,13 @@ export default function SaleForm({
   // Comissão do retorno para o vendedor = % do líquido (config. na financeira).
   const returnCommission = Math.round(retorno.net * (sellerReturnPercent / 100) * 100) / 100;
   const methodLabel =
-    paymentMethod === "A_VISTA" ? "à vista" : paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
+    paymentMethod === "A_VISTA"
+      ? "à vista"
+      : paymentMethod === "PARCELADO"
+        ? "parcelado"
+        : paymentMethod === "CAPITAL_SOCIO"
+          ? "no capital do sócio"
+          : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
 
@@ -626,19 +639,60 @@ export default function SaleForm({
           </div>
         ))}
         <Field label="Forma de pagamento" required>
-          <Select
+          {/* "Capital de sócio" é opção da tela: envia PARCELADO 1x sem entrada
+              e o sócio pagador — o servidor abate do capital no fechamento. */}
+          <input
+            type="hidden"
             name="paymentMethod"
+            value={paymentMethod === "CAPITAL_SOCIO" ? "PARCELADO" : paymentMethod}
+          />
+          {paymentMethod === "CAPITAL_SOCIO" ? (
+            <>
+              <input type="hidden" name="downPayment" value="0" />
+              <input type="hidden" name="installmentsCount" value="1" />
+            </>
+          ) : null}
+          <Select
             value={paymentMethod}
             onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
           >
             <option value="A_VISTA">À vista</option>
             <option value="PARCELADO">Parcelado (carnê da loja)</option>
             <option value="FINANCIADO">Financiado (banco/financeira)</option>
+            {beneficiaries.length > 0 ? (
+              <option value="CAPITAL_SOCIO">Capital de sócio (abate do saldo)</option>
+            ) : null}
           </Select>
         </Field>
       </div>
 
-      {paymentMethod !== "A_VISTA" ? (
+      {paymentMethod === "CAPITAL_SOCIO" ? (
+        <div className="rounded-lg border border-violet-300 bg-violet-50 p-4">
+          <p className="mb-1 text-sm font-medium text-violet-900">💼 Pago com o capital de um sócio</p>
+          <p className="mb-3 text-xs text-violet-800">
+            Nenhum dinheiro entra no caixa: no fechamento, o valor da venda é quitado como{" "}
+            <strong>retirada do capital</strong> do sócio escolhido (o saldo dele diminui). O
+            cliente do contrato pode ser qualquer pessoa — o sócio é só quem paga.
+          </p>
+          <Field label="Sócio que paga com o capital" required>
+            <Select
+              name="capitalPayerBeneficiaryId"
+              value={capitalPayerId}
+              onChange={(e) => setCapitalPayerId(e.target.value)}
+              required
+            >
+              <option value="">— selecione o sócio —</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+        </div>
+      ) : null}
+
+      {paymentMethod === "PARCELADO" || paymentMethod === "FINANCIADO" ? (
         <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
           <p className="mb-1 text-sm font-medium text-amber-900">Parcelamento informado ao comprador</p>
           <p className="mb-3 text-xs text-amber-800">
