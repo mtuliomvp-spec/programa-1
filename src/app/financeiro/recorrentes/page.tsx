@@ -158,9 +158,14 @@ export default async function RecorrentesPage({
                   </Td>
                   <Td className="text-right tabular-nums">{formatCurrency(e.amount)}</Td>
                   <Td>
-                    <Badge tone={e.active ? "success" : "default"}>
-                      {e.active ? "Ativa" : "Pausada"}
-                    </Badge>
+                    {/* Término no passado: não gera mais nada — "Ativa" enganaria. */}
+                    {e.active && e.endDate && e.endDate < new Date() ? (
+                      <Badge tone="warning">Encerrada</Badge>
+                    ) : (
+                      <Badge tone={e.active ? "success" : "default"}>
+                        {e.active ? "Ativa" : "Pausada"}
+                      </Badge>
+                    )}
                   </Td>
                   <Td>
                     {canCriar ? <RecurringRowActions id={e.id} active={e.active} /> : null}
