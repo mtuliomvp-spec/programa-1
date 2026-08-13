@@ -39,9 +39,25 @@ function vehicleLabel(brand: string, model: string, version: string | null): str
   return `${base} ${v}`;
 }
 
-/** Texto do selo de CRLV no card (com o ano em exercício quando anexado). */
-function crlvBadgeLabel(hasCrlv: boolean, year: string | null): string {
-  return hasCrlv ? `✓ CRLV${year ? ` ${year}` : ""}` : "⚠ CRLV pendente";
+/**
+ * Selo de documentação do veículo, em três estados:
+ *  - "⚠ CRLV pendente": sem CRLV anexado e sem transferência lançada;
+ *  - "🔄 Transferência em aberto": custo de transferência (DETRAN) lançado e o
+ *    CRLV novo ainda não anexado — o processo está correndo;
+ *  - "✓ CRLV {ano}" (ou "✓ Transferido · CRLV {ano}"): o CRLV no nome da
+ *    loja/sócio foi anexado — documentação em dia.
+ */
+function crlvBadge(
+  hasCrlv: boolean,
+  year: string | null,
+  transferStarted: boolean,
+): { label: string; tone: "success" | "warning" | "info" } {
+  if (hasCrlv) {
+    const crlv = `CRLV${year ? ` ${year}` : ""}`;
+    return { label: transferStarted ? `✓ Transferido · ${crlv}` : `✓ ${crlv}`, tone: "success" };
+  }
+  if (transferStarted) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
+  return { label: "⚠ CRLV pendente", tone: "warning" };
 }
 
 export default async function EstoquePage({
@@ -73,7 +89,9 @@ export default async function EstoquePage({
       prisma.vehicle.findMany({
         where: { status, intermediation: false },
         include: {
-          costs: { select: { amount: true } },
+          // Descrição junto: detecta o custo de transferência (DETRAN) para o
+          // selo "Processo de transferência em aberto".
+          costs: { select: { amount: true, description: true } },
           payables: { select: { amount: true, status: true } },
           // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
           attachments: { select: { kind: true, description: true } },
@@ -112,6 +130,9 @@ export default async function EstoquePage({
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // Custo com "transferência" na descrição (ex.: "Documentação de veículo:
+    // Transferência Detran para MVP") = processo de transferência iniciado.
+    transferStarted: v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)),
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
     transferDoneAt: v.sale?.transferDoneAt ?? null,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
@@ -236,12 +257,12 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
             </Badge>
@@ -310,7 +331,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={v.hasCrlv ? "success" : "warning"}>{crlvBadgeLabel(v.hasCrlv, v.crlvYear)}</Badge>
+          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
         </span>
         {v.status === "VENDIDO" ? (
           <span className="mt-1 flex flex-col items-start gap-1">
