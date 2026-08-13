@@ -130,6 +130,9 @@ export default async function EstoquePage({
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
+    // ATPV-e não aparece nada (nem "pendente").
+    hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
     // Custo com "transferência" na descrição (ex.: "Documentação de veículo:
     // Transferência Detran para MVP") = processo de transferência iniciado.
     transferStarted: v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)),
@@ -263,11 +266,13 @@ export default async function EstoquePage({
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
+            {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
+            {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
             </Badge>
@@ -343,6 +348,11 @@ export default async function EstoquePage({
         <span className="mt-1 block">
           <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
         </span>
+        {v.hasAtpv ? (
+          <span className="mt-1 block">
+            <Badge tone="success">✓ ATPV-e</Badge>
+          </span>
+        ) : null}
         {v.status === "VENDIDO" ? (
           <span className="mt-1 flex flex-col items-start gap-1">
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
