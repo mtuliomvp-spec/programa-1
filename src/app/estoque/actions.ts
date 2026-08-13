@@ -548,6 +548,7 @@ async function applyCrlvToVehicle(input: {
     select: {
       plate: true, chassi: true, renavam: true, brand: true, model: true,
       manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
+      docOwnerName: true,
     },
   });
 
@@ -614,6 +615,15 @@ async function applyCrlvToVehicle(input: {
   if (!vehicle.modelYear && crlv.anoModelo) {
     data.modelYear = crlv.anoModelo;
     filled.push(`ano do modelo ${crlv.anoModelo}`);
+  }
+
+  // Em nome de quem o veículo está: diferente dos demais campos (que só entram
+  // em branco), o proprietário SOBRESCREVE — o último CRLV lido é a verdade
+  // (ex.: transferência concluída, novo documento no nome da loja/sócio).
+  const proprietario = (crlv.proprietario ?? "").trim();
+  if (proprietario && proprietario !== (vehicle.docOwnerName ?? "").trim()) {
+    data.docOwnerName = proprietario;
+    filled.push(`proprietário ${proprietario}`);
   }
 
   if (Object.keys(data).length) {

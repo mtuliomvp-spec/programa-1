@@ -449,6 +449,9 @@ model Vehicle {
   // Vazio = um título só, como antes. Fica no veículo (e não só no formulário)
   // porque editar o veículo apaga e recria os títulos da compra.
   debtsItems       Json          @default("[]")
+  // Em nome de quem o veículo está: o proprietário lido do último CRLV
+  // anexado (preenchido pela leitura por IA; sobrescrito a cada leitura).
+  docOwnerName     String?
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)
