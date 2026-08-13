@@ -11,6 +11,7 @@ import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
+import VehicleBoletos from "./VehicleBoletos";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import SaleTransferSetting from "./SaleTransferSetting";
@@ -648,6 +649,20 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
           <Card>
             <CardHeader
+              title="Boletos e guias (IPVA, multas, quitação)"
+              description="Anexe o boleto e o sistema lê valor e vencimento, casando com os descontos da negociação — a diferença segue a regra de desconto/acréscimo"
+            />
+            <VehicleBoletos
+              vehicleId={vehicle.id}
+              canManage={canComunicacao}
+              boletos={vehicle.attachments.filter(
+                (a) => a.kind === "DOCUMENTO" && /^boleto/i.test(a.description),
+              )}
+            />
+          </Card>
+
+          <Card>
+            <CardHeader
               title="Documentos do veículo"
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
@@ -658,8 +673,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 (a) =>
                   a.kind !== "FOTO_VEICULO" &&
                   a.kind !== "CRLV" &&
-                  // ATPV-e tem card próprio logo acima — não duplica aqui.
-                  !(a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
+                  // ATPV-e e boletos têm cards próprios acima — não duplica aqui.
+                  !(a.kind === "DOCUMENTO" && /atpv/i.test(a.description)) &&
+                  !(a.kind === "DOCUMENTO" && /^boleto/i.test(a.description)),
               )}
             />
           </Card>
