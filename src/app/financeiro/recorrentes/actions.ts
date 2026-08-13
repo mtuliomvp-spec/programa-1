@@ -49,6 +49,11 @@ export async function createRecurringAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  // Término antes do início: a recorrência nunca geraria nada (o gerador só cria
+  // vencimentos entre as duas datas) e ainda apareceria "Ativa" na lista.
+  if (data.endDate && parseDateInput(data.endDate) < parseDateInput(data.startDate)) {
+    return { error: 'O "Termina em" não pode ser antes do "Começa em" — assim a recorrência nunca geraria títulos.' };
+  }
   const isCard = data.kind === "PAGAR" && Boolean(data.cardInvoice);
   if (!isCard && data.amount <= 0) {
     return { error: "Informe um valor maior que zero." };
@@ -145,6 +150,10 @@ export async function updateRecurringAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  // Mesma trava do criar: término antes do início nunca gera título.
+  if (data.endDate && parseDateInput(data.endDate) < parseDateInput(data.startDate)) {
+    return { error: 'O "Termina em" não pode ser antes do "Começa em" — assim a recorrência nunca geraria títulos.' };
+  }
   const isCard = data.kind === "PAGAR" && Boolean(data.cardInvoice);
   if (!isCard && data.amount <= 0) {
     return { error: "Informe um valor maior que zero." };
