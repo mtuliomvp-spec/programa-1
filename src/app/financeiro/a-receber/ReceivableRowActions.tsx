@@ -6,6 +6,7 @@ import {
   markPendingAction,
   receiveWithDiscountAction,
   correctReceivedDateAction,
+  receiveFromCapitalAction,
 } from "./actions";
 import FixDateButton from "@/components/FixDateButton";
 
@@ -16,6 +17,7 @@ export default function ReceivableRowActions({
   status,
   amount,
   accounts,
+  beneficiaries = [],
   canReceber = true,
   canDiscount = false,
   hasVehicle = false,
@@ -26,6 +28,8 @@ export default function ReceivableRowActions({
   status: "PENDENTE" | "RECEBIDO" | "ATRASADO";
   amount: number;
   accounts: Account[];
+  /** Sócios ativos — habilita receber abatendo do capital ("No capital"). */
+  beneficiaries?: Account[];
   canReceber?: boolean;
   /** Pode perdoar a diferença (baixar como custo/despesa) em vez de deixá-la pendente. */
   canDiscount?: boolean;
@@ -42,6 +46,9 @@ export default function ReceivableRowActions({
   const [value, setValue] = useState<string>(String(amount));
   // O que fazer com a diferença: deixar pendente (padrão) ou dar desconto.
   const [discount, setDiscount] = useState(false);
+  // Receber abatendo do capital de um sócio (venda de veículo para sócio etc.).
+  const [capitalChoosing, setCapitalChoosing] = useState(false);
+  const [beneficiaryId, setBeneficiaryId] = useState(beneficiaries[0]?.id ?? "");
   const [error, setError] = useState<string | null>(null);
 
   // Sem permissão de baixa: nenhum controle de receber/reverter aparece.
@@ -168,17 +175,85 @@ export default function ReceivableRowActions({
     );
   }
 
+  if (capitalChoosing) {
+    const money = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    return (
+      <div className="flex flex-col items-end gap-1.5">
+        <div className="w-60 rounded-lg border border-violet-200 bg-violet-50 p-2 text-left">
+          <p className="text-[11px] font-medium text-violet-900">
+            Abater {money(amount)} do capital de:
+          </p>
+          <select
+            value={beneficiaryId}
+            onChange={(e) => setBeneficiaryId(e.target.value)}
+            className="mt-1 h-8 w-full rounded-lg border border-slate-300 bg-white px-2 text-xs text-slate-900"
+          >
+            {beneficiaries.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-[11px] text-slate-600">
+            Sem dinheiro em caixa: o título é quitado e o valor vira{" "}
+            <strong>retirada de capital</strong> do sócio (o saldo dele diminui).
+          </p>
+        </div>
+        {error ? <p className="w-60 text-[11px] text-rose-600">{error}</p> : null}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            disabled={pending || !beneficiaryId}
+            onClick={() => {
+              setError(null);
+              startTransition(async () => {
+                const res = await receiveFromCapitalAction(id, beneficiaryId);
+                if (!res.ok) setError(res.error || "Não foi possível abater do capital.");
+              });
+            }}
+            className="text-sm font-medium text-violet-700 hover:underline disabled:opacity-50"
+          >
+            {pending ? "Salvando..." : "Confirmar"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setCapitalChoosing(false);
+              setError(null);
+            }}
+            className="text-xs text-slate-400 hover:underline"
+          >
+            ✕
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <button
-      type="button"
-      disabled={pending}
-      onClick={() => {
-        setValue(String(amount));
-        setChoosing(true);
-      }}
-      className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
-    >
-      Receber
-    </button>
+    <div className="flex items-center justify-end gap-3">
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => {
+          setValue(String(amount));
+          setChoosing(true);
+        }}
+        className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
+      >
+        Receber
+      </button>
+      {beneficiaries.length > 0 ? (
+        <button
+          type="button"
+          disabled={pending}
+          onClick={() => setCapitalChoosing(true)}
+          title="Receber abatendo do capital de um sócio (sem dinheiro em caixa)"
+          className="text-sm font-medium text-violet-700 hover:underline disabled:opacity-50"
+        >
+          No capital
+        </button>
+      ) : null}
+    </div>
   );
 }
