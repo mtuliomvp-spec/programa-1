@@ -30,6 +30,7 @@ const crlvSchema = z.object({
   cor: z.string().nullable(),
   combustivel: z.string().nullable(),
   transmissao: z.string().nullable(),
+  proprietario: z.string().nullable(),
 });
 
 export type CrlvExtraido = z.infer<typeof crlvSchema>;
@@ -51,6 +52,7 @@ const CRLV_JSON_SCHEMA = {
     "cor",
     "combustivel",
     "transmissao",
+    "proprietario",
   ],
   properties: {
     placa: { type: ["string", "null"], description: "só letras e números, ex. ABC1D23" },
@@ -64,6 +66,10 @@ const CRLV_JSON_SCHEMA = {
     cor: { type: ["string", "null"] },
     combustivel: { type: ["string", "null"] },
     transmissao: { type: ["string", "null"], description: "Manual ou Automático, se constar" },
+    proprietario: {
+      type: ["string", "null"],
+      description: "nome completo do PROPRIETÁRIO como impresso no documento",
+    },
   },
 } as const;
 
@@ -76,8 +82,9 @@ const SYSTEM_PROMPT =
   "2) RENAVAM: só os dígitos, sem pontos ou traços. " +
   "3) PLACA: só letras e números (ABC1D23 ou ABC1234). " +
   "4) EXERCÍCIO é o ano de licenciamento do documento (costuma aparecer como 'EXERCÍCIO' no topo). " +
-  "5) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "6) Responda somente com o JSON pedido.";
+  "5) PROPRIETÁRIO: o nome completo impresso no campo de proprietário do documento (pessoa ou empresa). " +
+  "6) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "7) Responda somente com o JSON pedido.";
 
 /** Tipos de imagem que a API aceita no bloco `image`. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;

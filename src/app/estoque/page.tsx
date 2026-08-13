@@ -219,6 +219,11 @@ export default async function EstoquePage({
             <p className="mt-0.5 text-xs text-slate-500">
               {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
             </p>
+            {v.docOwnerName ? (
+              <p className="mt-0.5 truncate text-[11px] text-slate-500">
+                Este veículo está em nome de <strong>{v.docOwnerName}</strong>
+              </p>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
@@ -285,6 +290,11 @@ export default async function EstoquePage({
     <Tr key={v.id}>
       <Td className="font-medium text-slate-900">
         {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
+        {v.docOwnerName ? (
+          <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+            Este veículo está em nome de <strong>{v.docOwnerName}</strong>
+          </span>
+        ) : null}
       </Td>
       <Td>{v.plate}</Td>
       <Td>{v.color || "-"}</Td>
