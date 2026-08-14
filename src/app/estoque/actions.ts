@@ -23,6 +23,7 @@ import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseDebtItems } from "@/lib/vehicle-debts";
+import { plateKey, plateIdentityKey, plateVariants } from "@/lib/plate";
 
 const advanceSchema = z.object({
   vehicleId: z.string().min(1),
@@ -138,13 +139,18 @@ export async function createVehicleAction(
 
   // Só barra placa repetida entre fichas ATIVAS: um veículo já vendido pode
   // ser recomprado — vira uma nova ficha e o histórico antigo fica intacto.
+  // Mercosul: a placa antiga e a nova (2º dígito virou letra) são o MESMO
+  // carro — procurar só a grafia digitada deixaria cadastrar a segunda ficha.
   const existing = await prisma.vehicle.findFirst({
-    where: { plate: data.plate.toUpperCase(), status: { not: "VENDIDO" } },
+    where: { plate: { in: plateVariants(data.plate) }, status: { not: "VENDIDO" } },
+    select: { plate: true },
   });
   if (existing) {
     return {
       error:
-        "Esta placa já está no estoque (veículo ativo). Veículos já vendidos podem ser recomprados normalmente.",
+        existing.plate !== plateKey(data.plate)
+          ? `Este carro já está no estoque com a placa ${existing.plate} (mesma placa em outra grafia — Mercosul). Edite a ficha existente para atualizar a placa.`
+          : "Esta placa já está no estoque (veículo ativo). Veículos já vendidos podem ser recomprados normalmente.",
     };
   }
 
@@ -239,9 +245,10 @@ export async function updateVehicleAction(
   }
   const data = parsed.data;
 
+  // Mercosul: as duas grafias são o mesmo carro (ver src/lib/plate.ts).
   const existing = await prisma.vehicle.findFirst({
     where: {
-      plate: data.plate.toUpperCase(),
+      plate: { in: plateVariants(data.plate) },
       status: { not: "VENDIDO" },
       id: { not: data.id },
     },
@@ -517,10 +524,6 @@ export type AttachmentState = {
 };
 
 
-/** Placa comparável: maiúsculas, só letras e números (padrão de plate-lookup). */
-const plateKey = (v: string | null | undefined) =>
-  (v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
-
 /**
  * Lê o CRLV recém-anexado e preenche o que falta na ficha do veículo.
  *
@@ -559,7 +562,10 @@ async function applyCrlvToVehicle(input: {
   if (!lida) {
     return { filled, warnings: ["Não deu para ler a placa neste CRLV — nada foi preenchido. Confira se o arquivo está legível."] };
   }
-  if (lida !== plateKey(vehicle.plate)) {
+  // Mercosul: PSK4673 e PSK4G73 são O MESMO carro (o 2º dígito virou letra).
+  // Comparar pela identidade evita o falso "CRLV de outro carro" quando o
+  // documento novo chega em Mercosul e a ficha ainda tem a placa antiga.
+  if (plateIdentityKey(lida) !== plateIdentityKey(vehicle.plate)) {
     return {
       filled,
       warnings: [
@@ -567,8 +573,14 @@ async function applyCrlvToVehicle(input: {
       ],
     };
   }
-
   const data: Record<string, unknown> = {};
+
+  // Mesma placa em grafia nova (o carro trocou para Mercosul): a ficha adota a
+  // do documento — é a que vale daqui em diante, e as buscas acham as duas.
+  if (lida !== plateKey(vehicle.plate)) {
+    data.plate = lida;
+    filled.push(`placa ${lida} (Mercosul)`);
+  }
 
   const renavam = normalizeRenavam(crlv.renavam);
   if (renavam && !normalizeRenavam(vehicle.renavam)) {

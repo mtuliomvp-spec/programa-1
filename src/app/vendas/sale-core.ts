@@ -7,6 +7,7 @@ import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { chassiOrNull } from "@/lib/vehicle-doc";
 import { parseDebtItems } from "@/lib/vehicle-debts";
+import { plateVariants } from "@/lib/plate";
 
 /** Remove um veículo recebido em troca (e suas contas) — usado para desfazer a
  *  troca quando o registro da venda falha, evitando veículo "órfão" no estoque. */
@@ -254,8 +255,9 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
     }
     // Só barra ficha ATIVA da mesma placa — receber de volta na troca um carro
     // que a loja já vendeu é permitido (vira uma nova ficha no estoque).
+    // Mercosul: as duas grafias são o mesmo carro (ver src/lib/plate.ts).
     const existing = await prisma.vehicle.findFirst({
-      where: { plate: d.tiPlate.toUpperCase(), status: { not: "VENDIDO" } },
+      where: { plate: { in: plateVariants(d.tiPlate) }, status: { not: "VENDIDO" } },
     });
     if (existing) {
       throw new Error("Já existe um veículo ativo no estoque com a placa informada na troca.");

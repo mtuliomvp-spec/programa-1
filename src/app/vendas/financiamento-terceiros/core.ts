@@ -5,6 +5,7 @@ import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
+import { plateVariants } from "@/lib/plate";
 import { findCustomerByIdentity } from "@/lib/person-dedupe";
 import {
   chassiOrNull,
@@ -109,9 +110,10 @@ async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: stri
   if (D > F) {
     throw new Error("A devolução ao cliente não pode ser maior que o valor do financiamento.");
   }
+  // Mercosul: as duas grafias são o mesmo carro (ver src/lib/plate.ts).
   const existing = await prisma.vehicle.findFirst({
     where: {
-      plate: d.plate.toUpperCase(),
+      plate: { in: plateVariants(d.plate) },
       status: { not: "VENDIDO" },
       intermediation: false,
       ...(excludeVehicleId ? { id: { not: excludeVehicleId } } : {}),

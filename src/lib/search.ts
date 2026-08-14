@@ -5,6 +5,8 @@
  * acentos e maiúsculas são ignorados ("jose" acha "José").
  */
 
+import { plateVariants } from "@/lib/plate";
+
 export function normalizeSearch(value: string): string {
   return value
     .normalize("NFD")
@@ -18,15 +20,30 @@ export function matchesSearch(
 ): boolean {
   const query = (q || "").trim();
   if (!query) return true;
-  const haystack = normalizeSearch(
-    fields
-      .filter((f) => f !== null && f !== undefined && f !== "")
-      .map(String)
-      .join(" "),
-  );
+  const raw = fields.filter((f) => f !== null && f !== undefined && f !== "").map(String);
+  // Placa Mercosul: PSK4673 e PSK4G73 são o MESMO carro (o 2º dígito virou
+  // letra). Toda placa que aparece nos campos entra no palheiro nas DUAS
+  // grafias, então procurar por qualquer uma acha os lançamentos de antes e
+  // depois da troca — inclusive nos textos ("Venda do veículo ... placa X").
+  const haystack = normalizeSearch([...raw, ...plateSpellings(raw.join(" "))].join(" "));
   return normalizeSearch(query)
     .split(/\s+/)
-    .every((term) => haystack.includes(term));
+    // O termo digitado também é expandido: quem procura a grafia que não está
+    // gravada (ex.: a antiga, num registro já atualizado) continua achando.
+    .every((term) => haystack.includes(term) || plateSpellings(term).some((v) => haystack.includes(normalizeSearch(v))));
+}
+
+/**
+ * Todas as grafias de placa encontradas num texto (a antiga e a Mercosul).
+ * Trabalha sobre o texto cru: as placas aparecem soltas ("PSK4G73") ou dentro
+ * de descrições ("... - placa PSK4G73").
+ */
+function plateSpellings(text: string): string[] {
+  const out: string[] = [];
+  for (const match of text.toUpperCase().matchAll(/\b[A-Z]{3}\d[A-Z0-9]\d{2}\b/g)) {
+    out.push(...plateVariants(match[0]));
+  }
+  return out;
 }
 
 /** Data (Date ou ISO) dentro do intervalo `de`/`ate` (yyyy-mm-dd), inclusivo. */
