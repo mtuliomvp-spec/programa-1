@@ -17,6 +17,7 @@ import {
   parseDebtItems,
   debtsDiff,
   AJUSTE_DEBITOS_DESC,
+  AJUSTE_QUITACAO_DESC,
   type VehicleDebtItem,
 } from "@/lib/vehicle-debts";
 import { parseDateInput } from "@/lib/format";
@@ -213,6 +214,8 @@ async function createAcquisitionPayables(
     installmentsCount: number;
     financerName: string | null;
     payoffAmount?: number;
+    /** Quitação REAL (boleto), quando diverge do acordado — ver Vehicle. */
+    payoffActualAmount?: number | null;
     payoffTo?: string | null;
     debtsAmount?: number;
     /** Detalhamento dos débitos: uma conta a pagar por linha. */
@@ -231,6 +234,13 @@ async function createAcquisitionPayables(
   };
 
   const payoffAmount = Math.max(0, input.payoffAmount ?? 0);
+  // Quitação REAL (boleto do banco): o título sai pelo real; o ACORDADO
+  // (payoffAmount) segue ancorando o líquido ao vendedor. A diferença vira
+  // custo de ajuste — boleto maior é custo do carro, menor reduz o custo —
+  // mesma regra dos débitos (guias × acordado).
+  const payoffActual = (input.payoffActualAmount ?? 0) > 0
+    ? Math.round((input.payoffActualAmount as number) * 100) / 100
+    : payoffAmount;
   const debtsAmount = Math.max(0, input.debtsAmount ?? 0);
 
   // Repasse: quitação do financiamento (banco) e débitos do veículo (órgãos)
@@ -241,12 +251,29 @@ async function createAcquisitionPayables(
       data: {
         ...base,
         description: `Quitação do financiamento ${input.label}${input.payoffTo ? ` (${input.payoffTo})` : ""}`,
-        amount: payoffAmount,
+        amount: payoffActual,
         dueDate: input.dueDate,
         status: "PENDENTE",
         supplierId: null,
       },
     });
+    const payoffDiff = Math.round((payoffActual - payoffAmount) * 100) / 100;
+    if (Math.abs(payoffDiff) > 0.005) {
+      // Mesmo racional do ajuste de débitos: o título soma o REAL e o farol
+      // pede pagáveis == purchasePrice + Σ custos, então a diferença fecha a
+      // conta como custo (positivo) ou redução de custo (negativo).
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: input.vehicleId,
+          description: AJUSTE_QUITACAO_DESC,
+          category: "OUTROS",
+          amount: payoffDiff,
+          date: input.entryDate,
+          postSale: false,
+          notes: `Boleto ${brl(payoffActual)} · acordado com o vendedor ${brl(payoffAmount)}`,
+        },
+      });
+    }
   }
   if (debtsAmount > 0) {
     // Detalhado (IPVA, multa, licenciamento...): um título por linha, cada um
@@ -402,7 +429,11 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
     // O custo de ajuste dos débitos é recriado junto com os títulos — sem isto
     // cada edição do veículo somaria mais uma linha.
     await tx.vehicleCost.deleteMany({
-      where: { vehicleId, payableId: null, description: AJUSTE_DEBITOS_DESC },
+      where: {
+        vehicleId,
+        payableId: null,
+        description: { in: [AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC] },
+      },
     });
 
     if (vehicle.purchasePrice > 0) {
@@ -419,6 +450,7 @@ export async function regenerateVehicleAcquisitionPayables(vehicleId: string) {
         installmentsCount: vehicle.installmentsCount,
         financerName: vehicle.financerName,
         payoffAmount: vehicle.payoffAmount,
+        payoffActualAmount: vehicle.payoffActualAmount,
         payoffTo: vehicle.payoffTo,
         debtsAmount: vehicle.debtsAmount,
         // Detalhamento vem do veículo: é por isso que ele é gravado lá, e não
