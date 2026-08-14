@@ -13,15 +13,41 @@ import { getParecerConfig } from "@/lib/parecer-ia";
  * devolução ao proprietário; compra → guias × acordado vira custo de ajuste).
  */
 
+/** Tipos que o casamento entende; qualquer outro texto vira OUTRO. */
+const TIPOS = ["QUITACAO", "IPVA", "LICENCIAMENTO", "MULTA", "TAXA", "OUTRO"] as const;
+export type BoletoTipo = (typeof TIPOS)[number];
+
 const boletoSchema = z.object({
   valor: z.number().nullable(),
   vencimento: z.string().nullable(),
-  tipo: z.enum(["QUITACAO", "IPVA", "LICENCIAMENTO", "MULTA", "TAXA", "OUTRO"]).nullable(),
+  // String livre no schema (não enum): declarar `enum` junto com
+  // `type: ["string","null"]` é recusado pelo validador de structured outputs
+  // ("Enum value 'QUITACAO' does not match declared type"). A normalização
+  // para o conjunto conhecido é feita aqui embaixo.
+  tipo: z.string().nullable(),
   descricao: z.string().nullable(),
   cedente: z.string().nullable(),
 });
 
-export type BoletoExtraido = z.infer<typeof boletoSchema>;
+export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
+  tipo: BoletoTipo | null;
+};
+
+/** Texto devolvido pela IA → um dos tipos conhecidos (ou null). */
+function normalizeTipo(raw: string | null): BoletoTipo | null {
+  const value = (raw ?? "").trim().toUpperCase();
+  if (!value) return null;
+  const exact = TIPOS.find((t) => t === value);
+  if (exact) return exact;
+  // Tolerante ao texto livre: "quitação de financiamento", "IPVA 2026"...
+  const key = value.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  if (key.includes("QUITAC")) return "QUITACAO";
+  if (key.includes("IPVA")) return "IPVA";
+  if (key.includes("LICENC")) return "LICENCIAMENTO";
+  if (key.includes("MULTA")) return "MULTA";
+  if (key.includes("TAXA")) return "TAXA";
+  return "OUTRO";
+}
 
 const BOLETO_JSON_SCHEMA = {
   type: "object",
@@ -32,9 +58,8 @@ const BOLETO_JSON_SCHEMA = {
     vencimento: { type: ["string", "null"], description: "data de vencimento em yyyy-mm-dd" },
     tipo: {
       type: ["string", "null"],
-      enum: ["QUITACAO", "IPVA", "LICENCIAMENTO", "MULTA", "TAXA", "OUTRO", null],
       description:
-        "QUITACAO = boleto de quitação de financiamento de veículo (banco/financeira); IPVA/LICENCIAMENTO/MULTA/TAXA = guias de órgãos; OUTRO = qualquer outro",
+        "exatamente um destes valores: QUITACAO (boleto de quitação de financiamento de veículo, emitido por banco/financeira), IPVA, LICENCIAMENTO, MULTA, TAXA (guias de órgãos) ou OUTRO",
     },
     descricao: {
       type: ["string", "null"],
@@ -134,5 +159,5 @@ export async function extractBoleto(base64: string, mimeType: string): Promise<B
   if (!result.success) {
     throw new Error("A IA não devolveu os dados do boleto no formato esperado. Tente novamente.");
   }
-  return result.data;
+  return { ...result.data, tipo: normalizeTipo(result.data.tipo) };
 }
