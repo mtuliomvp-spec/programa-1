@@ -8,6 +8,7 @@ import {
   uploadVehicleBoletoAction,
   deleteVehicleAttachmentAction,
   encerrarDebitosVeiculoAction,
+  refazerDebitosVeiculoAction,
   type AttachmentState,
 } from "../actions";
 
@@ -52,6 +53,8 @@ export default function VehicleBoletos({
   const [preparing, setPreparing] = useState(false);
   const [closing, startClose] = useTransition();
   const [closeMsg, setCloseMsg] = useState<string | null>(null);
+  const [redoing, startRedo] = useTransition();
+  const [redoMsg, setRedoMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.ok) formRef.current?.reset();
@@ -155,6 +158,32 @@ export default function VehicleBoletos({
           ))}
         </ul>
       )}
+
+      {canManage && (boletos.length > 0 || (saldoDebitos != null && saldoDebitos > 0.005)) ? (
+        <div className="mb-4 border-t border-slate-100 pt-3">
+          <button
+            type="button"
+            disabled={redoing}
+            onClick={() => {
+              if (
+                confirm(
+                  "Refazer os débitos? Os títulos de débitos PENDENTES (o principal e as guias já lançadas) e os ajustes de custo são removidos, e volta o título único com o valor descontado na compra. Nada pago é alterado. Depois, anexe os boletos de novo para recasar.",
+                )
+              ) {
+                setRedoMsg(null);
+                startRedo(async () => {
+                  const res = await refazerDebitosVeiculoAction(vehicleId);
+                  setRedoMsg(res.ok ? res.message ?? "Débitos refeitos." : res.error ?? "Não foi possível refazer.");
+                });
+              }
+            }}
+            className="text-xs font-medium text-slate-500 underline hover:text-slate-700 disabled:opacity-50"
+          >
+            {redoing ? "Refazendo…" : "↺ Refazer débitos (corrigir casamento errado)"}
+          </button>
+          {redoMsg ? <p className="mt-1 text-xs font-medium text-slate-700">{redoMsg}</p> : null}
+        </div>
+      ) : null}
 
       <form
         ref={formRef}

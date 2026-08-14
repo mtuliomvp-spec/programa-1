@@ -1024,6 +1024,110 @@ export async function uploadVehicleBoletoAction(
  * remanescente é excluído e a sobra vira GANHO — custo negativo do veículo,
  * pela regra acertada (desconto é ganho da loja).
  */
+/**
+ * REFAZER os débitos do veículo: desfaz o casamento das guias e volta ao ponto
+ * de partida — um único título "Débitos do veículo (repasse)" com o valor
+ * DESCONTADO na negociação (o campo "Débitos do veículo" da ficha).
+ *
+ * Serve para corrigir um casamento que saiu errado (guias faltando, ajustes
+ * duplicados) sem precisar recriar o título na mão: apaga os títulos de débitos
+ * PENDENTES deste veículo — o pai e as guias — junto dos custos de ajuste
+ * ("Ajuste de débitos"), e recria o título único.
+ *
+ * Nunca mexe no que já foi PAGO: se qualquer título de débitos estiver pago (ou
+ * dentro de um combo), a rotina recusa e explica — desfazer ali exigiria
+ * estornar dinheiro, decisão que é do usuário.
+ *
+ * Os boletos anexados NÃO são apagados (são documentos): para recasar, exclua e
+ * anexe de novo, ou anexe os que faltavam.
+ */
+export async function refazerDebitosVeiculoAction(
+  vehicleId: string,
+): Promise<{ ok: boolean; error?: string; message?: string }> {
+  try {
+    await assertCan("estoque", "comunicacao");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { id: true, brand: true, model: true, plate: true, debtsAmount: true, entryDate: true },
+  });
+  if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
+  const descontado = Math.round((vehicle.debtsAmount ?? 0) * 100) / 100;
+
+  const titulos = await prisma.payable.findMany({
+    where: {
+      vehicleId,
+      category: "COMPRA_VEICULO",
+      description: { startsWith: "Débitos do veículo" },
+    },
+    select: { id: true, amount: true, status: true, dueDate: true, supplierId: true, costCenterId: true, paymentComboId: true, description: true },
+  });
+  const pago = titulos.find((t) => t.status === "PAGO");
+  if (pago) {
+    return {
+      ok: false,
+      error: `O título "${pago.description.slice(0, 60)}" já está PAGO — refazer apagaria um pagamento. Reverta a baixa antes, se for o caso.`,
+    };
+  }
+  const emCombo = titulos.find((t) => t.paymentComboId);
+  if (emCombo) {
+    return {
+      ok: false,
+      error: `O título "${emCombo.description.slice(0, 60)}" está num combo de pagamento. Remova-o do combo antes de refazer.`,
+    };
+  }
+
+  const { AJUSTE_DEBITOS_DESC } = await import("@/lib/vehicle-debts");
+  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  // Data e credor do título recriado: os do título mais antigo que existia
+  // (preserva o vencimento combinado na compra); sem nenhum, a entrada do carro.
+  const base = [...titulos].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())[0];
+  const label = `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
+
+  const removidos = titulos.length;
+  const custosRemovidos = await prisma.vehicleCost.count({
+    where: { vehicleId, payableId: null, description: AJUSTE_DEBITOS_DESC },
+  });
+
+  await prisma.$transaction(async (tx) => {
+    if (titulos.length) {
+      await tx.payable.deleteMany({ where: { id: { in: titulos.map((t) => t.id) } } });
+    }
+    await tx.vehicleCost.deleteMany({
+      where: { vehicleId, payableId: null, description: AJUSTE_DEBITOS_DESC },
+    });
+    if (descontado > 0.005) {
+      await tx.payable.create({
+        data: {
+          description: `Débitos do veículo (repasse) ${label}`,
+          category: "COMPRA_VEICULO",
+          amount: descontado,
+          dueDate: base?.dueDate ?? vehicle.entryDate,
+          status: "PENDENTE",
+          vehicleId,
+          supplierId: base?.supplierId ?? null,
+          costCenterId: base?.costCenterId ?? veiculosCenterId,
+        },
+      });
+    }
+  });
+
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/estoque");
+  revalidatePath("/financeiro/a-pagar");
+  const brlv = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  return {
+    ok: true,
+    message:
+      descontado > 0.005
+        ? `Débitos refeitos: ${removidos} título(s) e ${custosRemovidos} ajuste(s) removidos; título único de ${brlv(descontado)} recriado. Anexe os boletos de novo para recasar.`
+        : `Débitos limpos: ${removidos} título(s) e ${custosRemovidos} ajuste(s) removidos (a ficha não tem valor de débitos descontado).`,
+  };
+}
+
 export async function encerrarDebitosVeiculoAction(
   vehicleId: string,
 ): Promise<{ ok: boolean; error?: string; message?: string }> {
