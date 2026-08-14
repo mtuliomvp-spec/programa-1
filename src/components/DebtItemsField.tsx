@@ -35,9 +35,10 @@ export default function DebtItemsField({
   /** Total acordado com o antigo dono, para comparar com as guias. */
   agreed: number;
   /**
-   * Para onde vai a diferença guias × acordado: "custo" (compra/troca — vira
-   * custo do veículo), "devolucao" (consignado — ajusta a devolução ao dono) ou
-   * "exato" (a soma PRECISA bater com o total — nada absorve diferença).
+   * Rótulo do valor de referência: "custo" (compra/troca — "acordado"),
+   * "devolucao" (consignado — "descontado do dono") ou "exato" (a soma PRECISA
+   * bater com o total). Em ambos os primeiros a diferença vira custo do
+   * veículo: acréscimo é perda da loja, desconto é ganho.
    */
   mode?: "custo" | "devolucao" | "exato";
   /** Abre a lista de guias já expandida (sem o botão "detalhar"). */
@@ -169,13 +170,9 @@ export default function DebtItemsField({
                 ? diff > 0
                   ? `${formatCurrency(diff)} acima do valor do título — a soma precisa ser igual.`
                   : `Faltam ${formatCurrency(-diff)} para fechar o valor do título.`
-                : mode === "devolucao"
-                  ? diff > 0
-                    ? `${formatCurrency(diff)} acima do descontado — sai da devolução ao proprietário.`
-                    : `${formatCurrency(-diff)} abaixo do descontado — volta para a devolução ao proprietário.`
-                  : diff > 0
-                    ? `${formatCurrency(diff)} acima do acordado — entra como custo do veículo.`
-                    : `${formatCurrency(-diff)} abaixo do acordado — reduz o custo do veículo.`}
+                : diff > 0
+                  ? `${formatCurrency(diff)} acima do ${mode === "devolucao" ? "descontado" : "acordado"} — entra como custo do veículo.`
+                  : `${formatCurrency(-diff)} abaixo do ${mode === "devolucao" ? "descontado" : "acordado"} — reduz o custo do veículo.`}
             </p>
           ) : null}
           {mode === "exato" && items.length && Math.abs(diff) <= 0.005 ? (

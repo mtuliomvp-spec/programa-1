@@ -1317,26 +1317,46 @@ async function vehicleSale(input: {
       const payoff = Math.max(0, Math.round((vehicle.payoffAmount ?? 0) * 100) / 100);
       const debts = Math.max(0, Math.round((vehicle.debtsAmount ?? 0) * 100) / 100);
       const repasseLabel = `${vehicle.brand} ${vehicle.model} - placa ${vehicle.plate}`;
+      // MESMA regra do veículo próprio: os títulos saem pelo valor REAL
+      // (boleto/guias) e o ACORDADO com o dono não muda — a devolução fica a
+      // combinada. A diferença é da loja: acréscimo é perda (custo do veículo),
+      // desconto é ganho (custo negativo). O custo entra por competência
+      // (postSale false), então Lucro/Prejuízo e equação patrimonial fecham
+      // juntos com o título pendente.
       if (payoff > 0) {
+        const payoffActual =
+          (vehicle.payoffActualAmount ?? 0) > 0
+            ? Math.round((vehicle.payoffActualAmount as number) * 100) / 100
+            : payoff;
         await tx.payable.create({
           data: {
             description: `Quitação do financiamento ${repasseLabel}${vehicle.payoffTo ? ` (${vehicle.payoffTo})` : ""}`,
             category: "COMPRA_VEICULO",
-            amount: payoff,
+            amount: payoffActual,
             dueDate: input.saleDate,
             status: "PENDENTE",
             vehicleId: input.vehicleId,
             costCenterId: veiculosCenterId,
           },
         });
+        const payoffDiff = Math.round((payoffActual - payoff) * 100) / 100;
+        if (Math.abs(payoffDiff) > 0.005) {
+          await tx.vehicleCost.create({
+            data: {
+              vehicleId: input.vehicleId,
+              description: AJUSTE_QUITACAO_DESC,
+              category: "OUTROS",
+              amount: payoffDiff,
+              date: input.saleDate,
+              postSale: false,
+              notes: `Boleto ${brl(payoffActual)} · descontado do proprietário ${brl(payoff)}`,
+            },
+          });
+        }
       }
       // Débitos detalhados (IPVA, multa, licenciamento...): um título por guia,
-      // cada um com o seu vencimento — igual à compra de estoque. A soma REAL
-      // das guias é o que a loja de fato paga; se divergir do descontado
-      // (debtsAmount), a diferença NÃO vira custo (o custo do consignado é o
-      // acertado): ela flui para o líquido ao dono — guias mais baratas, sobra
-      // mais; mais caras, sobra menos. O campo do veículo acompanha o real para
-      // o detalhamento da venda bater com os títulos.
+      // cada um com o seu vencimento. A soma REAL das guias × o descontado do
+      // dono (debtsAmount) segue a regra acima: diferença vira custo (ou ganho).
       const debtItems = parseDebtItems(vehicle.debtsItems).filter((d) => d.amount > 0);
       const debtsReal = debtItems.length
         ? Math.round(debtItems.reduce((s, d) => s + d.amount, 0) * 100) / 100
@@ -1355,10 +1375,18 @@ async function vehicleSale(input: {
             },
           });
         }
-        if (Math.abs(debtsReal - debts) > 0.005) {
-          await tx.vehicle.update({
-            where: { id: input.vehicleId },
-            data: { debtsAmount: debtsReal },
+        const debtsDiffValue = Math.round((debtsReal - debts) * 100) / 100;
+        if (Math.abs(debtsDiffValue) > 0.005) {
+          await tx.vehicleCost.create({
+            data: {
+              vehicleId: input.vehicleId,
+              description: AJUSTE_DEBITOS_DESC,
+              category: "OUTROS",
+              amount: debtsDiffValue,
+              date: input.saleDate,
+              postSale: false,
+              notes: `Guias ${brl(debtsReal)} · descontado do proprietário ${brl(debts)}`,
+            },
           });
         }
       } else if (debts > 0) {
@@ -1374,8 +1402,9 @@ async function vehicleSale(input: {
           },
         });
       }
-      // Líquido ao proprietário = valor acertado − quitação − débitos (reais).
-      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debtsReal) * 100) / 100);
+      // Líquido ao proprietário = valor acertado − quitação − débitos, todos
+      // ACORDADOS (a devolução do dono não muda com boleto maior/menor).
+      const liquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
       if (liquido > 0) {
         // Nome do proprietário (consignante) para constar nos documentos.
         const owner = vehicle.supplierId
@@ -1428,7 +1457,7 @@ export async function cancelVehicleSale(saleId: string) {
   return prisma.$transaction(async (tx) => {
     const sale = await tx.sale.findUniqueOrThrow({
       where: { id: saleId },
-      include: { vehicle: { select: { plate: true } } },
+      include: { vehicle: { select: { plate: true, consigned: true } } },
     });
 
     // Idempotente: todos os passos podem rodar de novo com segurança. Isso
@@ -1484,6 +1513,18 @@ export async function cancelVehicleSale(saleId: string) {
     await tx.payable.deleteMany({
       where: { vehicleId: sale.vehicleId, category: "DEVOLUCAO_PROPRIETARIO" },
     });
+    // Consignado: os custos de AJUSTE (boleto/guias × descontado do dono) só
+    // existem por causa do fechamento — saem junto com os títulos de repasse.
+    // (Num veículo próprio o ajuste é da COMPRA e fica.)
+    if (sale.vehicle?.consigned) {
+      await tx.vehicleCost.deleteMany({
+        where: {
+          vehicleId: sale.vehicleId,
+          payableId: null,
+          description: { in: [AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC] },
+        },
+      });
+    }
     await tx.capitalTransaction.deleteMany({ where: { saleId } });
 
     // 2e) Desconto concedido na baixa de um recebível desta venda: o par do

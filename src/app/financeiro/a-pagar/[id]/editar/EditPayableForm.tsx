@@ -30,7 +30,7 @@ type Payable = {
   /** É a compra do carro: valor e destino vêm do cadastro do veículo. */
   isAcquisition: boolean;
   /** Repasse do consignado (quitação/débitos): o valor pode ser ajustado —
-   * a diferença vai automaticamente para a Devolução ao proprietário. */
+   * a diferença vira custo (acréscimo) ou ganho (desconto) do veículo. */
   consignedRepasse: boolean;
   /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
   fromRecurring: boolean;
@@ -98,8 +98,9 @@ export default function EditPayableForm({
             <MoneyInput name="amount" defaultValue={payable.amount} required />
             {payable.consignedRepasse ? (
               <p className="mt-1 text-xs text-slate-500">
-                Repasse do consignado: ao mudar o valor, a diferença ajusta automaticamente a{" "}
-                <strong>Devolução ao proprietário</strong> (o valor acertado com o dono não muda).
+                Repasse do consignado: o valor acertado com o dono não muda. A diferença é da
+                loja — boleto <strong>maior</strong> entra como custo do veículo,{" "}
+                <strong>menor</strong> reduz o custo.
               </p>
             ) : null}
           </Field>
@@ -129,9 +130,9 @@ export default function EditPayableForm({
           <p className="mt-1">
             Este título é a <strong>quitação/débitos</strong> descontados do valor acertado com o
             proprietário do consignado. O <strong>valor pode ser ajustado</strong> mesmo depois da
-            venda: a diferença vai automaticamente para a <strong>Devolução ao proprietário</strong>{" "}
-            pendente (guia mais barata → sobra mais para o dono; mais cara → sobra menos). O valor
-            acertado e o lucro da venda não mudam.
+            venda. O valor <strong>acertado com o proprietário</strong> e a devolução dele não
+            mudam: a diferença é da loja — guia mais cara entra como <strong>custo do veículo</strong>{" "}
+            (perda), mais barata <strong>reduz o custo</strong> (ganho).
           </p>
           <p className="mt-1">
             O <strong>veículo</strong>, o <strong>fluxo</strong> e a <strong>categoria</strong>{" "}
