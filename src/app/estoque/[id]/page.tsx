@@ -658,6 +658,16 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               boletos={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /^boleto/i.test(a.description),
               )}
+              // Saldo do título "Débitos do veículo (repasse)" ainda não
+              // identificado por guias — habilita o "Encerrar débitos".
+              saldoDebitos={
+                vehicle.payables.find(
+                  (p) =>
+                    p.status !== "PAGO" &&
+                    p.category === "COMPRA_VEICULO" &&
+                    p.description.startsWith("Débitos do veículo (repasse)"),
+                )?.amount ?? null
+              }
             />
           </Card>
 

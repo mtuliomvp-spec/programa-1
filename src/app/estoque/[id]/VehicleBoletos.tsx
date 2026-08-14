@@ -2,11 +2,12 @@
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field } from "@/components/ui";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehicleBoletoAction,
   deleteVehicleAttachmentAction,
+  encerrarDebitosVeiculoAction,
   type AttachmentState,
 } from "../actions";
 
@@ -34,10 +35,13 @@ export default function VehicleBoletos({
   vehicleId,
   boletos,
   canManage = true,
+  saldoDebitos = null,
 }: {
   vehicleId: string;
   boletos: Boleto[];
   canManage?: boolean;
+  /** Saldo do título "Débitos do veículo (repasse)" ainda não identificado. */
+  saldoDebitos?: number | null;
 }) {
   const [state, formAction, pending] = useActionState(
     uploadVehicleBoletoAction,
@@ -46,6 +50,8 @@ export default function VehicleBoletos({
   const formRef = useRef<HTMLFormElement>(null);
   const [removing, startRemove] = useTransition();
   const [preparing, setPreparing] = useState(false);
+  const [closing, startClose] = useTransition();
+  const [closeMsg, setCloseMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.ok) formRef.current?.reset();
@@ -70,6 +76,39 @@ export default function VehicleBoletos({
 
   return (
     <div className="p-5">
+      {saldoDebitos != null && saldoDebitos > 0.005 ? (
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>
+            Ainda há <strong>{formatCurrency(saldoDebitos)}</strong> do que foi descontado na
+            negociação sem guia identificada (título &quot;Débitos do veículo (repasse)&quot;).
+            Anexe as guias que faltam — cada uma vira um título e abate desse saldo.
+          </p>
+          {canManage ? (
+            <button
+              type="button"
+              disabled={closing}
+              onClick={() => {
+                if (
+                  confirm(
+                    `Encerrar os débitos? O título restante de ${formatCurrency(saldoDebitos)} é excluído e a sobra reduz o custo do veículo.`,
+                  )
+                ) {
+                  setCloseMsg(null);
+                  startClose(async () => {
+                    const res = await encerrarDebitosVeiculoAction(vehicleId);
+                    setCloseMsg(res.ok ? res.message ?? "Débitos encerrados." : res.error ?? "Não foi possível encerrar.");
+                  });
+                }
+              }}
+              className="mt-2 text-sm font-medium text-amber-900 underline hover:no-underline disabled:opacity-50"
+            >
+              {closing ? "Encerrando…" : "Encerrar débitos (a sobra reduz o custo)"}
+            </button>
+          ) : null}
+          {closeMsg ? <p className="mt-2 font-medium">{closeMsg}</p> : null}
+        </div>
+      ) : null}
+
       {boletos.length === 0 ? (
         <p className="mb-4 text-sm text-slate-500">Nenhum boleto anexado ainda.</p>
       ) : (
