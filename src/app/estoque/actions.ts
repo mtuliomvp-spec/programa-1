@@ -746,6 +746,11 @@ export async function uploadVehicleAttachmentAction(
  *  - Nos demais casos (sem título/guia correspondente, compra já paga), o
  *    boleto fica anexado e a leitura vira aviso com orientação.
  */
+/** Rótulo curto do boleto para mensagens e nome do anexo. */
+function tipoLabelOf(b: { tipo: string | null; descricao: string | null }): string {
+  return b.tipo === "QUITACAO" ? "Quitação de financiamento" : b.descricao || b.tipo || "guia";
+}
+
 export async function uploadVehicleBoletoAction(
   _prev: AttachmentState,
   formData: FormData,
@@ -765,14 +770,10 @@ export async function uploadVehicleBoletoAction(
   if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
   if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Arquivo muito grande (máximo 15 MB)." };
 
-  const vehicle = await prisma.vehicle.findUnique({
-    where: { id: vehicleId },
-    select: {
-      id: true, status: true, consigned: true,
-      payoffAmount: true, payoffActualAmount: true, debtsAmount: true, debtsItems: true,
-    },
-  });
-  if (!vehicle) return { error: "Veículo não encontrado." };
+  // Só confere que existe: o estado (quitação/guias) é relido a cada boleto,
+  // porque o ajuste de um muda o cadastro para o próximo.
+  const exists = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!exists) return { error: "Veículo não encontrado." };
 
   const buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "application/octet-stream";
@@ -792,186 +793,205 @@ export async function uploadVehicleBoletoAction(
   // upload — falhou a IA, o boleto continua anexado e o ajuste é manual.
   const filled: string[] = [];
   const warnings: string[] = [];
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   try {
-    const { extractBoleto } = await import("@/lib/boleto-ai");
-    const boleto = await extractBoleto(buffer.toString("base64"), mimeType);
-    const round2 = (n: number) => Math.round(n * 100) / 100;
-    const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-    const tipoLabel =
-      boleto.tipo === "QUITACAO" ? "Quitação de financiamento" : boleto.descricao || boleto.tipo || "guia";
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    // O arquivo pode trazer VÁRIOS boletos (guias do exercício num PDF só):
+    // cada um é casado à parte, com o estado do veículo relido a cada volta
+    // (o ajuste anterior pode ter mudado guia/quitação).
+    const boletos = await extractBoletos(buffer.toString("base64"), mimeType);
+    if (!boletos.length) {
+      warnings.push("Nenhum boleto foi reconhecido neste arquivo — anexado sem casamento automático.");
+    }
 
-    // Nome do anexo ganha o que foi lido (aparece na lista de boletos).
-    const parts = [boleto.descricao || tipoLabel];
-    if (boleto.valor) parts.push(brl(boleto.valor));
+    // Nome do anexo resume o que foi lido (aparece na lista de boletos).
+    const resumo = boletos
+      .map((b) => [b.descricao || tipoLabelOf(b), b.valor ? brl(round2(b.valor)) : null].filter(Boolean).join(" — "))
+      .join(" · ");
     await prisma.vehicleAttachment.update({
       where: { id: attachment.id },
-      data: { description: `Boleto: ${parts.join(" — ")}` },
+      data: {
+        description: resumo
+          ? `Boleto${boletos.length > 1 ? `s (${boletos.length})` : ""}: ${resumo}`.slice(0, 500)
+          : "Boleto",
+      },
     });
 
-    const valor = boleto.valor && boleto.valor > 0 ? round2(boleto.valor) : null;
-    if (!valor) {
-      warnings.push("Não deu para ler o valor do boleto — anexado sem casamento automático.");
-    } else {
-      filled.push(`boleto lido: ${tipoLabel} de ${brl(valor)}${boleto.vencimento ? ` (venc. ${boleto.vencimento.split("-").reverse().join("/")})` : ""}`);
-      const isQuitacao = boleto.tipo === "QUITACAO";
-      const due = boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento)
-        ? parseDateInput(boleto.vencimento)
-        : null;
-
-      if (vehicle.consigned && vehicle.status === "VENDIDO") {
-        // Consignado vendido: ajusta o título de repasse pendente — a regra da
-        // edição manual (diferença → devolução ao proprietário).
-        const titulos = await prisma.payable.findMany({
-          where: {
-            vehicleId,
-            category: "COMPRA_VEICULO",
-            saleId: null,
-            status: { not: "PAGO" },
-            description: { startsWith: isQuitacao ? "Quitação do financiamento" : "Débitos do veículo" },
-          },
-          select: { id: true, amount: true, description: true },
-        });
-        const titulo = titulos.sort(
-          (a, b) => Math.abs(a.amount - valor) - Math.abs(b.amount - valor),
-        )[0];
-        if (!titulo) {
-          warnings.push(
-            `Nenhum título pendente de ${isQuitacao ? "quitação" : "débitos"} para casar — o boleto ficou anexado; ajuste pelo Contas a pagar se precisar.`,
-          );
-        } else {
-          const delta = round2(valor - titulo.amount);
-          if (Math.abs(delta) > 0.005) {
-            // Mesma regra do veículo próprio: o descontado do dono (e a
-            // devolução dele) não muda — a diferença é da loja. Acréscimo vira
-            // custo do veículo; desconto vira ganho (custo negativo).
-            const { AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } = await import("@/lib/vehicle-debts");
-            await prisma.$transaction([
-              prisma.payable.update({
-                where: { id: titulo.id },
-                data: { amount: valor, ...(due ? { dueDate: due } : {}) },
-              }),
-              prisma.vehicleCost.create({
-                data: {
-                  vehicleId,
-                  description: isQuitacao ? AJUSTE_QUITACAO_DESC : AJUSTE_DEBITOS_DESC,
-                  category: "OUTROS",
-                  amount: delta,
-                  date: new Date(),
-                  postSale: false,
-                  notes: `Boleto ${brl(valor)} · descontado do proprietário ${brl(titulo.amount)}`,
-                },
-              }),
-            ]);
-            filled.push(
-              delta > 0
-                ? `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(delta)} entrou como custo do veículo (a devolução ao proprietário não muda)`
-                : `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(-delta)} reduziu o custo do veículo (a devolução ao proprietário não muda)`,
-            );
-          } else {
-            if (due) {
-              await prisma.payable.update({ where: { id: titulo.id }, data: { dueDate: due } });
-            }
-            filled.push(`valor confere com o título pendente (${brl(titulo.amount)})${due ? " — vencimento atualizado" : ""}`);
-          }
-        }
-      } else if (!vehicle.consigned) {
-        // Compra: a fonte da verdade é o cadastro do veículo — os títulos
-        // regeneram dele e a regra guias × acordado lança o custo de ajuste.
-        const jaPago = await prisma.payable.findFirst({
-          where: { vehicleId, category: "COMPRA_VEICULO", status: "PAGO" },
-          select: { id: true },
-        });
-        if (jaPago) {
-          warnings.push(
-            "A compra deste veículo já tem pagamento feito — os títulos não podem ser regerados. O boleto ficou anexado; ajuste manualmente se precisar.",
-          );
-        } else if (isQuitacao) {
-          // Regra acertada: o ACORDADO com o vendedor (payoffAmount) não muda —
-          // o título sai pelo boleto REAL e a diferença vira custo de ajuste
-          // (boleto maior → custo do veículo; menor → reduz o custo).
-          const acordado = round2(vehicle.payoffAmount ?? 0);
-          if (acordado <= 0) {
-            warnings.push(
-              "O cadastro do veículo não tem quitação acordada — confira a ficha antes de casar o boleto.",
-            );
-          } else if (valor !== acordado || vehicle.payoffActualAmount != null) {
-            await prisma.vehicle.update({
-              where: { id: vehicleId },
-              data: { payoffActualAmount: valor === acordado ? null : valor },
-            });
-            const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
-            await regenerateVehicleAcquisitionPayables(vehicleId);
-            const diff = round2(valor - acordado);
-            filled.push(
-              diff === 0
-                ? `boleto confere com o acordado (${brl(acordado)}) — título recalculado`
-                : diff > 0
-                  ? `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(diff)} entrou como custo do veículo`
-                  : `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(-diff)} reduziu o custo do veículo`,
-            );
-          } else {
-            filled.push(`valor da quitação confere com o acordado (${brl(valor)})`);
-          }
-        } else {
-          // Débito: atualiza a guia correspondente do detalhamento (a mais
-          // próxima em valor). Sem detalhamento não há como saber qual guia é —
-          // orienta a detalhar na ficha.
-          const items = parseDebtItems(vehicle.debtsItems);
-          if (!items.length) {
-            warnings.push(
-              'O veículo não tem o detalhamento de débitos ("detalhar em vários títulos" na ficha) — sem ele não dá para saber qual guia este boleto paga. Detalhe os débitos e anexe de novo, ou ajuste à mão.',
-            );
-          } else {
-            const idx = items
-              .map((it, i) => ({ i, diff: Math.abs(it.amount - valor) }))
-              .sort((a, b) => a.diff - b.diff)[0].i;
-            const antigo = items[idx];
-            items[idx] = {
-              description: antigo.description || boleto.descricao || tipoLabel,
-              amount: valor,
-              dueDate: boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento) ? boleto.vencimento : antigo.dueDate,
-            };
-            await prisma.vehicle.update({
-              where: { id: vehicleId },
-              data: { debtsItems: items },
-            });
-            const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
-            await regenerateVehicleAcquisitionPayables(vehicleId);
-            filled.push(
-              `guia "${antigo.description || "sem descrição"}" ajustada de ${brl(antigo.amount)} para ${brl(valor)} — títulos regerados; a diferença contra o acordado vira custo de ajuste (regra guias × acordado)`,
-            );
-          }
-        }
+    for (const boleto of boletos) {
+      const vehicle = await prisma.vehicle.findUniqueOrThrow({
+        where: { id: vehicleId },
+        select: {
+          id: true, status: true, consigned: true,
+          payoffAmount: true, payoffActualAmount: true, debtsAmount: true, debtsItems: true,
+        },
+      });
+      const tipoLabel = tipoLabelOf(boleto);
+      const valor = boleto.valor && boleto.valor > 0 ? round2(boleto.valor) : null;
+      if (!valor) {
+        warnings.push("Não deu para ler o valor do boleto — anexado sem casamento automático.");
       } else {
-        // Consignado ainda em estoque: quitação/débitos viram títulos só no
-        // fechamento — ajusta o cadastro, que o fechamento respeita.
-        if (isQuitacao) {
-          if (round2(vehicle.payoffAmount ?? 0) !== valor) {
-            await prisma.vehicle.update({ where: { id: vehicleId }, data: { payoffAmount: valor } });
-            filled.push(`quitação do consignado ajustada para ${brl(valor)} (usada no fechamento da venda)`);
+        filled.push(`boleto lido: ${tipoLabel} de ${brl(valor)}${boleto.vencimento ? ` (venc. ${boleto.vencimento.split("-").reverse().join("/")})` : ""}`);
+        const isQuitacao = boleto.tipo === "QUITACAO";
+        const due = boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento)
+          ? parseDateInput(boleto.vencimento)
+          : null;
+
+        if (vehicle.consigned && vehicle.status === "VENDIDO") {
+          // Consignado vendido: ajusta o título de repasse pendente — a regra da
+          // edição manual (diferença → devolução ao proprietário).
+          const titulos = await prisma.payable.findMany({
+            where: {
+              vehicleId,
+              category: "COMPRA_VEICULO",
+              saleId: null,
+              status: { not: "PAGO" },
+              description: { startsWith: isQuitacao ? "Quitação do financiamento" : "Débitos do veículo" },
+            },
+            select: { id: true, amount: true, description: true },
+          });
+          const titulo = titulos.sort(
+            (a, b) => Math.abs(a.amount - valor) - Math.abs(b.amount - valor),
+          )[0];
+          if (!titulo) {
+            warnings.push(
+              `Nenhum título pendente de ${isQuitacao ? "quitação" : "débitos"} para casar — o boleto ficou anexado; ajuste pelo Contas a pagar se precisar.`,
+            );
           } else {
-            filled.push(`valor da quitação confere com o cadastro (${brl(valor)})`);
+            const delta = round2(valor - titulo.amount);
+            if (Math.abs(delta) > 0.005) {
+              // Mesma regra do veículo próprio: o descontado do dono (e a
+              // devolução dele) não muda — a diferença é da loja. Acréscimo vira
+              // custo do veículo; desconto vira ganho (custo negativo).
+              const { AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } = await import("@/lib/vehicle-debts");
+              await prisma.$transaction([
+                prisma.payable.update({
+                  where: { id: titulo.id },
+                  data: { amount: valor, ...(due ? { dueDate: due } : {}) },
+                }),
+                prisma.vehicleCost.create({
+                  data: {
+                    vehicleId,
+                    description: isQuitacao ? AJUSTE_QUITACAO_DESC : AJUSTE_DEBITOS_DESC,
+                    category: "OUTROS",
+                    amount: delta,
+                    date: new Date(),
+                    postSale: false,
+                    notes: `Boleto ${brl(valor)} · descontado do proprietário ${brl(titulo.amount)}`,
+                  },
+                }),
+              ]);
+              filled.push(
+                delta > 0
+                  ? `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(delta)} entrou como custo do veículo (a devolução ao proprietário não muda)`
+                  : `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(-delta)} reduziu o custo do veículo (a devolução ao proprietário não muda)`,
+              );
+            } else {
+              if (due) {
+                await prisma.payable.update({ where: { id: titulo.id }, data: { dueDate: due } });
+              }
+              filled.push(`valor confere com o título pendente (${brl(titulo.amount)})${due ? " — vencimento atualizado" : ""}`);
+            }
+          }
+        } else if (!vehicle.consigned) {
+          // Compra: a fonte da verdade é o cadastro do veículo — os títulos
+          // regeneram dele e a regra guias × acordado lança o custo de ajuste.
+          const jaPago = await prisma.payable.findFirst({
+            where: { vehicleId, category: "COMPRA_VEICULO", status: "PAGO" },
+            select: { id: true },
+          });
+          if (jaPago) {
+            warnings.push(
+              "A compra deste veículo já tem pagamento feito — os títulos não podem ser regerados. O boleto ficou anexado; ajuste manualmente se precisar.",
+            );
+          } else if (isQuitacao) {
+            // Regra acertada: o ACORDADO com o vendedor (payoffAmount) não muda —
+            // o título sai pelo boleto REAL e a diferença vira custo de ajuste
+            // (boleto maior → custo do veículo; menor → reduz o custo).
+            const acordado = round2(vehicle.payoffAmount ?? 0);
+            if (acordado <= 0) {
+              warnings.push(
+                "O cadastro do veículo não tem quitação acordada — confira a ficha antes de casar o boleto.",
+              );
+            } else if (valor !== acordado || vehicle.payoffActualAmount != null) {
+              await prisma.vehicle.update({
+                where: { id: vehicleId },
+                data: { payoffActualAmount: valor === acordado ? null : valor },
+              });
+              const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
+              await regenerateVehicleAcquisitionPayables(vehicleId);
+              const diff = round2(valor - acordado);
+              filled.push(
+                diff === 0
+                  ? `boleto confere com o acordado (${brl(acordado)}) — título recalculado`
+                  : diff > 0
+                    ? `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(diff)} entrou como custo do veículo`
+                    : `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(-diff)} reduziu o custo do veículo`,
+              );
+            } else {
+              filled.push(`valor da quitação confere com o acordado (${brl(valor)})`);
+            }
+          } else {
+            // Débito: atualiza a guia correspondente do detalhamento (a mais
+            // próxima em valor). Sem detalhamento não há como saber qual guia é —
+            // orienta a detalhar na ficha.
+            const items = parseDebtItems(vehicle.debtsItems);
+            if (!items.length) {
+              warnings.push(
+                'O veículo não tem o detalhamento de débitos ("detalhar em vários títulos" na ficha) — sem ele não dá para saber qual guia este boleto paga. Detalhe os débitos e anexe de novo, ou ajuste à mão.',
+              );
+            } else {
+              const idx = items
+                .map((it, i) => ({ i, diff: Math.abs(it.amount - valor) }))
+                .sort((a, b) => a.diff - b.diff)[0].i;
+              const antigo = items[idx];
+              items[idx] = {
+                description: antigo.description || boleto.descricao || tipoLabel,
+                amount: valor,
+                dueDate: boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento) ? boleto.vencimento : antigo.dueDate,
+              };
+              await prisma.vehicle.update({
+                where: { id: vehicleId },
+                data: { debtsItems: items },
+              });
+              const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
+              await regenerateVehicleAcquisitionPayables(vehicleId);
+              filled.push(
+                `guia "${antigo.description || "sem descrição"}" ajustada de ${brl(antigo.amount)} para ${brl(valor)} — títulos regerados; a diferença contra o acordado vira custo de ajuste (regra guias × acordado)`,
+              );
+            }
           }
         } else {
-          const items = parseDebtItems(vehicle.debtsItems);
-          if (!items.length) {
-            warnings.push(
-              "Consignado sem detalhamento de débitos na ficha — detalhe as guias para o boleto casar (cada guia vira um título no fechamento).",
-            );
+          // Consignado ainda em estoque: quitação/débitos viram títulos só no
+          // fechamento — ajusta o cadastro, que o fechamento respeita.
+          if (isQuitacao) {
+            if (round2(vehicle.payoffAmount ?? 0) !== valor) {
+              await prisma.vehicle.update({ where: { id: vehicleId }, data: { payoffAmount: valor } });
+              filled.push(`quitação do consignado ajustada para ${brl(valor)} (usada no fechamento da venda)`);
+            } else {
+              filled.push(`valor da quitação confere com o cadastro (${brl(valor)})`);
+            }
           } else {
-            const idx = items
-              .map((it, i) => ({ i, diff: Math.abs(it.amount - valor) }))
-              .sort((a, b) => a.diff - b.diff)[0].i;
-            const antigo = items[idx];
-            items[idx] = {
-              description: antigo.description || boleto.descricao || tipoLabel,
-              amount: valor,
-              dueDate: boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento) ? boleto.vencimento : antigo.dueDate,
-            };
-            await prisma.vehicle.update({ where: { id: vehicleId }, data: { debtsItems: items } });
-            filled.push(
-              `guia "${antigo.description || "sem descrição"}" ajustada para ${brl(valor)} — no fechamento, a diferença contra o descontado ajusta a devolução ao proprietário`,
-            );
+            const items = parseDebtItems(vehicle.debtsItems);
+            if (!items.length) {
+              warnings.push(
+                "Consignado sem detalhamento de débitos na ficha — detalhe as guias para o boleto casar (cada guia vira um título no fechamento).",
+              );
+            } else {
+              const idx = items
+                .map((it, i) => ({ i, diff: Math.abs(it.amount - valor) }))
+                .sort((a, b) => a.diff - b.diff)[0].i;
+              const antigo = items[idx];
+              items[idx] = {
+                description: antigo.description || boleto.descricao || tipoLabel,
+                amount: valor,
+                dueDate: boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento) ? boleto.vencimento : antigo.dueDate,
+              };
+              await prisma.vehicle.update({ where: { id: vehicleId }, data: { debtsItems: items } });
+              filled.push(
+                `guia "${antigo.description || "sem descrição"}" ajustada para ${brl(valor)} — no fechamento, a diferença contra o descontado ajusta a devolução ao proprietário`,
+              );
+            }
           }
         }
       }
