@@ -827,15 +827,26 @@ export async function uploadVehicleBoletoAction(
         },
       });
       const tipoLabel = tipoLabelOf(boleto);
-      const valor = boleto.valor && boleto.valor > 0 ? round2(boleto.valor) : null;
+      // Fora da multa não existe desconto por pontualidade: se a leitura trouxer
+      // um valor "com desconto" numa guia de IPVA/licenciamento/taxa/quitação,
+      // é engano — vale o valor CHEIO do documento.
+      const lido = boleto.valor && boleto.valor > 0 ? round2(boleto.valor) : null;
+      const valor =
+        lido != null &&
+        boleto.tipo !== "MULTA" &&
+        boleto.valorSemDesconto &&
+        boleto.valorSemDesconto > lido
+          ? round2(boleto.valorSemDesconto)
+          : lido;
       if (!valor) {
         warnings.push("Não deu para ler o valor do boleto — anexado sem casamento automático.");
       } else {
-        // Desconto por pontualidade (multa de trânsito tem 20% por lei): o valor
-      // casado é o A PAGAR ATÉ O VENCIMENTO — o desconto já é ganho da loja,
-      // coerente com a regra (guia mais barata reduz o custo).
+        // Desconto por pontualidade existe SÓ em guia de MULTA (20% por lei —
+      // CTB art. 284). Nela o valor casado é o A PAGAR ATÉ O VENCIMENTO, e o
+      // desconto já é ganho da loja (guia mais barata reduz o custo). Nos
+      // demais tipos, desconto lido é engano de leitura: vale o valor cheio.
       const cheio =
-        boleto.valorSemDesconto && boleto.valorSemDesconto > valor
+        boleto.tipo === "MULTA" && boleto.valorSemDesconto && boleto.valorSemDesconto > valor
           ? round2(boleto.valorSemDesconto)
           : null;
       const descontoTxt = cheio
