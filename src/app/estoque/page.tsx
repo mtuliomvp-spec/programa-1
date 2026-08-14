@@ -40,6 +40,23 @@ function vehicleLabel(brand: string, model: string, version: string | null): str
 }
 
 /**
+ * O veículo está no nome da CASA (a loja ou um dos sócios) ou de terceiro?
+ *
+ * A comparação é por `nameKey` (sem acento/pontuação/espaço) e por CONTINÊNCIA
+ * nos dois sentidos, porque o CRLV traz a razão social completa enquanto o
+ * cadastro costuma ter a forma curta: "MVP VEICULOS LTDA" (documento) casa com
+ * "MVP Veículos" (Parâmetros). Terceiro — "FABIANO FROES NEGOCIOS LTDA" — não
+ * casa com nenhuma das nossas.
+ *
+ * Sem nome conhecido no CRLV o selo nem aparece (ver a listagem).
+ */
+function isOwnName(ownerName: string, houseKeys: string[]): boolean {
+  const key = nameKey(ownerName);
+  if (!key) return false;
+  return houseKeys.some((h) => h.length >= 4 && (key.includes(h) || h.includes(key)));
+}
+
+/**
  * Selo de documentação do veículo, em três estados:
  *  - "⚠ CRLV pendente": sem CRLV anexado e sem transferência lançada;
  *  - "🔄 Transferência em aberto": custo de transferência (DETRAN) lançado e o
@@ -84,7 +101,7 @@ export default async function EstoquePage({
     userCan("estoque", "pdfcusto"),
   ]);
 
-  const [vehicles, openPreSales] = await timed("tela: estoque", () =>
+  const [vehicles, openPreSales, company, beneficiaryNames] = await timed("tela: estoque", () =>
     Promise.all([
       prisma.vehicle.findMany({
         where: { status, intermediation: false },
@@ -115,8 +132,23 @@ export default async function EstoquePage({
         select: { vehicleId: true, number: true },
         orderBy: { number: "desc" },
       }),
+      // Nomes "da casa" (loja + sócios): decidem se o proprietário do CRLV sai
+      // em verde (nosso) ou vermelho (terceiro).
+      prisma.companySettings.findUnique({
+        where: { id: "company" },
+        select: { razaoSocial: true, nomeFantasia: true },
+      }),
+      prisma.capitalBeneficiary.findMany({ select: { name: true } }),
     ]),
   );
+
+  const houseKeys = [
+    company?.razaoSocial,
+    company?.nomeFantasia,
+    ...beneficiaryNames.map((b) => b.name),
+  ]
+    .map((n) => nameKey(n))
+    .filter((k) => k.length >= 4);
 
   // vehicleId → número da pré-venda aberta mais recente (ordenado desc: 1º = maior).
   const preSaleByVehicle = new Map<string, number>();
@@ -130,6 +162,8 @@ export default async function EstoquePage({
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    // Documento no nome da loja/sócio (verde) ou de terceiro (vermelho).
+    docOwnerIsOurs: v.docOwnerName ? isOwnName(v.docOwnerName, houseKeys) : false,
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
@@ -224,7 +258,10 @@ export default async function EstoquePage({
             </p>
             {v.docOwnerName ? (
               <p className="mt-0.5 truncate text-[11px] text-slate-500">
-                Este veículo está em nome de <strong>{v.docOwnerName}</strong>
+                Este veículo está em nome de{" "}
+                <strong className={v.docOwnerIsOurs ? "text-emerald-600" : "text-rose-600"}>
+                  {v.docOwnerName}
+                </strong>
               </p>
             ) : null}
           </div>
@@ -297,7 +334,10 @@ export default async function EstoquePage({
         {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
         {v.docOwnerName ? (
           <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
-            Este veículo está em nome de <strong>{v.docOwnerName}</strong>
+            Este veículo está em nome de{" "}
+            <strong className={v.docOwnerIsOurs ? "text-emerald-600" : "text-rose-600"}>
+              {v.docOwnerName}
+            </strong>
           </span>
         ) : null}
       </Td>
