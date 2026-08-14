@@ -746,6 +746,8 @@ export async function uploadVehicleAttachmentAction(
  *  - Nos demais casos (sem título/guia correspondente, compra já paga), o
  *    boleto fica anexado e a leitura vira aviso com orientação.
  */
+type BoletoLido = { tipo: string | null; descricao: string | null; valor: number | null; vencimento: string | null };
+
 /** Rótulo curto do boleto para mensagens e nome do anexo. */
 function tipoLabelOf(b: { tipo: string | null; descricao: string | null }): string {
   return b.tipo === "QUITACAO" ? "Quitação de financiamento" : b.descricao || b.tipo || "guia";
@@ -818,7 +820,84 @@ export async function uploadVehicleBoletoAction(
       },
     });
 
+    // DESMEMBRAMENTO: várias guias (não-quitação) para UM único título de
+    // débitos pendente — o caso do "Débitos do veículo (repasse)" lançado na
+    // compra. Ajustar o mesmo título uma vez por boleto faria a última guia
+    // sobrescrever as anteriores; o certo é o título virar UM POR GUIA, cada
+    // um com seu valor e vencimento. A diferença entre a soma das guias e o
+    // valor descontado segue a regra: acréscimo é custo, desconto é ganho.
+    const tratados = new Set<BoletoLido>();
+    const guias = boletos.filter(
+      (b) => b.tipo !== "QUITACAO" && b.valor != null && b.valor > 0,
+    );
+    if (guias.length >= 2) {
+      const v = await prisma.vehicle.findUniqueOrThrow({
+        where: { id: vehicleId },
+        select: { brand: true, model: true, plate: true },
+      });
+      const pendentes = await prisma.payable.findMany({
+        where: {
+          vehicleId,
+          category: "COMPRA_VEICULO",
+          status: { not: "PAGO" },
+          description: { startsWith: "Débitos do veículo" },
+        },
+        select: { id: true, amount: true, dueDate: true, supplierId: true, costCenterId: true, paymentComboId: true },
+      });
+      const lump = pendentes.length === 1 ? pendentes[0] : null;
+      if (lump && !lump.paymentComboId) {
+        const label = `${v.brand} ${v.model} - placa ${v.plate}`;
+        const soma = round2(guias.reduce((acc, b) => acc + round2(b.valor as number), 0));
+        const delta = round2(soma - lump.amount);
+        const { AJUSTE_DEBITOS_DESC } = await import("@/lib/vehicle-debts");
+        await prisma.$transaction(async (tx) => {
+          for (const b of guias) {
+            const venc =
+              b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento)
+                ? parseDateInput(b.vencimento)
+                : lump.dueDate;
+            await tx.payable.create({
+              data: {
+                description: `Débitos do veículo: ${b.descricao || tipoLabelOf(b)} ${label}`,
+                category: "COMPRA_VEICULO",
+                amount: round2(b.valor as number),
+                dueDate: venc,
+                status: "PENDENTE",
+                vehicleId,
+                supplierId: lump.supplierId,
+                costCenterId: lump.costCenterId,
+              },
+            });
+          }
+          await tx.payable.delete({ where: { id: lump.id } });
+          if (Math.abs(delta) > 0.005) {
+            await tx.vehicleCost.create({
+              data: {
+                vehicleId,
+                description: AJUSTE_DEBITOS_DESC,
+                category: "OUTROS",
+                amount: delta,
+                date: new Date(),
+                postSale: false,
+                notes: `Guias ${brl(soma)} · descontado na compra ${brl(lump.amount)} (desmembramento pelos boletos).`,
+              },
+            });
+          }
+        });
+        filled.push(
+          `título de débitos (${brl(lump.amount)}) desmembrado em ${guias.length} guias, uma por boleto` +
+            (Math.abs(delta) > 0.005
+              ? delta > 0
+                ? ` — as guias somam ${brl(soma)}, ${brl(delta)} a mais entrou como custo do veículo`
+                : ` — as guias somam ${brl(soma)}, ${brl(-delta)} a menos reduziu o custo do veículo`
+              : " — a soma bate com o descontado"),
+        );
+        for (const b of guias) tratados.add(b);
+      }
+    }
+
     for (const boleto of boletos) {
+      if (tratados.has(boleto)) continue;
       const vehicle = await prisma.vehicle.findUniqueOrThrow({
         where: { id: vehicleId },
         select: {
