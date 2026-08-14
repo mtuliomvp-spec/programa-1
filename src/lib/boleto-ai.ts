@@ -49,7 +49,7 @@ function normalizeTipo(raw: string | null): BoletoTipo | null {
   return "OUTRO";
 }
 
-const BOLETO_JSON_SCHEMA = {
+const BOLETO_ITEM_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: ["valor", "vencimento", "tipo", "descricao", "cedente"],
@@ -69,6 +69,21 @@ const BOLETO_JSON_SCHEMA = {
   },
 } as const;
 
+// O arquivo pode trazer VÁRIOS boletos (é comum o órgão emitir um PDF com as
+// guias do exercício, uma por página) — por isso a resposta é uma lista.
+const BOLETOS_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["boletos"],
+  properties: {
+    boletos: {
+      type: "array",
+      description: "um item por boleto/guia distinto encontrado no arquivo",
+      items: BOLETO_ITEM_SCHEMA,
+    },
+  },
+} as const;
+
 const SYSTEM_PROMPT =
   "Você transcreve boletos e guias de pagamento brasileiros (IPVA, licenciamento, multas, taxas, " +
   "quitação de financiamento de veículo). Leia o documento e devolva os campos pedidos. Regras: " +
@@ -76,8 +91,12 @@ const SYSTEM_PROMPT =
   "2) VENCIMENTO: a data de vencimento no formato yyyy-mm-dd. " +
   "3) TIPO: QUITACAO quando for boleto de quitação/liquidação de financiamento emitido por " +
   "banco/financeira; IPVA, LICENCIAMENTO, MULTA ou TAXA para guias de órgãos; OUTRO nos demais. " +
-  "4) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "5) Responda somente com o JSON pedido.";
+  "4) O arquivo pode conter MAIS DE UM boleto/guia (uma por página, ou várias na mesma página): " +
+  "devolva UM ITEM POR BOLETO DISTINTO, cada um com o seu valor e vencimento. Não some valores de " +
+  "boletos diferentes e não repita o mesmo boleto (a 2ª via / o canhoto do MESMO documento, com " +
+  "mesmo valor e vencimento, conta uma vez só). " +
+  "5) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "6) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];
@@ -86,7 +105,7 @@ function isImageType(mime: string): mime is ImageMediaType {
   return (IMAGE_TYPES as readonly string[]).includes(mime);
 }
 
-export async function extractBoleto(base64: string, mimeType: string): Promise<BoletoExtraido> {
+export async function extractBoletos(base64: string, mimeType: string): Promise<BoletoExtraido[]> {
   const config = await getParecerConfig();
   if (!config.configured || !config.apiKey) {
     throw new Error("A IA ainda não está configurada. Cadastre a chave em Parâmetros › Parecer IA.");
@@ -112,16 +131,22 @@ export async function extractBoleto(base64: string, mimeType: string): Promise<B
   try {
     response = await client.beta.messages.create({
       model: "claude-opus-5",
-      max_tokens: 1500,
+      max_tokens: 3000,
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
       output_config: {
         effort: "low",
-        format: { type: "json_schema", schema: BOLETO_JSON_SCHEMA },
+        format: { type: "json_schema", schema: BOLETOS_JSON_SCHEMA },
       },
       system: SYSTEM_PROMPT,
       messages: [
-        { role: "user", content: [fileBlock, { type: "text", text: "Transcreva este boleto/guia." }] },
+        {
+          role: "user",
+          content: [
+            fileBlock,
+            { type: "text", text: "Transcreva TODOS os boletos/guias deste arquivo." },
+          ],
+        },
       ],
     });
   } catch (e) {
@@ -155,9 +180,19 @@ export async function extractBoleto(base64: string, mimeType: string): Promise<B
   } catch {
     throw new Error("A IA não devolveu os dados do boleto no formato esperado. Tente novamente.");
   }
-  const result = boletoSchema.safeParse(parsed);
+  const result = z.object({ boletos: z.array(boletoSchema) }).safeParse(parsed);
   if (!result.success) {
     throw new Error("A IA não devolveu os dados do boleto no formato esperado. Tente novamente.");
   }
-  return { ...result.data, tipo: normalizeTipo(result.data.tipo) };
+  // Dedupe defensivo: 2ª via / canhoto do MESMO boleto (mesmo valor e
+  // vencimento) não pode virar dois ajustes.
+  const seen = new Set<string>();
+  const out: BoletoExtraido[] = [];
+  for (const b of result.data.boletos) {
+    const key = `${b.valor ?? ""}|${b.vencimento ?? ""}`;
+    if (b.valor != null && seen.has(key)) continue;
+    if (b.valor != null) seen.add(key);
+    out.push({ ...b, tipo: normalizeTipo(b.tipo) });
+  }
+  return out;
 }
