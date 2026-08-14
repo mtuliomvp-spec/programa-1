@@ -831,7 +831,24 @@ export async function uploadVehicleBoletoAction(
       if (!valor) {
         warnings.push("Não deu para ler o valor do boleto — anexado sem casamento automático.");
       } else {
-        filled.push(`boleto lido: ${tipoLabel} de ${brl(valor)}${boleto.vencimento ? ` (venc. ${boleto.vencimento.split("-").reverse().join("/")})` : ""}`);
+        // Desconto por pontualidade (multa de trânsito tem 20% por lei): o valor
+      // casado é o A PAGAR ATÉ O VENCIMENTO — o desconto já é ganho da loja,
+      // coerente com a regra (guia mais barata reduz o custo).
+      const cheio =
+        boleto.valorSemDesconto && boleto.valorSemDesconto > valor
+          ? round2(boleto.valorSemDesconto)
+          : null;
+      const descontoTxt = cheio
+        ? ` — com desconto até o vencimento (valor cheio ${brl(cheio)}; economia de ${brl(round2(cheio - valor))})`
+        : "";
+      filled.push(
+        `boleto lido: ${tipoLabel} de ${brl(valor)}${boleto.vencimento ? ` (venc. ${boleto.vencimento.split("-").reverse().join("/")})` : ""}${descontoTxt}`,
+      );
+      if (cheio) {
+        warnings.push(
+          `${tipoLabel}: o valor lançado (${brl(valor)}) vale para pagamento ATÉ o vencimento. Pagando depois, o valor volta para ${brl(cheio)} — ajuste o título se perder o prazo.`,
+        );
+      }
         const isQuitacao = boleto.tipo === "QUITACAO";
         const due = boleto.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(boleto.vencimento)
           ? parseDateInput(boleto.vencimento)
@@ -901,9 +918,59 @@ export async function uploadVehicleBoletoAction(
             select: { id: true },
           });
           if (jaPago) {
-            warnings.push(
-              "A compra deste veículo já tem pagamento feito — os títulos não podem ser regerados. O boleto ficou anexado; ajuste manualmente se precisar.",
-            );
+            // Já há baixa na compra: regerar apagaria pagamentos. Em vez de
+            // bloquear, ajusta DIRETO o título pendente correspondente e lança
+            // só o custo de ajuste — a mesma regra (acréscimo é perda, desconto
+            // é ganho), preservando o que já foi pago.
+            const pendentes = await prisma.payable.findMany({
+              where: {
+                vehicleId,
+                category: "COMPRA_VEICULO",
+                status: { not: "PAGO" },
+                description: {
+                  startsWith: isQuitacao ? "Quitação do financiamento" : "Débitos do veículo",
+                },
+              },
+              select: { id: true, amount: true, description: true },
+            });
+            const titulo = pendentes.sort(
+              (a, b) => Math.abs(a.amount - valor) - Math.abs(b.amount - valor),
+            )[0];
+            if (!titulo) {
+              warnings.push(
+                `A compra já tem pagamento feito e não há título pendente de ${isQuitacao ? "quitação" : "débitos"} para ajustar — o boleto ficou anexado. Se este valor já foi pago por outro valor, lance a diferença como custo do veículo na ficha.`,
+              );
+            } else {
+              const delta = round2(valor - titulo.amount);
+              const { AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } = await import("@/lib/vehicle-debts");
+              if (Math.abs(delta) > 0.005) {
+                await prisma.$transaction([
+                  prisma.payable.update({
+                    where: { id: titulo.id },
+                    data: { amount: valor, ...(due ? { dueDate: due } : {}) },
+                  }),
+                  prisma.vehicleCost.create({
+                    data: {
+                      vehicleId,
+                      description: isQuitacao ? AJUSTE_QUITACAO_DESC : AJUSTE_DEBITOS_DESC,
+                      category: "OUTROS",
+                      amount: delta,
+                      date: new Date(),
+                      postSale: false,
+                      notes: `Boleto ${brl(valor)} · título ${brl(titulo.amount)} (compra com pagamento já feito — ajuste direto no título).`,
+                    },
+                  }),
+                ]);
+                filled.push(
+                  delta > 0
+                    ? `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(delta)} entrou como custo do veículo`
+                    : `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(-delta)} reduziu o custo do veículo`,
+                );
+              } else {
+                if (due) await prisma.payable.update({ where: { id: titulo.id }, data: { dueDate: due } });
+                filled.push(`valor confere com o título pendente (${brl(titulo.amount)})${due ? " — vencimento atualizado" : ""}`);
+              }
+            }
           } else if (isQuitacao) {
             // Regra acertada: o ACORDADO com o vendedor (payoffAmount) não muda —
             // o título sai pelo boleto REAL e a diferença vira custo de ajuste

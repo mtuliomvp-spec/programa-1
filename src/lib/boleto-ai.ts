@@ -19,6 +19,9 @@ export type BoletoTipo = (typeof TIPOS)[number];
 
 const boletoSchema = z.object({
   valor: z.number().nullable(),
+  // Valor CHEIO quando o boleto dá desconto para pagamento até o vencimento
+  // (multas de trânsito têm 20% por lei — CTB art. 284). Nulo = sem desconto.
+  valorSemDesconto: z.number().nullable().optional(),
   vencimento: z.string().nullable(),
   // String livre no schema (não enum): declarar `enum` junto com
   // `type: ["string","null"]` é recusado pelo validador de structured outputs
@@ -52,9 +55,18 @@ function normalizeTipo(raw: string | null): BoletoTipo | null {
 const BOLETO_ITEM_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["valor", "vencimento", "tipo", "descricao", "cedente"],
+  required: ["valor", "valorSemDesconto", "vencimento", "tipo", "descricao", "cedente"],
   properties: {
-    valor: { type: ["number", "null"], description: "valor do documento em reais, ex. 1234.56" },
+    valor: {
+      type: ["number", "null"],
+      description:
+        "valor A PAGAR ATÉ O VENCIMENTO, em reais — já COM o desconto por pontualidade quando o boleto oferece um (ex.: multa com 20% de desconto: informe o valor com desconto)",
+    },
+    valorSemDesconto: {
+      type: ["number", "null"],
+      description:
+        "valor CHEIO (sem o desconto por pontualidade), quando o boleto oferece desconto para pagamento até o vencimento; null quando não há desconto",
+    },
     vencimento: { type: ["string", "null"], description: "data de vencimento em yyyy-mm-dd" },
     tipo: {
       type: ["string", "null"],
@@ -87,7 +99,10 @@ const BOLETOS_JSON_SCHEMA = {
 const SYSTEM_PROMPT =
   "Você transcreve boletos e guias de pagamento brasileiros (IPVA, licenciamento, multas, taxas, " +
   "quitação de financiamento de veículo). Leia o documento e devolva os campos pedidos. Regras: " +
-  "1) VALOR: o valor do documento (total a pagar), número em reais com ponto decimal. " +
+  "1) VALOR: o valor A PAGAR ATÉ O VENCIMENTO, número em reais com ponto decimal. Se o boleto " +
+  "oferece DESCONTO para pagamento até o vencimento (multas de trânsito têm 20% por lei), o VALOR " +
+  "é o já descontado e VALORSEMDESCONTO é o valor cheio. Sem desconto, VALORSEMDESCONTO é null. " +
+  "Não use valores com juros/mora de atraso. " +
   "2) VENCIMENTO: a data de vencimento no formato yyyy-mm-dd. " +
   "3) TIPO: QUITACAO quando for boleto de quitação/liquidação de financiamento emitido por " +
   "banco/financeira; IPVA, LICENCIAMENTO, MULTA ou TAXA para guias de órgãos; OUTRO nos demais. " +
