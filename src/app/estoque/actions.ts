@@ -829,38 +829,32 @@ export async function uploadVehicleBoletoAction(
         } else {
           const delta = round2(valor - titulo.amount);
           if (Math.abs(delta) > 0.005) {
-            const devolucao = await prisma.payable.findFirst({
-              where: { vehicleId, category: "DEVOLUCAO_PROPRIETARIO", status: { not: "PAGO" } },
-              select: { id: true, amount: true },
-            });
-            const novaDevolucao = devolucao ? round2(devolucao.amount - delta) : null;
-            if (!devolucao || novaDevolucao == null || novaDevolucao < 0) {
-              warnings.push(
-                !devolucao
-                  ? "O valor do boleto difere do título, mas não há Devolução ao proprietário pendente para absorver a diferença — ajuste manualmente."
-                  : `A diferença de ${brl(delta)} deixaria a Devolução ao proprietário negativa — ajuste manualmente.`,
-              );
-            } else {
-              await prisma.$transaction([
-                prisma.payable.update({
-                  where: { id: titulo.id },
-                  data: { amount: valor, ...(due ? { dueDate: due } : {}) },
-                }),
-                prisma.payable.update({
-                  where: { id: devolucao.id },
-                  data: { amount: novaDevolucao },
-                }),
-                prisma.vehicle.update({
-                  where: { id: vehicleId },
-                  data: isQuitacao
-                    ? { payoffAmount: round2(Math.max(0, (vehicle.payoffAmount ?? 0) + delta)) }
-                    : { debtsAmount: round2(Math.max(0, (vehicle.debtsAmount ?? 0) + delta)) },
-                }),
-              ]);
-              filled.push(
-                `título "${titulo.description.slice(0, 60)}" ajustado de ${brl(titulo.amount)} para ${brl(valor)}; a Devolução ao proprietário ${delta < 0 ? "subiu" : "desceu"} ${brl(Math.abs(delta))}`,
-              );
-            }
+            // Mesma regra do veículo próprio: o descontado do dono (e a
+            // devolução dele) não muda — a diferença é da loja. Acréscimo vira
+            // custo do veículo; desconto vira ganho (custo negativo).
+            const { AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } = await import("@/lib/vehicle-debts");
+            await prisma.$transaction([
+              prisma.payable.update({
+                where: { id: titulo.id },
+                data: { amount: valor, ...(due ? { dueDate: due } : {}) },
+              }),
+              prisma.vehicleCost.create({
+                data: {
+                  vehicleId,
+                  description: isQuitacao ? AJUSTE_QUITACAO_DESC : AJUSTE_DEBITOS_DESC,
+                  category: "OUTROS",
+                  amount: delta,
+                  date: new Date(),
+                  postSale: false,
+                  notes: `Boleto ${brl(valor)} · descontado do proprietário ${brl(titulo.amount)}`,
+                },
+              }),
+            ]);
+            filled.push(
+              delta > 0
+                ? `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(delta)} entrou como custo do veículo (a devolução ao proprietário não muda)`
+                : `título "${titulo.description.slice(0, 60)}" ajustado para ${brl(valor)} — ${brl(-delta)} reduziu o custo do veículo (a devolução ao proprietário não muda)`,
+            );
           } else {
             if (due) {
               await prisma.payable.update({ where: { id: titulo.id }, data: { dueDate: due } });

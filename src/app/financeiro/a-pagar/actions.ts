@@ -15,7 +15,7 @@ import { structuralCenterId } from "@/lib/structural";
 import { isStructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
-import { parseDebtItems } from "@/lib/vehicle-debts";
+import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -598,10 +598,11 @@ export async function updatePayableAction(
   // rebaixava a categoria para OUTROS, soltando o título de
   // regenerateVehicleAcquisitionPayables (que passaria a criar um 2º título).
   const isAcquisition = isVehiclePurchase(current.category);
-  // Repasse do CONSIGNADO (quitação/débitos): o valor PODE ser ajustado depois da
-  // venda — a diferença vai para a Devolução ao proprietário (o acertado com o
-  // dono não muda: quitação + débitos + devolução continuam somando o mesmo, e o
-  // farol segue verde). O destino contábil continua travado como aquisição.
+  // Repasse do CONSIGNADO (quitação/débitos): o valor PODE ser ajustado depois
+  // da venda — mesma regra do veículo próprio: o acordado com o dono (e a
+  // devolução dele) não muda; a diferença é da loja — acréscimo vira custo do
+  // veículo, desconto vira ganho (custo negativo), por competência. O destino
+  // contábil continua travado como aquisição.
   const consignedRepasse = isAcquisition && !current.saleId && Boolean(current.vehicle?.consigned);
   const locked = saleGenerated || isAcquisition;
   const currentFlow = isStructuralKey(current.costCenter?.key)
@@ -629,35 +630,8 @@ export async function updatePayableAction(
   // Exceção: repasse do consignado, cujo ajuste flui para a devolução ao dono.
   const amount = isAcquisition && !consignedRepasse ? current.amount : d.amount;
 
-  // Repasse do consignado com valor alterado: valida e prepara o ajuste da
-  // Devolução ao proprietário ANTES de gravar (tudo ou nada do ponto de vista
-  // do usuário — se a devolução não puder absorver, nada muda).
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const repasseDelta = consignedRepasse ? round2(d.amount - current.amount) : 0;
-  let devolucaoToAdjust: { id: string; amount: number } | null = null;
-  if (consignedRepasse && Math.abs(repasseDelta) > 0.005) {
-    const devolucao = await prisma.payable.findFirst({
-      where: {
-        vehicleId: current.vehicleId!,
-        category: "DEVOLUCAO_PROPRIETARIO",
-        status: { not: "PAGO" },
-      },
-      select: { id: true, amount: true },
-    });
-    if (!devolucao) {
-      return {
-        error:
-          "Não há Devolução ao proprietário pendente para absorver a diferença (ela pode já ter sido paga ou ter virado aporte de capital). Reverta/ajuste a devolução antes de mudar este valor.",
-      };
-    }
-    const novaDevolucao = round2(devolucao.amount - repasseDelta);
-    if (novaDevolucao < 0) {
-      return {
-        error: `A diferença deixaria a Devolução ao proprietário negativa (ela tem ${devolucao.amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} pendente). Ajuste um valor menor.`,
-      };
-    }
-    devolucaoToAdjust = { id: devolucao.id, amount: novaDevolucao };
-  }
 
   await updateManualPayable({
     id: d.id,
@@ -676,21 +650,22 @@ export async function updatePayableAction(
     vehicleId,
     capitalBeneficiaryId,
   });
-  // Repasse do consignado: aplica a contrapartida — a devolução ao dono absorve
-  // a diferença e o campo do veículo (quitação/débitos) acompanha, para o
-  // detalhamento da venda continuar batendo com os títulos.
-  if (consignedRepasse && devolucaoToAdjust && current.vehicleId) {
+  // Repasse do consignado: a contrapartida da mudança de valor é um CUSTO de
+  // ajuste do veículo (acréscimo = perda; desconto = ganho, custo negativo),
+  // por competência — o acordado com o dono e a devolução dele não mudam.
+  if (consignedRepasse && Math.abs(repasseDelta) > 0.005 && current.vehicleId) {
     const isPayoff = current.description.startsWith("Quitação do financiamento");
-    const vehicleData = isPayoff
-      ? { payoffAmount: round2(Math.max(0, (current.vehicle?.payoffAmount ?? 0) + repasseDelta)) }
-      : { debtsAmount: round2(Math.max(0, (current.vehicle?.debtsAmount ?? 0) + repasseDelta)) };
-    await prisma.$transaction([
-      prisma.payable.update({
-        where: { id: devolucaoToAdjust.id },
-        data: { amount: devolucaoToAdjust.amount },
-      }),
-      prisma.vehicle.update({ where: { id: current.vehicleId }, data: vehicleData }),
-    ]);
+    await prisma.vehicleCost.create({
+      data: {
+        vehicleId: current.vehicleId,
+        description: isPayoff ? AJUSTE_QUITACAO_DESC : AJUSTE_DEBITOS_DESC,
+        category: "OUTROS",
+        amount: repasseDelta,
+        date: new Date(),
+        postSale: false,
+        notes: `Título ajustado de ${brl(current.amount)} para ${brl(d.amount)} (edição manual).`,
+      },
+    });
   }
 
   // Fatura de cartão: o valor do título é a soma dos lançamentos — se o valor
@@ -773,33 +748,9 @@ export async function splitConsignedRepasseAction(
   const total = round2(items.reduce((s, d) => s + d.amount, 0));
   const delta = round2(total - current.amount);
 
-  // Diferença entre as guias e o descontado: a devolução ao dono absorve — as
-  // mesmas guardas da edição de valor (precisa existir e não pode ficar negativa).
-  let devolucaoToAdjust: { id: string; amount: number } | null = null;
-  if (Math.abs(delta) > 0.005) {
-    const devolucao = await prisma.payable.findFirst({
-      where: {
-        vehicleId: current.vehicleId,
-        category: "DEVOLUCAO_PROPRIETARIO",
-        status: { not: "PAGO" },
-      },
-      select: { id: true, amount: true },
-    });
-    if (!devolucao) {
-      return {
-        error:
-          "Não há Devolução ao proprietário pendente para absorver a diferença (ela pode já ter sido paga ou ter virado aporte de capital). Reverta/ajuste a devolução, ou desmembre com a soma igual ao valor do título.",
-      };
-    }
-    const novaDevolucao = round2(devolucao.amount - delta);
-    if (novaDevolucao < 0) {
-      return {
-        error: `A diferença deixaria a Devolução ao proprietário negativa (ela tem ${brl(devolucao.amount)} pendente). Ajuste as guias.`,
-      };
-    }
-    devolucaoToAdjust = { id: devolucao.id, amount: novaDevolucao };
-  }
-
+  // Diferença entre as guias reais e o descontado do dono: mesma regra do
+  // veículo próprio — vira custo de ajuste do veículo (acréscimo = perda da
+  // loja; desconto = ganho). A devolução ao proprietário não muda.
   const repasseLabel = `${current.vehicle.brand} ${current.vehicle.model} - placa ${current.vehicle.plate}`;
   await prisma.$transaction(async (tx) => {
     for (const item of items) {
@@ -817,16 +768,17 @@ export async function splitConsignedRepasseAction(
       });
     }
     await tx.payable.delete({ where: { id } });
-    if (devolucaoToAdjust) {
-      await tx.payable.update({
-        where: { id: devolucaoToAdjust.id },
-        data: { amount: devolucaoToAdjust.amount },
-      });
-    }
     if (Math.abs(delta) > 0.005) {
-      await tx.vehicle.update({
-        where: { id: current.vehicleId! },
-        data: { debtsAmount: round2(Math.max(0, (current.vehicle?.debtsAmount ?? 0) + delta)) },
+      await tx.vehicleCost.create({
+        data: {
+          vehicleId: current.vehicleId!,
+          description: AJUSTE_DEBITOS_DESC,
+          category: "OUTROS",
+          amount: delta,
+          date: new Date(),
+          postSale: false,
+          notes: `Guias ${brl(total)} · descontado do proprietário ${brl(current.amount)} (desmembramento).`,
+        },
       });
     }
   });
