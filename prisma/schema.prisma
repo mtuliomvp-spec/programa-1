@@ -449,6 +449,11 @@ model Vehicle {
   // Vazio = um título só, como antes. Fica no veículo (e não só no formulário)
   // porque editar o veículo apaga e recria os títulos da compra.
   debtsItems       Json          @default("[]")
+  // Quitação REAL (boleto do banco), quando diferente do acordado
+  // (payoffAmount). O título sai pelo real e a diferença vira custo de ajuste
+  // (acréscimo → custo; menor → reduz o custo) — o líquido ao vendedor não
+  // muda. Nulo = boleto igual ao acordado.
+  payoffActualAmount Float?
   // Em nome de quem o veículo está: o proprietário lido do último CRLV
   // anexado (preenchido pela leitura por IA; sobrescrito a cada leitura).
   docOwnerName     String?

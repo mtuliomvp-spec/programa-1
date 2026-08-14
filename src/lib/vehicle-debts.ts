@@ -95,3 +95,6 @@ export function debtsDiff(agreed: number, items: unknown): { real: number; diff:
 
 /** Descrição-marca do custo de ajuste — é por ela que ele é apagado e recriado. */
 export const AJUSTE_DEBITOS_DESC = "Ajuste de débitos (guias × acordado)";
+
+/** Mesmo papel para a QUITAÇÃO: boleto real × valor acordado com o vendedor. */
+export const AJUSTE_QUITACAO_DESC = "Ajuste de quitação (boleto × acordado)";

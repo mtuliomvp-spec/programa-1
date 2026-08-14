@@ -757,7 +757,7 @@ export async function uploadVehicleBoletoAction(
     where: { id: vehicleId },
     select: {
       id: true, status: true, consigned: true,
-      payoffAmount: true, debtsAmount: true, debtsItems: true,
+      payoffAmount: true, payoffActualAmount: true, debtsAmount: true, debtsItems: true,
     },
   });
   if (!vehicle) return { error: "Veículo não encontrado." };
@@ -880,15 +880,31 @@ export async function uploadVehicleBoletoAction(
             "A compra deste veículo já tem pagamento feito — os títulos não podem ser regerados. O boleto ficou anexado; ajuste manualmente se precisar.",
           );
         } else if (isQuitacao) {
-          if (round2(vehicle.payoffAmount ?? 0) !== valor) {
-            await prisma.vehicle.update({ where: { id: vehicleId }, data: { payoffAmount: valor } });
+          // Regra acertada: o ACORDADO com o vendedor (payoffAmount) não muda —
+          // o título sai pelo boleto REAL e a diferença vira custo de ajuste
+          // (boleto maior → custo do veículo; menor → reduz o custo).
+          const acordado = round2(vehicle.payoffAmount ?? 0);
+          if (acordado <= 0) {
+            warnings.push(
+              "O cadastro do veículo não tem quitação acordada — confira a ficha antes de casar o boleto.",
+            );
+          } else if (valor !== acordado || vehicle.payoffActualAmount != null) {
+            await prisma.vehicle.update({
+              where: { id: vehicleId },
+              data: { payoffActualAmount: valor === acordado ? null : valor },
+            });
             const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
             await regenerateVehicleAcquisitionPayables(vehicleId);
+            const diff = round2(valor - acordado);
             filled.push(
-              `quitação ajustada de ${brl(vehicle.payoffAmount ?? 0)} para ${brl(valor)} — o título e o líquido ao vendedor foram recalculados`,
+              diff === 0
+                ? `boleto confere com o acordado (${brl(acordado)}) — título recalculado`
+                : diff > 0
+                  ? `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(diff)} entrou como custo do veículo`
+                  : `quitação real ${brl(valor)} (acordado ${brl(acordado)}) — o título foi ajustado e ${brl(-diff)} reduziu o custo do veículo`,
             );
           } else {
-            filled.push(`valor da quitação confere com o cadastro (${brl(valor)})`);
+            filled.push(`valor da quitação confere com o acordado (${brl(valor)})`);
           }
         } else {
           // Débito: atualiza a guia correspondente do detalhamento (a mais
