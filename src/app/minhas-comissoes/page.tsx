@@ -35,7 +35,61 @@ export default async function MinhasComissoesPage() {
       where: { userId: null, name: { equals: user.name, mode: "insensitive" } },
       include: { transactions: { select: { kind: true, amount: true } } },
     }));
+
+  // Comissão aplicada no capital DIRETO no fechamento da venda (checkbox
+  // "aplicar no capital"): não gera título COMISSAO — vira só um APORTE. Sem
+  // isto, essas comissões (ex.: Toyota do João) apareciam no Capital mas não
+  // aqui. Buscamos os aportes de comissão do beneficiário para listá-los junto.
+  const commissionAportes = beneficiary
+    ? await prisma.capitalTransaction.findMany({
+        where: {
+          beneficiaryId: beneficiary.id,
+          kind: "APORTE",
+          saleId: { not: null },
+          description: { startsWith: "Aporte — comissão" },
+        },
+        orderBy: { date: "desc" },
+        select: { id: true, amount: true, date: true, description: true },
+      })
+    : [];
+
   const rows = payables.map((p) => ({ ...p, effective: effectivePayableStatus(p.status, p.dueDate) }));
+
+  // Linhas unificadas: os títulos de comissão + as comissões aplicadas no
+  // capital (estas com status próprio "No capital"). Ordenadas por data desc.
+  type Linha = {
+    id: string;
+    description: string;
+    date: Date;
+    amount: number;
+    kind: "titulo" | "capital";
+    effective: "PENDENTE" | "PAGO" | "ATRASADO";
+    paymentDate: Date | null;
+    accountName: string | null;
+  };
+  const linhas: Linha[] = [
+    ...rows.map((r) => ({
+      id: r.id,
+      description: r.description,
+      date: r.dueDate,
+      amount: r.amount,
+      kind: "titulo" as const,
+      effective: r.effective,
+      paymentDate: r.paymentDate,
+      accountName: r.account?.name ?? null,
+    })),
+    ...commissionAportes.map((a) => ({
+      id: a.id,
+      // Tira o prefixo "Aporte — " para a descrição casar com as demais linhas.
+      description: a.description?.replace(/^Aporte — /, "").replace(/^comiss/, "Comiss") ?? "Comissão aplicada no capital",
+      date: a.date,
+      amount: a.amount,
+      kind: "capital" as const,
+      effective: "PAGO" as const,
+      paymentDate: a.date,
+      accountName: null,
+    })),
+  ].sort((a, b) => b.date.getTime() - a.date.getTime());
 
   const totalReceber = rows.filter((r) => r.effective !== "PAGO").reduce((s, r) => s + r.amount, 0);
   const totalRecebido = rows.filter((r) => r.effective === "PAGO").reduce((s, r) => s + r.amount, 0);
@@ -103,7 +157,7 @@ export default async function MinhasComissoesPage() {
 
       <Card>
         <CardHeader title="Comissões" description="Somente as suas comissões de venda" />
-        {rows.length === 0 ? (
+        {linhas.length === 0 ? (
           <EmptyState title="Você ainda não tem comissões" description="Quando uma venda gerar comissão para você, ela aparece aqui." />
         ) : (
           <Table>
@@ -116,17 +170,25 @@ export default async function MinhasComissoesPage() {
               </Tr>
             </Thead>
             <tbody>
-              {rows.map((r) => (
+              {linhas.map((r) => (
                 <Tr key={r.id}>
                   <Td className="font-medium text-slate-900">{r.description}</Td>
-                  <Td className="whitespace-nowrap text-slate-600">{formatDate(r.dueDate)}</Td>
+                  <Td className="whitespace-nowrap text-slate-600">{formatDate(r.date)}</Td>
                   <Td className="text-right tabular-nums">{formatCurrency(r.amount)}</Td>
                   <Td>
-                    <Badge tone={statusTone[r.effective]}>{statusLabel[r.effective]}</Badge>
-                    {r.effective === "PAGO" && r.paymentDate ? (
+                    {r.kind === "capital" ? (
+                      <Badge tone="info">No capital</Badge>
+                    ) : (
+                      <Badge tone={statusTone[r.effective]}>{statusLabel[r.effective]}</Badge>
+                    )}
+                    {r.kind === "capital" ? (
+                      <p className="mt-0.5 text-[11px] text-slate-400">
+                        aplicada no seu capital em {formatDate(r.date)}
+                      </p>
+                    ) : r.effective === "PAGO" && r.paymentDate ? (
                       <p className="mt-0.5 text-[11px] text-slate-400">
                         pago em {formatDate(r.paymentDate)}
-                        {r.account ? ` · ${r.account.name}` : ""}
+                        {r.accountName ? ` · ${r.accountName}` : ""}
                       </p>
                     ) : null}
                   </Td>
