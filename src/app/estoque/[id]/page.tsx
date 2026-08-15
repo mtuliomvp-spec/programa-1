@@ -77,7 +77,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -90,6 +90,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("financeiro", "visualizar"),
       userCan("vendas", "foto"),
       userCan("estoque", "lucro"),
+      userCan("estoque", "sinal"),
     ]);
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
@@ -454,7 +455,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               />
               <VehicleAdvance
                 vehicleId={vehicle.id}
-                canManage={canEditar}
+                canManage={canSinal}
                 accounts={advanceAccounts.map((a) => ({ id: a.id, name: a.name }))}
                 customers={advanceCustomers}
                 advances={advances.map((r) => ({

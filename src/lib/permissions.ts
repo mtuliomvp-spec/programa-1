@@ -31,6 +31,7 @@ export const MODULES: ModuleConfig[] = [
       EDITAR,
       EXCLUIR,
       { acao: "custos", label: "Lançar custos" },
+      { acao: "sinal", label: "Registrar sinal / entrada antecipada" },
       { acao: "debitos", label: "Consultar/importar débitos" },
       { acao: "publicar", label: "Postar na vitrine" },
       { acao: "comunicacao", label: "Anexar comunicação de venda / documentos" },

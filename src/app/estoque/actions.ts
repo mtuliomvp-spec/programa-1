@@ -50,7 +50,7 @@ export async function registerVehicleAdvanceAction(
   formData: FormData,
 ): Promise<AdvanceFormState> {
   try {
-    await assertCan("estoque", "editar");
+    await assertCan("estoque", "sinal");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -121,11 +121,11 @@ export async function creditVehicleAdvanceAction(
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    // Quem opera o caixa (financeiro.contas) ou quem registrou o sinal
-    // (estoque.editar) pode confirmar o crédito.
+    // Quem opera o caixa (financeiro.contas) ou quem registra o sinal
+    // (estoque.sinal) pode confirmar o crédito.
     await assertCanAny([
       ["financeiro", "contas"],
-      ["estoque", "editar"],
+      ["estoque", "sinal"],
     ]);
     await assertBooksBalanced();
     await assertCashboxOpen();
@@ -183,7 +183,7 @@ export async function creditVehicleAdvanceAction(
 }
 
 export async function deleteVehicleAdvanceAction(id: string, vehicleId: string) {
-  await assertCan("estoque", "editar");
+  await assertCan("estoque", "sinal");
   // Só remove sinal ainda não vinculado a uma venda (pendente ou já creditado —
   // creditado, deletar estorna o valor da conta, pois o saldo é derivado).
   const r = await prisma.receivable.findFirst({
