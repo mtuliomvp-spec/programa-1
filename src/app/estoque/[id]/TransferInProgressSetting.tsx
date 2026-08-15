@@ -14,13 +14,10 @@ export default function TransferInProgressSetting({
   vehicleId,
   initial,
   canManage,
-  hasCrlv,
 }: {
   vehicleId: string;
   initial: boolean;
   canManage: boolean;
-  /** Já tem CRLV anexado: o processo se encerra ao anexar (só informa). */
-  hasCrlv: boolean;
 }) {
   const [on, setOn] = useState(initial);
   const [saving, startSave] = useTransition();
@@ -68,10 +65,10 @@ export default function TransferInProgressSetting({
           ) : null}
         </div>
       )}
-      {hasCrlv ? (
+      {on ? (
         <p className="mt-2 text-xs text-slate-400">
-          Quando o CRLV anexado estiver no nome da loja/sócio, a lista passa a mostrar
-          “Transferido”. Enquanto estiver no nome do dono anterior, segue “em processo”.
+          Enquanto estiver marcado, a lista do estoque mostra “em processo de transferência”
+          (a marca manual prevalece). <strong>Desfaça</strong> quando a transferência for concluída.
         </p>
       ) : null}
       {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}

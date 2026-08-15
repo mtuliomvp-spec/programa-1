@@ -69,14 +69,20 @@ function crlvBadge(
   year: string | null,
   transferStarted: boolean,
   docOwnerIsOurs: boolean,
+  transferManual: boolean,
 ): { label: string; tone: "success" | "warning" | "info" } {
   const crlv = `CRLV${year ? ` ${year}` : ""}`;
+  // Marca MANUAL "em processo de transferência" vence tudo: o usuário afirmou
+  // que a transferência ainda está correndo (ex.: veículo vendido cujo CRLV
+  // ainda está no nome de um sócio, não do comprador). Desfazer a marca na ficha
+  // libera os demais estados.
+  if (transferManual) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
   // Documento JÁ no nome da loja/sócio → transferência concluída de fato. Ter
   // CRLV anexado não basta: pode ser o do dono anterior (ex.: implantação de
   // estoque com o CRLV antigo).
   if (hasCrlv && docOwnerIsOurs) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
-  // Processo em aberto (marca manual ou custo de transferência) e ainda NÃO no
-  // nosso nome — mesmo com o CRLV do dono anterior anexado.
+  // Processo em aberto (custo de transferência) e ainda NÃO no nosso nome —
+  // mesmo com o CRLV do dono anterior anexado.
   if (transferStarted) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
   // Tem CRLV, sem processo e sem confirmação de que está no nosso nome.
   if (hasCrlv) return { label: `✓ ${crlv}`, tone: "success" };
@@ -323,14 +329,14 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
@@ -409,7 +415,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
+          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
         </span>
         {v.hasAtpv ? (
           <span className="mt-1 block">
