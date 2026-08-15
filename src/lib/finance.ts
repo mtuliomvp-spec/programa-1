@@ -1912,6 +1912,12 @@ export async function syncPayableCapital(payableId: string) {
   } else if (existing) {
     await prisma.capitalTransaction.delete({ where: { id: existing.id } });
   }
+  // Retirada paga com SUBSTITUIÇÃO (a fatia aplicada trocou de dono): ao estornar
+  // o título, a troca da fatia também é desfeita — senão o aplicado do substituto
+  // fica pendurado sem a retirada correspondente.
+  if (p.status !== "PAGO") {
+    await prisma.investmentAllocation.deleteMany({ where: { payableId: p.id } });
+  }
 }
 
 /** Igual ao anterior, para títulos A RECEBER do fluxo Capital (APORTE ao receber). */
