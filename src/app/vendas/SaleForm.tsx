@@ -319,11 +319,6 @@ export default function SaleForm({
     paymentMethod === "FINANCIADO"
       ? Math.round((baseDevolucao + Math.max(0, financedTyped - restanteFin)) * 100) / 100
       : baseDevolucao;
-  // O financiado só vira "conta a receber" quando NÃO há financeira cadastrada
-  // (aí é repasse pendente). Com financeira, ele entra na conta dela.
-  const aReceberFin = financerAccountId
-    ? entradaFinanciamento
-    : Math.round((entradaFinanciamento + financedTyped) * 100) / 100;
   // Retorno da financeira: incide sobre o valor financiado (o typed; se vazio,
   // financia todo o restante). Só vale com financeira escolhida.
   const financedEffetivo = financedTyped > 0 ? financedTyped : restanteFin;
@@ -997,22 +992,47 @@ export default function SaleForm({
               <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3 text-sm">
                 <div className="space-y-1">
                   <SummaryRow label="Restante a pagar (após troca e sinal)" value={restanteFin} />
-                  <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
-                  <SummaryRow
-                    label="= Entrada do cliente → Contas a Receber"
-                    value={aReceberFin}
-                    strong
-                    tone="green"
-                    top
-                  />
+                  {financerAccountId ? (
+                    // Financeira conveniada: o financiado entra na conta dela; só
+                    // a entrada do cliente fica a receber.
+                    <>
+                      <SummaryRow label="(−) Financiado pela financeira" value={financedTyped} />
+                      <SummaryRow
+                        label="= Entrada do cliente → Contas a Receber"
+                        value={entradaFinanciamento}
+                        strong
+                        tone="green"
+                        top
+                      />
+                    </>
+                  ) : (
+                    // Banco NÃO conveniado: duas contas a receber — a do banco
+                    // (repasse) e, se houver, o saldo/entrada do cliente.
+                    <>
+                      <SummaryRow
+                        label={`= Repasse do banco${financerNameManual ? ` (${financerNameManual})` : ""} → Contas a Receber`}
+                        value={financedTyped}
+                        strong
+                        tone="green"
+                        top
+                      />
+                      {entradaFinanciamento > 0 ? (
+                        <SummaryRow
+                          label="= Saldo/entrada do cliente → Contas a Receber"
+                          value={entradaFinanciamento}
+                          strong
+                          tone="green"
+                        />
+                      ) : null}
+                    </>
+                  )}
                 </div>
                 <p className="mt-2 text-xs text-slate-500">
-                  A entrada do cliente vai para <strong>Contas a Receber</strong> (pendente): quando ele
-                  pagar — total ou parcial — você dá baixa na conta do depósito; o que faltar continua
-                  pendente.{" "}
                   {financerAccountId
-                    ? "O valor financiado entra na conta da financeira."
-                    : "Sem financeira escolhida, o valor financiado também fica a receber (repasse) e por isso soma acima."}
+                    ? "A entrada do cliente vai para Contas a Receber (pendente): quando ele pagar — total ou parcial — você dá baixa na conta do depósito. O valor financiado entra na conta da financeira."
+                    : entradaFinanciamento > 0
+                      ? "Banco não conveniado: são geradas DUAS contas a receber — o repasse do banco e o saldo/entrada do cliente. Cada uma é baixada quando o dinheiro cair."
+                      : "Banco não conveniado: o valor financiado fica como conta a receber do banco (repasse), baixada quando o dinheiro cair."}
                 </p>
               </div>
             )
