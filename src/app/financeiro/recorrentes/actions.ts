@@ -76,16 +76,22 @@ export async function createRecurringAction(
   let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
   let categoryReceber: CategoriaReceber | null = null;
   let categoryLabel: string | null = null;
+  // Capital: a categoria INTERNA é sempre OUTROS (retirada/aporte não é despesa
+  // nem receita), mas o rótulo digitado é guardado para organização/relatório.
   if (data.kind === "PAGAR") {
-    if (isCapital) categoryPagar = "OUTROS";
-    else {
+    if (isCapital) {
+      categoryPagar = "OUTROS";
+      categoryLabel = label || null;
+    } else {
       const cat = await resolveDespesaCategory(label);
       categoryPagar = cat.category;
       categoryLabel = cat.label;
     }
   } else {
-    if (isCapital) categoryReceber = "OUTROS";
-    else {
+    if (isCapital) {
+      categoryReceber = "OUTROS";
+      categoryLabel = label || null;
+    } else {
       const cat = await resolveReceitaCategory(label);
       categoryReceber = cat.category;
       categoryLabel = cat.label;
@@ -174,16 +180,22 @@ export async function updateRecurringAction(
   let categoryPagar: "COMPRA_VEICULO" | "COMPRA_PECA" | "DESPESA_OPERACIONAL" | "COMISSAO" | "SALARIO" | "COMBUSTIVEL" | "DEVOLUCAO_CLIENTE" | "DEVOLUCAO_PROPRIETARIO" | "OUTROS" | null = null;
   let categoryReceber: CategoriaReceber | null = null;
   let categoryLabel: string | null = null;
+  // Capital: a categoria INTERNA é sempre OUTROS (retirada/aporte não é despesa
+  // nem receita), mas o rótulo digitado é guardado para organização/relatório.
   if (data.kind === "PAGAR") {
-    if (isCapital) categoryPagar = "OUTROS";
-    else {
+    if (isCapital) {
+      categoryPagar = "OUTROS";
+      categoryLabel = label || null;
+    } else {
       const cat = await resolveDespesaCategory(label);
       categoryPagar = cat.category;
       categoryLabel = cat.label;
     }
   } else {
-    if (isCapital) categoryReceber = "OUTROS";
-    else {
+    if (isCapital) {
+      categoryReceber = "OUTROS";
+      categoryLabel = label || null;
+    } else {
       const cat = await resolveReceitaCategory(label);
       categoryReceber = cat.category;
       categoryLabel = cat.label;
