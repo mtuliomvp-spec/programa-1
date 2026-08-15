@@ -13,7 +13,7 @@ import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
 type Account = { id: string; name: string };
-type Vehicle = { id: string; label: string };
+type Vehicle = { id: string; label: string; capitalName?: string | null };
 type Beneficiary = { id: string; name: string; applied?: number; free?: number };
 type Customer = { id: string; name: string };
 
@@ -40,7 +40,6 @@ export default function CashEntryForm({
   lockedDate?: boolean;
   preselectedAccountId?: string;
 }) {
-  const [state, formAction, pending] = useActionState(createCashEntryAction, initial);
   const [open, setOpen] = useState(false);
   const [kind, setKind] = useState<"entrada" | "saida">("saida");
   const [flow, setFlow] = useState<string>("ADMINISTRATIVO");
@@ -74,23 +73,28 @@ export default function CashEntryForm({
     lastAutoDesc.current = auto;
   }, [isSinal, vehicleId, vehicles]);
 
-  useEffect(() => {
-    if (state.ok) {
-      formRef.current?.reset();
-      setKind("saida");
-      setFlow("ADMINISTRATIVO");
-      setSupplierName("");
-      setNewSupplier(false);
-      setVehicleId("");
-      setAmount(0);
-      setAmountKey((k) => k + 1);
-      setCapitalBeneficiaryId("");
-      setDescription("");
-      setCustomerId("");
-      setNewCustomer(false);
-      lastAutoDesc.current = "";
-    }
-  }, [state.ok]);
+  const [state, formAction, pending] = useActionState(
+    async (prev: CashEntryState, formData: FormData) => {
+      const result = await createCashEntryAction(prev, formData);
+      if (result.ok) {
+        formRef.current?.reset();
+        setKind("saida");
+        setFlow("ADMINISTRATIVO");
+        setSupplierName("");
+        setNewSupplier(false);
+        setVehicleId("");
+        setAmount(0);
+        setAmountKey((k) => k + 1);
+        setCapitalBeneficiaryId("");
+        setDescription("");
+        setCustomerId("");
+        setNewCustomer(false);
+        lastAutoDesc.current = "";
+      }
+      return result;
+    },
+    initial,
+  );
 
   if (accounts.length === 0) {
     return (
@@ -248,6 +252,12 @@ export default function CashEntryForm({
             </Select>
             {vehicles.length === 0 ? (
               <p className="mt-1 text-xs text-slate-400">Nenhum veículo em estoque.</p>
+            ) : kind === "saida" && vehicles.find((v) => v.id === vehicleId)?.capitalName ? (
+              <p className="mt-1 rounded-md border border-indigo-200 bg-indigo-50 px-2 py-1 text-xs text-indigo-800">
+                🔗 Este veículo está <strong>atrelado ao capital de{" "}
+                {vehicles.find((v) => v.id === vehicleId)?.capitalName}</strong> — o valor será{" "}
+                <strong>debitado do capital dele</strong> (retirada) e não conta como pós-venda da loja.
+              </p>
             ) : (
               <p className="mt-1 text-xs text-slate-400">
                 {kind === "entrada"

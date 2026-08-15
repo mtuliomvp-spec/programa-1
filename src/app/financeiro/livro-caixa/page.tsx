@@ -100,7 +100,7 @@ export default async function LivroCaixaPage({
       prisma.vehicle.findMany({
         // Inclui vendidos (para lançar despesas pós-venda); em estoque primeiro.
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-        select: { id: true, brand: true, model: true, plate: true, status: true },
+        select: { id: true, brand: true, model: true, plate: true, status: true, postSaleCapitalBeneficiaryId: true },
       }),
       listCategoryNames("DESPESA"),
       prisma.capitalBeneficiary.findMany({
@@ -127,9 +127,15 @@ export default async function LivroCaixaPage({
   // Oculta só por padrão; a busca ou o botão "Ver lançamentos" (ver=1) revela.
   const hideEntries = monthClosed && !filtering && !reveal;
 
+  // Sócio ao qual cada veículo está atrelado (custo vira retirada do capital dele).
+  const beneficiaryNameById = new Map(beneficiaries.map((b) => [b.id, b.name]));
   const vehicleOptions = stockVehicles.map((v) => ({
     id: v.id,
     label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+    capitalName:
+      v.status === "VENDIDO" && v.postSaleCapitalBeneficiaryId
+        ? beneficiaryNameById.get(v.postSaleCapitalBeneficiaryId) ?? "um sócio"
+        : null,
   }));
 
   // saldo inicial considera o saldo de abertura das contas e as

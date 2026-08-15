@@ -2741,19 +2741,29 @@ export async function createExpensePayable(input: {
   // (o carro não está mais no estoque) e vira despesa Administrativa; o custo é
   // marcado como pós-venda (não mexe na margem da venda já realizada).
   let vehicleSold = false;
+  let vehicleCapitalBenef: string | null = null;
   if (input.vehicleId) {
     const v = await prisma.vehicle.findUnique({
       where: { id: input.vehicleId },
-      select: { status: true },
+      select: { status: true, postSaleCapitalBeneficiaryId: true },
     });
     vehicleSold = v?.status === "VENDIDO";
+    // Veículo VENDIDO e ATRELADO ao capital de um sócio: a despesa é do sócio
+    // (dono do resultado do carro) — vira RETIRADA do capital dele, não
+    // despesa/pós-venda da loja. Vale para QUALQUER origem que crie a despesa
+    // (movimento de caixa diário, contas a pagar, conciliação...).
+    if (vehicleSold && v?.postSaleCapitalBeneficiaryId && !isVehiclePurchase(input.category)) {
+      vehicleCapitalBenef = v.postSaleCapitalBeneficiaryId;
+    }
   }
+  // Sócio efetivo do capital: o informado explicitamente OU o do veículo atrelado.
+  const capitalBeneficiaryId = input.capitalBeneficiaryId || vehicleCapitalBenef;
   const centerId =
     input.costCenterId ||
-    (input.vehicleId
-      ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
-      : input.capitalBeneficiaryId
-        ? await structuralCenterId("CAPITAL")
+    (capitalBeneficiaryId
+      ? await structuralCenterId("CAPITAL")
+      : input.vehicleId
+        ? await structuralCenterId(vehicleSold ? "ADMINISTRATIVO" : "VEICULOS")
         : // Sem veículo indicado, "Veículos" vira Administrativo (o gasto é da
           // loja, não de um carro).
           await structuralCenterId(effectiveStructuralKey(input.structuralKey, input.vehicleId)));
@@ -2775,7 +2785,7 @@ export async function createExpensePayable(input: {
         costCenterId: centerId,
         supplierId: input.supplierId || null,
         vehicleId: input.vehicleId || null,
-        capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+        capitalBeneficiaryId: capitalBeneficiaryId || null,
         notes: input.notes || null,
         avulso: input.avulso ?? false,
         purchaseRequestId: input.purchaseRequestId || null,
@@ -2792,6 +2802,9 @@ export async function createExpensePayable(input: {
           amount: input.amount,
           date: input.dueDate,
           postSale: vehicleSold,
+          // Atrelado ao capital do sócio: marca o custo para ficar FORA da
+          // margem do carro e do Lucro/Prejuízo (é custo do sócio, não da loja).
+          capitalBeneficiaryId: capitalBeneficiaryId || null,
           notes: input.notes || null,
           payableId: payable.id,
         },
@@ -2800,10 +2813,10 @@ export async function createExpensePayable(input: {
     // Capital (retirada) só se move junto com o dinheiro: cria aqui quando o
     // título já nasce PAGO; se nascer pendente, a retirada é lançada na baixa
     // (markPayablePaid → syncPayableCapital), mantendo o farol consistente.
-    if (input.capitalBeneficiaryId && input.paid) {
+    if (capitalBeneficiaryId && input.paid) {
       await tx.capitalTransaction.create({
         data: {
-          beneficiaryId: input.capitalBeneficiaryId,
+          beneficiaryId: capitalBeneficiaryId,
           kind: "RETIRADA",
           amount: input.amount,
           date: input.paymentDate || input.dueDate,
