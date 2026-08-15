@@ -398,6 +398,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               canManage={canCustos}
               canOpenPayable={canOpenPayable}
               beneficiaries={costBeneficiaries}
+              attachedBeneficiaryId={vehicle.postSaleCapitalBeneficiaryId}
               costs={vehicle.costs.map((c) => ({
                 id: c.id,
                 description: c.description,

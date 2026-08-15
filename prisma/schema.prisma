@@ -462,6 +462,11 @@ model Vehicle {
   // "transferência" para acender o selo sozinho. Anexar o CRLV novo encerra o
   // processo (o selo vira "Transferido"), independentemente desta marca.
   transferInProgress Boolean     @default(false)
+  // Sócio ao qual o PÓS-VENDA do veículo está ATRELADO: enquanto marcado, toda
+  // despesa de pós-venda lançada no carro é custeada pelo capital deste sócio
+  // (aporte, Banco Neutro), sem tocar no caixa. Só vale com o carro VENDIDO;
+  // limpar volta ao custeio normal. String pura (sem FK), como capitalPayer.
+  postSaleCapitalBeneficiaryId String?
   status           StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
   published        Boolean       @default(false)

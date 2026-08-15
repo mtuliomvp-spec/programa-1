@@ -395,6 +395,42 @@ export async function setVehicleTransferInProgressAction(
   return { ok: true };
 }
 
+/**
+ * Atrela (ou desatrela) o PÓS-VENDA do veículo ao capital de um sócio: enquanto
+ * atrelado, todo custo de pós-venda lançado no carro é custeado pelo capital
+ * dele (aporte, Banco Neutro), sem passar pelo caixa. Só vale com o carro
+ * vendido; `beneficiaryId = null` desatrela (volta ao custeio normal).
+ */
+export async function setVehicleCostCapitalBeneficiaryAction(
+  vehicleId: string,
+  beneficiaryId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "custos");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const v = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { status: true } });
+  if (!v) return { ok: false, error: "Veículo não encontrado." };
+  if (v.status !== "VENDIDO") {
+    return { ok: false, error: "Só é possível atrelar um sócio ao pós-venda de um veículo já vendido." };
+  }
+  if (beneficiaryId) {
+    const b = await prisma.capitalBeneficiary.findUnique({
+      where: { id: beneficiaryId },
+      select: { active: true },
+    });
+    if (!b || !b.active) return { ok: false, error: "Sócio inválido ou inativo." };
+  }
+  await prisma.vehicle.update({
+    where: { id: vehicleId },
+    data: { postSaleCapitalBeneficiaryId: beneficiaryId },
+  });
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${vehicleId}`);
+  return { ok: true };
+}
+
 export async function lookupPlateAction(plate: string) {
   // Consulta externa (paga) por placa — usada no cadastro de veículo e nos
   // formulários de venda. Liberada a quem cadastra/edita veículo ou registra/
@@ -496,7 +532,17 @@ export async function addVehicleCostAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
-  const capitalBeneficiaryId = (data.capitalBeneficiaryId || "").trim() || null;
+  let capitalBeneficiaryId = (data.capitalBeneficiaryId || "").trim() || null;
+  // Veículo ATRELADO a um sócio: enquanto vendido e marcado, todo custo de
+  // pós-venda é SEMPRE custeado pelo capital dele (o vínculo do carro manda,
+  // acima do que veio do formulário).
+  const veic = await prisma.vehicle.findUnique({
+    where: { id: data.vehicleId },
+    select: { status: true, postSaleCapitalBeneficiaryId: true },
+  });
+  if (veic?.status === "VENDIDO" && veic.postSaleCapitalBeneficiaryId) {
+    capitalBeneficiaryId = veic.postSaleCapitalBeneficiaryId;
+  }
 
   try {
     await addVehicleCostWithPayable({

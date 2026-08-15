@@ -6,6 +6,7 @@ import {
   addVehicleCostAction,
   deleteVehicleCostAction,
   detachVehicleCostAction,
+  setVehicleCostCapitalBeneficiaryAction,
   type CostFormState,
 } from "../actions";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
@@ -40,6 +41,7 @@ export default function VehicleCosts({
   canManage = true,
   canOpenPayable = false,
   beneficiaries = [],
+  attachedBeneficiaryId = null,
 }: {
   vehicleId: string;
   costs: Cost[];
@@ -48,11 +50,34 @@ export default function VehicleCosts({
   canOpenPayable?: boolean;
   /** Sócios ativos: permitem custear um custo pós-venda pelo capital do sócio. */
   beneficiaries?: { id: string; name: string }[];
+  /** Sócio ao qual o pós-venda está ATRELADO (custeio automático), se houver. */
+  attachedBeneficiaryId?: string | null;
 }) {
   const [showForm, setShowForm] = useState(false);
   // Pós-venda custeado pelo capital de um sócio (só faz sentido com o carro
   // vendido): a despesa vira aporte do sócio, sem tocar no caixa.
   const [payFromCapital, setPayFromCapital] = useState(false);
+  // Vínculo persistente: enquanto atrelado a um sócio, TODO custo de pós-venda
+  // já entra custeado por ele (o servidor força isso; aqui é só o controle/aviso).
+  const [attachedId, setAttachedId] = useState<string | null>(attachedBeneficiaryId);
+  const [pickBeneficiary, setPickBeneficiary] = useState("");
+  const [attaching, startAttach] = useTransition();
+  const [attachError, setAttachError] = useState<string | null>(null);
+  const attachedName = beneficiaries.find((b) => b.id === attachedId)?.name ?? null;
+  const attached = Boolean(attachedId);
+
+  function setAttachment(next: string | null) {
+    setAttachError(null);
+    startAttach(async () => {
+      const r = await setVehicleCostCapitalBeneficiaryAction(vehicleId, next);
+      if (!r.ok) {
+        setAttachError(r.error || "Não foi possível salvar.");
+        return;
+      }
+      setAttachedId(next);
+      setPickBeneficiary("");
+    });
+  }
   const [expanded, setExpanded] = useState<string | null>(null);
   // Confirmação in-app (o window.confirm nativo é suprimido em navegadores de
   // celular/in-app, deixando o Excluir "morto").
@@ -250,6 +275,63 @@ export default function VehicleCosts({
       )}
 
       <div className={`border-t border-slate-100 px-5 py-4 ${canManage ? "" : "hidden"}`}>
+        {sold && beneficiaries.length > 0 ? (
+          <div className="mb-3 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+            {attached ? (
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-indigo-900">
+                  🔗 Pós-venda atrelado ao capital de <strong>{attachedName ?? "sócio"}</strong> — todo
+                  custo lançado aqui é custeado por ele (aporte, sem mexer no caixa).
+                </p>
+                {canManage ? (
+                  <button
+                    type="button"
+                    onClick={() => setAttachment(null)}
+                    disabled={attaching}
+                    className="text-xs text-slate-500 hover:underline disabled:opacity-50"
+                  >
+                    {attaching ? "..." : "desatrelar"}
+                  </button>
+                ) : null}
+              </div>
+            ) : (
+              <div className="flex flex-wrap items-end gap-2">
+                <div className="flex-1 min-w-[12rem]">
+                  <p className="mb-1 text-sm text-indigo-900">
+                    <strong>Atrelar o pós-venda ao capital de um sócio</strong> — enquanto atrelado,
+                    todo custo lançado no carro vira aporte dele (sem mexer no caixa).
+                  </p>
+                  {canManage ? (
+                    <Select
+                      value={pickBeneficiary}
+                      onChange={(e) => setPickBeneficiary(e.target.value)}
+                    >
+                      <option value="">Selecione o sócio</option>
+                      {beneficiaries.map((b) => (
+                        <option key={b.id} value={b.id}>
+                          {b.name}
+                        </option>
+                      ))}
+                    </Select>
+                  ) : null}
+                </div>
+                {canManage ? (
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => setAttachment(pickBeneficiary)}
+                    disabled={attaching || !pickBeneficiary}
+                  >
+                    {attaching ? "..." : "Atrelar"}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+            {attachError ? (
+              <p className="mt-2 text-sm font-medium text-rose-600">{attachError}</p>
+            ) : null}
+          </div>
+        ) : null}
         {sold && !showForm ? (
           <p className="mb-2 text-xs text-slate-500">
             Veículo vendido. Novos custos entram como <strong>pós-venda</strong> (não mexem na
@@ -278,13 +360,19 @@ export default function VehicleCosts({
               <Field label="Data" required>
                 <Input name="date" type="date" defaultValue={toDateInputValue(new Date())} required />
               </Field>
-              {!payFromCapital ? (
+              {!(payFromCapital || attached) ? (
                 <Field label="Parcelas (IPVA, multas...)">
                   <Input name="installments" type="number" min={1} max={60} defaultValue={1} />
                 </Field>
               ) : null}
             </div>
-            {sold && beneficiaries.length > 0 ? (
+            {attached ? (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
+                🔗 Este custo será custeado pelo capital de <strong>{attachedName ?? "sócio"}</strong>{" "}
+                (veículo atrelado): vira <strong>aporte</strong> dele, sem mexer no caixa. Para pagar
+                pelo caixa, desatrele o veículo acima.
+              </div>
+            ) : sold && beneficiaries.length > 0 ? (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
                 <label className="flex items-start gap-2 text-sm text-indigo-900">
                   <input
@@ -315,7 +403,7 @@ export default function VehicleCosts({
                 ) : null}
               </div>
             ) : null}
-            {!payFromCapital ? (
+            {!(payFromCapital || attached) ? (
               <label className="flex items-center gap-2 text-sm text-slate-700">
                 <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
                 Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)
