@@ -68,12 +68,18 @@ function crlvBadge(
   hasCrlv: boolean,
   year: string | null,
   transferStarted: boolean,
+  docOwnerIsOurs: boolean,
 ): { label: string; tone: "success" | "warning" | "info" } {
-  if (hasCrlv) {
-    const crlv = `CRLV${year ? ` ${year}` : ""}`;
-    return { label: transferStarted ? `✓ Transferido · ${crlv}` : `✓ ${crlv}`, tone: "success" };
-  }
+  const crlv = `CRLV${year ? ` ${year}` : ""}`;
+  // Documento JÁ no nome da loja/sócio → transferência concluída de fato. Ter
+  // CRLV anexado não basta: pode ser o do dono anterior (ex.: implantação de
+  // estoque com o CRLV antigo).
+  if (hasCrlv && docOwnerIsOurs) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
+  // Processo em aberto (marca manual ou custo de transferência) e ainda NÃO no
+  // nosso nome — mesmo com o CRLV do dono anterior anexado.
   if (transferStarted) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
+  // Tem CRLV, sem processo e sem confirmação de que está no nosso nome.
+  if (hasCrlv) return { label: `✓ ${crlv}`, tone: "success" };
   return { label: "⚠ CRLV pendente", tone: "warning" };
 }
 
@@ -308,7 +314,7 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
@@ -316,7 +322,7 @@ export default async function EstoquePage({
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
@@ -394,7 +400,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
+          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs).label}</Badge>
         </span>
         {v.hasAtpv ? (
           <span className="mt-1 block">
