@@ -190,7 +190,39 @@ export default function VehicleCosts({
                 </div>
               </div>
               {confirmingId === c.id ? (
-                c.payableId ? (
+                c.payableId && c.capitalBeneficiaryName ? (
+                  // Custo custeado pelo capital: excluir remove TUDO de uma vez
+                  // (custo + título + a retirada do capital do sócio). Não faz
+                  // sentido "remover do veículo mantendo o título" aqui.
+                  <div className="mt-2 space-y-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
+                    <p className="text-xs text-rose-700">
+                      Este custo é <strong>debitado do capital de {c.capitalBeneficiaryName}</strong>.
+                      Excluir desfaz tudo de uma vez: o custo, o título e a retirada do capital dele
+                      (se já paga, o valor volta ao caixa).
+                    </p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => {
+                          setConfirmingId(null);
+                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
+                        }}
+                        className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
+                      >
+                        {deleting ? "Excluindo..." : "Excluir (desfaz custo, título e retirada)"}
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => setConfirmingId(null)}
+                        className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                      >
+                        Voltar
+                      </button>
+                    </div>
+                  </div>
+                ) : c.payableId ? (
                   <div className="mt-2 space-y-2 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2">
                     <p className="text-xs text-rose-700">
                       Este custo tem uma <strong>conta a pagar vinculada</strong>. O que fazer com ela?
