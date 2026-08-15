@@ -37,7 +37,10 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
   }
 
   // Parcelamento informado ao comprador: obrigatório quando há parcelas.
-  if (d.paymentMethod !== "A_VISTA") {
+  // Exceção: financiamento por banco NÃO conveniado (sem conta de financeira),
+  // em que o comprador paga sob o contrato do banco.
+  const externalFin = d.paymentMethod === "FINANCIADO" && !d.financerAccountId;
+  if (d.paymentMethod !== "A_VISTA" && !externalFin) {
     if (!d.installmentsInfoCount || d.installmentsInfoCount < 1 || !d.installmentsInfoAmount || d.installmentsInfoAmount <= 0) {
       return { error: "Informe a quantidade e o valor das parcelas que o comprador vai pagar (para o contrato)." };
     }

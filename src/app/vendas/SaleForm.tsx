@@ -702,34 +702,43 @@ export default function SaleForm({
       ) : null}
 
       {paymentMethod === "PARCELADO" || paymentMethod === "FINANCIADO" ? (
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="mb-1 text-sm font-medium text-amber-900">Parcelamento informado ao comprador</p>
-          <p className="mb-3 text-xs text-amber-800">
-            Consta no contrato para evitar contestação futura. Informe exatamente como o comprador vai
-            pagar (na loja ou no banco).
-          </p>
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Nº de parcelas" required>
-              <Input
-                type="number"
-                min={1}
-                name="installmentsInfoCount"
-                defaultValue={initial?.installmentsInfoCount || ""}
-                required
-              />
-            </Field>
-            <Field label="Valor da parcela (R$)" required>
-              <Input
-                type="number"
-                step="0.01"
-                min={0.01}
-                name="installmentsInfoAmount"
-                defaultValue={initial?.installmentsInfoAmount || ""}
-                required
-              />
-            </Field>
-          </div>
-        </div>
+        (() => {
+          // Financiamento por banco NÃO conveniado: o comprador paga direto ao
+          // banco, sob o contrato dele — o parcelamento informado pela loja não
+          // se aplica, então deixa de ser obrigatório (segue opcional).
+          const parcelamentoOpcional = paymentMethod === "FINANCIADO" && externalFinancer;
+          return (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+              <p className="mb-1 text-sm font-medium text-amber-900">Parcelamento informado ao comprador</p>
+              <p className="mb-3 text-xs text-amber-800">
+                {parcelamentoOpcional
+                  ? "Opcional: o financiamento é por banco/financeira não conveniado — o comprador paga sob o contrato do banco. Preencha só se quiser que conste no contrato da loja."
+                  : "Consta no contrato para evitar contestação futura. Informe exatamente como o comprador vai pagar (na loja ou no banco)."}
+              </p>
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Nº de parcelas" required={!parcelamentoOpcional}>
+                  <Input
+                    type="number"
+                    min={1}
+                    name="installmentsInfoCount"
+                    defaultValue={initial?.installmentsInfoCount || ""}
+                    required={!parcelamentoOpcional}
+                  />
+                </Field>
+                <Field label="Valor da parcela (R$)" required={!parcelamentoOpcional}>
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min={0.01}
+                    name="installmentsInfoAmount"
+                    defaultValue={initial?.installmentsInfoAmount || ""}
+                    required={!parcelamentoOpcional}
+                  />
+                </Field>
+              </div>
+            </div>
+          );
+        })()
       ) : null}
 
       {sinal > 0 ? (
