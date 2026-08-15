@@ -212,7 +212,26 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       ])
     : [[], [], []];
 
-  const extraCosts = vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
+  // Custos custeados pelo capital de um sócio ficam FORA do custo/margem do carro
+  // (são do sócio, dono do resultado — viram retirada, não custo da loja). Eles
+  // seguem visíveis na lista de custos, sinalizados.
+  const extraCosts = vehicle.costs
+    .filter((c) => !c.capitalBeneficiaryId)
+    .reduce((sum, c) => sum + c.amount, 0);
+  // Nome do sócio de cada custo custeado pelo capital (para o selo na lista).
+  const costCapitalIds = [
+    ...new Set(vehicle.costs.map((c) => c.capitalBeneficiaryId).filter((x): x is string => !!x)),
+  ];
+  const costCapitalNames = costCapitalIds.length
+    ? new Map(
+        (
+          await prisma.capitalBeneficiary.findMany({
+            where: { id: { in: costCapitalIds } },
+            select: { id: true, name: true },
+          })
+        ).map((b) => [b.id, b.name]),
+      )
+    : new Map<string, string>();
   // Consignado: o custo do negócio é o valor acertado com o proprietário (o carro
   // não é comprado, purchasePrice 0). Os custos adicionais entram igual ao próprio.
   const sold = vehicle.status === "VENDIDO" && vehicle.sale?.status === "CONCLUIDA";
@@ -411,6 +430,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 payableId: c.payable?.id ?? null,
                 payableStatus: c.payable
                   ? effectivePayableStatus(c.payable.status, c.payable.dueDate)
+                  : null,
+                capitalBeneficiaryName: c.capitalBeneficiaryId
+                  ? costCapitalNames.get(c.capitalBeneficiaryId) ?? "sócio"
                   : null,
                 duplicateSuspect: duplicateIds.has(c.id),
                 // Órfão: custo gerado por solicitação de compra ("Compra NNNN/AAAA…")

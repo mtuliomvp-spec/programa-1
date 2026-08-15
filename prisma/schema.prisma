@@ -572,6 +572,10 @@ model VehicleCost {
   // Custo lançado depois que o veículo já foi vendido (pós-venda): não entra na
   // margem da venda, aparece à parte no Lucro/Prejuízo e no prontuário.
   postSale    Boolean               @default(false)
+  // Custo custeado pelo CAPITAL de um sócio (veículo atrelado a ele): o título
+  // vira RETIRADA do capital do sócio e NÃO conta como despesa/pós-venda da
+  // empresa (é custo do sócio, dono do resultado do carro). String pura, sem FK.
+  capitalBeneficiaryId String?
   notes       String?
   payableId   String?               @unique
   payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)

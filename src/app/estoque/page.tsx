@@ -114,7 +114,7 @@ export default async function EstoquePage({
         include: {
           // Descrição junto: detecta o custo de transferência (DETRAN) para o
           // selo "Processo de transferência em aberto".
-          costs: { select: { amount: true, description: true } },
+          costs: { select: { amount: true, description: true, capitalBeneficiaryId: true } },
           // description junto: uma conta a pagar com "transferência" (pagamento
           // ao despachante) também acende o selo "em processo de transferência".
           payables: { select: { amount: true, status: true, description: true } },
@@ -197,7 +197,11 @@ export default async function EstoquePage({
         .filter(Boolean)
         .sort()
         .at(-1) ?? null,
-    invested: v.purchasePrice + v.costs.reduce((sum, c) => sum + c.amount, 0),
+    // Custos custeados pelo capital de um sócio ficam de fora do "investido" da
+    // loja (são do sócio, dono do resultado do carro).
+    invested:
+      v.purchasePrice +
+      v.costs.filter((c) => !c.capitalBeneficiaryId).reduce((sum, c) => sum + c.amount, 0),
     // Custo real = tudo o que já foi efetivamente PAGO por esse veículo
     // (aquisição + manutenção/custos), pela conta financeira.
     paidCost: v.payables.filter((p) => p.status === "PAGO").reduce((s, p) => s + p.amount, 0),

@@ -24,6 +24,9 @@ type Cost = {
   notes?: string | null;
   payableId?: string | null;
   payableStatus?: "PENDENTE" | "PAGO" | "ATRASADO" | null;
+  // Custo custeado pelo capital de um sócio: vira retirada do capital dele e não
+  // conta como pós-venda/despesa da loja. Nome do sócio (para o selo).
+  capitalBeneficiaryName?: string | null;
   // Outro custo deste veículo tem o MESMO valor — possível lançamento em dobro.
   duplicateSuspect?: boolean;
   // Custo de solicitação de compra cuja solicitação/título foram excluídos na
@@ -129,7 +132,11 @@ export default function VehicleCosts({
                   <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
                     {formatDate(c.date)}
                     <Badge>{VEHICLE_COST_CATEGORY_LABEL[c.category]}</Badge>
-                    {c.postSale ? <Badge tone="danger">Pós-venda</Badge> : null}
+                    {c.capitalBeneficiaryName ? (
+                      <Badge tone="info">🔗 Capital: {c.capitalBeneficiaryName}</Badge>
+                    ) : c.postSale ? (
+                      <Badge tone="danger">Pós-venda</Badge>
+                    ) : null}
                     {c.payableStatus === "PENDENTE" || c.payableStatus === "ATRASADO" ? (
                       <Badge tone={c.payableStatus === "ATRASADO" ? "danger" : "warning"}>
                         {c.payableStatus === "ATRASADO" ? "Pagamento atrasado" : "A pagar"}
@@ -280,8 +287,9 @@ export default function VehicleCosts({
             {attached ? (
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm text-indigo-900">
-                  🔗 Pós-venda atrelado ao capital de <strong>{attachedName ?? "sócio"}</strong> — todo
-                  custo lançado aqui é custeado por ele (aporte, sem mexer no caixa).
+                  🔗 Custos atrelados ao capital de <strong>{attachedName ?? "sócio"}</strong> — todo
+                  custo lançado aqui é <strong>debitado do capital dele</strong> (vira retirada) e não
+                  conta como pós-venda da loja.
                 </p>
                 {canManage ? (
                   <button
@@ -298,8 +306,9 @@ export default function VehicleCosts({
               <div className="flex flex-wrap items-end gap-2">
                 <div className="flex-1 min-w-[12rem]">
                   <p className="mb-1 text-sm text-indigo-900">
-                    <strong>Atrelar o pós-venda ao capital de um sócio</strong> — enquanto atrelado,
-                    todo custo lançado no carro vira aporte dele (sem mexer no caixa).
+                    <strong>Atrelar os custos ao capital de um sócio</strong> — enquanto atrelado,
+                    todo custo lançado no carro é <strong>debitado do capital dele</strong> (retirada),
+                    em vez de entrar como pós-venda da loja.
                   </p>
                   {canManage ? (
                     <Select
@@ -333,10 +342,18 @@ export default function VehicleCosts({
           </div>
         ) : null}
         {sold && !showForm ? (
-          <p className="mb-2 text-xs text-slate-500">
-            Veículo vendido. Novos custos entram como <strong>pós-venda</strong> (não mexem na
-            margem da venda; aparecem no Lucro/Prejuízo como pós-venda).
-          </p>
+          attached ? (
+            <p className="mb-2 text-xs text-slate-500">
+              Veículo vendido e atrelado ao capital de <strong>{attachedName ?? "um sócio"}</strong>.
+              Novos custos são <strong>debitados do capital dele</strong> (retirada) — não entram no
+              Lucro/Prejuízo como pós-venda.
+            </p>
+          ) : (
+            <p className="mb-2 text-xs text-slate-500">
+              Veículo vendido. Novos custos entram como <strong>pós-venda</strong> (não mexem na
+              margem da venda; aparecem no Lucro/Prejuízo como pós-venda).
+            </p>
+          )
         ) : null}
         {showForm ? (
           <form action={formAction} className="space-y-3">
@@ -368,9 +385,9 @@ export default function VehicleCosts({
             </div>
             {attached ? (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-sm text-indigo-900">
-                🔗 Este custo será custeado pelo capital de <strong>{attachedName ?? "sócio"}</strong>{" "}
-                (veículo atrelado): vira <strong>aporte</strong> dele, sem mexer no caixa. Para pagar
-                pelo caixa, desatrele o veículo acima.
+                🔗 Este custo será <strong>debitado do capital de {attachedName ?? "sócio"}</strong>{" "}
+                (veículo atrelado): vira uma <strong>retirada</strong> dele e não conta como pós-venda
+                da loja. Para voltar ao normal, desatrele o veículo acima.
               </div>
             ) : sold && beneficiaries.length > 0 ? (
               <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
@@ -382,9 +399,9 @@ export default function VehicleCosts({
                     className="mt-0.5 h-4 w-4 rounded border-slate-300"
                   />
                   <span>
-                    <strong>Pagar com o capital de um sócio</strong> — o sócio bancou esta despesa
-                    com recurso próprio. Ela entra no resultado como pós-venda e vira{" "}
-                    <strong>aporte</strong> do sócio (sem mexer no caixa da loja).
+                    <strong>Debitar do capital de um sócio</strong> — este custo é do sócio (dono do
+                    resultado do carro): vira uma <strong>retirada</strong> do capital dele e não
+                    conta como pós-venda da loja.
                   </span>
                 </label>
                 {payFromCapital ? (
@@ -403,12 +420,12 @@ export default function VehicleCosts({
                 ) : null}
               </div>
             ) : null}
-            {!(payFromCapital || attached) ? (
-              <label className="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
-                Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)
-              </label>
-            ) : null}
+            <label className="flex items-center gap-2 text-sm text-slate-700">
+              <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
+              {payFromCapital || attached
+                ? "Já paguei no ato (debita o capital do sócio agora; senão, fica como conta a pagar do capital e debita quando for paga)"
+                : "Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)"}
+            </label>
             {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
             <div className="flex gap-2">
               <Button type="submit" disabled={pending}>
