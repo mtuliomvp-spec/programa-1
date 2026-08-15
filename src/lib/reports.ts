@@ -189,7 +189,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       (sum, s) =>
         sum +
         s.vehicle.purchasePrice +
-        s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+        // Custos custeados pelo capital de um sócio ficam de fora (são do sócio,
+        // dono do resultado do carro — viram retirada, não custo da loja).
+        s.vehicle.costs.filter((c) => !c.capitalBeneficiaryId).reduce((cs, c) => cs + c.amount, 0) +
         // Consignado: o valor devolvido ao proprietário é custo da venda (o carro
         // não é patrimônio comprado, então purchasePrice é 0). Reconhecido por
         // competência aqui — o destino (conta a pagar ou aporte) não muda o custo.
@@ -380,6 +382,9 @@ async function profitLossStatement(
     prisma.vehicleCost.findMany({
       where: {
         postSale: true,
+        // Custo custeado pelo capital de um sócio não é despesa da loja (vira
+        // retirada do sócio) — fica fora do Lucro/Prejuízo.
+        capitalBeneficiaryId: null,
         OR: [
           { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
           { cardItem: { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } } },
@@ -841,7 +846,11 @@ export async function getVehicleProfitReport(): Promise<VehicleProfitRow[]> {
   });
 
   return sales.map((s) => {
-    const extraCosts = s.vehicle.costs.reduce((sum, c) => sum + c.amount, 0);
+    // Custos custeados pelo capital de um sócio ficam fora do lucro do carro
+    // (são do sócio — viram retirada, não custo da loja).
+    const extraCosts = s.vehicle.costs
+      .filter((c) => !c.capitalBeneficiaryId)
+      .reduce((sum, c) => sum + c.amount, 0);
     const r = computeVehicleSaleResult({
       purchasePrice: s.vehicle.purchasePrice,
       extraCosts,
@@ -1071,7 +1080,8 @@ export async function getPerformanceStats() {
   const profitThisMonth = monthSales.reduce((sum, s) => {
     const cost =
       s.vehicle.purchasePrice +
-      s.vehicle.costs.reduce((cs, c) => cs + c.amount, 0) +
+      // Custos custeados pelo capital de um sócio ficam de fora (são do sócio).
+      s.vehicle.costs.filter((c) => !c.capitalBeneficiaryId).reduce((cs, c) => cs + c.amount, 0) +
       // Consignado: devolução ao proprietário é custo da venda.
       (s.ownerRefundAmount || 0);
     return sum + (s.totalAmount - cost);
