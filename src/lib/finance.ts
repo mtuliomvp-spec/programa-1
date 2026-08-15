@@ -820,15 +820,22 @@ export async function addPartStockWithPayable(input: {
  * veículo (sem venda). Quando a venda for fechada, esse valor é abatido
  * automaticamente do que o cliente tem a pagar.
  */
-export async function receiveVehicleAdvance(input: {
+/**
+ * REGISTRA um sinal / entrada antecipada como PENDENTE (aguardando crédito): o
+ * vendedor informa o valor, a conta em que o cliente depositou e a data do
+ * depósito. Ainda NÃO entra no caixa — o dinheiro só é creditado quando o caixa
+ * for aberto na data do depósito e alguém confirmar (creditVehicleAdvance). Um
+ * recebível PENDENTE com veículo e sem venda é neutro na equação/caixa.
+ */
+export async function registerVehicleAdvance(input: {
   vehicleId: string;
   amount: number;
-  date: Date;
-  accountId?: string | null;
+  depositDate: Date;
+  accountId: string;
   customerId?: string | null;
+  proofAttachmentId?: string | null;
   notes?: string | null;
 }) {
-  const accountId = input.accountId ?? (await getDefaultAccountId());
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: input.vehicleId } });
   return prisma.receivable.create({
@@ -836,16 +843,35 @@ export async function receiveVehicleAdvance(input: {
       description: `Sinal / entrada antecipada - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
       category: "VENDA_VEICULO",
       amount: input.amount,
-      dueDate: input.date,
-      receivedDate: input.date,
-      status: "RECEBIDO",
+      // Vencimento = data do depósito (é quando o valor "existe"); o crédito no
+      // caixa acontece na baixa, com a data de trabalho do caixa.
+      dueDate: input.depositDate,
+      status: "PENDENTE",
       customerId: input.customerId || null,
       vehicleId: input.vehicleId,
-      accountId,
+      accountId: input.accountId,
       costCenterId: veiculosCenterId,
+      proofAttachmentId: input.proofAttachmentId || null,
       notes: input.notes || null,
     },
   });
+}
+
+/**
+ * CREDITA um sinal pendente: baixa o recebível na conta indicada, com a data de
+ * trabalho do caixa (`creditDate`). A partir daí segue o fluxo normal do sinal
+ * (abatido do cliente no fechamento da venda). Só credita sinal PENDENTE ligado
+ * a um veículo e ainda sem venda.
+ */
+export async function creditVehicleAdvance(receivableId: string, creditDate: Date) {
+  const r = await prisma.receivable.findUniqueOrThrow({
+    where: { id: receivableId },
+    select: { status: true, vehicleId: true, saleId: true, accountId: true },
+  });
+  if (r.status !== "PENDENTE") throw new Error("Este sinal já foi creditado.");
+  if (!r.vehicleId || r.saleId) throw new Error("Este título não é um sinal pendente.");
+  const accountId = r.accountId ?? (await getDefaultAccountId());
+  await markReceivableReceived(receivableId, creditDate, accountId);
 }
 
 /**
