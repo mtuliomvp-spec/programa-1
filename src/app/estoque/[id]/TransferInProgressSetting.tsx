@@ -70,7 +70,8 @@ export default function TransferInProgressSetting({
       )}
       {hasCrlv ? (
         <p className="mt-2 text-xs text-slate-400">
-          Este veículo já tem CRLV anexado — na lista ele aparece como “Transferido”.
+          Quando o CRLV anexado estiver no nome da loja/sócio, a lista passa a mostrar
+          “Transferido”. Enquanto estiver no nome do dono anterior, segue “em processo”.
         </p>
       ) : null}
       {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}
