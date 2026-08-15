@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { formatDate } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { openCashboxAction, closeCashboxAction, revertCashboxAction } from "./actions";
+import { creditVehicleAdvanceAction } from "@/app/estoque/actions";
 
 type Session = {
   id: string;
@@ -11,6 +12,15 @@ type Session = {
   openedBy: string | null;
   closedAt: Date | null;
   closedBy: string | null;
+};
+
+type PendingAdvance = {
+  id: string;
+  amount: number;
+  depositDate: Date;
+  accountName: string | null;
+  vehicleLabel: string | null;
+  customerName: string | null;
 };
 
 function todayInput(): string {
@@ -29,11 +39,14 @@ export default function CashboxCard({
   session,
   history,
   canManage = true,
+  pendingAdvances = [],
 }: {
   open: boolean;
   session: Session | null;
   history: Session[];
   canManage?: boolean;
+  /** Sinais aguardando crédito cuja data de depósito já chegou. */
+  pendingAdvances?: PendingAdvance[];
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +54,16 @@ export default function CashboxCard({
   const [workDate, setWorkDate] = useState(todayInput());
   const [reverting, startRevert] = useTransition();
   const [revertMsg, setRevertMsg] = useState<string | null>(null);
+  const [crediting, startCredit] = useTransition();
+  const [creditError, setCreditError] = useState<string | null>(null);
+
+  function doCredit(id: string) {
+    setCreditError(null);
+    startCredit(async () => {
+      const r = await creditVehicleAdvanceAction(id);
+      if (!r.ok) setCreditError(r.error || "Não foi possível creditar o sinal.");
+    });
+  }
 
   // Reabrir = a última sessão está fechada e é do MESMO dia selecionado.
   const lastDay = session ? new Date(session.workDate).toISOString().slice(0, 10) : null;
@@ -189,6 +212,49 @@ export default function CashboxCard({
 
         {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}
         {revertMsg ? <p className="mt-2 text-sm font-medium text-emerald-700">{revertMsg}</p> : null}
+
+        {open && pendingAdvances.length > 0 ? (
+          <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+            <p className="text-sm font-semibold text-amber-900">
+              💰 Sinais / entradas antecipadas aguardando crédito
+            </p>
+            <p className="mt-0.5 text-xs text-amber-800">
+              O cliente depositou (data já chegada) e o valor ainda não entrou no caixa. Confira e
+              credite o que confirmar — entra na conta indicada, na data de trabalho de hoje.
+            </p>
+            <ul className="mt-2 space-y-1.5">
+              {pendingAdvances.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-amber-200 bg-white px-3 py-2"
+                >
+                  <div className="min-w-0 text-sm text-slate-700">
+                    <span className="font-semibold text-slate-900">{formatCurrency(a.amount)}</span>
+                    {a.accountName ? <> · {a.accountName}</> : null}
+                    {a.vehicleLabel ? <> · {a.vehicleLabel}</> : null}
+                    {a.customerName ? <> · {a.customerName}</> : null}
+                    <span className="block text-xs text-slate-500">
+                      Depósito em {formatDate(a.depositDate)}
+                    </span>
+                  </div>
+                  {canManage ? (
+                    <button
+                      type="button"
+                      onClick={() => doCredit(a.id)}
+                      disabled={crediting}
+                      className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
+                    >
+                      {crediting ? "Creditando..." : "Creditar"}
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+            {creditError ? (
+              <p className="mt-2 text-sm font-medium text-rose-600">{creditError}</p>
+            ) : null}
+          </div>
+        ) : null}
 
         {showHistory ? (
           <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">

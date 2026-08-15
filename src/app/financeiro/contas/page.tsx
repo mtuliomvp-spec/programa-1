@@ -84,6 +84,41 @@ export default async function ContasPage({
   ]);
   const ownerByAccount = new Map(owners.map((o) => [o.id, o.ownerBeneficiary?.name ?? null]));
 
+  // Sinais/entradas antecipadas aguardando crédito cuja data de depósito já
+  // chegou (<= data de trabalho do caixa aberto): viram um aviso para creditar.
+  const pendingAdvancesRaw =
+    cashbox.open && cashbox.session
+      ? await prisma.receivable.findMany({
+          where: {
+            status: "PENDENTE",
+            saleId: null,
+            vehicleId: { not: null },
+            category: "VENDA_VEICULO",
+            dueDate: { lte: cashbox.session.workDate },
+            // Só veículo ainda em estoque: o abatimento do sinal na venda usa
+            // recebíveis já RECEBIDOS, então creditar depois de vendido ficaria
+            // solto (sem casar com a venda). Fica pendente até ser tratado.
+            vehicle: { status: { not: "VENDIDO" } },
+          },
+          include: {
+            vehicle: { select: { brand: true, model: true, plate: true } },
+            account: { select: { name: true } },
+            customer: { select: { name: true } },
+          },
+          orderBy: { dueDate: "asc" },
+        })
+      : [];
+  const pendingAdvances = pendingAdvancesRaw.map((r) => ({
+    id: r.id,
+    amount: r.amount,
+    depositDate: r.dueDate,
+    accountName: r.account?.name ?? null,
+    vehicleLabel: r.vehicle
+      ? `${r.vehicle.brand} ${r.vehicle.model} · ${r.vehicle.plate}`
+      : null,
+    customerName: r.customer?.name ?? null,
+  }));
+
   const canContas = await userCan("financeiro", "contas");
   const active = accounts.filter((a) => a.active);
   // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
@@ -157,7 +192,13 @@ export default async function ContasPage({
 
       {/* data-no-pdf: fora do PDF "Contas e caixas", que traz só o saldo das contas. */}
       <div data-no-pdf>
-        <CashboxCard open={cashbox.open} session={cashbox.session} history={cashboxHistory} canManage={canContas} />
+        <CashboxCard
+          open={cashbox.open}
+          session={cashbox.session}
+          history={cashboxHistory}
+          canManage={canContas}
+          pendingAdvances={pendingAdvances}
+        />
         <BooksHealthChecks health={health} />
       </div>
 

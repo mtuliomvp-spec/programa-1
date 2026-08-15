@@ -204,9 +204,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         getActiveAccounts(),
         prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
         prisma.receivable.findMany({
-          where: { vehicleId: id, saleId: null, status: "RECEBIDO" },
+          // Sinais/entradas antecipadas: pendentes (aguardando crédito) e já creditados.
+          where: { vehicleId: id, saleId: null, status: { in: ["PENDENTE", "RECEBIDO"] } },
           include: { account: { select: { name: true } }, customer: { select: { name: true } } },
-          orderBy: { receivedDate: "desc" },
+          orderBy: { createdAt: "desc" },
         }),
       ])
     : [[], [], []];
@@ -437,9 +438,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 advances={advances.map((r) => ({
                   id: r.id,
                   amount: r.amount,
+                  // Pendente: mostra a data do depósito (dueDate); creditado: a data do crédito.
                   date: r.receivedDate ?? r.dueDate,
                   accountName: r.account?.name ?? null,
                   customerName: r.customer?.name ?? null,
+                  status: r.status === "RECEBIDO" ? ("RECEBIDO" as const) : ("PENDENTE" as const),
+                  proofAttachmentId: r.proofAttachmentId,
                 }))}
               />
             </Card>

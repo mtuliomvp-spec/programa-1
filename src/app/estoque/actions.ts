@@ -9,7 +9,8 @@ import {
   createVehicleWithPayable,
   deleteVehicleCost,
   detachVehicleCost,
-  receiveVehicleAdvance,
+  registerVehicleAdvance,
+  creditVehicleAdvance,
 } from "@/lib/finance";
 import {
   chassiOrNull,
@@ -19,7 +20,8 @@ import {
   isChassiComplete,
 } from "@/lib/vehicle-doc";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseDebtItems } from "@/lib/vehicle-debts";
@@ -29,49 +31,170 @@ import { structuralCenterId } from "@/lib/structural";
 const advanceSchema = z.object({
   vehicleId: z.string().min(1),
   amount: z.coerce.number().min(0.01, "Informe o valor do sinal"),
+  // Data em que o cliente fez o depósito (não a data do caixa).
   date: z.string().min(1),
-  accountId: z.string().optional(),
+  accountId: z.string().min(1, "Indique a conta em que o cliente depositou"),
   customerId: z.string().optional(),
 });
 
 export type AdvanceFormState = { error?: string; success?: string };
 
-export async function receiveVehicleAdvanceAction(
+/**
+ * REGISTRA o sinal / entrada antecipada (não credita ainda). O vendedor informa
+ * valor, a conta do depósito, a data do depósito e, opcionalmente, o comprovante.
+ * Fica PENDENTE — não entra no caixa e não exige caixa aberto. O crédito é feito
+ * depois, ao abrir o caixa na data do depósito (creditVehicleAdvanceAction).
+ */
+export async function registerVehicleAdvanceAction(
   _prev: AdvanceFormState,
   formData: FormData,
 ): Promise<AdvanceFormState> {
   try {
     await assertCan("estoque", "editar");
-    await assertBooksBalanced();
-    await assertCashboxOpen();
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const parsed = advanceSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+
+  const account = await prisma.financialAccount.findUnique({
+    where: { id: d.accountId },
+    select: { id: true, isInvestment: true, active: true },
+  });
+  if (!account || account.isInvestment) {
+    return { error: "Escolha uma conta válida (contas de Aplicação não recebem sinal)." };
+  }
+
+  // Comprovante do depósito (opcional): guardado como anexo do veículo e servido
+  // por /anexos/[id]. O id fica no recebível (proofAttachmentId).
+  let proofAttachmentId: string | null = null;
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return { error: "Comprovante muito grande (máximo 15 MB)." };
+    }
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const att = await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId: d.vehicleId,
+        kind: "DOCUMENTO",
+        description: "Comprovante de sinal / entrada antecipada",
+        filename: file.name || "comprovante",
+        mimeType: file.type || "application/octet-stream",
+        size: file.size,
+        data: buffer,
+      },
+    });
+    proofAttachmentId = att.id;
+  }
+
   try {
-    await receiveVehicleAdvance({
+    await registerVehicleAdvance({
       vehicleId: d.vehicleId,
       amount: d.amount,
-      date: parseDateInput(d.date),
-      accountId: d.accountId || null,
+      depositDate: parseDateInput(d.date),
+      accountId: d.accountId,
       customerId: d.customerId || null,
+      proofAttachmentId,
     });
   } catch {
-    return { error: "Não foi possível receber o sinal." };
+    // Não deixa o comprovante órfão se a gravação do recebível falhar.
+    if (proofAttachmentId) {
+      await prisma.vehicleAttachment.delete({ where: { id: proofAttachmentId } }).catch(() => {});
+    }
+    return { error: "Não foi possível registrar o sinal." };
   }
   revalidatePath(`/estoque/${d.vehicleId}`);
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/");
-  return { success: "Sinal recebido." };
+  return { success: "Sinal registrado. Será creditado ao abrir o caixa na data do depósito." };
+}
+
+/**
+ * CREDITA um sinal pendente: baixa o recebível na conta indicada, com a data de
+ * trabalho do caixa. Exige caixa aberto e a data de trabalho igual ou posterior
+ * à data do depósito (o dinheiro não pode entrar antes de ter sido depositado).
+ */
+export async function creditVehicleAdvanceAction(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    // Quem opera o caixa (financeiro.contas) ou quem registrou o sinal
+    // (estoque.editar) pode confirmar o crédito.
+    await assertCanAny([
+      ["financeiro", "contas"],
+      ["estoque", "editar"],
+    ]);
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
+  const workDate = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(workDate);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+  const r = await prisma.receivable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      vehicleId: true,
+      saleId: true,
+      dueDate: true,
+      vehicle: { select: { status: true } },
+    },
+  });
+  if (!r || r.status !== "PENDENTE" || !r.vehicleId || r.saleId) {
+    return { ok: false, error: "Sinal pendente não encontrado." };
+  }
+  // Veículo já vendido: o sinal deveria ter sido creditado antes da venda (o
+  // fechamento abate só sinais já recebidos). Creditar solto desequilibraria o
+  // farol — não permitir por aqui.
+  if (r.vehicle?.status === "VENDIDO") {
+    return {
+      ok: false,
+      error: "O veículo já foi vendido. Este sinal pendente deve ser tratado na venda, não creditado avulso.",
+    };
+  }
+  // Não creditar antes do dia do depósito (o valor só existe a partir dele).
+  const dayKey = (x: Date) => x.toISOString().slice(0, 10);
+  if (dayKey(workDate) < dayKey(r.dueDate)) {
+    const label = r.dueDate.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+    return {
+      ok: false,
+      error: `O depósito é do dia ${label}. Abra o caixa nessa data (ou depois) para creditar o sinal.`,
+    };
+  }
+  try {
+    await creditVehicleAdvance(id, workDate);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível creditar o sinal." };
+  }
+  revalidatePath(`/estoque/${r.vehicleId}`);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: true };
 }
 
 export async function deleteVehicleAdvanceAction(id: string, vehicleId: string) {
   await assertCan("estoque", "editar");
-  // Só remove sinal ainda não vinculado a uma venda.
-  await prisma.receivable.deleteMany({ where: { id, saleId: null, vehicleId } });
+  // Só remove sinal ainda não vinculado a uma venda (pendente ou já creditado —
+  // creditado, deletar estorna o valor da conta, pois o saldo é derivado).
+  const r = await prisma.receivable.findFirst({
+    where: { id, saleId: null, vehicleId },
+    select: { id: true, proofAttachmentId: true },
+  });
+  if (!r) return;
+  await prisma.receivable.delete({ where: { id: r.id } });
+  if (r.proofAttachmentId) {
+    await prisma.vehicleAttachment.delete({ where: { id: r.proofAttachmentId } }).catch(() => {});
+  }
   revalidatePath(`/estoque/${vehicleId}`);
   revalidatePath("/financeiro/contas");
   revalidatePath("/");
