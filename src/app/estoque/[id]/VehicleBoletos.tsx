@@ -39,11 +39,11 @@ function amountsInText(text: string): number[] {
 }
 
 /**
- * Status de pagamento de um boleto: casa os valores lidos na descrição do anexo
- * com os títulos de débitos/quitação do veículo (por valor). Um título já usado
- * não casa de novo (dois boletos de mesmo valor → dois títulos distintos).
- * "pago" quando todos os valores casados estão pagos; "parcial" quando só
- * alguns; "pendente" quando nenhum; null quando não achou título (sem badge).
+ * Status de pagamento de um boleto. Um boleto anexado é, por definição, algo a
+ * PAGAR — então o padrão é "A pagar". Só marca "Pago" quando há prova: um
+ * título de débitos/quitação JÁ BAIXADO cujo valor casa com o do boleto (cada
+ * título pago casa uma vez só). Cobre parte dos valores → "n/m pagos".
+ * Sem valor legível na descrição → sem selo.
  */
 function statusBoleto(
   description: string,
@@ -51,20 +51,20 @@ function statusBoleto(
 ): { label: string; tone: "success" | "warning" | "info" } | null {
   const valores = amountsInText(description);
   if (!valores.length) return null;
-  const disponiveis = titulos.map((t) => ({ ...t, usado: false }));
-  let casados = 0;
-  let pagos = 0;
+  const pagos = titulos.filter((t) => t.paid).map((t) => ({ ...t, usado: false }));
+  let pagosCasados = 0;
   for (const v of valores) {
-    const t = disponiveis.find((x) => !x.usado && Math.abs(x.amount - v) <= 0.005);
-    if (!t) continue;
-    t.usado = true;
-    casados++;
-    if (t.paid) pagos++;
+    const t = pagos.find((x) => !x.usado && Math.abs(x.amount - v) <= 0.005);
+    if (t) {
+      t.usado = true;
+      pagosCasados++;
+    }
   }
-  if (!casados) return null;
-  if (pagos === casados) return { label: casados > 1 ? "✓ Pagos" : "✓ Pago", tone: "success" };
-  if (pagos > 0) return { label: `${pagos}/${casados} pagos`, tone: "info" };
-  return { label: "A pagar", tone: "warning" };
+  if (pagosCasados === 0) return { label: "A pagar", tone: "warning" };
+  if (pagosCasados === valores.length) {
+    return { label: valores.length > 1 ? "✓ Pagos" : "✓ Pago", tone: "success" };
+  }
+  return { label: `${pagosCasados}/${valores.length} pagos`, tone: "info" };
 }
 
 /**
