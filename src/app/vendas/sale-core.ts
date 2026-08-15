@@ -193,8 +193,11 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
   }
 
   // Parcelamento informado ao comprador: obrigatório quando há parcelas (não à
-  // vista), para o contrato registrar quantas parcelas e de que valor.
-  if (d.paymentMethod !== "A_VISTA") {
+  // vista), para o contrato registrar quantas parcelas e de que valor. Exceção:
+  // financiamento por banco NÃO conveniado (sem conta de financeira) — o
+  // comprador paga sob o contrato do banco, então é opcional.
+  const externalFin = d.paymentMethod === "FINANCIADO" && !d.financerAccountId;
+  if (d.paymentMethod !== "A_VISTA" && !externalFin) {
     if (!d.installmentsInfoCount || d.installmentsInfoCount < 1 || !d.installmentsInfoAmount || d.installmentsInfoAmount <= 0) {
       throw new Error("Informe a quantidade e o valor das parcelas que o comprador vai pagar (para o contrato).");
     }
