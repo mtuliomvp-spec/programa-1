@@ -668,6 +668,19 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                     p.description.startsWith("Débitos do veículo (repasse)"),
                 )?.amount ?? null
               }
+              // Títulos gerados por boletos (débitos e quitação) — para mostrar,
+              // ao lado de cada boleto, se ele já foi PAGO (casa por valor).
+              debitoTitulos={vehicle.payables
+                .filter(
+                  (p) =>
+                    p.category === "COMPRA_VEICULO" &&
+                    (p.description.startsWith("Débitos do veículo") ||
+                      p.description.startsWith("Quitação do financiamento")),
+                )
+                .map((p) => ({
+                  amount: p.amount,
+                  paid: effectivePayableStatus(p.status, p.dueDate) === "PAGO",
+                }))}
             />
           </Card>
 

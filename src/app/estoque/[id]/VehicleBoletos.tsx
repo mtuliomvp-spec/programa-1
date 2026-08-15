@@ -26,6 +26,47 @@ function humanSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+type Titulo = { amount: number; paid: boolean };
+
+/** Valores "R$ 1.234,56" que aparecem na descrição do anexo → números. */
+function amountsInText(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/R\$\s*([\d.]+,\d{2})/g)) {
+    const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+    if (Number.isFinite(n)) out.push(Math.round(n * 100) / 100);
+  }
+  return out;
+}
+
+/**
+ * Status de pagamento de um boleto: casa os valores lidos na descrição do anexo
+ * com os títulos de débitos/quitação do veículo (por valor). Um título já usado
+ * não casa de novo (dois boletos de mesmo valor → dois títulos distintos).
+ * "pago" quando todos os valores casados estão pagos; "parcial" quando só
+ * alguns; "pendente" quando nenhum; null quando não achou título (sem badge).
+ */
+function statusBoleto(
+  description: string,
+  titulos: Titulo[],
+): { label: string; tone: "success" | "warning" | "info" } | null {
+  const valores = amountsInText(description);
+  if (!valores.length) return null;
+  const disponiveis = titulos.map((t) => ({ ...t, usado: false }));
+  let casados = 0;
+  let pagos = 0;
+  for (const v of valores) {
+    const t = disponiveis.find((x) => !x.usado && Math.abs(x.amount - v) <= 0.005);
+    if (!t) continue;
+    t.usado = true;
+    casados++;
+    if (t.paid) pagos++;
+  }
+  if (!casados) return null;
+  if (pagos === casados) return { label: casados > 1 ? "✓ Pagos" : "✓ Pago", tone: "success" };
+  if (pagos > 0) return { label: `${pagos}/${casados} pagos`, tone: "info" };
+  return { label: "A pagar", tone: "warning" };
+}
+
 /**
  * Boletos/guias de pagamento do veículo (IPVA, multas, licenciamento, quitação
  * de financiamento). Ao anexar, a IA lê valor/vencimento/tipo e o sistema casa
@@ -37,12 +78,15 @@ export default function VehicleBoletos({
   boletos,
   canManage = true,
   saldoDebitos = null,
+  debitoTitulos = [],
 }: {
   vehicleId: string;
   boletos: Boleto[];
   canManage?: boolean;
   /** Saldo do título "Débitos do veículo (repasse)" ainda não identificado. */
   saldoDebitos?: number | null;
+  /** Títulos de débitos/quitação do veículo — para o status pago por boleto. */
+  debitoTitulos?: Titulo[];
 }) {
   const [state, formAction, pending] = useActionState(
     uploadVehicleBoletoAction,
@@ -116,10 +160,25 @@ export default function VehicleBoletos({
         <p className="mb-4 text-sm text-slate-500">Nenhum boleto anexado ainda.</p>
       ) : (
         <ul className="mb-4 divide-y divide-slate-100">
-          {boletos.map((b) => (
+          {boletos.map((b) => {
+            const st = statusBoleto(b.description, debitoTitulos);
+            const tone =
+              st?.tone === "success"
+                ? "bg-emerald-100 text-emerald-700"
+                : st?.tone === "info"
+                  ? "bg-blue-100 text-blue-700"
+                  : "bg-amber-100 text-amber-700";
+            return (
             <li key={b.id} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-slate-800">🧾 {b.description}</p>
+                <p className="truncate text-sm font-medium text-slate-800">
+                  🧾 {b.description}
+                  {st ? (
+                    <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${tone}`}>
+                      {st.label}
+                    </span>
+                  ) : null}
+                </p>
                 <p className="truncate text-xs text-slate-400">
                   {b.filename} · {humanSize(b.size)} · {formatDate(b.createdAt)}
                 </p>
@@ -155,7 +214,8 @@ export default function VehicleBoletos({
                 ) : null}
               </div>
             </li>
-          ))}
+            );
+          })}
         </ul>
       )}
 
