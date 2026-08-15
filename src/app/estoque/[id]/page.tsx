@@ -12,6 +12,7 @@ import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
 import VehicleBoletos from "./VehicleBoletos";
+import TransferInProgressSetting from "./TransferInProgressSetting";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import SaleTransferSetting from "./SaleTransferSetting";
@@ -630,6 +631,19 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               vehicleId={vehicle.id}
               canManage={canCrlv}
               crlvs={vehicle.attachments.filter((a) => a.kind === "CRLV")}
+            />
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Processo de transferência (DETRAN)"
+              description="Marque manualmente quando a transferência já foi paga/iniciada fora do sistema (casos antigos)"
+            />
+            <TransferInProgressSetting
+              vehicleId={vehicle.id}
+              initial={vehicle.transferInProgress}
+              canManage={canComunicacao || canEditar}
+              hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
             />
           </Card>
 

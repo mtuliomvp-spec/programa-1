@@ -167,9 +167,11 @@ export default async function EstoquePage({
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
-    // Custo com "transferência" na descrição (ex.: "Documentação de veículo:
-    // Transferência Detran para MVP") = processo de transferência iniciado.
-    transferStarted: v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)),
+    // Processo de transferência iniciado: custo com "transferência" na
+    // descrição (ex.: "Documentação de veículo: Transferência Detran para MVP")
+    // OU a marca manual (casos antigos, taxa paga fora do sistema).
+    transferStarted:
+      v.transferInProgress || v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)),
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
     transferDoneAt: v.sale?.transferDoneAt ?? null,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
