@@ -370,6 +370,31 @@ export async function setSaleTransferDoneAction(
   return { ok: true };
 }
 
+/**
+ * Marca/desmarca MANUALMENTE que o veículo está em processo de transferência no
+ * DETRAN — para casos antigos em que a taxa foi paga fora do sistema e não há
+ * custo de "transferência" para acender o selo sozinho.
+ */
+export async function setVehicleTransferInProgressAction(
+  vehicleId: string,
+  inProgress: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "comunicacao"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const v = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!v) return { ok: false, error: "Veículo não encontrado." };
+  await prisma.vehicle.update({ where: { id: vehicleId }, data: { transferInProgress: inProgress } });
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${vehicleId}`);
+  return { ok: true };
+}
+
 export async function lookupPlateAction(plate: string) {
   // Consulta externa (paga) por placa — usada no cadastro de veículo e nos
   // formulários de venda. Liberada a quem cadastra/edita veículo ou registra/
@@ -747,7 +772,6 @@ export async function uploadVehicleAttachmentAction(
  *  - Nos demais casos (sem título/guia correspondente, compra já paga), o
  *    boleto fica anexado e a leitura vira aviso com orientação.
  */
-type BoletoLido = { tipo: string | null; descricao: string | null; valor: number | null; vencimento: string | null };
 
 /** Descrição-marca do título de débitos lançado na compra/no fechamento. */
 const DEBITOS_MAE_PREFIX = "Débitos do veículo (repasse)";
