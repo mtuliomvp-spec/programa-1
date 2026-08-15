@@ -354,12 +354,6 @@ export default async function ContasAPagarPage({
               <LinkButton href="/financeiro/a-pagar/contrato-locacao" variant="secondary">
                 🏠 Contrato de locação
               </LinkButton>
-              <LinkButton href="/financeiro/a-pagar/importar-pmz" variant="secondary">
-                ⇪ Importar PMZ
-              </LinkButton>
-              <LinkButton href="/financeiro/a-pagar/importar-agrasty" variant="secondary">
-                ⇪ Lançar Pix 31/07 (Agrasty)
-              </LinkButton>
               <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
             </div>
           </Can>
