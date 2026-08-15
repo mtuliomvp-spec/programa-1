@@ -86,9 +86,9 @@ export default async function PreVendaFichaPage({
     pre.paymentMethod === "FINANCIADO"
       ? Math.round((baseDevolucao + Math.max(0, financedTyped - restanteFin)) * 100) / 100
       : baseDevolucao;
-  const aReceberFin = pre.financerAccountId
-    ? entradaFin
-    : Math.round((entradaFin + financedTyped) * 100) / 100;
+  // Nome da financeira: conveniada (conta) ou o nome livre do banco não
+  // conveniado gravado na pré-venda.
+  const financerName = financer?.name ?? pre.financerName ?? null;
   const methodLabel =
     pre.paymentMethod === "A_VISTA" ? "à vista" : pre.paymentMethod === "PARCELADO" ? "parcelado" : "financiado";
   const retorno =
@@ -228,7 +228,10 @@ export default async function PreVendaFichaPage({
             <h2 className="mb-2 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">
               Financiamento
             </h2>
-            <p className="mb-1"><span className="text-slate-500">Financeira:</span> {financer?.name || "Não informada"}</p>
+            <p className="mb-1">
+              <span className="text-slate-500">Financeira:</span>{" "}
+              {financerName ? `${financerName}${!pre.financerAccountId ? " (não conveniada)" : ""}` : "Não informada"}
+            </p>
             <Row label="Valor financiado (banco)" value={financedTyped} />
             {retorno && retorno.net > 0 ? (
               <>
@@ -261,7 +264,26 @@ export default async function PreVendaFichaPage({
             {devolucao > 0 ? (
               <Row label="= Devolução ao cliente (Contas a Pagar)" value={devolucao} strong tone="rose" top />
             ) : pre.paymentMethod === "FINANCIADO" ? (
-              <Row label="= Entrada do cliente (Contas a Receber)" value={aReceberFin} strong tone="green" top />
+              pre.financerAccountId ? (
+                // Financeira conveniada: o financiado entra na conta dela; só a
+                // entrada do cliente fica a receber.
+                <Row label="= Entrada do cliente (Contas a Receber)" value={entradaFin} strong tone="green" top />
+              ) : (
+                // Banco NÃO conveniado: duas contas a receber — a do banco
+                // (repasse) e, se houver, o saldo/entrada do cliente.
+                <>
+                  <Row
+                    label={`= Repasse do banco${financerName ? ` (${financerName})` : ""} (Contas a Receber)`}
+                    value={financedTyped}
+                    strong
+                    tone="green"
+                    top
+                  />
+                  {entradaFin > 0 ? (
+                    <Row label="= Saldo/entrada do cliente (Contas a Receber)" value={entradaFin} strong tone="green" />
+                  ) : null}
+                </>
+              )
             ) : (
               <Row label={`= Restante a pagar (${methodLabel})`} value={restanteFin} strong top />
             )}
