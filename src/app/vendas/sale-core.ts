@@ -38,6 +38,10 @@ export const saleSchema = z.object({
   downPayment: z.coerce.number().min(0).default(0),
   installmentsCount: z.coerce.number().int().min(0).default(0),
   financerAccountId: z.string().optional(),
+  // Financeira/banco indicado pelo cliente, NÃO conveniado à loja (sem conta
+  // financeira própria). Só o nome, para constar no contrato; o repasse vira
+  // conta a receber comum. Usado quando não há financerAccountId.
+  financerNameManual: z.string().optional(),
   financedAmount: z.coerce.number().min(0).optional(),
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel: z.coerce.number().int().min(0).default(0),
@@ -203,12 +207,18 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
   }
 
   let financerName: string | null = null;
-  if (d.paymentMethod === "FINANCIADO" && d.financerAccountId) {
-    const acc = await prisma.financialAccount.findUnique({
-      where: { id: d.financerAccountId },
-      select: { name: true },
-    });
-    financerName = acc?.name ?? null;
+  if (d.paymentMethod === "FINANCIADO") {
+    if (d.financerAccountId) {
+      const acc = await prisma.financialAccount.findUnique({
+        where: { id: d.financerAccountId },
+        select: { name: true },
+      });
+      financerName = acc?.name ?? null;
+    } else {
+      // Financeira indicada pelo cliente (não conveniada): sem conta própria, o
+      // repasse vira conta a receber comum e o nome vem do texto digitado.
+      financerName = d.financerNameManual?.trim() || null;
+    }
   }
 
   // Consignado: o valor a devolver ao proprietário é travado a partir do veículo

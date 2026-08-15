@@ -30,6 +30,7 @@ export default async function NovaVendaPage({
         downPayment: pre.downPayment,
         installmentsCount: pre.installmentsCount,
         financerAccountId: pre.financerAccountId ?? undefined,
+        financerNameManual: pre.financerName ?? undefined,
         financedAmount: pre.financedAmount ?? undefined,
         returnLevel: pre.returnLevel ?? 0,
         sellerName: pre.sellerName ?? undefined,

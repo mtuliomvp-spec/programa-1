@@ -619,6 +619,10 @@ model PreSale {
   installmentsCount Int            @default(0)
   financerAccountId String?
   financedAmount    Float?
+  // Financeira/banco indicado pelo cliente, NÃO conveniado à loja (sem conta
+  // financeira). Guarda o nome para o contrato; o repasse vira conta a receber
+  // comum. Nulo quando a financeira é conveniada (usa financerAccountId).
+  financerName      String?
   sellerName        String?
   sellerId          String?
   seller            User?          @relation("PreSaleSeller", fields: [sellerId], references: [id])

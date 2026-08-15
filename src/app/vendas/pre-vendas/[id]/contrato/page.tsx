@@ -53,7 +53,8 @@ export default async function ContratoPreVendaPage({ params }: { params: Promise
       sinal={sinal}
       entrada={entrada}
       financiado={financiado}
-      financerName={financer?.name ?? null}
+      financerName={financer?.name ?? pre.financerName ?? null}
+      financerExternal={!pre.financerAccountId && !!pre.financerName}
       saldo={saldo}
       devolucao={devolucao}
       buyerBank={{

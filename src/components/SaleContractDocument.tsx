@@ -58,6 +58,8 @@ export type SaleContractData = {
   entrada: number;
   financiado: number;
   financerName: string | null;
+  /** Financeira/banco indicado pelo cliente, NÃO conveniado à loja. */
+  financerExternal?: boolean;
   saldo: number;
   // Devolução ao COMPRADOR: quando troca + sinal + financiamento superam o preço,
   // a loja deve a diferença ao cliente (aparece no lugar do "Saldo a pagar").
@@ -237,6 +239,17 @@ export default function SaleContractDocument(d: SaleContractData) {
                 {d.installmentsInfo.count} ({numeroExtenso(d.installmentsInfo.count)})
               </strong>{" "}
               parcela(s) de <strong>{formatCurrency(d.installmentsInfo.amount)}</strong> cada.
+            </p>
+          ) : null}
+          {d.paymentMethod === "FINANCIADO" && d.financiado > 0 && d.financerExternal ? (
+            <p className="mt-2">
+              O financiamento é realizado por{" "}
+              <strong>{d.financerName || "instituição financeira indicada pelo(a) COMPRADOR(A)"}</strong>,
+              instituição escolhida pelo(a) COMPRADOR(A) e <strong>não conveniada</strong> a
+              VENDEDORA. O(A) COMPRADOR(A) declara ciência de que a liberação e as condições do
+              crédito são de responsabilidade exclusiva dessa instituição, e a VENDEDORA receberá
+              dela o valor financiado de <strong>{formatCurrency(d.financiado)}</strong> a título de
+              pagamento desta venda.
             </p>
           ) : null}
         </Clausula>
