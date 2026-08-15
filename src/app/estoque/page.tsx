@@ -167,6 +167,10 @@ export default async function EstoquePage({
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
+    // Orçamento da transferência (despachante) anexado — só selo positivo.
+    hasTransferQuote: v.attachments.some(
+      (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
+    ),
     // Processo de transferência iniciado: custo com "transferência" na
     // descrição (ex.: "Documentação de veículo: Transferência Detran para MVP")
     // OU a marca manual (casos antigos, taxa paga fora do sistema).
@@ -306,6 +310,8 @@ export default async function EstoquePage({
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
+            {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
+            {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
@@ -393,6 +399,11 @@ export default async function EstoquePage({
         {v.hasAtpv ? (
           <span className="mt-1 block">
             <Badge tone="success">✓ ATPV-e</Badge>
+          </span>
+        ) : null}
+        {v.hasTransferQuote ? (
+          <span className="mt-1 block">
+            <Badge tone="success">✓ Orçamento transf.</Badge>
           </span>
         ) : null}
         {v.status === "VENDIDO" ? (

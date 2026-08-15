@@ -13,6 +13,7 @@ import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
 import VehicleBoletos from "./VehicleBoletos";
 import TransferInProgressSetting from "./TransferInProgressSetting";
+import VehicleTransferQuote from "./VehicleTransferQuote";
 import VehiclePhotos from "./VehiclePhotos";
 import ClientPhotoCapture from "./ClientPhotoCapture";
 import SaleTransferSetting from "./SaleTransferSetting";
@@ -649,6 +650,20 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
           <Card>
             <CardHeader
+              title="Orçamento de transferência (despachante)"
+              description="Anexe o orçamento da transferência de propriedade emitido pelo despachante"
+            />
+            <VehicleTransferQuote
+              vehicleId={vehicle.id}
+              canManage={canComunicacao}
+              quotes={vehicle.attachments.filter(
+                (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
+              )}
+            />
+          </Card>
+
+          <Card>
+            <CardHeader
               title="ATPV-e"
               description="Anexe a Autorização para Transferência de Propriedade do Veículo (ATPV-e)"
             />
@@ -710,9 +725,11 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 (a) =>
                   a.kind !== "FOTO_VEICULO" &&
                   a.kind !== "CRLV" &&
-                  // ATPV-e e boletos têm cards próprios acima — não duplica aqui.
+                  // ATPV-e, boletos e orçamento de transferência têm cards
+                  // próprios acima — não duplica aqui.
                   !(a.kind === "DOCUMENTO" && /atpv/i.test(a.description)) &&
-                  !(a.kind === "DOCUMENTO" && /^boleto/i.test(a.description)),
+                  !(a.kind === "DOCUMENTO" && /^boleto/i.test(a.description)) &&
+                  !(a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description)),
               )}
             />
           </Card>
