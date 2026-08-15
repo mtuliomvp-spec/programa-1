@@ -58,6 +58,7 @@ export default async function ContratoVendaPage({ params }: { params: Promise<{ 
       entrada={entrada}
       financiado={financiado}
       financerName={sale.financerName ?? sale.financerAccount?.name ?? null}
+      financerExternal={!sale.financerAccountId && !!sale.financerName}
       saldo={saldo}
       devolucao={devolucao}
       buyerBank={{

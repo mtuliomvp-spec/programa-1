@@ -67,6 +67,12 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     downPayment: d.paymentMethod === "PARCELADO" ? d.downPayment : 0,
     installmentsCount: d.paymentMethod === "PARCELADO" ? d.installmentsCount : 0,
     financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
+    // Financeira indicada pelo cliente (não conveniada): guarda o nome quando
+    // não há conta de financeira escolhida.
+    financerName:
+      d.paymentMethod === "FINANCIADO" && !d.financerAccountId
+        ? d.financerNameManual?.trim() || null
+        : null,
     financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
     returnLevel: d.paymentMethod === "FINANCIADO" ? Math.max(0, d.returnLevel || 0) : 0,
     sellerName,
@@ -176,6 +182,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     downPayment: pre.downPayment,
     installmentsCount: pre.installmentsCount,
     financerAccountId: pre.financerAccountId ?? undefined,
+    financerNameManual: pre.financerName ?? undefined,
     financedAmount: pre.financedAmount ?? undefined,
     returnLevel: pre.returnLevel ?? 0,
     sellerName: pre.sellerName ?? undefined,

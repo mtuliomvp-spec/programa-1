@@ -59,6 +59,8 @@ export type SaleFormInitial = {
   downPayment?: number;
   installmentsCount?: number;
   financerAccountId?: string;
+  /** Financeira/banco indicado pelo cliente (não conveniada à loja). */
+  financerNameManual?: string;
   financedAmount?: number;
   returnLevel?: number;
   sellerName?: string;
@@ -282,6 +284,13 @@ export default function SaleForm({
     initial?.financedAmount != null ? String(initial.financedAmount) : "",
   );
   const [financerAccountId, setFinancerAccountId] = useState(initial?.financerAccountId || "");
+  // Financeira indicada pelo cliente (não conveniada): sem conta própria, só o
+  // nome — o repasse vira conta a receber comum. Liga quando a pré-venda veio
+  // com um nome manual e sem conta escolhida.
+  const [externalFinancer, setExternalFinancer] = useState(
+    Boolean(initial?.financerNameManual && !initial?.financerAccountId),
+  );
+  const [financerNameManual, setFinancerNameManual] = useState(initial?.financerNameManual || "");
   // Retorno da financeira (comissão sobre o financiado); 0 = sem retorno.
   const [returnLevel, setReturnLevel] = useState<string>(
     initial?.returnLevel ? String(initial.returnLevel) : "0",
@@ -797,28 +806,61 @@ export default function SaleForm({
           <p className="mb-3 text-sm font-medium text-slate-700">Detalhes do financiamento</p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Financeira">
-              <Select
-                name="financerAccountId"
-                value={financerAccountId}
-                onChange={(e) => setFinancerAccountId(e.target.value)}
-              >
-                <option value="">Selecione a financeira</option>
-                {financers.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
-                ))}
-              </Select>
-              {financers.length === 0 ? (
-                <p className="mt-1 text-xs text-amber-600">
-                  Nenhuma financeira cadastrada.{" "}
-                  <a href="/financeiro/contas" className="underline">Cadastrar em Contas financeiras</a> (tipo Financeira).
-                </p>
+              {externalFinancer ? (
+                <>
+                  {/* Não conveniada: sem conta própria — só o nome, para o
+                      contrato. financerAccountId vai vazio (repasse a receber). */}
+                  <input type="hidden" name="financerAccountId" value="" />
+                  <Input
+                    name="financerNameManual"
+                    value={financerNameManual}
+                    onChange={(e) => setFinancerNameManual(e.target.value)}
+                    placeholder="Nome do banco/financeira indicado pelo cliente"
+                  />
+                  <p className="mt-1 text-xs text-slate-500">
+                    Instituição <strong>não conveniada</strong> à loja: o valor será recebido dela
+                    como conta a receber. O nome consta no contrato.
+                  </p>
+                </>
               ) : (
-                <p className="mt-1 text-xs text-slate-400">
-                  O valor financiado fica na conta da financeira até ela pagar.
-                </p>
+                <>
+                  <Select
+                    name="financerAccountId"
+                    value={financerAccountId}
+                    onChange={(e) => setFinancerAccountId(e.target.value)}
+                  >
+                    <option value="">Selecione a financeira</option>
+                    {financers.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        {f.name}
+                      </option>
+                    ))}
+                  </Select>
+                  {financers.length === 0 ? (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Nenhuma financeira conveniada cadastrada.{" "}
+                      <a href="/financeiro/contas" className="underline">Cadastrar em Contas financeiras</a> (tipo Financeira).
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-xs text-slate-400">
+                      O valor financiado fica na conta da financeira até ela pagar.
+                    </p>
+                  )}
+                </>
               )}
+              <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={externalFinancer}
+                  onChange={(e) => {
+                    setExternalFinancer(e.target.checked);
+                    if (e.target.checked) setFinancerAccountId("");
+                    else setFinancerNameManual("");
+                  }}
+                />
+                Financiamento por banco/financeira <strong>indicado pelo cliente</strong> (não
+                conveniado à loja)
+              </label>
             </Field>
             <Field label="Valor financiado (repasse do banco)">
               <Input
