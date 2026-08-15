@@ -29,9 +29,10 @@ type Payable = {
   saleId: string | null;
   /** É a compra do carro: valor e destino vêm do cadastro do veículo. */
   isAcquisition: boolean;
-  /** Repasse do consignado (quitação/débitos): o valor pode ser ajustado —
-   * a diferença vira custo (acréscimo) ou ganho (desconto) do veículo. */
-  consignedRepasse: boolean;
+  /** Débitos/quitação da compra: o valor pode ser ajustado (ex.: desconto no
+   * pagamento) — a diferença vira custo (acréscimo) ou ganho (desconto) do
+   * veículo. Vale para consignado e veículo próprio. */
+  repasseDebito: boolean;
   /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
   fromRecurring: boolean;
 };
@@ -58,8 +59,8 @@ export default function EditPayableForm({
   const saleGenerated = Boolean(payable.saleId);
   // Compra do carro: além do destino, o VALOR vem do preço de compra do veículo.
   const isAcquisition = payable.isAcquisition;
-  // Repasse do consignado: o valor é editável (a diferença ajusta a devolução).
-  const amountLocked = isAcquisition && !payable.consignedRepasse;
+  // Débitos/quitação da compra: o valor é editável (a diferença vira custo/ganho).
+  const amountLocked = isAcquisition && !payable.repasseDebito;
   const locked = saleGenerated || isAcquisition;
 
   return (
@@ -96,10 +97,10 @@ export default function EditPayableForm({
         ) : (
           <Field label="Valor (R$)" required>
             <MoneyInput name="amount" defaultValue={payable.amount} required />
-            {payable.consignedRepasse ? (
+            {payable.repasseDebito ? (
               <p className="mt-1 text-xs text-slate-500">
-                Repasse do consignado: o valor acertado com o dono não muda. A diferença é da
-                loja — boleto <strong>maior</strong> entra como custo do veículo,{" "}
+                Débito/quitação da compra: pode ajustar o valor (ex.: desconto no pagamento). A
+                diferença é da loja — <strong>maior</strong> entra como custo do veículo,{" "}
                 <strong>menor</strong> reduz o custo.
               </p>
             ) : null}
@@ -124,15 +125,16 @@ export default function EditPayableForm({
         )}
       </div>
 
-      {payable.consignedRepasse ? (
+      {payable.repasseDebito ? (
         <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-          <p className="font-medium text-slate-800">🚗 Repasse do consignado</p>
+          <p className="font-medium text-slate-800">🚗 Débitos/quitação da compra</p>
           <p className="mt-1">
-            Este título é a <strong>quitação/débitos</strong> descontados do valor acertado com o
-            proprietário do consignado. O <strong>valor pode ser ajustado</strong> mesmo depois da
-            venda. O valor <strong>acertado com o proprietário</strong> e a devolução dele não
-            mudam: a diferença é da loja — guia mais cara entra como <strong>custo do veículo</strong>{" "}
-            (perda), mais barata <strong>reduz o custo</strong> (ganho).
+            Este título é um <strong>débito/quitação</strong> descontado do cliente/vendedor no
+            momento da compra (IPVA, multa, licenciamento, quitação). O{" "}
+            <strong>valor pode ser ajustado</strong> — por exemplo, ao pagar a guia com desconto. O
+            valor descontado na negociação não muda: a diferença é da loja — guia mais cara entra
+            como <strong>custo do veículo</strong> (perda), mais barata <strong>reduz o custo</strong>{" "}
+            (ganho).
           </p>
           <p className="mt-1">
             O <strong>veículo</strong>, o <strong>fluxo</strong> e a <strong>categoria</strong>{" "}

@@ -188,12 +188,14 @@ export default async function EditarPayablePage({
               // Título da COMPRA do carro: valor e destino vêm do cadastro do
               // veículo (mexer aqui contaria o mesmo dinheiro duas vezes).
               isAcquisition: payable.category === "COMPRA_VEICULO",
-              // Repasse do consignado (quitação/débitos): o valor pode ser
-              // ajustado — a diferença vai para a Devolução ao proprietário.
-              consignedRepasse:
+              // Débitos/quitação da compra (o valor descontado do cliente na
+              // compra): o valor pode ser ajustado — a diferença vira custo
+              // (acréscimo) ou ganho (desconto) do veículo.
+              repasseDebito:
                 payable.category === "COMPRA_VEICULO" &&
                 !payable.saleId &&
-                Boolean(payable.vehicle?.consigned),
+                (payable.description.startsWith("Débitos do veículo") ||
+                  payable.description.startsWith("Quitação do financiamento")),
               fromRecurring: Boolean(payable.recurringId),
             }}
             suppliers={suppliers}
