@@ -206,14 +206,44 @@ function shortHash(payload: unknown, geradoEm: string): string {
   return createHash("sha256").update(JSON.stringify(payload) + geradoEm).digest("hex").slice(0, 16);
 }
 
-/** Parecer geral da gestão (indicadores dos últimos 12 meses + patrimônio). */
+/** Parecer geral da gestão (indicadores do PERÍODO DE ATIVIDADE + patrimônio). */
 export async function generateGlobalParecer(
   config: ParecerConfig,
 ): Promise<{ parecer: GlobalParecer; meta: ParecerMeta }> {
+  // Início das atividades: 1º dia de caixa (o sistema bloqueia lançamentos sem
+  // caixa aberto). Fallback: 1ª venda / 1º título. O resultado cobre SÓ esse
+  // período real — não força uma janela de 12 meses que a loja nem operou.
+  const firstCashbox = await prisma.cashboxSession.findFirst({
+    orderBy: { workDate: "asc" },
+    select: { workDate: true },
+  });
+  let inicioAtividades = firstCashbox?.workDate ?? null;
+  if (!inicioAtividades) {
+    const [s, p] = await Promise.all([
+      prisma.sale.findFirst({ orderBy: { saleDate: "asc" }, select: { saleDate: true } }),
+      prisma.payable.findFirst({ orderBy: { createdAt: "asc" }, select: { createdAt: true } }),
+    ]);
+    const cands = [s?.saleDate, p?.createdAt].filter((d): d is Date => !!d);
+    inicioAtividades = cands.length ? new Date(Math.min(...cands.map((d) => d.getTime()))) : new Date();
+  }
+  const periodoStart = new Date(
+    Date.UTC(inicioAtividades.getUTCFullYear(), inicioAtividades.getUTCMonth(), 1),
+  );
+  const now = new Date();
+  const mesesAtividade = Math.max(
+    1,
+    (now.getUTCFullYear() - periodoStart.getUTCFullYear()) * 12 +
+      (now.getUTCMonth() - periodoStart.getUTCMonth()) +
+      1,
+  );
+  const mesRef = (d: Date) =>
+    `${String(d.getUTCMonth() + 1).padStart(2, "0")}/${d.getUTCFullYear()}`;
+
   const [company, pat, pl, profit, aging] = await Promise.all([
     getCompany(),
     getPatrimonialStats(),
-    getProfitLossStatement(12),
+    // Só o período REAL de operação (do 1º mês de atividade até agora).
+    getProfitLossStatement(12, { start: periodoStart }),
     getVehicleProfitReport(),
     getStockAging(),
   ]);
@@ -227,6 +257,12 @@ export async function generateGlobalParecer(
 
   const payload = {
     empresa: company.nomeFantasia,
+    periodo_analisado: {
+      inicio_atividades: mesRef(inicioAtividades),
+      meses_de_operacao: mesesAtividade,
+      observacao:
+        "A loja iniciou as atividades neste período; os números de resultado cobrem SOMENTE o histórico real de operação, não 12 meses.",
+    },
     patrimonio: {
       lucro_prejuizo_acumulado: pat.lucro,
       saldo_caixa: pat.saldoCaixa,
@@ -238,7 +274,7 @@ export async function generateGlobalParecer(
       comissoes_a_pagar: pat.comissoesAPagar,
       capital_socios: pat.saldoCapital,
     },
-    resultado_12m: {
+    resultado_periodo: {
       receita_veiculos: pl.receitaTotal,
       lucro_bruto: pl.lucroBruto,
       despesas: pl.despesas,
@@ -263,6 +299,9 @@ export async function generateGlobalParecer(
 
   const userText =
     "Analise a gestão desta revenda de veículos com base nos indicadores JSON abaixo (valores em reais). " +
+    `IMPORTANTE: a loja iniciou as atividades em ${mesRef(inicioAtividades)} — são apenas ${mesesAtividade} ` +
+    "mês(es) de operação. NÃO trate os números de resultado como um histórico de 12 meses nem projete " +
+    "tendências longas; avalie como uma operação recente (em implantação/maturação). " +
     "Emita o parecer geral. Todos os valores já estão calculados pelo sistema.\n\n" +
     JSON.stringify(payload, null, 2);
 

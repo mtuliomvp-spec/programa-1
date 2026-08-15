@@ -21,8 +21,8 @@ export default async function ParecerIAPage() {
         <div className="space-y-4 p-5">
           <p className="text-sm text-slate-600">
             A IA analisa os números da MVP (saúde financeira, giro de estoque, desempenho de vendas e
-            margem, caixa e inadimplência) dos últimos 12 meses e emite um parecer com riscos e
-            recomendações práticas — baixado em PDF.
+            margem, caixa e inadimplência) desde o início das atividades da loja e emite um parecer
+            com riscos e recomendações práticas — baixado em PDF.
           </p>
 
           {config.configured ? (
