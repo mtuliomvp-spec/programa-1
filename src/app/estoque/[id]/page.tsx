@@ -546,6 +546,21 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   />
                 </div>
 
+                {/* Marca manual "em processo de transferência" também no veículo
+                    VENDIDO (a transferência pode estar em andamento antes de sair
+                    o CRLV novo). Fica aqui, junto do "Marcar como transferido". */}
+                <div className="mx-5 mb-3 rounded-lg border border-slate-200">
+                  <p className="border-b border-slate-100 px-3 pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                    Processo de transferência (DETRAN)
+                  </p>
+                  <TransferInProgressSetting
+                    vehicleId={vehicle.id}
+                    initial={vehicle.transferInProgress}
+                    canManage={canComunicacao || canEditar}
+                    hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
+                  />
+                </div>
+
                 {canLucro && saleResult ? (
                   <div className="mx-5 mb-5 rounded-xl border border-slate-200 bg-slate-50 p-4">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">
@@ -674,18 +689,22 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
           </Card>
 
-          <Card>
-            <CardHeader
-              title="Processo de transferência (DETRAN)"
-              description="Marque manualmente quando a transferência já foi paga/iniciada fora do sistema (casos antigos)"
-            />
-            <TransferInProgressSetting
-              vehicleId={vehicle.id}
-              initial={vehicle.transferInProgress}
-              canManage={canComunicacao || canEditar}
-              hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
-            />
-          </Card>
+          {/* Veículo vendido mostra a marca "em processo" dentro do card da venda
+              (junto do "Marcar como transferido"); aqui é só para os em estoque. */}
+          {vehicle.status !== "VENDIDO" ? (
+            <Card>
+              <CardHeader
+                title="Processo de transferência (DETRAN)"
+                description="Marque manualmente quando a transferência já foi paga/iniciada fora do sistema (casos antigos)"
+              />
+              <TransferInProgressSetting
+                vehicleId={vehicle.id}
+                initial={vehicle.transferInProgress}
+                canManage={canComunicacao || canEditar}
+                hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
+              />
+            </Card>
+          ) : null}
 
           <Card>
             <CardHeader
