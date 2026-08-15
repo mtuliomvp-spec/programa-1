@@ -115,7 +115,9 @@ export default async function EstoquePage({
           // Descrição junto: detecta o custo de transferência (DETRAN) para o
           // selo "Processo de transferência em aberto".
           costs: { select: { amount: true, description: true } },
-          payables: { select: { amount: true, status: true } },
+          // description junto: uma conta a pagar com "transferência" (pagamento
+          // ao despachante) também acende o selo "em processo de transferência".
+          payables: { select: { amount: true, status: true, description: true } },
           // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
           attachments: { select: { kind: true, description: true } },
           // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
@@ -177,11 +179,14 @@ export default async function EstoquePage({
     hasTransferQuote: v.attachments.some(
       (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
     ),
-    // Processo de transferência iniciado: custo com "transferência" na
-    // descrição (ex.: "Documentação de veículo: Transferência Detran para MVP")
-    // OU a marca manual (casos antigos, taxa paga fora do sistema).
+    // Processo de transferência iniciado quando qualquer um: marca manual
+    // (casos antigos); custo do veículo com "transferência"; ou conta a pagar
+    // com "transferência" (pagamento ao despachante), mesmo fora da ficha de
+    // venda.
     transferStarted:
-      v.transferInProgress || v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)),
+      v.transferInProgress ||
+      v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
+      v.payables.some((p) => /transfer[eê]ncia/i.test(p.description)),
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
     transferDoneAt: v.sale?.transferDoneAt ?? null,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
