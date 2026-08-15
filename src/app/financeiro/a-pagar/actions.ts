@@ -598,12 +598,18 @@ export async function updatePayableAction(
   // rebaixava a categoria para OUTROS, soltando o título de
   // regenerateVehicleAcquisitionPayables (que passaria a criar um 2º título).
   const isAcquisition = isVehiclePurchase(current.category);
-  // Repasse do CONSIGNADO (quitação/débitos): o valor PODE ser ajustado depois
-  // da venda — mesma regra do veículo próprio: o acordado com o dono (e a
-  // devolução dele) não muda; a diferença é da loja — acréscimo vira custo do
-  // veículo, desconto vira ganho (custo negativo), por competência. O destino
-  // contábil continua travado como aquisição.
-  const consignedRepasse = isAcquisition && !current.saleId && Boolean(current.vehicle?.consigned);
+  // Título de DÉBITOS/QUITAÇÃO da compra (o valor descontado do cliente/vendedor
+  // no momento da compra — IPVA, multa, licenciamento, quitação): o valor PODE
+  // ser ajustado. É o caso do pagamento com desconto (ex.: multa paga com 20%
+  // off) — a diferença é da loja: acréscimo vira custo do veículo, desconto
+  // vira ganho (custo negativo), por competência. Vale para consignado E
+  // veículo próprio. Só o título "Compra do veículo" (preço de compra) segue
+  // travado — esse muda no Estoque.
+  const repasseDebito =
+    isAcquisition &&
+    !current.saleId &&
+    (current.description.startsWith("Débitos do veículo") ||
+      current.description.startsWith("Quitação do financiamento"));
   const locked = saleGenerated || isAcquisition;
   const currentFlow = isStructuralKey(current.costCenter?.key)
     ? current.costCenter.key
@@ -627,11 +633,11 @@ export async function updatePayableAction(
   // do carro). O nome exibido pode ser trocado à vontade.
   const category = locked ? current.category : cat.category;
   // O valor da compra do carro é o preço de compra do veículo — muda no Estoque.
-  // Exceção: repasse do consignado, cujo ajuste flui para a devolução ao dono.
-  const amount = isAcquisition && !consignedRepasse ? current.amount : d.amount;
+  // Exceção: débitos/quitação da compra, cujo ajuste vira custo/ganho do veículo.
+  const amount = isAcquisition && !repasseDebito ? current.amount : d.amount;
 
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  const repasseDelta = consignedRepasse ? round2(d.amount - current.amount) : 0;
+  const repasseDelta = repasseDebito ? round2(d.amount - current.amount) : 0;
 
   await updateManualPayable({
     id: d.id,
@@ -650,10 +656,10 @@ export async function updatePayableAction(
     vehicleId,
     capitalBeneficiaryId,
   });
-  // Repasse do consignado: a contrapartida da mudança de valor é um CUSTO de
-  // ajuste do veículo (acréscimo = perda; desconto = ganho, custo negativo),
-  // por competência — o acordado com o dono e a devolução dele não mudam.
-  if (consignedRepasse && Math.abs(repasseDelta) > 0.005 && current.vehicleId) {
+  // Débitos/quitação da compra: a contrapartida da mudança de valor é um CUSTO
+  // de ajuste do veículo (acréscimo = perda; desconto = ganho, custo negativo),
+  // por competência — o acordado/descontado no momento da compra não muda.
+  if (repasseDebito && Math.abs(repasseDelta) > 0.005 && current.vehicleId) {
     const isPayoff = current.description.startsWith("Quitação do financiamento");
     await prisma.vehicleCost.create({
       data: {
