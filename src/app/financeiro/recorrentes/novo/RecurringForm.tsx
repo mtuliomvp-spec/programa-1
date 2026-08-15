@@ -209,6 +209,18 @@ export default function RecurringForm({
           </Field>
         ) : null}
 
+        {isCapital ? (
+          <Field label="Categoria (opcional)">
+            {/* Capital é retirada/aporte (categoria interna OUTROS); o rótulo
+                aqui é só para organizar/filtrar nos relatórios. */}
+            <CategoryInput
+              name="categoryLabel"
+              options={kind === "PAGAR" ? despesaCategories : receitaCategories}
+              defaultValue={initial?.categoryLabel ?? ""}
+            />
+          </Field>
+        ) : null}
+
         {isCapital && kind === "PAGAR" ? supplierField("Fornecedor (opcional)") : null}
 
         {!isCapital && kind === "PAGAR" ? (
