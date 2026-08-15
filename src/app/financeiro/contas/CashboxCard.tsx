@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { formatDate } from "@/lib/format";
-import { openCashboxAction, closeCashboxAction } from "./actions";
+import { openCashboxAction, closeCashboxAction, revertCashboxAction } from "./actions";
 
 type Session = {
   id: string;
@@ -39,6 +39,8 @@ export default function CashboxCard({
   const [error, setError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [workDate, setWorkDate] = useState(todayInput());
+  const [reverting, startRevert] = useTransition();
+  const [revertMsg, setRevertMsg] = useState<string | null>(null);
 
   // Reabrir = a última sessão está fechada e é do MESMO dia selecionado.
   const lastDay = session ? new Date(session.workDate).toISOString().slice(0, 10) : null;
@@ -56,6 +58,28 @@ export default function CashboxCard({
     start(async () => {
       const r = await closeCashboxAction();
       if (!r.ok) setError(r.error || "Erro ao fechar o caixa.");
+    });
+  }
+  function doRevert() {
+    setError(null);
+    setRevertMsg(null);
+    const dia = session ? formatDate(session.workDate) : "de hoje";
+    if (
+      !confirm(
+        `Estornar TODOS os pagamentos e recebimentos do caixa ${dia}?\n\nOs títulos voltam a pendente e os lançamentos avulsos do dia são apagados. Baixas vindas de venda/recorrência não são tocadas (reverta na origem). Esta ação não pode ser desfeita em bloco.`,
+      )
+    ) {
+      return;
+    }
+    startRevert(async () => {
+      const r = await revertCashboxAction();
+      if (!r.ok) {
+        setError(r.error || "Erro ao estornar o caixa.");
+        return;
+      }
+      const partes = [`${r.revertidos ?? 0} baixa(s) estornada(s)`];
+      if (r.pulados) partes.push(`${r.pulados} de venda/recorrência mantida(s) — reverta na origem`);
+      setRevertMsg(partes.join(" · "));
     });
   }
 
@@ -132,14 +156,25 @@ export default function CashboxCard({
           </a>
 
           {canManage && open ? (
-            <button
-              type="button"
-              onClick={doClose}
-              disabled={pending}
-              className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
-            >
-              🔒 {pending ? "Fechando..." : "Fechar Caixa"}
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={doRevert}
+                disabled={reverting || pending}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
+                title="Volta todos os pagamentos e recebimentos do dia para pendente (e apaga os avulsos)"
+              >
+                ↺ {reverting ? "Estornando..." : "Estornar caixa do dia"}
+              </button>
+              <button
+                type="button"
+                onClick={doClose}
+                disabled={pending}
+                className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
+              >
+                🔒 {pending ? "Fechando..." : "Fechar Caixa"}
+              </button>
+            </>
           ) : canManage && !open ? (
             <button
               type="button"
@@ -153,6 +188,7 @@ export default function CashboxCard({
         </div>
 
         {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}
+        {revertMsg ? <p className="mt-2 text-sm font-medium text-emerald-700">{revertMsg}</p> : null}
 
         {showHistory ? (
           <div className="mt-3 rounded-lg border border-slate-200 bg-white p-3">
