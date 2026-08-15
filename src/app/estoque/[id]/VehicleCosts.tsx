@@ -39,14 +39,20 @@ export default function VehicleCosts({
   sold,
   canManage = true,
   canOpenPayable = false,
+  beneficiaries = [],
 }: {
   vehicleId: string;
   costs: Cost[];
   sold: boolean;
   canManage?: boolean;
   canOpenPayable?: boolean;
+  /** Sócios ativos: permitem custear um custo pós-venda pelo capital do sócio. */
+  beneficiaries?: { id: string; name: string }[];
 }) {
   const [showForm, setShowForm] = useState(false);
+  // Pós-venda custeado pelo capital de um sócio (só faz sentido com o carro
+  // vendido): a despesa vira aporte do sócio, sem tocar no caixa.
+  const [payFromCapital, setPayFromCapital] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   // Confirmação in-app (o window.confirm nativo é suprimido em navegadores de
   // celular/in-app, deixando o Excluir "morto").
@@ -54,7 +60,10 @@ export default function VehicleCosts({
   const [state, formAction, pending] = useActionState<CostFormState, FormData>(
     async (prev, formData) => {
       const result = await addVehicleCostAction(prev, formData);
-      if (result.success) setShowForm(false);
+      if (result.success) {
+        setShowForm(false);
+        setPayFromCapital(false);
+      }
       return result;
     },
     {},
@@ -269,20 +278,62 @@ export default function VehicleCosts({
               <Field label="Data" required>
                 <Input name="date" type="date" defaultValue={toDateInputValue(new Date())} required />
               </Field>
-              <Field label="Parcelas (IPVA, multas...)">
-                <Input name="installments" type="number" min={1} max={60} defaultValue={1} />
-              </Field>
+              {!payFromCapital ? (
+                <Field label="Parcelas (IPVA, multas...)">
+                  <Input name="installments" type="number" min={1} max={60} defaultValue={1} />
+                </Field>
+              ) : null}
             </div>
-            <label className="flex items-center gap-2 text-sm text-slate-700">
-              <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
-              Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)
-            </label>
+            {sold && beneficiaries.length > 0 ? (
+              <div className="rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2">
+                <label className="flex items-start gap-2 text-sm text-indigo-900">
+                  <input
+                    type="checkbox"
+                    checked={payFromCapital}
+                    onChange={(e) => setPayFromCapital(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                  />
+                  <span>
+                    <strong>Pagar com o capital de um sócio</strong> — o sócio bancou esta despesa
+                    com recurso próprio. Ela entra no resultado como pós-venda e vira{" "}
+                    <strong>aporte</strong> do sócio (sem mexer no caixa da loja).
+                  </span>
+                </label>
+                {payFromCapital ? (
+                  <div className="mt-2">
+                    <Field label="Sócio (beneficiário do capital)" required>
+                      <Select name="capitalBeneficiaryId" defaultValue="" required>
+                        <option value="">Selecione o sócio</option>
+                        {beneficiaries.map((b) => (
+                          <option key={b.id} value={b.id}>
+                            {b.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </Field>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            {!payFromCapital ? (
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="alreadyPaid" value="true" className="h-4 w-4 rounded border-slate-300" />
+                Já paguei no ato (senão, entra como conta a pagar; o pagamento é dado depois por uma conta financeira)
+              </label>
+            ) : null}
             {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
             <div className="flex gap-2">
               <Button type="submit" disabled={pending}>
                 {pending ? "Salvando..." : "Lançar custo"}
               </Button>
-              <Button type="button" variant="secondary" onClick={() => setShowForm(false)}>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setShowForm(false);
+                  setPayFromCapital(false);
+                }}
+              >
                 Cancelar
               </Button>
             </div>
