@@ -4,7 +4,7 @@ import { ensureRecurringGeneratedForPage } from "@/lib/recurring";
 import { getActiveAccounts } from "@/lib/accounts";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
-import { capitalStatusByBeneficiary } from "@/lib/investments";
+import { capitalStatusByBeneficiary, freeCapitalOf } from "@/lib/investments";
 import { getCashboxState } from "@/lib/cashbox";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -239,7 +239,61 @@ export default async function ContasAPagarPage({
     // a opção "aplicar no capital" não aparece — mostramos uma dica de como habilitar.
     commissionSellerUnlinked:
       p.category === "COMISSAO" && !!p.beneficiaryUserId && !excessByUser.has(p.beneficiaryUserId),
+    // Retirada de capital pura (sócio, sem veículo): pode ser paga com
+    // substituição quando o capital do sócio está aplicado.
+    capitalBeneficiaryId: p.capitalBeneficiaryId ?? null,
+    isCapitalRetirada: !!p.capitalBeneficiaryId && !p.vehicle,
   }));
+
+  // Dados para "Pagar com substituição": para cada sócio que tem retirada de
+  // capital PENDENTE (sem veículo), as aplicações onde ele tem fatia e a lista de
+  // possíveis substitutos (capital livre). Só calcula se houver esses títulos.
+  const subBenefIds = Array.from(
+    new Set(
+      mappedRows
+        .filter((r) => r.isCapitalRetirada && r.effective !== "PAGO" && r.capitalBeneficiaryId)
+        .map((r) => r.capitalBeneficiaryId as string),
+    ),
+  );
+  const substitutionData: Record<
+    string,
+    {
+      appliedAccounts: { accountId: string; accountName: string; applied: number }[];
+      substitutes: { id: string; name: string; free: number }[];
+    }
+  > = {};
+  if (subBenefIds.length) {
+    const otherBenefs = await prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+      select: { id: true, name: true },
+    });
+    for (const bId of subBenefIds) {
+      const appliedRows = await prisma.investmentAllocation.groupBy({
+        by: ["accountId"],
+        where: { beneficiaryId: bId },
+        _sum: { amount: true },
+      });
+      const positives = appliedRows.filter((r) => (r._sum.amount ?? 0) > 0.005);
+      if (positives.length === 0) continue; // sem capital aplicado → sem substituição
+      const acctNames = await prisma.financialAccount.findMany({
+        where: { id: { in: positives.map((r) => r.accountId) } },
+        select: { id: true, name: true },
+      });
+      const nameById = new Map(acctNames.map((a) => [a.id, a.name]));
+      const appliedAccounts = positives.map((r) => ({
+        accountId: r.accountId,
+        accountName: nameById.get(r.accountId) ?? "—",
+        applied: Math.round((r._sum.amount ?? 0) * 100) / 100,
+      }));
+      const substitutes = await Promise.all(
+        otherBenefs
+          .filter((s) => s.id !== bId)
+          .map(async (s) => ({ id: s.id, name: s.name, free: await freeCapitalOf(s.id) })),
+      );
+      substitutionData[bId] = { appliedAccounts, substitutes };
+    }
+  }
 
   // Busca livre pelos campos exibidos (nº, descrição, categoria, fornecedor,
   // veículo, vencimento, valor, status, conta).
@@ -408,7 +462,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} />
+            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} substitutionData={substitutionData} />
             {pageCount > 1 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 print:hidden">
                 <p className="text-xs text-slate-500">

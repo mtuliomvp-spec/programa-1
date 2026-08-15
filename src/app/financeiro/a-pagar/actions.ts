@@ -16,6 +16,7 @@ import { isStructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
+import { appliedOf, freeCapitalOf } from "@/lib/investments";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -307,6 +308,130 @@ export async function payBatchAction(
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: true, paid };
+}
+
+/**
+ * Paga títulos de RETIRADA de capital de um sócio cujo capital está APLICADO,
+ * com SUBSTITUIÇÃO: outro sócio assume a fatia aplicada (o capital livre dele
+ * vira aplicado). Mesma mecânica do "Sacar com substituição" da tela de Capital,
+ * só que baixando títulos que já existem. Só vale para retiradas de capital
+ * pendentes, do MESMO sócio, sem veículo vinculado.
+ */
+export async function payWithSubstitutionAction(
+  ids: string[],
+  opts: { payFromAccountId: string; applicationAccountId: string; substituteId: string },
+): Promise<PayBatchResult> {
+  if (!ids.length) return { ok: false, paid: 0, error: "Selecione ao menos um título." };
+  if (!opts.payFromAccountId || !opts.applicationAccountId || !opts.substituteId) {
+    return { ok: false, paid: 0, error: "Escolha a conta que paga, a aplicação da fatia e o sócio substituto." };
+  }
+  try {
+    await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+    await assertNotInSolicitedCombo(ids);
+  } catch (e) {
+    return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const rows = await prisma.payable.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, amount: true, status: true, capitalBeneficiaryId: true, vehicleId: true },
+  });
+  if (rows.length !== ids.length) return { ok: false, paid: 0, error: "Título não encontrado." };
+  const benefId = rows[0].capitalBeneficiaryId;
+  if (
+    !benefId ||
+    rows.some((r) => r.capitalBeneficiaryId !== benefId || r.vehicleId || r.status === "PAGO")
+  ) {
+    return {
+      ok: false,
+      paid: 0,
+      error: "Selecione apenas retiradas de capital pendentes do mesmo sócio (sem veículo vinculado).",
+    };
+  }
+  if (opts.substituteId === benefId) {
+    return { ok: false, paid: 0, error: "O substituto precisa ser outro sócio." };
+  }
+  const appAccount = await prisma.financialAccount.findUnique({
+    where: { id: opts.applicationAccountId },
+    select: { isInvestment: true },
+  });
+  if (!appAccount?.isInvestment) {
+    return { ok: false, paid: 0, error: "A conta da fatia precisa ser uma conta de Aplicação." };
+  }
+  const [benef, sub] = await Promise.all([
+    prisma.capitalBeneficiary.findUnique({ where: { id: benefId }, select: { name: true } }),
+    prisma.capitalBeneficiary.findUnique({
+      where: { id: opts.substituteId },
+      select: { name: true, active: true },
+    }),
+  ]);
+  if (!benef || !sub) return { ok: false, paid: 0, error: "Sócio não encontrado." };
+  if (!sub.active) return { ok: false, paid: 0, error: "Substituto inativo." };
+
+  const total = round2(rows.reduce((s, r) => s + r.amount, 0));
+  // O substituto assume só a fatia REALMENTE aplicada (o excedente vira overdraw
+  // no capital do sócio, sem substituição — igual ao "Sacar com substituição").
+  const applied = await appliedOf(opts.applicationAccountId, benefId);
+  const swapTotal = round2(Math.min(total, applied));
+  const free = await freeCapitalOf(opts.substituteId);
+  if (swapTotal > free + 0.01) {
+    return {
+      ok: false,
+      paid: 0,
+      error: `${sub.name} tem apenas ${brl(free)} de capital livre para assumir a fatia de ${brl(swapTotal)}.`,
+    };
+  }
+
+  let remaining = swapTotal;
+  let paid = 0;
+  for (const p of rows) {
+    // Baixa o título (gera a retirada do sócio via syncPayableCapital)...
+    await markPayablePaid(p.id, date, opts.payFromAccountId);
+    // ...e troca o dono da fatia aplicada (líquido zero na conta de Aplicação),
+    // distribuindo o swap entre os títulos e limitado ao que estava aplicado.
+    const swap = round2(Math.min(p.amount, remaining));
+    remaining = round2(remaining - swap);
+    if (swap > 0) {
+      await prisma.investmentAllocation.createMany({
+        data: [
+          {
+            accountId: opts.applicationAccountId,
+            beneficiaryId: benefId,
+            kind: "SUBSTITUICAO",
+            amount: -swap,
+            date,
+            description: `Fatia assumida por ${sub.name}`,
+            payableId: p.id,
+          },
+          {
+            accountId: opts.applicationAccountId,
+            beneficiaryId: opts.substituteId,
+            kind: "SUBSTITUICAO",
+            amount: swap,
+            date,
+            description: `Assumiu a fatia de ${benef.name}`,
+            payableId: p.id,
+          },
+        ],
+      });
+    }
+    paid += 1;
+  }
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/capital");
   revalidatePath("/");
   return { ok: true, paid };
 }
@@ -926,9 +1051,11 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   if (okIds.length) {
     await prisma.$transaction([
       // O custo do veículo perderia o vínculo (SetNull) e a movimentação de
-      // capital não tem cascade — os dois saem junto com o título.
+      // capital não tem cascade — os dois saem junto com o título. A troca de
+      // fatia aplicada (substituição) também é vinculada ao título.
       prisma.vehicleCost.deleteMany({ where: { payableId: { in: okIds } } }),
       prisma.capitalTransaction.deleteMany({ where: { payableId: { in: okIds } } }),
+      prisma.investmentAllocation.deleteMany({ where: { payableId: { in: okIds } } }),
       prisma.payable.deleteMany({ where: { id: { in: okIds } } }),
     ]);
   }

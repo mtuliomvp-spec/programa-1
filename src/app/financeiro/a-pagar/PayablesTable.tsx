@@ -8,6 +8,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import {
   markPendingAction,
   payBatchAction,
+  payWithSubstitutionAction,
   deletePayablesAction,
   correctPaymentDateAction,
 } from "./actions";
@@ -46,7 +47,18 @@ export type PayableRow = {
   commissionExcess: { beneficiaryName: string; free: number; capital: number } | null;
   // Comissão de vendedor SEM beneficiário do capital vinculado: mostra uma dica.
   commissionSellerUnlinked: boolean;
+  // Retirada de capital de um sócio (sem veículo): pode ser paga com substituição.
+  capitalBeneficiaryId: string | null;
+  isCapitalRetirada: boolean;
 };
+
+type SubstitutionData = Record<
+  string,
+  {
+    appliedAccounts: { accountId: string; accountName: string; applied: number }[];
+    substitutes: { id: string; name: string; free: number }[];
+  }
+>;
 
 const statusTone = { PENDENTE: "warning", PAGO: "success", ATRASADO: "danger" } as const;
 const statusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atrasado" } as const;
@@ -61,6 +73,7 @@ export default function PayablesTable({
   canCombo = false,
   cashboxDate = null,
   openCombos = [],
+  substitutionData = {},
 }: {
   rows: PayableRow[];
   accounts: Account[];
@@ -74,6 +87,9 @@ export default function PayablesTable({
   canCombo?: boolean;
   cashboxDate?: string | null;
   openCombos?: { id: string; name: string }[];
+  // Por sócio com retirada de capital pendente: aplicações e substitutos, para
+  // pagar com substituição da fatia aplicada.
+  substitutionData?: SubstitutionData;
 }) {
   const showEdit = canEdit ?? canManage;
   const router = useRouter();
@@ -85,6 +101,11 @@ export default function PayablesTable({
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
   const [addingCombo, startAddCombo] = useTransition();
+  // Pagar com substituição (retirada de capital aplicado).
+  const [showSub, setShowSub] = useState(false);
+  const [subAppAccountId, setSubAppAccountId] = useState("");
+  const [subSubstituteId, setSubSubstituteId] = useState("");
+  const [subbing, startSub] = useTransition();
 
   function addToCombo() {
     const ids = [...selected];
@@ -107,6 +128,47 @@ export default function PayablesTable({
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
   const selectedTotal = selectedRows.reduce((s, r) => s + r.amount, 0);
+
+  // "Pagar com substituição": só quando TODOS os selecionados são retiradas de
+  // capital do MESMO sócio e esse sócio tem capital aplicado (substitutionData).
+  const subBenefId =
+    selectedRows.length > 0 &&
+    selectedRows.every(
+      (r) => r.isCapitalRetirada && r.capitalBeneficiaryId === selectedRows[0].capitalBeneficiaryId,
+    )
+      ? selectedRows[0].capitalBeneficiaryId
+      : null;
+  const subData = subBenefId ? substitutionData[subBenefId] : null;
+  const canSubstitute = !!subData && subData.appliedAccounts.length > 0;
+
+  function paySub() {
+    if (!accountId) {
+      setMsg("Escolha a conta que fará o pagamento.");
+      return;
+    }
+    if (!subAppAccountId || !subSubstituteId) {
+      setMsg("Escolha a aplicação de onde sai a fatia e o sócio substituto.");
+      return;
+    }
+    const ids = [...selected];
+    setMsg(null);
+    startSub(async () => {
+      const res = await payWithSubstitutionAction(ids, {
+        payFromAccountId: accountId,
+        applicationAccountId: subAppAccountId,
+        substituteId: subSubstituteId,
+      });
+      if (!res.ok) {
+        setMsg(res.error || "Não foi possível pagar com substituição.");
+        return;
+      }
+      setSelected(new Set());
+      setShowSub(false);
+      setSubAppAccountId("");
+      setSubSubstituteId("");
+      setMsg(`${res.paid} título(s) pago(s) com substituição.`);
+    });
+  }
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -372,6 +434,17 @@ export default function PayablesTable({
                       ? "Pagar título"
                       : `Pagar ${selected.size} títulos`}
                 </button>
+                {canPagar && canSubstitute ? (
+                  <button
+                    type="button"
+                    disabled={subbing || pending}
+                    onClick={() => setShowSub((v) => !v)}
+                    className="h-9 rounded-lg border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
+                    title="O capital do sócio está aplicado; outro sócio assume a fatia"
+                  >
+                    {showSub ? "Fechar substituição" : "Pagar com substituição"}
+                  </button>
+                ) : null}
               </>
             ) : null}
             {canCombo && openCombos.length > 0 ? (
@@ -418,6 +491,60 @@ export default function PayablesTable({
               Limpar
             </button>
           </div>
+
+          {showSub && canSubstitute && subData ? (
+            <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
+              <p className="text-sm font-semibold text-amber-900">
+                Pagar com substituição da fatia aplicada
+              </p>
+              <p className="mt-0.5 text-xs text-amber-800">
+                O capital deste sócio está aplicado. Outro sócio assume a fatia (o capital livre dele
+                vira aplicado); o valor sai da <strong>conta que vai pagar</strong> (acima) e vira
+                retirada do sócio. Se o valor passar do aplicado, o excedente deixa o capital dele
+                negativo (sem substituição da parte excedente).
+              </p>
+              <div className="mt-2 flex flex-wrap items-end gap-3">
+                <label className="flex flex-col gap-1 text-xs text-slate-600">
+                  Aplicação (de onde sai a fatia)
+                  <select
+                    value={subAppAccountId}
+                    onChange={(e) => setSubAppAccountId(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+                  >
+                    <option value="">Selecione…</option>
+                    {subData.appliedAccounts.map((a) => (
+                      <option key={a.accountId} value={a.accountId}>
+                        {a.accountName} · aplicado {formatCurrency(a.applied)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-slate-600">
+                  Sócio que assume a fatia
+                  <select
+                    value={subSubstituteId}
+                    onChange={(e) => setSubSubstituteId(e.target.value)}
+                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+                  >
+                    <option value="">Selecione…</option>
+                    {subData.substitutes.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} · livre {formatCurrency(s.free)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={subbing}
+                  onClick={paySub}
+                  className="h-9 rounded-lg bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                >
+                  {subbing ? "Pagando..." : `Confirmar (${formatCurrency(selectedTotal)})`}
+                </button>
+              </div>
+            </div>
+          ) : null}
           {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
         </div>
       ) : null}
