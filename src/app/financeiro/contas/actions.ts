@@ -42,6 +42,51 @@ export async function openCashboxAction(workDate?: string): Promise<{ ok: boolea
   return { ok: true };
 }
 
+/**
+ * Estorna, de uma vez, todas as baixas (pagamentos e recebimentos) feitas no
+ * caixa aberto (data de trabalho) — "zera o caixa do dia". Títulos voltam a
+ * PENDENTE e avulsos são apagados; baixas de origem (venda/recorrência/etc.)
+ * não são tocadas e vêm reportadas para reverter na origem.
+ */
+export async function revertCashboxAction(): Promise<{
+  ok: boolean;
+  error?: string;
+  revertidos?: number;
+  pulados?: number;
+  puladosDescricoes?: string[];
+}> {
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
+  try {
+    await assertCan("financeiro", "contas");
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const { revertCashboxBaixas } = await import("@/lib/finance");
+  let res;
+  try {
+    res = await revertCashboxBaixas(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar o caixa." };
+  }
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/capital");
+  revalidatePath("/", "layout");
+  return { ok: true, ...res };
+}
+
 /** Fecha o caixa: bloqueia novos lançamentos até reabrir. */
 export async function closeCashboxAction(): Promise<{ ok: boolean; error?: string }> {
   const user = await getSessionUser();

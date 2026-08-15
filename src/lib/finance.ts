@@ -3036,6 +3036,85 @@ export async function deleteCashEntry(kind: "entrada" | "saida", id: string) {
   }
 }
 
+/**
+ * Estorna TODAS as baixas (pagamentos e recebimentos) com data = `workDate` —
+ * o "zerar o caixa do dia". Aplica, em lote, a mesma regra do estorno
+ * individual (deleteCashEntry):
+ *  - lançamento AVULSO → apagado (com a movimentação de capital vinculada);
+ *  - TÍTULO baixado comum → volta a PENDENTE (desfaz retirada/aporte de capital,
+ *    fatura de cartão e solicitação de compra pelos syncs);
+ *  - baixa de origem (venda, peça, recorrência, consórcio, funcionário) → NÃO é
+ *    tocada e entra em `pulados`: precisa ser revertida na própria origem
+ *    (ex.: cancelar a venda), porque desfazê-la aqui deixaria a origem
+ *    inconsistente.
+ *
+ * Reverte os dois lados juntos (pagáveis e recebíveis do dia), então os pares no
+ * Banco Neutro (comissão no capital, título pago com capital) voltam inteiros e
+ * o farol continua consistente.
+ */
+export async function revertCashboxBaixas(workDate: Date): Promise<{
+  revertidos: number;
+  pulados: number;
+  puladosDescricoes: string[];
+}> {
+  const dayStart = new Date(Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 0, 0, 0));
+  const dayEnd = new Date(Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 23, 59, 59, 999));
+  const range = { gte: dayStart, lte: dayEnd };
+
+  const [receivables, payables] = await Promise.all([
+    prisma.receivable.findMany({
+      where: { status: "RECEBIDO", receivedDate: range },
+      select: { id: true, description: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true },
+    }),
+    prisma.payable.findMany({
+      where: { status: "PAGO", paymentDate: range },
+      select: { id: true, description: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true },
+    }),
+  ]);
+
+  let revertidos = 0;
+  let pulados = 0;
+  const puladosDescricoes: string[] = [];
+
+  // Recebíveis: avulso apaga; título comum estorna; origem é pulada.
+  for (const r of receivables) {
+    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
+      pulados++;
+      puladosDescricoes.push(r.description);
+      continue;
+    }
+    if (r.avulso) {
+      await prisma.$transaction([
+        prisma.capitalTransaction.deleteMany({ where: { receivableId: r.id } }),
+        prisma.receivable.delete({ where: { id: r.id } }),
+      ]);
+    } else {
+      await markReceivablePending(r.id);
+    }
+    revertidos++;
+  }
+
+  // Pagáveis: mesma regra (origem = veículo/peça/recorrência/consórcio/funcionário).
+  for (const p of payables) {
+    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
+      pulados++;
+      puladosDescricoes.push(p.description);
+      continue;
+    }
+    if (p.avulso) {
+      await prisma.$transaction([
+        prisma.capitalTransaction.deleteMany({ where: { payableId: p.id } }),
+        prisma.payable.delete({ where: { id: p.id } }),
+      ]);
+    } else {
+      await markPayablePending(p.id);
+    }
+    revertidos++;
+  }
+
+  return { revertidos, pulados, puladosDescricoes };
+}
+
 export async function createManualReceivable(input: {
   description: string;
   amount: number;
