@@ -557,7 +557,6 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                     vehicleId={vehicle.id}
                     initial={vehicle.transferInProgress}
                     canManage={canComunicacao || canEditar}
-                    hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
                   />
                 </div>
 
@@ -701,7 +700,6 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 vehicleId={vehicle.id}
                 initial={vehicle.transferInProgress}
                 canManage={canComunicacao || canEditar}
-                hasCrlv={vehicle.attachments.some((a) => a.kind === "CRLV")}
               />
             </Card>
           ) : null}
