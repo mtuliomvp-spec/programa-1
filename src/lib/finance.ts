@@ -478,7 +478,23 @@ export async function addVehicleCostWithPayable(input: {
   alreadyPaid: boolean;
   dueDate?: Date | null;
   installments?: number;
+  // Pós-venda custeado pelo CAPITAL de um sócio: a despesa é reconhecida
+  // normalmente e o valor entra como APORTE do sócio (ele bancou uma conta da
+  // loja com recurso próprio). Só vale para veículo já VENDIDO (pós-venda).
+  capitalBeneficiaryId?: string | null;
 }) {
+  if (input.capitalBeneficiaryId) {
+    return addPostSaleCostFromCapital({
+      vehicleId: input.vehicleId,
+      description: input.description,
+      category: input.category,
+      amount: input.amount,
+      date: input.date,
+      notes: input.notes ?? null,
+      supplierId: input.supplierId ?? null,
+      capitalBeneficiaryId: input.capitalBeneficiaryId,
+    });
+  }
   const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
   const veiculosCenterId = await structuralCenterId("VEICULOS");
   const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
@@ -540,6 +556,107 @@ export async function addVehicleCostWithPayable(input: {
   });
 }
 
+/**
+ * Lança um custo PÓS-VENDA custeado pelo CAPITAL de um sócio. A loja teve a
+ * despesa (reconhecida no resultado como pós-venda), mas quem pagou foi o sócio
+ * com recurso próprio — então o valor entra como APORTE dele. O par
+ * despesa + aporte é baixado no BANCO NEUTRO (se anula, nenhum dinheiro real se
+ * move), mantendo a equação patrimonial em dia: a despesa reduz o resultado em
+ * X e o capital sobe X (que também subtrai X na equação) — os dois lados batem.
+ *
+ * Só vale para veículo já VENDIDO (é o que caracteriza o pós-venda). Ambas as
+ * pernas ficam protegidas dos estornos de caixa (a despesa pelo vínculo com o
+ * veículo; o aporte pela marca de "estornar na origem"), então o par só é
+ * desfeito de propósito, em deleteVehicleCost — que apaga o par inteiro.
+ */
+async function addPostSaleCostFromCapital(input: {
+  vehicleId: string;
+  description: string;
+  category: CategoriaCustoVeiculo;
+  amount: number;
+  date: Date;
+  notes: string | null;
+  supplierId: string | null;
+  capitalBeneficiaryId: string;
+}) {
+  const [adminCenterId, capitalCenterId, neutralAccountId] = await Promise.all([
+    structuralCenterId("ADMINISTRATIVO"),
+    structuralCenterId("CAPITAL"),
+    getNeutralAccountId(),
+  ]);
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: input.vehicleId } });
+  if (vehicle.status !== "VENDIDO") {
+    throw new Error(
+      "Atrelar a despesa ao capital do sócio só vale para pós-venda (veículo já vendido).",
+    );
+  }
+  const beneficiary = await prisma.capitalBeneficiary.findUniqueOrThrow({
+    where: { id: input.capitalBeneficiaryId },
+    select: { name: true, active: true },
+  });
+  if (!beneficiary.active) throw new Error("Sócio (beneficiário do capital) inativo.");
+
+  const suffix = `${vehicle.brand} ${vehicle.model} (${vehicle.plate})`;
+  // Despesa (pós-venda) + custo do veículo — criados PENDENTES na transação.
+  const payable = await prisma.$transaction(async (tx) => {
+    const payable = await tx.payable.create({
+      data: {
+        description: `${input.description} - ${suffix}`,
+        category: "DESPESA_OPERACIONAL",
+        amount: input.amount,
+        dueDate: input.date,
+        status: "PENDENTE",
+        supplierId: input.supplierId || null,
+        vehicleId: vehicle.id,
+        notes: input.notes || null,
+        costCenterId: adminCenterId,
+      },
+    });
+    await tx.vehicleCost.create({
+      data: {
+        vehicleId: vehicle.id,
+        description: input.description,
+        category: input.category,
+        amount: input.amount,
+        date: input.date,
+        postSale: true,
+        notes: input.notes || null,
+        payableId: payable.id,
+      },
+    });
+    return payable;
+  });
+
+  // A despesa é "paga" no Banco Neutro (quem bancou foi o sócio, não o caixa)...
+  await markPayablePaid(payable.id, input.date, neutralAccountId);
+  // ...e a contrapartida: APORTE do sócio recebido no mesmo Banco Neutro. A
+  // marca installmentNumber tira o aporte dos estornos de caixa (livro caixa,
+  // "estornar caixa do dia"): a perna-par só volta pela origem (o custo).
+  const aporte = await prisma.receivable.create({
+    data: {
+      costCenterId: capitalCenterId,
+      description: `Aporte p/ pós-venda — ${beneficiary.name} — ${input.description} - ${suffix}`,
+      category: "OUTROS",
+      amount: input.amount,
+      dueDate: input.date,
+      status: "PENDENTE",
+      capitalBeneficiaryId: input.capitalBeneficiaryId,
+      installmentNumber: 1,
+      notes:
+        "Aporte do sócio que bancou uma despesa de pós-venda da loja (par no Banco Neutro — sem dinheiro em caixa). Estorne pelo custo do veículo.",
+    },
+  });
+  await markReceivableReceived(aporte.id, input.date, neutralAccountId);
+  // Liga o APORTE (via a movimentação de capital) à despesa-par, para que
+  // deleteVehicleCost ache e apague o par inteiro e o neutro volte a zero.
+  await prisma.capitalTransaction.updateMany({
+    where: { receivableId: aporte.id },
+    data: { payableId: payable.id },
+  });
+
+  return prisma.vehicleCost.findFirstOrThrow({ where: { payableId: payable.id } });
+}
+
 export async function deleteVehicleCost(costId: string) {
   return prisma.$transaction(async (tx) => {
     const cost = await tx.vehicleCost.findUniqueOrThrow({
@@ -552,6 +669,17 @@ export async function deleteVehicleCost(costId: string) {
     }
     await tx.vehicleCost.delete({ where: { id: costId } });
     if (cost.payableId) {
+      // Pós-venda custeado pelo capital do sócio: a despesa foi paga no Banco
+      // Neutro contra um APORTE (recebível-par). Apaga o par inteiro (aporte +
+      // movimentação de capital), senão o neutro trava desbalanceado.
+      const aporteTx = await tx.capitalTransaction.findFirst({
+        where: { payableId: cost.payableId, kind: "APORTE", receivableId: { not: null } },
+        select: { id: true, receivableId: true },
+      });
+      if (aporteTx?.receivableId) {
+        await tx.capitalTransaction.delete({ where: { id: aporteTx.id } });
+        await tx.receivable.delete({ where: { id: aporteTx.receivableId } });
+      }
       await tx.payable.delete({ where: { id: cost.payableId } });
     }
   });

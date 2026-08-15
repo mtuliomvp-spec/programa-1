@@ -473,6 +473,9 @@ const costSchema = z.object({
   alreadyPaid: z.coerce.boolean().optional(),
   dueDate: z.string().optional(),
   installments: z.coerce.number().int().min(1).max(60).optional(),
+  // Pós-venda custeado pelo capital de um sócio (veículo já vendido): a despesa
+  // vira aporte do sócio, baixada no Banco Neutro (sem mexer no caixa).
+  capitalBeneficiaryId: z.string().optional(),
 });
 
 export type CostFormState = { error?: string; success?: boolean };
@@ -493,6 +496,7 @@ export async function addVehicleCostAction(
     return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   }
   const data = parsed.data;
+  const capitalBeneficiaryId = (data.capitalBeneficiaryId || "").trim() || null;
 
   try {
     await addVehicleCostWithPayable({
@@ -503,10 +507,14 @@ export async function addVehicleCostAction(
       date: parseDateInput(data.date),
       alreadyPaid: Boolean(data.alreadyPaid),
       dueDate: data.dueDate ? parseDateInput(data.dueDate) : null,
-      installments: data.installments ?? 1,
+      // No custeio por capital não há parcelamento: o sócio banca o valor cheio.
+      installments: capitalBeneficiaryId ? 1 : data.installments ?? 1,
+      capitalBeneficiaryId,
     });
-  } catch {
-    return { error: "Não foi possível lançar o custo. Tente novamente." };
+  } catch (e) {
+    // A rotina de capital valida veículo vendido / sócio ativo — repassa a
+    // mensagem para o usuário entender o motivo.
+    return { error: e instanceof Error ? e.message : "Não foi possível lançar o custo. Tente novamente." };
   }
   revalidatePath(`/estoque/${data.vehicleId}`);
   revalidatePath("/estoque");

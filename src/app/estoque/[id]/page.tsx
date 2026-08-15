@@ -163,6 +163,16 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   // Sinais / entradas antecipadas (só p/ veículo ainda não vendido)
   const inStock = vehicle.status !== "VENDIDO";
 
+  // Sócios ativos: só o veículo vendido oferece custear o pós-venda pelo capital.
+  const costBeneficiaries =
+    vehicle.status === "VENDIDO" && canCustos
+      ? await prisma.capitalBeneficiary.findMany({
+          where: { active: true },
+          orderBy: { name: "asc" },
+          select: { id: true, name: true },
+        })
+      : [];
+
   // QR Code do para-brisa: aponta para o anúncio público (/vitrine/[id]) —
   // tudo que ele mostra é gerenciado na ficha (preço, fotos, dados, publicar).
   const [company, qrDataUrl] = await Promise.all([
@@ -387,6 +397,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               sold={vehicle.status === "VENDIDO"}
               canManage={canCustos}
               canOpenPayable={canOpenPayable}
+              beneficiaries={costBeneficiaries}
               costs={vehicle.costs.map((c) => ({
                 id: c.id,
                 description: c.description,
