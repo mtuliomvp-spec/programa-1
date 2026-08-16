@@ -89,6 +89,22 @@ function crlvBadge(
   return { label: "⚠ CRLV pendente", tone: "warning" };
 }
 
+/**
+ * Selo de publicação na vitrine pública. "Na vitrine" só quando o anúncio
+ * REALMENTE aparece (publicado + em estoque + sem pré-venda aberta) — é o mesmo
+ * critério do QR do para-brisa. Publicado mas oculto (reservado/pré-venda) e não
+ * publicado têm avisos próprios.
+ */
+function vitrineBadge(
+  published: boolean,
+  status: string,
+  hasPreSale: boolean,
+): { label: string; tone: "success" | "warning" | "info" } {
+  if (published && status === "ESTOQUE" && !hasPreSale) return { label: "✓ Na vitrine", tone: "success" };
+  if (published) return { label: "🔒 Publicado (oculto na vitrine)", tone: "info" };
+  return { label: "⚠ Fora da vitrine", tone: "warning" };
+}
+
 export default async function EstoquePage({
   searchParams,
 }: {
@@ -332,6 +348,10 @@ export default async function EstoquePage({
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
+            {(() => {
+              const b = vitrineBadge(v.published, v.status, v.preSaleNumber != null);
+              return <Badge tone={b.tone}>{b.label}</Badge>;
+            })()}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
@@ -425,6 +445,14 @@ export default async function EstoquePage({
         {v.hasTransferQuote ? (
           <span className="mt-1 block">
             <Badge tone="success">✓ Orçamento transf.</Badge>
+          </span>
+        ) : null}
+        {v.status !== "VENDIDO" ? (
+          <span className="mt-1 block">
+            {(() => {
+              const b = vitrineBadge(v.published, v.status, v.preSaleNumber != null);
+              return <Badge tone={b.tone}>{b.label}</Badge>;
+            })()}
           </span>
         ) : null}
         {v.status === "VENDIDO" ? (
