@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { getBaseUrl } from "@/lib/base-url";
 import { formatCurrency } from "@/lib/format";
@@ -26,7 +26,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { id } = await params;
   const [v, company] = await Promise.all([getShowroomVehicle(id), getCompany().catch(() => null)]);
-  if (!v) return { title: "Veículo não encontrado" };
+  if (!v) return { title: "Veículo indisponível" };
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
   const base = await getBaseUrl();
@@ -58,7 +58,76 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
     getBaseUrl(),
   ]);
   const v = all.find((x) => x.id === id);
-  if (!v) notFound();
+  // Veículo fora da vitrine (não publicado, vendido, reservado ou com pré-venda):
+  // em vez de um 404 cru — ruim para quem escaneia o QR do para-brisa no pátio —
+  // mostra uma página amigável com o contato da loja. O mesmo QR volta a abrir o
+  // anúncio assim que o veículo for publicado e estiver à venda.
+  if (!v) {
+    const dbVehicle = await prisma.vehicle.findUnique({
+      where: { id },
+      select: { brand: true, model: true, manufactureYear: true, modelYear: true },
+    });
+    const nomeLoja = company?.nomeFantasia || "MVP Veículos";
+    const carroTitulo = dbVehicle ? displayName(dbVehicle.brand, dbVehicle.model) : null;
+    const zapIndisp = whatsappLink(
+      company?.phone,
+      carroTitulo
+        ? `Olá! Vi o QR do ${carroTitulo} e gostaria de mais informações.`
+        : `Olá! Gostaria de informações sobre os veículos da ${nomeLoja}.`,
+    );
+    return (
+      <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+        <ThemeScript />
+        <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+          <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
+            <Link href="/vitrine" className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-300">
+              ← Todos os veículos
+            </Link>
+            <ThemeToggle />
+          </div>
+        </header>
+        <main className="mx-auto max-w-2xl px-4 py-16 text-center">
+          <div className="text-6xl">🚗</div>
+          <h1 className="mt-4 text-2xl font-bold text-slate-900 dark:text-white">
+            Veículo indisponível no momento
+          </h1>
+          {carroTitulo ? (
+            <p className="mt-1 text-sm font-medium text-slate-600 dark:text-slate-300">
+              {carroTitulo}
+              {dbVehicle ? ` · ${dbVehicle.manufactureYear}/${dbVehicle.modelYear}` : ""}
+            </p>
+          ) : null}
+          <p className="mx-auto mt-3 max-w-md text-slate-600 dark:text-slate-400">
+            Este veículo não está disponível na nossa vitrine agora — pode já ter sido vendido,
+            reservado ou ainda estar em preparação. Fale com a nossa equipe que ajudamos você a
+            encontrar o carro ideal.
+          </p>
+          <div className="mt-6 flex flex-wrap justify-center gap-3">
+            {zapIndisp ? (
+              <a
+                href={zapIndisp}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex h-12 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700"
+              >
+                💬 Falar com a equipe {nomeLoja}
+              </a>
+            ) : null}
+            <Link
+              href="/vitrine"
+              className="inline-flex h-12 items-center gap-2 rounded-xl border border-slate-300 bg-white px-5 text-base font-semibold text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+            >
+              Ver todos os veículos
+            </Link>
+          </div>
+          <div className="mt-10">
+            <PublicFooter company={company} />
+          </div>
+        </main>
+        <FloatingWhatsApp href={zapIndisp} />
+      </div>
+    );
+  }
 
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
