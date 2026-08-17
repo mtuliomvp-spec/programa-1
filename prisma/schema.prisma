@@ -588,6 +588,8 @@ model VehicleAppraisal {
   fipeModelo      String?
   // Avaliação em si.
   appraisalPrice  Float?
+  // Quanto o proprietário quer pelo veículo (pedido dele, não a avaliação da loja).
+  ownerAskingPrice Float?
   optionals       String[]        @default([])
   checklist       Json            @default("{}")
   notes           String?
