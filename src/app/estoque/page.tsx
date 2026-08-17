@@ -8,6 +8,7 @@ import { Badge, Card, EmptyState, LinkButton, Select, Table, Td, Th, Thead, Tr, 
 import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
 import PrintButton from "@/components/PrintButton";
+import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { nameKey } from "@/lib/person-keys";
 import type { StatusVeiculo } from "@prisma/client";
@@ -124,9 +125,10 @@ export default async function EstoquePage({
   // Duas permissões separadas: uma para VER o custo aqui na lista e outra para
   // LEVAR esse custo para fora no PDF. Quem não tem a primeira também não vê
   // custo no PDF, porque ele é montado a partir desta mesma tabela.
-  const [canVerCusto, canPdfCusto] = await Promise.all([
+  const [canVerCusto, canPdfCusto, canVerAPagar] = await Promise.all([
     userCan("estoque", "vercusto"),
     userCan("estoque", "pdfcusto"),
+    userCan("financeiro", "visualizar"),
   ]);
 
   const [vehicles, openPreSales, company, beneficiaryNames] = await timed("tela: estoque", () =>
@@ -329,7 +331,11 @@ export default async function EstoquePage({
               {v.pendingCost > 0 ? (
                 <p className="text-[11px] text-slate-400">
                   total {formatCurrency(v.invested)} ·{" "}
-                  <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                  {canVerAPagar ? (
+                    <PendingCostLink vehicleId={v.id} amountLabel={formatCurrency(v.pendingCost)} />
+                  ) : (
+                    <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+                  )}
                 </p>
               ) : v.paidCost < v.invested ? (
                 <p className="text-[11px] text-slate-400">de {formatCurrency(v.invested)}</p>
@@ -402,7 +408,11 @@ export default async function EstoquePage({
           {v.pendingCost > 0 ? (
             <span className="block text-[11px] text-slate-400">
               total {formatCurrency(v.invested)} ·{" "}
-              <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+              {canVerAPagar ? (
+                <PendingCostLink vehicleId={v.id} amountLabel={formatCurrency(v.pendingCost)} />
+              ) : (
+                <span className="text-rose-500">falta {formatCurrency(v.pendingCost)}</span>
+              )}
             </span>
           ) : v.paidCost < v.invested ? (
             <span className="block text-[11px] text-slate-400">de {formatCurrency(v.invested)}</span>
