@@ -49,7 +49,7 @@ const appraisalSchema = z.object({
   ownerPhone: optionalString,
 });
 
-export type AppraisalFormState = { error?: string };
+export type AppraisalFormState = { error?: string; id?: string };
 
 function isState(v: unknown): v is ChecklistState {
   return v === "OK" || v === "ATENCAO" || v === "PROBLEMA";
@@ -162,7 +162,9 @@ export async function createAppraisalAction(
   });
 
   revalidatePath("/avaliacoes");
-  redirect(`/avaliacoes/${created.id}`);
+  // Não redireciona aqui: o cliente sobe as fotos selecionadas para este id e
+  // depois navega para a ficha.
+  return { id: created.id };
 }
 
 export async function updateAppraisalAction(
@@ -190,7 +192,7 @@ export async function updateAppraisalAction(
 
   revalidatePath("/avaliacoes");
   revalidatePath(`/avaliacoes/${id}`);
-  redirect(`/avaliacoes/${id}`);
+  return { id };
 }
 
 export async function deleteAppraisalAction(id: string) {
