@@ -113,10 +113,13 @@ function vitrineBadge(
 export default async function EstoquePage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ status?: string; doc?: string; q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
   const params = await searchParams;
   const { de, ate, min, max } = params;
+  // Filtro por situação de documentação (selo do card): transferência em aberto,
+  // orçamento, transferido, CRLV pendente, ATPV-e.
+  const docFilter = params.doc && params.doc !== "TODOS" ? params.doc : null;
   // "PRE_VENDIDO" é um filtro derivado (veículo em estoque com pré-venda em
   // aberto), não um status do banco. Os demais valores são status reais.
   const preVendidoFilter = params.status === "PRE_VENDIDO";
@@ -265,6 +268,35 @@ export default async function EstoquePage({
     ? allRows.filter((v) => v.status !== "VENDIDO" && v.preSaleNumber != null)
     : allRows;
 
+  // Situação de documentação: usa o MESMO selo do card (crlvBadge) para casar
+  // com o que o usuário vê. "Transferido" também inclui a baixa concluída no
+  // DETRAN (transferDoneAt) dos vendidos.
+  const docMatch = (v: (typeof allRows)[number]): boolean => {
+    if (!docFilter) return true;
+    const badge = crlvBadge(
+      v.hasCrlv,
+      v.crlvYear,
+      v.transferStarted,
+      v.docOwnerIsOurs,
+      v.transferInProgress,
+      v.saleTransferPending,
+    );
+    switch (docFilter) {
+      case "TRANSFERENCIA":
+        return badge.label.startsWith("🔄");
+      case "ORCAMENTO":
+        return v.hasTransferQuote;
+      case "TRANSFERIDO":
+        return badge.label.startsWith("✓ Transferido") || v.transferDoneAt != null;
+      case "CRLV_PENDENTE":
+        return badge.label.startsWith("⚠");
+      case "ATPV":
+        return v.hasAtpv;
+      default:
+        return true;
+    }
+  };
+
   // Busca livre pelos campos exibidos + intervalo de entrada + faixa de preço.
   const rows = statusFiltered.filter(
     (v) =>
@@ -290,7 +322,8 @@ export default async function EstoquePage({
         v.receivedInTrade ? "recebido em troca" : "",
       ) &&
       inDateRange(v.entryDate, de, ate) &&
-      inValueRange(v.salePrice, min, max),
+      inValueRange(v.salePrice, min, max) &&
+      docMatch(v),
   );
 
   // A lista é do ESTOQUE: os vendidos são histórico e vão para o fim da página,
@@ -537,7 +570,7 @@ export default async function EstoquePage({
         ate={ate}
         min={min}
         max={max}
-        filtersKey={`${params.status ?? ""}`}
+        filtersKey={`${params.status ?? ""}|${params.doc ?? ""}`}
         pdf={canPdfCusto}
         actions={
           emEstoque.length > 0 ? (
@@ -551,15 +584,28 @@ export default async function EstoquePage({
           ) : null
         }
         extra={
-          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
-            Status
-            <Select name="status" defaultValue={params.status || "TODOS"} className="mt-0.5 w-44">
-              <option value="TODOS">Todos os status</option>
-              <option value="ESTOQUE">Em estoque</option>
-              <option value="PRE_VENDIDO">Pré-vendido</option>
-              <option value="VENDIDO">Vendido</option>
-            </Select>
-          </label>
+          <div className="flex flex-wrap items-end gap-3">
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Status
+              <Select name="status" defaultValue={params.status || "TODOS"} className="mt-0.5 h-11 w-44">
+                <option value="TODOS">Todos os status</option>
+                <option value="ESTOQUE">Em estoque</option>
+                <option value="PRE_VENDIDO">Pré-vendido</option>
+                <option value="VENDIDO">Vendido</option>
+              </Select>
+            </label>
+            <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+              Documentação
+              <Select name="doc" defaultValue={params.doc || "TODOS"} className="mt-0.5 h-11 w-56">
+                <option value="TODOS">Toda a documentação</option>
+                <option value="TRANSFERENCIA">Em processo de transferência</option>
+                <option value="ORCAMENTO">Com orçamento de transferência</option>
+                <option value="TRANSFERIDO">Transferido (CRLV no nome da loja)</option>
+                <option value="CRLV_PENDENTE">CRLV pendente</option>
+                <option value="ATPV">Com ATPV-e</option>
+              </Select>
+            </label>
+          </div>
         }
       />
 
