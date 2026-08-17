@@ -108,6 +108,14 @@ export async function deleteCashEntryAction(kind: "entrada" | "saida", id: strin
   await deleteCashEntry(kind, id);
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/contas");
+  // Estornar uma baixa devolve o título a PENDENTE em Contas a pagar/receber e
+  // pode desfazer uma retirada/aporte de capital — as mesmas telas que o create
+  // revalida precisam ser atualizadas aqui, senão o título estornado não
+  // reaparece como pendente (cache de rota) e o capital fica desatualizado.
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/capital");
   revalidatePath("/estoque");
   revalidatePath("/");
 }
