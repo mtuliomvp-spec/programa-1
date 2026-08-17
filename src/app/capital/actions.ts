@@ -9,6 +9,7 @@ import { parseDateInput } from "@/lib/format";
 import { getDefaultAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
+import { markPayablePending, markReceivablePending } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
 import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
@@ -312,17 +313,66 @@ export async function withdrawWithSubstituteAction(
 
 export async function deleteCapitalTransactionAction(id: string, beneficiaryId: string) {
   await assertCan("administrativo", "capital");
-  await prisma.$transaction(async (tx) => {
-    const transaction = await tx.capitalTransaction.findUniqueOrThrow({ where: { id } });
-    await tx.capitalTransaction.delete({ where: { id } });
-    if (transaction.payableId) {
-      await tx.payable.deleteMany({ where: { id: transaction.payableId } });
-    }
-    if (transaction.receivableId) {
-      await tx.receivable.deleteMany({ where: { id: transaction.receivableId } });
-    }
+
+  const transaction = await prisma.capitalTransaction.findUniqueOrThrow({
+    where: { id },
+    select: { id: true, payableId: true, receivableId: true },
   });
+
+  // Movimento DERIVADO de um título real do fluxo Capital — título lançado em
+  // Contas a pagar/receber com beneficiário do capital e pago/recebido (inclusive
+  // via conciliação bancária): NÃO apagar o título, senão ele some do sistema.
+  // Reverte a baixa (markPayable/ReceivablePending) → o título volta a PENDENTE
+  // em Contas a pagar/receber e o próprio sync remove este movimento de capital.
+  // Só APAGA o título quando ele nasceu junto com o movimento (retirada / aporte
+  // / pró-labore lançados direto no Capital, sem beneficiário no próprio título).
+  if (transaction.payableId) {
+    const pay = await prisma.payable.findUnique({
+      where: { id: transaction.payableId },
+      select: { capitalBeneficiaryId: true },
+    });
+    if (pay?.capitalBeneficiaryId) {
+      await markPayablePending(transaction.payableId);
+      // Limpa a marca de conciliação para o título reabrir "limpo" (pendente e
+      // não conciliado), pronto para ser casado de novo no extrato.
+      await prisma.payable.update({
+        where: { id: transaction.payableId },
+        data: { reconciledAt: null, bankRef: null },
+      });
+    } else {
+      await prisma.$transaction([
+        prisma.capitalTransaction.delete({ where: { id } }),
+        prisma.payable.deleteMany({ where: { id: transaction.payableId } }),
+      ]);
+    }
+  } else if (transaction.receivableId) {
+    const rec = await prisma.receivable.findUnique({
+      where: { id: transaction.receivableId },
+      select: { capitalBeneficiaryId: true },
+    });
+    if (rec?.capitalBeneficiaryId) {
+      await markReceivablePending(transaction.receivableId);
+      await prisma.receivable.update({
+        where: { id: transaction.receivableId },
+        data: { reconciledAt: null, bankRef: null },
+      });
+    } else {
+      await prisma.$transaction([
+        prisma.capitalTransaction.delete({ where: { id } }),
+        prisma.receivable.deleteMany({ where: { id: transaction.receivableId } }),
+      ]);
+    }
+  } else {
+    await prisma.capitalTransaction.delete({ where: { id } });
+  }
+
   revalidatePath(`/capital/${beneficiaryId}`);
   revalidatePath("/capital");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/conciliacao");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
 }
