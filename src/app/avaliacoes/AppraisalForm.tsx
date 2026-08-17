@@ -35,6 +35,7 @@ export type AppraisalInitial = {
   fipePrice: number | null;
   fipeModelo: string | null;
   appraisalPrice: number | null;
+  ownerAskingPrice: number | null;
   notes: string | null;
   ownerName: string | null;
   ownerPhone: string | null;
@@ -197,6 +198,9 @@ export default function AppraisalForm({ initial }: { initial?: AppraisalInitial 
         </Field>
         <Field label="Preço da avaliação (R$)">
           <MoneyInput name="appraisalPrice" defaultValue={initial?.appraisalPrice ?? undefined} />
+        </Field>
+        <Field label="Valor pedido pelo proprietário (R$)">
+          <MoneyInput name="ownerAskingPrice" defaultValue={initial?.ownerAskingPrice ?? undefined} />
         </Field>
       </div>
 

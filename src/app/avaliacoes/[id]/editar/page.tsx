@@ -45,6 +45,7 @@ export default async function EditarAvaliacaoPage({
               fipePrice: a.fipePrice,
               fipeModelo: a.fipeModelo,
               appraisalPrice: a.appraisalPrice,
+              ownerAskingPrice: a.ownerAskingPrice,
               notes: a.notes,
               ownerName: a.ownerName,
               ownerPhone: a.ownerPhone,

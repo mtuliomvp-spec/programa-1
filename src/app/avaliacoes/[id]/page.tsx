@@ -90,6 +90,11 @@ export default async function AvaliacaoDetailPage({
             Avaliação: {formatCurrency(a.appraisalPrice)}
           </span>
         ) : null}
+        {a.ownerAskingPrice != null ? (
+          <span className="text-sm font-medium text-slate-600">
+            Pedido do proprietário: {formatCurrency(a.ownerAskingPrice)}
+          </span>
+        ) : null}
       </div>
 
       <Card>
