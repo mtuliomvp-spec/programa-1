@@ -1075,17 +1075,29 @@ const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 
 export type AttachmentState = { error?: string; ok?: boolean };
 
+const ATTACHMENT_KINDS = ["BOLETO", "COMPROVANTE", "OUTRO"] as const;
+const KIND_DEFAULT_DESC: Record<string, string> = {
+  BOLETO: "Boleto de pagamento",
+  COMPROVANTE: "Comprovante de pagamento",
+};
+
 export async function uploadPayableAttachmentAction(
   _prev: AttachmentState,
   formData: FormData,
 ): Promise<AttachmentState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const payableId = String(formData.get("payableId") || "").trim();
-  const description = String(formData.get("description") || "").trim() || "Nota fiscal";
+  const kindRaw = String(formData.get("kind") || "OUTRO").trim().toUpperCase();
+  const kind = (ATTACHMENT_KINDS as readonly string[]).includes(kindRaw) ? kindRaw : "OUTRO";
+  const description =
+    String(formData.get("description") || "").trim() || KIND_DEFAULT_DESC[kind] || "Nota fiscal";
   const file = formData.get("file");
   if (!payableId) return { error: "Título inválido." };
   if (!(file instanceof File) || file.size === 0) return { error: "Selecione um arquivo." };
@@ -1094,10 +1106,16 @@ export async function uploadPayableAttachmentAction(
   const payable = await prisma.payable.findUnique({ where: { id: payableId }, select: { id: true } });
   if (!payable) return { error: "Título não encontrado." };
 
+  // Boleto e comprovante são um por título: substitui o que já houver do tipo.
+  if (kind === "BOLETO" || kind === "COMPROVANTE") {
+    await prisma.payableAttachment.deleteMany({ where: { payableId, kind } });
+  }
+
   const data = new Uint8Array(await file.arrayBuffer());
   await prisma.payableAttachment.create({
     data: {
       payableId,
+      kind,
       description,
       filename: file.name || "anexo",
       mimeType: file.type || "application/octet-stream",
@@ -1107,12 +1125,17 @@ export async function uploadPayableAttachmentAction(
   });
   revalidatePath("/financeiro/a-pagar");
   revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+  revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
   return { ok: true };
 }
 
 export async function deletePayableAttachmentAction(id: string, payableId: string) {
-  await assertCan("financeiro", "criar");
+  await assertCanAny([
+    ["financeiro", "criar"],
+    ["financeiro", "editar"],
+  ]);
   await prisma.payableAttachment.delete({ where: { id } });
   revalidatePath("/financeiro/a-pagar");
   revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+  revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
 }
