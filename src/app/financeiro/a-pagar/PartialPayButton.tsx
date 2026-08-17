@@ -109,10 +109,17 @@ export default function PartialPayButton({
           Saldo que continua em aberto: <strong>{formatCurrency(remaining)}</strong>
         </p>
       ) : null}
+      {value.trim() && !valid ? (
+        <p className="text-xs text-rose-600">
+          {Number.isFinite(parsed) && parsed >= total
+            ? `Não pode ser maior que o total (${formatCurrency(total)}). Para pagar tudo, use "Pagar título".`
+            : "Informe um valor maior que zero."}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2">
         <button
           type="button"
-          disabled={pending}
+          disabled={pending || !valid}
           onClick={pay}
           className="h-8 rounded-lg bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
         >
