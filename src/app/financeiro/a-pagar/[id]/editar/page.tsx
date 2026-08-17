@@ -8,6 +8,7 @@ import SplitRepasseForm from "./SplitRepasseForm";
 import SplitSameTotalForm from "./SplitSameTotalForm";
 import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
+import PayableDocSlots from "./PayableDocSlots";
 
 export const dynamic = "force-dynamic";
 // A importação de fatura em PDF chama a IA e pode levar minutos.
@@ -53,6 +54,10 @@ export default async function EditarPayablePage({
           vehicle: { select: { brand: true, model: true, plate: true } },
           capitalBeneficiary: { select: { name: true } },
         },
+      },
+      attachments: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, kind: true, filename: true, size: true, createdAt: true },
       },
     },
   });
@@ -205,6 +210,18 @@ export default async function EditarPayablePage({
             returnTo={safeReturn}
           />
         </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Boleto e comprovante"
+          description="Anexe o boleto do título e, depois, o comprovante do pagamento (um de cada)."
+        />
+        <PayableDocSlots
+          payableId={payable.id}
+          boleto={payable.attachments.find((a) => a.kind === "BOLETO") ?? null}
+          comprovante={payable.attachments.find((a) => a.kind === "COMPROVANTE") ?? null}
+        />
       </Card>
     </div>
   );

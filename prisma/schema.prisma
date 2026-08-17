@@ -1041,6 +1041,9 @@ model PayableAttachment {
   id         String   @id @default(cuid())
   payableId  String
   payable    Payable  @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  // Tipo do anexo: BOLETO / COMPROVANTE (slots dedicados, um de cada por
+  // título) ou OUTRO (anexos gerais da ordem de pagamento).
+  kind       String   @default("OUTRO")
   description String
   filename   String
   mimeType   String
