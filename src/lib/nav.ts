@@ -18,6 +18,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     title: "Operação",
     items: [
       { href: "/estoque", label: "Estoque de veículos", icon: "🚗", module: "estoque" },
+      { href: "/avaliacoes", label: "Veículos avaliados", icon: "🔎", module: "avaliacoes" },
       { href: "/vendas", label: "Vendas", icon: "🧾", module: "vendas" },
       {
         href: "/vendas/financiamento-terceiros",

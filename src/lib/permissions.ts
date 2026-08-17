@@ -46,6 +46,17 @@ export const MODULES: ModuleConfig[] = [
     ],
   },
   {
+    key: "avaliacoes",
+    label: "Veículos avaliados",
+    acoes: [
+      { acao: "visualizar", label: "Ver avaliações" },
+      { acao: "criar", label: "Fazer avaliação" },
+      { acao: "editar", label: "Editar avaliação" },
+      { acao: "excluir", label: "Excluir avaliação" },
+      { acao: "conferir", label: "Conferência de entrega" },
+    ],
+  },
+  {
     key: "vendas",
     label: "Vendas",
     acoes: [
