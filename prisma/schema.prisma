@@ -558,6 +558,73 @@ model CompanyDocument {
   @@map("company_documents")
 }
 
+// Avaliação de veículo (módulo "Veículos avaliados"). NÃO é um veículo do
+// estoque nem gera lançamento financeiro — é o registro da avaliação feita pelo
+// usuário: dados do carro (via placa/FIPE), opcionais, checklist padrão, preço
+// de avaliação e fotos. Quando o carro é entregue na loja para efetivar o
+// negócio, a CONFERÊNCIA re-marca o mesmo checklist e o sistema aponta o que
+// mudou desde a avaliação.
+enum StatusAvaliacao {
+  AVALIADO
+  CONFERIDO
+}
+
+model VehicleAppraisal {
+  id              String          @id @default(cuid())
+  // Identificação do veículo (dados FIPE/placa — não vira Vehicle do estoque).
+  plate           String?
+  brand           String?
+  model           String?
+  version         String?
+  manufactureYear Int?
+  modelYear       Int?
+  color           String?
+  fuel            String?
+  transmission    String?
+  km              Int?
+  chassi          String?
+  renavam         String?
+  fipePrice       Float?
+  fipeModelo      String?
+  // Avaliação em si.
+  appraisalPrice  Float?
+  optionals       String[]        @default([])
+  checklist       Json            @default("{}")
+  notes           String?
+  // Contato do proprietário/ofertante.
+  ownerName       String?
+  ownerPhone      String?
+  // Conferência de entrega (re-marcação do mesmo checklist).
+  status          StatusAvaliacao @default(AVALIADO)
+  deliveryChecklist Json?
+  deliveryNotes   String?
+  deliveredAt     DateTime?
+  checkedBy       String?
+  createdById     String?
+  createdByName   String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  photos VehicleAppraisalPhoto[]
+
+  @@index([status])
+  @@map("vehicle_appraisals")
+}
+
+model VehicleAppraisalPhoto {
+  id          String           @id @default(cuid())
+  appraisalId String
+  appraisal   VehicleAppraisal @relation(fields: [appraisalId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime         @default(now())
+
+  @@index([appraisalId])
+  @@map("vehicle_appraisal_photos")
+}
+
 // Custo lançado sobre um veículo específico (preparação, documentação,
 // mecânica...). Sempre gera uma conta a pagar vinculada, mantendo o
 // financeiro integrado; a soma entra no custo total e na margem real.
