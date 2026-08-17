@@ -70,6 +70,9 @@ export default async function AvaliacaoDetailPage({
             <LinkButton href="/avaliacoes" variant="secondary">
               ← Voltar
             </LinkButton>
+            <LinkButton href={`/avaliacoes/${a.id}/documento`} variant="secondary">
+              📄 PDF da avaliação
+            </LinkButton>
             {canEdit ? <LinkButton href={`/avaliacoes/${a.id}/editar`}>✏️ Editar</LinkButton> : null}
             {canDelete ? <DeleteAppraisalButton id={a.id} /> : null}
           </div>
