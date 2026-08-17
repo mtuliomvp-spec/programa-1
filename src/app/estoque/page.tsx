@@ -71,6 +71,7 @@ function crlvBadge(
   transferStarted: boolean,
   docOwnerIsOurs: boolean,
   transferManual: boolean,
+  saleTransferPending: boolean,
 ): { label: string; tone: "success" | "warning" | "info" } {
   const crlv = `CRLV${year ? ` ${year}` : ""}`;
   // Marca MANUAL "em processo de transferência" vence tudo: o usuário afirmou
@@ -78,6 +79,9 @@ function crlvBadge(
   // ainda está no nome de um sócio, não do comprador). Desfazer a marca na ficha
   // libera os demais estados.
   if (transferManual) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
+  // Veículo vendido/pré-vendido, ainda no nosso nome, com transferência lançada:
+  // é a transferência ao COMPRADOR em andamento — vence o "Transferido".
+  if (saleTransferPending) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
   // Documento JÁ no nome da loja/sócio → transferência concluída de fato. Ter
   // CRLV anexado não basta: pode ser o do dono anterior (ex.: implantação de
   // estoque com o CRLV antigo).
@@ -213,6 +217,18 @@ export default async function EstoquePage({
       v.payables.some((p) => /transfer[eê]ncia/i.test(p.description)),
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
     transferDoneAt: v.sale?.transferDoneAt ?? null,
+    // Em veículo VENDIDO/PRÉ-VENDIDO ainda no nosso nome, uma transferência
+    // lançada (custo/conta com "transferência") significa a transferência ao
+    // COMPRADOR em andamento — então o selo "em processo" deve vencer o
+    // "Transferido". Em estoque puro isso não vale (senão todo carro comprado,
+    // que teve custo de transferência ao entrar, ficaria eternamente "em
+    // processo"). Não vale se a baixa no DETRAN já foi marcada como concluída.
+    saleTransferPending:
+      (v.status === "VENDIDO" || preSaleByVehicle.has(v.id)) &&
+      !v.sale?.transferDoneAt &&
+      (v.transferInProgress ||
+        v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
+        v.payables.some((p) => /transfer[eê]ncia/i.test(p.description))),
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
     crlvYear:
       v.attachments
@@ -351,7 +367,7 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             {(() => {
@@ -362,7 +378,7 @@ export default async function EstoquePage({
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
+            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
@@ -445,7 +461,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress).label}</Badge>
+          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
         </span>
         {v.hasAtpv ? (
           <span className="mt-1 block">
