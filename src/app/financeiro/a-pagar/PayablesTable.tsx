@@ -15,6 +15,7 @@ import {
 import FixDateButton from "@/components/FixDateButton";
 import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
+import PartialPayButton from "./PartialPayButton";
 
 type Account = { id: string; name: string };
 
@@ -371,6 +372,18 @@ export default function PayablesTable({
                       >
                         ⓘ capital
                       </span>
+                    ) : selectable &&
+                      canPagar &&
+                      p.effective !== "PAGO" &&
+                      !p.combo &&
+                      !p.cardInvoice &&
+                      accounts.length > 0 ? (
+                      <PartialPayButton
+                        payableId={p.id}
+                        total={p.amount}
+                        accounts={accounts}
+                        cashboxDate={cashboxDate}
+                      />
                     ) : null}
                   </div>
                 </Td>
