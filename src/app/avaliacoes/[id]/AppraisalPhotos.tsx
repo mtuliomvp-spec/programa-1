@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import { uploadAppraisalPhotosAction, deleteAppraisalPhotoAction } from "../actions";
+import PlateCoverEditor from "./PlateCoverEditor";
 
 type Photo = { id: string; filename: string };
 
@@ -30,6 +31,7 @@ export default function AppraisalPhotos({
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [deleting, startDelete] = useTransition();
+  const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
 
   async function handleSend() {
     let files = Array.from(fileRef.current?.files ?? []);
@@ -93,23 +95,45 @@ export default function AppraisalPhotos({
                 />
               </a>
               {canManage ? (
-                <button
-                  type="button"
-                  disabled={deleting}
-                  onClick={() => {
-                    if (!confirm("Excluir esta foto?")) return;
-                    startDelete(() => deleteAppraisalPhotoAction(p.id, appraisalId));
-                  }}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
-                  title="Excluir foto"
-                >
-                  ✕
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => {
+                      if (!confirm("Excluir esta foto?")) return;
+                      startDelete(() => deleteAppraisalPhotoAction(p.id, appraisalId));
+                    }}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
+                    title="Excluir foto"
+                  >
+                    ✕
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoverPhotoId(p.id)}
+                    className="absolute inset-x-1 bottom-1 rounded-md bg-black/60 px-1.5 py-1 text-[11px] font-medium text-white hover:bg-black/80"
+                    title="Cobrir a placa"
+                  >
+                    🔒 Cobrir placa
+                  </button>
+                </>
               ) : null}
             </div>
           ))}
         </div>
       )}
+
+      {coverPhotoId ? (
+        <PlateCoverEditor
+          appraisalId={appraisalId}
+          photoId={coverPhotoId}
+          onClose={() => setCoverPhotoId(null)}
+          onSaved={() => {
+            setCoverPhotoId(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {canManage ? (
         <form ref={formRef} className="space-y-2">
