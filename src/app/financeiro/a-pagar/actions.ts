@@ -273,6 +273,124 @@ export async function markPaidAction(id: string, accountId?: string) {
   revalidatePath("/");
 }
 
+export type PartialPayResult = { ok: boolean; error?: string };
+
+/**
+ * Pagamento PARCIAL de um título: paga só uma parte agora e deixa o saldo em
+ * aberto. Modelado como desmembramento (mantém cada título integralmente pago ou
+ * pendente — o farol continua simples): o título original é reduzido ao SALDO
+ * restante (segue PENDENTE, mesmo nº) e nasce um título novo com o VALOR PAGO,
+ * baixado na conta/data escolhidas. O título pago herda o destino contábil
+ * (veículo, sócio do capital, fornecedor, categoria, vendedor, funcionário),
+ * então retirada de capital, custo de veículo etc. saem corretos pela parte
+ * paga; os rastreadores de origem (recorrência, solicitação de compra…) ficam no
+ * saldo pendente. Não vale para fatura de cartão nem compra de veículo (o valor
+ * desses vem de outra origem).
+ */
+export async function payPartialAction(
+  id: string,
+  amountToPay: number,
+  accountId: string,
+): Promise<PartialPayResult> {
+  if (!id) return { ok: false, error: "Título inválido." };
+  if (!accountId) return { ok: false, error: "Escolha a conta que fará o pagamento." };
+  try {
+    await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+    await assertNotInSolicitedCombo([id]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const p = await prisma.payable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      amount: true,
+      description: true,
+      category: true,
+      categoryLabel: true,
+      documentNumber: true,
+      dueDate: true,
+      vehicleId: true,
+      saleId: true,
+      supplierId: true,
+      costCenterId: true,
+      capitalBeneficiaryId: true,
+      beneficiaryUserId: true,
+      employeeId: true,
+      notes: true,
+      cardInvoice: true,
+      paymentComboId: true,
+    },
+  });
+  if (!p) return { ok: false, error: "Título não encontrado." };
+  if (p.status === "PAGO") return { ok: false, error: "Título já pago." };
+  if (p.paymentComboId) {
+    return { ok: false, error: "Título está num combo de pagamento. Remova-o do combo antes." };
+  }
+  if (p.cardInvoice) {
+    return { ok: false, error: "Fatura de cartão não pode ser paga parcialmente por aqui." };
+  }
+  if (p.category === "COMPRA_VEICULO") {
+    return { ok: false, error: "Título de compra de veículo não permite pagamento parcial." };
+  }
+
+  const amount = round2(amountToPay);
+  const total = round2(p.amount);
+  if (!(amount > 0)) return { ok: false, error: "Informe um valor válido para pagar." };
+  if (amount >= total) {
+    return { ok: false, error: `Para pagar o total use "Pagar título". O parcial deve ser menor que ${brl(total)}.` };
+  }
+  const remaining = round2(total - amount);
+
+  // Reduz o original ao saldo e cria a parte paga (destino contábil copiado; sem
+  // rastreadores de origem). Baixa a parte paga fora da transação (markPayablePaid
+  // roda os próprios syncs/transação de capital, cartão e solicitação).
+  const paidId = await prisma.$transaction(async (tx) => {
+    await tx.payable.update({ where: { id }, data: { amount: remaining } });
+    const child = await tx.payable.create({
+      data: {
+        description: `${p.description} (pagamento parcial)`,
+        category: p.category,
+        categoryLabel: p.categoryLabel,
+        documentNumber: p.documentNumber,
+        amount,
+        dueDate: p.dueDate,
+        status: "PENDENTE",
+        vehicleId: p.vehicleId,
+        saleId: p.saleId,
+        supplierId: p.supplierId,
+        costCenterId: p.costCenterId,
+        capitalBeneficiaryId: p.capitalBeneficiaryId,
+        beneficiaryUserId: p.beneficiaryUserId,
+        employeeId: p.employeeId,
+        notes: p.notes,
+      },
+      select: { id: true },
+    });
+    return child.id;
+  });
+
+  await markPayablePaid(paidId, date, accountId);
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/capital");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export type PayBatchResult = { ok: boolean; paid: number; error?: string };
 
 /**
