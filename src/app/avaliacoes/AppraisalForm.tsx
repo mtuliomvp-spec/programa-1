@@ -1,9 +1,11 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
 import { formatCurrency } from "@/lib/format";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   CHECKLIST_ITEMS,
   CHECKLIST_STATES,
@@ -14,9 +16,12 @@ import {
 import {
   createAppraisalAction,
   updateAppraisalAction,
+  uploadAppraisalPhotosAction,
   lookupAppraisalPlateAction,
-  type AppraisalFormState,
 } from "./actions";
+
+const MAX_PHOTOS = 12;
+const BATCH = 3;
 
 export type AppraisalInitial = {
   id: string;
@@ -48,14 +53,68 @@ const TRANSMISSIONS = ["Manual", "Automático", "Automatizado", "CVT"];
 
 export default function AppraisalForm({ initial }: { initial?: AppraisalInitial }) {
   const isEdit = !!initial;
-  const action = isEdit ? updateAppraisalAction : createAppraisalAction;
-  const [state, formAction, pending] = useActionState<AppraisalFormState, FormData>(action, {});
+  const router = useRouter();
   const formRef = useRef<HTMLFormElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+  const [photoCount, setPhotoCount] = useState(0);
 
   // Opcionais extra (fora da lista predefinida) já cadastrados na avaliação.
   const extraOptionals = (initial?.optionals ?? []).filter((o) => !OPTIONALS.includes(o));
+
+  async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (saving) return;
+    setError(null);
+    const form = formRef.current;
+    if (!form) return;
+
+    setSaving(true);
+    try {
+      const fd = new FormData(form);
+      setSaveMsg("Salvando a avaliação…");
+      const res = isEdit ? await updateAppraisalAction({}, fd) : await createAppraisalAction({}, fd);
+      if (res.error || !res.id) {
+        setError(res.error || "Não foi possível salvar a avaliação.");
+        setSaveMsg(null);
+        setSaving(false);
+        return;
+      }
+      const id = res.id;
+
+      // Sobe as fotos selecionadas para a avaliação recém-salva (em lotes).
+      let files = Array.from(photoRef.current?.files ?? []);
+      if (files.length > MAX_PHOTOS) files = files.slice(0, MAX_PHOTOS);
+      if (files.length > 0) {
+        setSaveMsg("Preparando as fotos…");
+        const resized = await Promise.all(files.map((f) => resizeImageToJpeg(f)));
+        for (let i = 0; i < resized.length; i += BATCH) {
+          const lote = resized.slice(i, i + BATCH);
+          setSaveMsg(`Enviando fotos ${Math.min(i + lote.length, resized.length)} de ${resized.length}…`);
+          const pfd = new FormData();
+          pfd.set("appraisalId", id);
+          for (const f of lote) pfd.append("photos", f);
+          const up = await uploadAppraisalPhotosAction({}, pfd);
+          if (up.error) {
+            // A avaliação já foi salva; leva para a ficha para tentar as fotos lá.
+            setError(`Avaliação salva, mas houve erro nas fotos: ${up.error}`);
+            break;
+          }
+        }
+      }
+
+      router.push(`/avaliacoes/${id}`);
+      router.refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Não foi possível salvar a avaliação.");
+      setSaving(false);
+      setSaveMsg(null);
+    }
+  }
 
   function setField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;
@@ -107,15 +166,15 @@ export default function AppraisalForm({ initial }: { initial?: AppraisalInitial 
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-6">
+    <form ref={formRef} onSubmit={handleSubmit} className="space-y-6">
       {isEdit ? <input type="hidden" name="id" defaultValue={initial!.id} /> : null}
       {/* Preenchidos pela consulta de placa (não editáveis diretamente). */}
       <input type="hidden" name="fipePrice" defaultValue={initial?.fipePrice ?? ""} />
       <input type="hidden" name="fipeModelo" defaultValue={initial?.fipeModelo ?? ""} />
 
-      {state.error ? (
+      {error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-          {state.error}
+          {error}
         </div>
       ) : null}
 
@@ -291,9 +350,28 @@ export default function AppraisalForm({ initial }: { initial?: AppraisalInitial 
         <Textarea name="notes" rows={3} defaultValue={initial?.notes ?? ""} placeholder="Anotações da avaliação..." />
       </Field>
 
-      <div className="flex gap-3">
-        <Button type="submit" disabled={pending}>
-          {pending ? "Salvando..." : isEdit ? "Salvar alterações" : "Salvar avaliação"}
+      {/* Fotos do veículo — enviadas assim que a avaliação é salva. */}
+      <fieldset className="rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-700">Fotos do veículo</legend>
+        <input
+          ref={photoRef}
+          type="file"
+          accept="image/*"
+          multiple
+          onChange={(e) => setPhotoCount(e.target.files?.length ?? 0)}
+          className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-900 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-slate-700"
+        />
+        <p className="mt-2 text-xs text-slate-400">
+          {photoCount > 0
+            ? `${photoCount > MAX_PHOTOS ? MAX_PHOTOS : photoCount} foto(s) selecionada(s).`
+            : `Selecione até ${MAX_PHOTOS} fotos — são otimizadas automaticamente ao salvar.`}
+          {isEdit ? " As fotos já existentes ficam na ficha da avaliação." : ""}
+        </p>
+      </fieldset>
+
+      <div className="flex items-center gap-3">
+        <Button type="submit" disabled={saving}>
+          {saving ? saveMsg || "Salvando..." : isEdit ? "Salvar alterações" : "Salvar avaliação"}
         </Button>
       </div>
     </form>

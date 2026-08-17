@@ -31,11 +31,14 @@ export default async function AvaliacaoDetailPage({
   });
   if (!a) notFound();
 
-  const [canEdit, canDelete, canConfer] = await Promise.all([
+  const [canEdit, canCreate, canDelete, canConfer] = await Promise.all([
     userCan("avaliacoes", "editar"),
+    userCan("avaliacoes", "criar"),
     userCan("avaliacoes", "excluir"),
     userCan("avaliacoes", "conferir"),
   ]);
+  // Gerenciar fotos: quem cria OU edita avaliação (mesma regra da action).
+  const canManagePhotos = canCreate || canEdit;
 
   const title = [a.brand, a.model, a.version].filter(Boolean).join(" ") || "Veículo";
   const checklist = parseChecklist(a.checklist);
@@ -102,7 +105,7 @@ export default async function AvaliacaoDetailPage({
         <AppraisalPhotos
           appraisalId={a.id}
           photos={a.photos.map((p) => ({ id: p.id, filename: p.filename }))}
-          canManage={canEdit}
+          canManage={canManagePhotos}
         />
       </Card>
 

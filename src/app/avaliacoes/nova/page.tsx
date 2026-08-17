@@ -11,7 +11,7 @@ export default async function NovaAvaliacaoPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Nova avaliação"
-        description="Registre a avaliação do veículo. As fotos são adicionadas depois de salvar."
+        description="Registre a avaliação do veículo — inclusive as fotos, enviadas ao salvar."
         action={<LinkButton href="/avaliacoes" variant="secondary">← Voltar</LinkButton>}
       />
       <Card>
