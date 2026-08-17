@@ -264,6 +264,57 @@ export async function uploadAppraisalPhotosAction(
   return { ok: true };
 }
 
+/**
+ * Substitui uma foto pela versão com a PLACA COBERTA (tarja aplicada no
+ * navegador). Cria a nova foto e só então apaga a original — se o upload
+ * falhar, a foto antiga permanece.
+ */
+export async function replaceAppraisalPhotoAction(
+  _prev: PhotoState,
+  formData: FormData,
+): Promise<PhotoState> {
+  try {
+    await assertCanAny([
+      ["avaliacoes", "criar"],
+      ["avaliacoes", "editar"],
+    ]);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const appraisalId = String(formData.get("appraisalId") || "").trim();
+  const replaceId = String(formData.get("replaceId") || "").trim();
+  if (!appraisalId || !replaceId) return { error: "Foto inválida." };
+
+  const original = await prisma.vehicleAppraisalPhoto.findUnique({
+    where: { id: replaceId },
+    select: { id: true, appraisalId: true },
+  });
+  if (!original || original.appraisalId !== appraisalId) {
+    return { error: "Foto não encontrada." };
+  }
+
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) return { error: "Imagem inválida." };
+  if (!file.type.startsWith("image/")) return { error: "Arquivo não é uma imagem." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Imagem muito grande (máximo 15 MB)." };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await prisma.vehicleAppraisalPhoto.create({
+    data: {
+      appraisalId,
+      filename: file.name || "foto.jpg",
+      mimeType: file.type || "image/jpeg",
+      size: file.size,
+      data: buffer,
+    },
+  });
+  await prisma.vehicleAppraisalPhoto.delete({ where: { id: replaceId } });
+
+  revalidatePath(`/avaliacoes/${appraisalId}`);
+  return { ok: true };
+}
+
 export async function deleteAppraisalPhotoAction(photoId: string, appraisalId: string) {
   await assertCanAny([
     ["avaliacoes", "criar"],
