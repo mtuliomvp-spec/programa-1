@@ -122,7 +122,12 @@ export default function VehicleForm({
       setField("version", d.version);
       setField("manufactureYear", d.manufactureYear);
       setField("modelYear", d.modelYear ?? d.manufactureYear);
-      setField("chassi", d.chassi);
+      // O chassi da consulta vem MASCARADO (parcial, ex.: *****63440). Nunca
+      // sobrescreve um chassi já preenchido (ex.: completo, vindo do contrato) —
+      // só preenche quando o campo está vazio.
+      const chassiEl = formRef.current?.elements.namedItem("chassi");
+      const chassiAtual = chassiEl instanceof HTMLInputElement ? chassiEl.value.trim() : "";
+      if (!chassiAtual) setField("chassi", d.chassi);
       setField("renavam", d.renavam);
       setField("color", d.color);
       setField("fuel", d.fuel);
