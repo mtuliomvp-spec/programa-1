@@ -596,10 +596,42 @@ export async function importContractAction(base64: string, mimeType: string) {
   try {
     const { extractPurchaseContract } = await import("@/lib/contract-ai");
     const data = await extractPurchaseContract(base64, mimeType);
-    return { ok: true as const, data };
+    // Resolve/cadastra o fornecedor (vendedor) automaticamente, pelo documento
+    // (comparando só dígitos) e, na falta, pelo nome — sem duplicar.
+    const supplier = await resolveContractSupplier(data.vendedorNome, data.vendedorDocumento);
+    return { ok: true as const, data, supplier };
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : "Não foi possível ler o contrato." };
   }
+}
+
+/** Acha o fornecedor pelo CPF/CNPJ (ou nome) ou cria um novo. Idempotente. */
+async function resolveContractSupplier(
+  nome: string | null,
+  documento: string | null,
+): Promise<{ id: string; name: string } | null> {
+  const doc = (documento || "").replace(/\D/g, "");
+  const name = (nome || "").trim();
+  if (!doc && !name) return null;
+
+  if (doc) {
+    const all = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
+    const found = all.find((s) => (s.document || "").replace(/\D/g, "") === doc);
+    if (found) return { id: found.id, name: found.name };
+    const created = await prisma.supplier.create({
+      data: { name: name || `Fornecedor ${doc}`, document: documento || null },
+      select: { id: true, name: true },
+    });
+    return created;
+  }
+
+  const exact = await prisma.supplier.findFirst({
+    where: { name: { equals: name, mode: "insensitive" } },
+    select: { id: true, name: true },
+  });
+  if (exact) return exact;
+  const created = await prisma.supplier.create({ data: { name }, select: { id: true, name: true } });
+  return created;
 }
 
 export async function fetchVehicleDebtsAction(vehicleId: string) {
