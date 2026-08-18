@@ -957,6 +957,9 @@ async function vehicleSale(input: {
   // do valor a cobrar (billable − financiado) é a entrada paga agora.
   financerName?: string | null;
   financedAmount?: number | null;
+  // Financiamento JÁ recebido (está no sinal/entradas já recebidas): não gera
+  // repasse a receber do banco nem devolução ao cliente (evita duplicidade).
+  financedAlreadyReceived?: boolean;
   // Conta financeira da financeira: o valor financiado entra nela (aguardando a
   // financeira transferir para a conta da empresa).
   financerAccountId?: string | null;
@@ -1062,6 +1065,8 @@ async function vehicleSale(input: {
         // então guarda financedAmount 0 (nada a liquidar em "Receber financiamento").
         financedAmount:
           input.paymentMethod === "FINANCIADO" ? (input.refinancing ? 0 : input.financedAmount ?? null) : null,
+        financedAlreadyReceived:
+          input.paymentMethod === "FINANCIADO" ? Boolean(input.financedAlreadyReceived) : false,
         financerAccountId: input.paymentMethod === "FINANCIADO" ? input.financerAccountId || null : null,
         returnLevel: input.paymentMethod === "FINANCIADO" ? Math.max(0, input.returnLevel ?? 0) : 0,
         // Só marca; nada é lançado até a comissão do seguro cair.
@@ -1279,13 +1284,18 @@ async function vehicleSale(input: {
       const financedParaCarro = Math.min(financed, billable);
       // O que ainda sobra a receber do cliente (entrada).
       const entrada = Math.max(0, Math.round((billable - financedParaCarro) * 100) / 100);
+      // Financiamento JÁ recebido (está no sinal/entradas já recebidas): o valor
+      // financiado não é dinheiro NOVO — não vira repasse a receber nem gera
+      // devolução do excedente. Evita a duplicidade (contar o mesmo dinheiro no
+      // sinal e no repasse).
+      const financedAlreadyIn = input.paymentMethod === "FINANCIADO" && Boolean(input.financedAlreadyReceived);
       // Excedente do financiamento sobre o restante soma na devolução (que já
       // pode conter o excedente da troca + sinal). No refinanciamento a loja não
       // devolve nada (a financeira paga F direto ao financiado).
-      if (!input.refinancing) {
-        devolucaoCliente = Math.round((devolucaoCliente + Math.max(0, financed - billable)) * 100) / 100;
+      if (input.refinancing || financedAlreadyIn) {
+        devolucaoCliente = input.refinancing ? 0 : devolucaoCliente;
       } else {
-        devolucaoCliente = 0;
+        devolucaoCliente = Math.round((devolucaoCliente + Math.max(0, financed - billable)) * 100) / 100;
       }
 
       if (entrada > 0) {
@@ -1310,7 +1320,9 @@ async function vehicleSale(input: {
         const naFinanceira = !!input.financerAccountId;
         // Refinanciamento: a financeira paga F direto ao financiado — a loja NÃO
         // recebe o repasse. Só o retorno (abaixo) entra na loja.
-        if (!input.refinancing) {
+        // Financiamento já recebido: o repasse já entrou (no sinal), então não
+        // vira um novo título a receber (seria duplicidade).
+        if (!input.refinancing && !financedAlreadyIn) {
           receivablesData.push({
             description: `${baseDescription} - Repasse financiamento${input.financerName ? ` (${input.financerName})` : ""}`,
             category: "VENDA_VEICULO",

@@ -82,8 +82,11 @@ export default async function PreVendaFichaPage({
   const financedTyped = pre.paymentMethod === "FINANCIADO" ? pre.financedAmount ?? 0 : 0;
   const financedParaCarro = Math.min(financedTyped, restanteFin);
   const entradaFin = Math.max(0, Math.round((restanteFin - financedParaCarro) * 100) / 100);
+  // Financiamento já recebido (está no sinal): o financiado não é dinheiro novo,
+  // então não gera devolução do excedente nem repasse a receber.
+  const financedAlreadyIn = pre.paymentMethod === "FINANCIADO" && pre.financedAlreadyReceived;
   const devolucao =
-    pre.paymentMethod === "FINANCIADO"
+    pre.paymentMethod === "FINANCIADO" && !financedAlreadyIn
       ? Math.round((baseDevolucao + Math.max(0, financedTyped - restanteFin)) * 100) / 100
       : baseDevolucao;
   // Nome da financeira: conveniada (conta) ou o nome livre do banco não
@@ -259,10 +262,18 @@ export default async function PreVendaFichaPage({
             {tiLiquido > 0 ? <Row label="(−) Entrada da troca" value={tiLiquido} /> : null}
             {sinal > 0 ? <Row label="(−) Sinal já recebido" value={sinal} /> : null}
             {pre.paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
-              <Row label="(−) Financiado pelo banco" value={financedTyped} />
+              <Row
+                label={`(−) Financiado pelo banco${financedAlreadyIn ? " (já recebido — no sinal)" : ""}`}
+                value={financedTyped}
+              />
             ) : null}
             {devolucao > 0 ? (
               <Row label="= Devolução ao cliente (Contas a Pagar)" value={devolucao} strong tone="rose" top />
+            ) : financedAlreadyIn ? (
+              <p className="mt-1 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700">
+                Financiamento já recebido (incluído no sinal) — nada a receber do banco e sem devolução
+                ao cliente.
+              </p>
             ) : pre.paymentMethod === "FINANCIADO" ? (
               pre.financerAccountId ? (
                 // Financeira conveniada: o financiado entra na conta dela; só a

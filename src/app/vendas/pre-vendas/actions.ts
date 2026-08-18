@@ -77,6 +77,8 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
         ? d.financerNameManual?.trim() || null
         : null,
     financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
+    financedAlreadyReceived:
+      d.paymentMethod === "FINANCIADO" ? Boolean(d.financedAlreadyReceived) : false,
     returnLevel: d.paymentMethod === "FINANCIADO" ? Math.max(0, d.returnLevel || 0) : 0,
     sellerName,
     sellerId: d.sellerId || null,
@@ -187,6 +189,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     financerAccountId: pre.financerAccountId ?? undefined,
     financerNameManual: pre.financerName ?? undefined,
     financedAmount: pre.financedAmount ?? undefined,
+    financedAlreadyReceived: pre.financedAlreadyReceived,
     returnLevel: pre.returnLevel ?? 0,
     sellerName: pre.sellerName ?? undefined,
     sellerId: pre.sellerId ?? undefined,

@@ -43,6 +43,9 @@ export const saleSchema = z.object({
   // conta a receber comum. Usado quando não há financerAccountId.
   financerNameManual: z.string().optional(),
   financedAmount: z.coerce.number().min(0).optional(),
+  // Financiamento já recebido: o valor financiado já entrou na loja (está no
+  // sinal/entradas). Não gera repasse a receber do banco nem devolução ao cliente.
+  financedAlreadyReceived: z.coerce.boolean().optional(),
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel: z.coerce.number().int().min(0).default(0),
   sellerName: z.string().optional(),
@@ -346,6 +349,7 @@ export async function registerSaleCore(d: SaleData): Promise<string> {
       installmentsInfoAmount: d.paymentMethod !== "A_VISTA" ? d.installmentsInfoAmount ?? null : null,
       financerName,
       financedAmount: d.paymentMethod === "FINANCIADO" ? d.financedAmount ?? null : null,
+      financedAlreadyReceived: d.paymentMethod === "FINANCIADO" ? Boolean(d.financedAlreadyReceived) : false,
       financerAccountId: d.paymentMethod === "FINANCIADO" ? d.financerAccountId || null : null,
       returnLevel,
       notes: d.notes || null,
