@@ -200,20 +200,23 @@ export default function VehicleForm({
         setField("purchasePrice", d.valorCompra);
         setNegociado(d.valorCompra);
       }
+      // Fornecedor (vendedor) resolvido/cadastrado no servidor: adiciona à lista
+      // e já deixa selecionado.
+      if (res.supplier) {
+        const sup = res.supplier;
+        setSupplierList((prev) => (prev.some((s) => s.id === sup.id) ? prev : [...prev, sup]));
+        setSupplierId(sup.id);
+      }
       const nome = [d.marca, d.modelo, d.anoModelo ?? d.anoFabricacao].filter(Boolean).join(" ");
       const extras = [
         d.valorCompra != null ? `compra ${formatCurrency(d.valorCompra)}` : null,
-        d.vendedorNome
-          ? `vendedor ${d.vendedorNome}${d.vendedorDocumento ? ` (${d.vendedorDocumento})` : ""}`
-          : null,
+        res.supplier ? `fornecedor: ${res.supplier.name} (selecionado)` : null,
       ]
         .filter(Boolean)
         .join(" · ");
       setContractMsg({
         tone: "ok",
-        text: `Contrato lido: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos${
-          d.vendedorNome ? ", selecione/cadastre o fornecedor" : ""
-        } e finalize — o contrato será anexado ao veículo.`,
+        text: `Contrato lido: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos e finalize — o contrato será anexado ao veículo.`,
       });
     });
   }
