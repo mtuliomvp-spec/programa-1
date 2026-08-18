@@ -62,6 +62,7 @@ export type SaleFormInitial = {
   /** Financeira/banco indicado pelo cliente (não conveniada à loja). */
   financerNameManual?: string;
   financedAmount?: number;
+  financedAlreadyReceived?: boolean;
   returnLevel?: number;
   sellerName?: string;
   sellerId?: string;
@@ -283,6 +284,9 @@ export default function SaleForm({
   const [financedAmount, setFinancedAmount] = useState<string>(
     initial?.financedAmount != null ? String(initial.financedAmount) : "",
   );
+  const [financedAlreadyReceived, setFinancedAlreadyReceived] = useState<boolean>(
+    Boolean(initial?.financedAlreadyReceived),
+  );
   const [financerAccountId, setFinancerAccountId] = useState(initial?.financerAccountId || "");
   // Financeira indicada pelo cliente (não conveniada): sem conta própria, só o
   // nome — o repasse vira conta a receber comum. Liga quando a pré-venda veio
@@ -314,9 +318,11 @@ export default function SaleForm({
   // Parte do financiamento que cobre o carro; o resto (se houver) é devolução.
   const financedParaCarro = Math.min(financedTyped, restanteFin);
   const entradaFinanciamento = Math.max(0, Math.round((restanteFin - financedParaCarro) * 100) / 100);
+  // Financiamento já recebido (está no sinal): não gera devolução do excedente.
+  const financedAlreadyIn = paymentMethod === "FINANCIADO" && financedAlreadyReceived;
   // Devolução = excedente de (troca + sinal) + excedente do financiamento.
   const devolucaoCliente =
-    paymentMethod === "FINANCIADO"
+    paymentMethod === "FINANCIADO" && !financedAlreadyIn
       ? Math.round((baseDevolucao + Math.max(0, financedTyped - restanteFin)) * 100) / 100
       : baseDevolucao;
   // Retorno da financeira: incide sobre o valor financiado (o typed; se vazio,
@@ -882,6 +888,24 @@ export default function SaleForm({
             O valor financiado vira uma conta a receber do banco/financeira (vencimento em 5 dias).
             {financedAmount === "" ? " Se ficar em branco, financia todo o restante a pagar." : ""}
           </p>
+          <label className="mt-2 flex items-start gap-2 text-sm text-slate-700">
+            <input
+              type="checkbox"
+              name="financedAlreadyReceived"
+              value="true"
+              checked={financedAlreadyReceived}
+              onChange={(e) => setFinancedAlreadyReceived(e.target.checked)}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300"
+            />
+            <span>
+              O valor financiado <strong>já foi recebido</strong> (já está no sinal/entradas).
+              <span className="block text-xs text-slate-500">
+                Marque quando o banco já depositou o valor na loja (está dentro do sinal). Não gera
+                conta a receber do banco nem devolução ao cliente — evita contar o mesmo dinheiro duas
+                vezes.
+              </span>
+            </span>
+          </label>
 
           <div className="mt-4 border-t border-slate-200 pt-3">
             <Field label="Retorno da financeira (R-xx)">

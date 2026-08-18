@@ -702,6 +702,10 @@ model PreSale {
   installmentsCount Int            @default(0)
   financerAccountId String?
   financedAmount    Float?
+  // Financiamento JÁ recebido: o valor financiado pelo banco já entrou na loja
+  // (está no sinal/entradas). Quando true, o repasse do banco não vira conta a
+  // receber e o excedente não gera devolução ao cliente (evita duplicidade).
+  financedAlreadyReceived Boolean  @default(false)
   // Financeira/banco indicado pelo cliente, NÃO conveniado à loja (sem conta
   // financeira). Guarda o nome para o contrato; o repasse vira conta a receber
   // comum. Nulo quando a financeira é conveniada (usa financerAccountId).
@@ -822,6 +826,9 @@ model Sale {
   // Financiamento: banco/financeira e valor financiado (repasse)
   financerName      String?
   financedAmount    Float?
+  // Financiamento JÁ recebido (está no sinal/entradas): não gera repasse a
+  // receber do banco nem devolução ao cliente.
+  financedAlreadyReceived Boolean @default(false)
   // Conta financeira da financeira (o valor financiado fica nela até a
   // financeira pagar/transferir para a conta da empresa)
   financerAccountId String?
