@@ -340,6 +340,22 @@ export async function createVehicleAction(
       consigned,
       ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
+    // Contrato de compra anexado no cadastro: fica no prontuário do veículo.
+    const contract = formData.get("contract");
+    if (contract instanceof File && contract.size > 0 && contract.size <= MAX_ATTACHMENT_BYTES) {
+      const buffer = Buffer.from(await contract.arrayBuffer());
+      await prisma.vehicleAttachment.create({
+        data: {
+          vehicleId: vehicle.id,
+          kind: "DOCUMENTO",
+          description: "Contrato de compra",
+          filename: contract.name || "contrato.pdf",
+          mimeType: contract.type || "application/octet-stream",
+          size: contract.size,
+          data: buffer,
+        },
+      });
+    }
     revalidatePath("/estoque");
     revalidatePath("/financeiro/a-pagar");
     revalidatePath("/");
@@ -563,6 +579,27 @@ export async function lookupPlateAction(plate: string) {
   }
   const { lookupPlate } = await import("@/lib/plate-lookup");
   return lookupPlate(plate);
+}
+
+/**
+ * Lê o CONTRATO DE COMPRA (PDF/imagem em base64) via IA e devolve os dados do
+ * veículo e da compra para preencher o formulário de "Novo veículo". Não grava
+ * nada — o anexo é enviado junto no cadastro (createVehicleAction).
+ */
+export async function importContractAction(base64: string, mimeType: string) {
+  try {
+    await assertCan("estoque", "criar");
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!base64) return { ok: false as const, error: "Anexe o contrato." };
+  try {
+    const { extractPurchaseContract } = await import("@/lib/contract-ai");
+    const data = await extractPurchaseContract(base64, mimeType);
+    return { ok: true as const, data };
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Não foi possível ler o contrato." };
+  }
 }
 
 export async function fetchVehicleDebtsAction(vehicleId: string) {

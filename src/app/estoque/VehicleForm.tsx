@@ -9,6 +9,7 @@ import {
   createVehicleAction,
   updateVehicleAction,
   lookupPlateAction,
+  importContractAction,
   type VehicleFormState,
 } from "./actions";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
@@ -76,8 +77,11 @@ export default function VehicleForm({
   // Consignado: líquido a devolver ao proprietário = acertado − quitação − débitos.
   const consignedLiquido = Math.max(0, Math.round((ownerRefund - payoff - debts) * 100) / 100);
   const formRef = useRef<HTMLFormElement>(null);
+  const contractRef = useRef<HTMLInputElement>(null);
   const [looking, startLookup] = useTransition();
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [reading, startReading] = useTransition();
+  const [contractMsg, setContractMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number; ano?: string }[]>([]);
   const [fipeChoice, setFipeChoice] = useState(0);
   const [showAllFipe, setShowAllFipe] = useState(false);
@@ -150,6 +154,70 @@ export default function VehicleForm({
     }
   }
 
+  function fileToBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+      r.onerror = () => reject(new Error("Falha ao ler o arquivo."));
+      r.readAsDataURL(file);
+    });
+  }
+
+  function handleContract() {
+    const file = contractRef.current?.files?.[0];
+    if (!file) {
+      setContractMsg({ tone: "err", text: "Selecione o contrato (PDF ou foto) primeiro." });
+      return;
+    }
+    setContractMsg({ tone: "ok", text: "Lendo o contrato com a IA… aguarde." });
+    startReading(async () => {
+      let base64: string;
+      try {
+        base64 = await fileToBase64(file);
+      } catch {
+        setContractMsg({ tone: "err", text: "Não foi possível abrir o arquivo." });
+        return;
+      }
+      const res = await importContractAction(base64, file.type || "application/pdf");
+      if (!res.ok) {
+        setContractMsg({ tone: "err", text: res.error });
+        return;
+      }
+      const d = res.data;
+      setField("brand", d.marca ?? undefined);
+      setField("model", d.modelo ?? undefined);
+      setField("version", d.versao ?? undefined);
+      setField("manufactureYear", d.anoFabricacao ?? undefined);
+      setField("modelYear", (d.anoModelo ?? d.anoFabricacao) ?? undefined);
+      setField("plate", d.placa ?? undefined);
+      setField("chassi", d.chassi ?? undefined);
+      setField("renavam", d.renavam ?? undefined);
+      setField("color", d.cor ?? undefined);
+      setField("fuel", d.combustivel ?? undefined);
+      setField("transmission", d.transmissao ?? undefined);
+      if (d.km != null) setField("km", d.km);
+      if (d.valorCompra != null) {
+        setField("purchasePrice", d.valorCompra);
+        setNegociado(d.valorCompra);
+      }
+      const nome = [d.marca, d.modelo, d.anoModelo ?? d.anoFabricacao].filter(Boolean).join(" ");
+      const extras = [
+        d.valorCompra != null ? `compra ${formatCurrency(d.valorCompra)}` : null,
+        d.vendedorNome
+          ? `vendedor ${d.vendedorNome}${d.vendedorDocumento ? ` (${d.vendedorDocumento})` : ""}`
+          : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      setContractMsg({
+        tone: "ok",
+        text: `Contrato lido: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos${
+          d.vendedorNome ? ", selecione/cadastre o fornecedor" : ""
+        } e finalize — o contrato será anexado ao veículo.`,
+      });
+    });
+  }
+
   return (
     <form ref={formRef} action={formAction} className="space-y-6">
       <ProcessingOverlay
@@ -161,6 +229,39 @@ export default function VehicleForm({
       {state.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {state.error}
+        </div>
+      ) : null}
+
+      {!isEdit ? (
+        <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4">
+          <p className="text-sm font-semibold text-violet-900">
+            📄 Importar contrato de compra (opcional)
+          </p>
+          <p className="mt-1 text-xs text-slate-600">
+            Anexe o contrato (PDF ou foto): a IA lê e preenche os dados do veículo e o valor de
+            compra automaticamente — você só confere e finaliza. O contrato fica anexado ao veículo.
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <input
+              ref={contractRef}
+              type="file"
+              name="contract"
+              accept="application/pdf,image/*"
+              className="block max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-violet-500"
+            />
+            <Button type="button" variant="secondary" onClick={handleContract} disabled={reading}>
+              {reading ? "Lendo o contrato…" : "✨ Ler contrato e preencher"}
+            </Button>
+          </div>
+          {contractMsg ? (
+            <p
+              className={`mt-2 text-sm font-medium ${
+                contractMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"
+              }`}
+            >
+              {contractMsg.text}
+            </p>
+          ) : null}
         </div>
       ) : null}
 
