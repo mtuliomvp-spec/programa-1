@@ -596,6 +596,23 @@ export async function importContractAction(base64: string, mimeType: string) {
   try {
     const { extractPurchaseContract } = await import("@/lib/contract-ai");
     const data = await extractPurchaseContract(base64, mimeType);
+    // O contrato normalmente NÃO traz a cor (e às vezes falta versão/combustível/
+    // câmbio). Quando há placa, completa esses campos vazios pela consulta de
+    // placa/FIPE — sem sobrescrever o que o contrato já trouxe.
+    if (data.placa && (!data.cor || !data.combustivel || !data.transmissao || !data.versao)) {
+      try {
+        const { lookupPlate } = await import("@/lib/plate-lookup");
+        const r = await lookupPlate(data.placa);
+        if (r.ok) {
+          data.cor = data.cor || r.data.color || null;
+          data.combustivel = data.combustivel || r.data.fuel || null;
+          data.transmissao = data.transmissao || r.data.transmission || null;
+          data.versao = data.versao || r.data.version || null;
+        }
+      } catch {
+        // Consulta complementar é opcional — se falhar, segue com o que o contrato deu.
+      }
+    }
     // Resolve/cadastra o fornecedor (vendedor) automaticamente, pelo documento
     // (comparando só dígitos) e, na falta, pelo nome — sem duplicar.
     const supplier = await resolveContractSupplier(data.vendedorNome, data.vendedorDocumento);
