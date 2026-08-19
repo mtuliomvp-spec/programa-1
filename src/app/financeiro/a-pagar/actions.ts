@@ -1369,6 +1369,147 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
   return { ok: attached.length > 0, attached, unmatched };
 }
 
+export type ImportDuplicatasResult = {
+  ok: boolean;
+  error?: string;
+  created: string[];
+  skipped: { title: string; reason: string }[];
+};
+
+/**
+ * Importa uma RELAÇÃO DE DUPLICATAS EM ABERTO de fornecedor (PDF): a IA lê o
+ * fornecedor e cada parcela (NF, parcela, emissão, vencimento, valor) e o
+ * sistema cria os títulos a pagar PENDENTES que ainda não existem — categoria
+ * Compra de peças, com nº do documento, vencimento e observações preenchidos.
+ * O que já está lançado (mesma NF/parcela ou mesmo valor + vencimento do mesmo
+ * fornecedor) é pulado. Fica faltando só editar o título para vincular o
+ * veículo/peça.
+ */
+export async function importDuplicatasAction(base64: string): Promise<ImportDuplicatasResult> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", created: [], skipped: [] };
+  }
+  if (!base64) return { ok: false, error: "Anexe o PDF do relatório.", created: [], skipped: [] };
+
+  let report;
+  try {
+    const { extractDuplicatas } = await import("@/lib/duplicatas-ai");
+    report = await extractDuplicatas(base64);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Não foi possível ler o relatório.",
+      created: [],
+      skipped: [],
+    };
+  }
+  if (report.duplicatas.length === 0) {
+    return { ok: false, error: "Nenhuma duplicata encontrada no relatório.", created: [], skipped: [] };
+  }
+
+  // Fornecedor: acha pelo CNPJ (só dígitos) ou pelo nome; cria se não existir.
+  const cnpj = (report.fornecedorCnpj || "").replace(/\D/g, "");
+  const nome = (report.fornecedorNome || "").trim();
+  let supplierId: string | null = null;
+  let supplierName = nome;
+  if (cnpj) {
+    const all = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
+    const found = all.find((s) => (s.document || "").replace(/\D/g, "") === cnpj);
+    if (found) {
+      supplierId = found.id;
+      supplierName = found.name;
+    }
+  }
+  if (!supplierId) {
+    if (!nome) return { ok: false, error: "Fornecedor não identificado no relatório.", created: [], skipped: [] };
+    supplierId = await resolveSupplierByName(nome);
+    if (cnpj) {
+      // Completa o CNPJ no cadastro quando ainda não tem.
+      await prisma.supplier.updateMany({
+        where: { id: supplierId, OR: [{ document: null }, { document: "" }] },
+        data: { document: report.fornecedorCnpj },
+      });
+    }
+  }
+
+  // Títulos já lançados do fornecedor, para deduplicar em memória.
+  const existing = await prisma.payable.findMany({
+    where: { supplierId },
+    select: { orderNumber: true, documentNumber: true, amount: true, dueDate: true },
+  });
+  const digits = (s: string | null) => (s || "").replace(/\D/g, "");
+  const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+
+  // Total de parcelas por fatura (para a descrição "parc. 1/2").
+  const parcelasPorFatura = new Map<string, number>();
+  for (const dup of report.duplicatas) {
+    if (dup.fatura) parcelasPorFatura.set(dup.fatura, (parcelasPorFatura.get(dup.fatura) ?? 0) + 1);
+  }
+
+  const created: string[] = [];
+  const skipped: { title: string; reason: string }[] = [];
+
+  for (const dup of report.duplicatas) {
+    const parcela = dup.parcela ?? 1;
+    const totalParc = dup.fatura ? parcelasPorFatura.get(dup.fatura) ?? 1 : 1;
+    const docNum = `NF ${dup.nota ?? dup.fatura ?? "?"} parc. ${parcela}`;
+    const title = `${docNum}${totalParc > 1 ? `/${totalParc}` : ""}${dup.valor != null ? ` — ${brl(dup.valor)}` : ""}${dup.vencimento ? ` (venc. ${dup.vencimento})` : ""}`;
+
+    if (dup.valor == null || dup.valor <= 0 || !dup.vencimento || Number.isNaN(Date.parse(`${dup.vencimento}T00:00:00Z`))) {
+      skipped.push({ title, reason: "valor ou vencimento não identificados" });
+      continue;
+    }
+    const due = new Date(`${dup.vencimento}T12:00:00Z`);
+    const notaDigits = digits(dup.nota);
+
+    const match = existing.find(
+      (p) =>
+        (p.documentNumber === docNum && Math.abs(p.amount - dup.valor!) <= 0.005) ||
+        (notaDigits.length >= 4 &&
+          digits(p.documentNumber).includes(notaDigits) &&
+          Math.abs(p.amount - dup.valor!) <= 0.005) ||
+        (Math.abs(p.amount - dup.valor!) <= 0.005 && sameDay(p.dueDate, due)),
+    );
+    if (match) {
+      skipped.push({
+        title,
+        reason: `já lançada (título nº ${String(match.orderNumber).padStart(4, "0")})`,
+      });
+      continue;
+    }
+
+    const payable = await createManualPayable({
+      description: `Peças ${supplierName} - NF ${dup.nota ?? dup.fatura ?? ""} (parc. ${parcela}${totalParc > 1 ? `/${totalParc}` : ""})`,
+      category: "COMPRA_PECA",
+      categoryLabel: "Compra de peças",
+      documentNumber: docNum,
+      amount: dup.valor,
+      dueDate: due,
+      supplierId,
+      structuralKey: "ADMINISTRATIVO",
+      notes: [
+        dup.fatura ? `Fatura ${dup.fatura}` : null,
+        dup.serie ? `série ${dup.serie}` : null,
+        dup.emissao ? `emissão ${dup.emissao}` : null,
+        "importado da relação de duplicatas — vincule o veículo/peça",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      alreadyPaid: false,
+    });
+    // Entra no dedup para o caso de o mesmo PDF trazer a parcela duplicada.
+    existing.push({ orderNumber: payable.orderNumber, documentNumber: docNum, amount: dup.valor, dueDate: due });
+    created.push(`nº ${String(payable.orderNumber).padStart(4, "0")} — ${title}`);
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/");
+  return { ok: created.length > 0, created, skipped };
+}
+
 // ---------------------------------------------------------------------------
 // Anexos do título (nota fiscal, comprovante…)
 // ---------------------------------------------------------------------------
