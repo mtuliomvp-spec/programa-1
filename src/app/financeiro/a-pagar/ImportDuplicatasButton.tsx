@@ -27,6 +27,7 @@ export default function ImportDuplicatasButton() {
   const [creating, setCreating] = useState(false);
   const [read, setRead] = useState<ReadDuplicatasResult | null>(null);
   const [supplierId, setSupplierId] = useState<string>("");
+  const [checked, setChecked] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<ImportDuplicatasResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,6 +36,7 @@ export default function ImportDuplicatasButton() {
     setRead(null);
     setResult(null);
     setSupplierId("");
+    setChecked(new Set());
   }
 
   async function handleFile(file: File) {
@@ -62,6 +64,8 @@ export default function ImportDuplicatasButton() {
       }
       setRead(res);
       setSupplierId(res.suggestedSupplierId ?? NEW_SUPPLIER);
+      // Todas as parcelas vêm marcadas — o usuário desmarca as que não quer criar.
+      setChecked(new Set((res.duplicatas ?? []).map((_, i) => i)));
     } catch {
       setError("Não foi possível importar. Tente novamente.");
     } finally {
@@ -72,13 +76,19 @@ export default function ImportDuplicatasButton() {
 
   async function handleCreate() {
     if (!read?.duplicatas) return;
+    const selecionadas = read.duplicatas.filter((_, i) => checked.has(i));
+    if (selecionadas.length === 0) {
+      setError("Marque ao menos uma parcela para criar.");
+      return;
+    }
+    setError(null);
     setCreating(true);
     try {
       const res = await createDuplicatasAction({
         supplierId: supplierId === NEW_SUPPLIER ? null : supplierId,
         newSupplierName: supplierId === NEW_SUPPLIER ? read.fornecedorNome ?? null : null,
         cnpj: read.fornecedorCnpj ?? null,
-        duplicatas: read.duplicatas,
+        duplicatas: selecionadas,
       });
       if (res.error) {
         setError(res.error);
@@ -149,28 +159,64 @@ export default function ImportDuplicatasButton() {
                   </p>
                 </div>
                 <div>
-                  <p className="font-medium text-slate-700">
-                    {read.duplicatas?.length ?? 0} parcela(s) encontrada(s):
-                  </p>
-                  <ul className="mt-1 max-h-48 list-inside list-disc overflow-y-auto text-slate-600">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="font-medium text-slate-700">
+                      {read.duplicatas?.length ?? 0} parcela(s) encontrada(s) — marque as que quer
+                      criar:
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const total = read.duplicatas?.length ?? 0;
+                        setChecked((prev) =>
+                          prev.size === total
+                            ? new Set()
+                            : new Set(Array.from({ length: total }, (_, i) => i)),
+                        );
+                      }}
+                      className="shrink-0 text-xs font-medium text-blue-700 hover:underline"
+                    >
+                      {checked.size === (read.duplicatas?.length ?? 0)
+                        ? "Desmarcar todas"
+                        : "Marcar todas"}
+                    </button>
+                  </div>
+                  <div className="mt-1 max-h-48 space-y-1 overflow-y-auto">
                     {(read.duplicatas ?? []).map((d, i) => (
-                      <li key={i}>
-                        NF {d.nota ?? d.fatura ?? "?"} parc. {d.parcela ?? 1}
-                        {d.valor != null ? ` — ${formatCurrency(d.valor)}` : ""}
-                        {d.vencimento ? ` (venc. ${d.vencimento})` : ""}
-                      </li>
+                      <label key={i} className="flex items-start gap-2 text-slate-600">
+                        <input
+                          type="checkbox"
+                          checked={checked.has(i)}
+                          onChange={(e) => {
+                            setChecked((prev) => {
+                              const next = new Set(prev);
+                              if (e.target.checked) next.add(i);
+                              else next.delete(i);
+                              return next;
+                            });
+                          }}
+                          className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                        />
+                        <span>
+                          NF {d.nota ?? d.fatura ?? "?"} parc. {d.parcela ?? 1}
+                          {d.valor != null ? ` — ${formatCurrency(d.valor)}` : ""}
+                          {d.vencimento ? ` (venc. ${d.vencimento})` : ""}
+                        </span>
+                      </label>
                     ))}
-                  </ul>
+                  </div>
                   <p className="mt-1 text-xs text-slate-400">
-                    As que já estiverem lançadas serão puladas automaticamente.
+                    Mesmo entre as marcadas, as que já estiverem lançadas são puladas automaticamente.
                   </p>
                 </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={reset} disabled={creating}>
                     Cancelar
                   </Button>
-                  <Button type="button" onClick={handleCreate} disabled={creating}>
-                    {creating ? "Criando títulos…" : "Criar títulos"}
+                  <Button type="button" onClick={handleCreate} disabled={creating || checked.size === 0}>
+                    {creating
+                      ? "Criando títulos…"
+                      : `Criar ${checked.size} título${checked.size === 1 ? "" : "s"}`}
                   </Button>
                 </div>
               </div>
