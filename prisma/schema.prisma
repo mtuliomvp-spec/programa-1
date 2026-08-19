@@ -1395,6 +1395,9 @@ model RecurringEntry {
   active          Boolean           @default(true)
   startDate       DateTime          @default(now())
   endDate         DateTime?
+  // Ocorrências EXCLUÍDAS pelo usuário (chave "AAAA-MM-DD" do vencimento):
+  // a geração pula esses dias para o título excluído não renascer.
+  skippedDays     String[]          @default([])
   notes           String?
   payables        Payable[]
   receivables     Receivable[]
