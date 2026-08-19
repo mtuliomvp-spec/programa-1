@@ -660,9 +660,15 @@ export async function createManualPayableAction(
   const d = parsed.data;
   try {
     // Título PENDENTE não movimenta dinheiro — pode ser criado com o caixa
-    // fechado. O caixa aberto só é exigido quando "já foi pago" (baixa junto).
-    if (d.paymentMode === "A_VISTA" && d.alreadyPaid) await assertCashboxOpen();
-    await assertMonthOpen(parseDateInput(d.dueDate));
+    // fechado e com vencimento em QUALQUER data, inclusive em mês já fechado
+    // (o L/P e o fechamento contam pelo PAGAMENTO, não pelo vencimento — o
+    // título só entra em Contas a pagar como atrasado). A trava do mês vale
+    // apenas quando "já foi pago": a baixa cai na data do vencimento e aí sim
+    // mexeria no resultado do mês fechado.
+    if (d.paymentMode === "A_VISTA" && d.alreadyPaid) {
+      await assertCashboxOpen();
+      await assertMonthOpen(parseDateInput(d.dueDate));
+    }
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
