@@ -2,27 +2,43 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
-import { importDuplicatasAction, type ImportDuplicatasResult } from "./actions";
+import { Button, Select } from "@/components/ui";
+import { formatCurrency } from "@/lib/format";
+import {
+  readDuplicatasAction,
+  createDuplicatasAction,
+  type ReadDuplicatasResult,
+  type ImportDuplicatasResult,
+} from "./actions";
 
 const MAX_BYTES = 15 * 1024 * 1024;
+const NEW_SUPPLIER = "__new__";
 
 /**
- * "Importar NFs do fornecedor": envia o PDF da relação de duplicatas em aberto
- * e o sistema cria os títulos a pagar que ainda não existem (NF, parcela,
- * vencimento, valor e fornecedor preenchidos). O que já está lançado é pulado.
- * Falta só editar cada título para vincular o veículo/peça.
+ * "Importar NFs do fornecedor" em duas etapas: (1) a IA lê o PDF da relação de
+ * duplicatas e mostra o fornecedor identificado + as parcelas; (2) o usuário
+ * CONFIRMA o fornecedor (pode estar cadastrado com outro nome — ex.: "PMZ")
+ * e o sistema cria os títulos que ainda não existem.
  */
 export default function ImportDuplicatasButton() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [read, setRead] = useState<ReadDuplicatasResult | null>(null);
+  const [supplierId, setSupplierId] = useState<string>("");
   const [result, setResult] = useState<ImportDuplicatasResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function handleFile(file: File) {
+  function reset() {
     setError(null);
+    setRead(null);
     setResult(null);
+    setSupplierId("");
+  }
+
+  async function handleFile(file: File) {
+    reset();
     if (file.type !== "application/pdf") {
       setError("Envie o relatório de duplicatas em PDF.");
       return;
@@ -39,13 +55,13 @@ export default function ImportDuplicatasButton() {
         r.onerror = () => reject(new Error("Falha ao ler o arquivo."));
         r.readAsDataURL(file);
       });
-      const res = await importDuplicatasAction(base64);
-      if (res.error) {
-        setError(res.error);
+      const res = await readDuplicatasAction(base64);
+      if (!res.ok) {
+        setError(res.error || "Não foi possível ler o relatório.");
         return;
       }
-      setResult(res);
-      router.refresh();
+      setRead(res);
+      setSupplierId(res.suggestedSupplierId ?? NEW_SUPPLIER);
     } catch {
       setError("Não foi possível importar. Tente novamente.");
     } finally {
@@ -53,6 +69,32 @@ export default function ImportDuplicatasButton() {
       if (fileRef.current) fileRef.current.value = "";
     }
   }
+
+  async function handleCreate() {
+    if (!read?.duplicatas) return;
+    setCreating(true);
+    try {
+      const res = await createDuplicatasAction({
+        supplierId: supplierId === NEW_SUPPLIER ? null : supplierId,
+        newSupplierName: supplierId === NEW_SUPPLIER ? read.fornecedorNome ?? null : null,
+        cnpj: read.fornecedorCnpj ?? null,
+        duplicatas: read.duplicatas,
+      });
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      setRead(null);
+      setResult(res);
+      router.refresh();
+    } catch {
+      setError("Não foi possível criar os títulos. Tente novamente.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  const open = Boolean(error || read || result);
 
   return (
     <>
@@ -70,11 +112,70 @@ export default function ImportDuplicatasButton() {
         {busy ? "Lendo o relatório…" : "🧾 Importar NFs do fornecedor"}
       </Button>
 
-      {error || result ? (
+      {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5">
             <h2 className="text-base font-semibold text-slate-900">Importar NFs do fornecedor</h2>
             {error ? <p className="mt-3 text-sm font-medium text-rose-600">{error}</p> : null}
+
+            {read ? (
+              <div className="mt-3 space-y-3 text-sm">
+                <div>
+                  <p className="text-slate-600">
+                    Fornecedor no relatório:{" "}
+                    <strong>{read.fornecedorNome || "não identificado"}</strong>
+                    {read.fornecedorCnpj ? ` · CNPJ ${read.fornecedorCnpj}` : ""}
+                  </p>
+                  <label className="mt-2 block text-xs font-medium text-slate-600">
+                    Lançar os títulos no fornecedor
+                    <Select
+                      value={supplierId}
+                      onChange={(e) => setSupplierId(e.target.value)}
+                      className="mt-1"
+                    >
+                      <option value={NEW_SUPPLIER}>
+                        ➕ Cadastrar &quot;{read.fornecedorNome || "novo fornecedor"}&quot;
+                      </option>
+                      {(read.suppliers ?? []).map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </label>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Confira: o fornecedor pode estar cadastrado com outro nome (ex.: PMZ). O CNPJ do
+                    relatório é gravado no cadastro escolhido para a próxima importação casar sozinha.
+                  </p>
+                </div>
+                <div>
+                  <p className="font-medium text-slate-700">
+                    {read.duplicatas?.length ?? 0} parcela(s) encontrada(s):
+                  </p>
+                  <ul className="mt-1 max-h-48 list-inside list-disc overflow-y-auto text-slate-600">
+                    {(read.duplicatas ?? []).map((d, i) => (
+                      <li key={i}>
+                        NF {d.nota ?? d.fatura ?? "?"} parc. {d.parcela ?? 1}
+                        {d.valor != null ? ` — ${formatCurrency(d.valor)}` : ""}
+                        {d.vencimento ? ` (venc. ${d.vencimento})` : ""}
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="mt-1 text-xs text-slate-400">
+                    As que já estiverem lançadas serão puladas automaticamente.
+                  </p>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="secondary" onClick={reset} disabled={creating}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" onClick={handleCreate} disabled={creating}>
+                    {creating ? "Criando títulos…" : "Criar títulos"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {result ? (
               <div className="mt-3 space-y-3 text-sm">
                 {result.created.length > 0 ? (
@@ -94,9 +195,7 @@ export default function ImportDuplicatasButton() {
                 )}
                 {result.skipped.length > 0 ? (
                   <div>
-                    <p className="font-medium text-slate-600">
-                      {result.skipped.length} pulada(s):
-                    </p>
+                    <p className="font-medium text-slate-600">{result.skipped.length} pulada(s):</p>
                     <ul className="mt-1 list-inside list-disc text-slate-600">
                       {result.skipped.map((s, i) => (
                         <li key={i}>
@@ -108,17 +207,14 @@ export default function ImportDuplicatasButton() {
                 ) : null}
               </div>
             ) : null}
-            <div className="mt-4 flex justify-end">
-              <Button
-                type="button"
-                onClick={() => {
-                  setError(null);
-                  setResult(null);
-                }}
-              >
-                Fechar
-              </Button>
-            </div>
+
+            {!read ? (
+              <div className="mt-4 flex justify-end">
+                <Button type="button" onClick={reset}>
+                  Fechar
+                </Button>
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

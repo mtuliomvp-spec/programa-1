@@ -1376,62 +1376,118 @@ export type ImportDuplicatasResult = {
   skipped: { title: string; reason: string }[];
 };
 
+export type ReadDuplicatasResult = {
+  ok: boolean;
+  error?: string;
+  fornecedorNome?: string | null;
+  fornecedorCnpj?: string | null;
+  /** Fornecedor do cadastro que casou pelo CNPJ (pré-selecionado na confirmação). */
+  suggestedSupplierId?: string | null;
+  /** Lista completa de fornecedores para o usuário confirmar/trocar. */
+  suppliers?: { id: string; name: string }[];
+  duplicatas?: import("@/lib/duplicatas-ai").DuplicataExtraida[];
+};
+
 /**
- * Importa uma RELAÇÃO DE DUPLICATAS EM ABERTO de fornecedor (PDF): a IA lê o
- * fornecedor e cada parcela (NF, parcela, emissão, vencimento, valor) e o
- * sistema cria os títulos a pagar PENDENTES que ainda não existem — categoria
- * Compra de peças, com nº do documento, vencimento e observações preenchidos.
- * O que já está lançado (mesma NF/parcela ou mesmo valor + vencimento do mesmo
- * fornecedor) é pulado. Fica faltando só editar o título para vincular o
- * veículo/peça.
+ * ETAPA 1 da importação da relação de duplicatas: a IA lê o PDF e devolve o
+ * fornecedor identificado + as parcelas, SEM criar nada. O usuário confirma (ou
+ * troca) o fornecedor — que pode estar cadastrado com outro nome (ex.: "PMZ"
+ * para Pemaza) — e a etapa 2 (createDuplicatasAction) cria os títulos.
  */
-export async function importDuplicatasAction(base64: string): Promise<ImportDuplicatasResult> {
+export async function readDuplicatasAction(base64: string): Promise<ReadDuplicatasResult> {
   try {
     await assertCan("financeiro", "criar");
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", created: [], skipped: [] };
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  if (!base64) return { ok: false, error: "Anexe o PDF do relatório.", created: [], skipped: [] };
+  if (!base64) return { ok: false, error: "Anexe o PDF do relatório." };
 
   let report;
   try {
     const { extractDuplicatas } = await import("@/lib/duplicatas-ai");
     report = await extractDuplicatas(base64);
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof Error ? e.message : "Não foi possível ler o relatório.",
-      created: [],
-      skipped: [],
-    };
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler o relatório." };
   }
   if (report.duplicatas.length === 0) {
-    return { ok: false, error: "Nenhuma duplicata encontrada no relatório.", created: [], skipped: [] };
+    return { ok: false, error: "Nenhuma duplicata encontrada no relatório." };
   }
 
-  // Fornecedor: acha pelo CNPJ (só dígitos) ou pelo nome; cria se não existir.
+  const suppliers = await prisma.supplier.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, document: true },
+  });
   const cnpj = (report.fornecedorCnpj || "").replace(/\D/g, "");
-  const nome = (report.fornecedorNome || "").trim();
-  let supplierId: string | null = null;
-  let supplierName = nome;
-  if (cnpj) {
-    const all = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
-    const found = all.find((s) => (s.document || "").replace(/\D/g, "") === cnpj);
-    if (found) {
-      supplierId = found.id;
-      supplierName = found.name;
-    }
+  // Sugestão: CNPJ exato; senão, mesma RAIZ de CNPJ (8 primeiros dígitos = a
+  // mesma empresa, filial diferente — ex.: relatório da filial 0017 e o
+  // fornecedor cadastrado com a 0076, caso PMZ/Pemaza).
+  const byCnpj = cnpj ? suppliers.find((s) => (s.document || "").replace(/\D/g, "") === cnpj) : null;
+  const byRoot =
+    !byCnpj && cnpj.length === 14
+      ? suppliers.find((s) => (s.document || "").replace(/\D/g, "").slice(0, 8) === cnpj.slice(0, 8))
+      : null;
+
+  return {
+    ok: true,
+    fornecedorNome: report.fornecedorNome,
+    fornecedorCnpj: report.fornecedorCnpj,
+    suggestedSupplierId: byCnpj?.id ?? byRoot?.id ?? null,
+    suppliers: suppliers.map((s) => ({ id: s.id, name: s.name })),
+    duplicatas: report.duplicatas,
+  };
+}
+
+const dupInputSchema = z.array(
+  z.object({
+    fatura: z.string().nullable(),
+    parcela: z.number().int().nullable(),
+    nota: z.string().nullable(),
+    serie: z.string().nullable(),
+    emissao: z.string().nullable(),
+    vencimento: z.string().nullable(),
+    valor: z.number().nullable(),
+  }),
+);
+
+/**
+ * ETAPA 2: cria os títulos a pagar PENDENTES das parcelas ainda não lançadas,
+ * no fornecedor CONFIRMADO pelo usuário — categoria Compra de peças, nº do
+ * documento, vencimento e observações preenchidos. Fica faltando só editar o
+ * título para vincular o veículo/peça. `newSupplierName` cadastra um fornecedor
+ * novo quando o do relatório não existe; `cnpj` completa o cadastro sem CNPJ.
+ */
+export async function createDuplicatasAction(input: {
+  supplierId?: string | null;
+  newSupplierName?: string | null;
+  cnpj?: string | null;
+  duplicatas: unknown;
+}): Promise<ImportDuplicatasResult> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", created: [], skipped: [] };
   }
+  const parsedDups = dupInputSchema.safeParse(input.duplicatas);
+  if (!parsedDups.success || parsedDups.data.length === 0) {
+    return { ok: false, error: "Parcelas inválidas — leia o PDF de novo.", created: [], skipped: [] };
+  }
+  const report = { duplicatas: parsedDups.data };
+
+  let supplierId = (input.supplierId || "").trim() || null;
   if (!supplierId) {
-    if (!nome) return { ok: false, error: "Fornecedor não identificado no relatório.", created: [], skipped: [] };
+    const nome = (input.newSupplierName || "").trim();
+    if (!nome) return { ok: false, error: "Escolha o fornecedor.", created: [], skipped: [] };
     supplierId = await resolveSupplierByName(nome);
-    if (cnpj) {
-      // Completa o CNPJ no cadastro quando ainda não tem.
-      await prisma.supplier.updateMany({
-        where: { id: supplierId, OR: [{ document: null }, { document: "" }] },
-        data: { document: report.fornecedorCnpj },
-      });
-    }
+  }
+  const supplier = await prisma.supplier.findUnique({
+    where: { id: supplierId },
+    select: { id: true, name: true, document: true },
+  });
+  if (!supplier) return { ok: false, error: "Fornecedor não encontrado.", created: [], skipped: [] };
+  const supplierName = supplier.name;
+  if (input.cnpj && !(supplier.document || "").trim()) {
+    // Completa o CNPJ no cadastro para a próxima importação casar sozinha.
+    await prisma.supplier.update({ where: { id: supplierId }, data: { document: input.cnpj } });
   }
 
   // Títulos já lançados do fornecedor, para deduplicar em memória.
