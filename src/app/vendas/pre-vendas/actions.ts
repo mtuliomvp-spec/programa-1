@@ -178,10 +178,19 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     redirect(`/vendas/${pre.convertedSaleId}`);
   }
 
+  // Data da venda = data de trabalho do CAIXA ABERTO (é quando o fechamento
+  // movimenta o dinheiro), não a data em que a pré-venda foi criada — senão a
+  // conversão travava ("a data precisa ser a do caixa aberto") sempre que a
+  // negociação começou dias antes da efetivação. A pré-venda guarda a data
+  // original como registro da negociação. Sem caixa aberto, mantém a data da
+  // pré-venda (a trava do caixa explica o que falta).
+  const { getCashboxWorkDate } = await import("@/lib/cashbox");
+  const workDate = await getCashboxWorkDate();
+
   const d: SaleData = {
     vehicleId: pre.vehicleId,
     customerId: pre.customerId,
-    saleDate: pre.saleDate.toISOString().slice(0, 10),
+    saleDate: workDate.toISOString().slice(0, 10),
     totalAmount: pre.totalAmount,
     paymentMethod: pre.paymentMethod,
     downPayment: pre.downPayment,
