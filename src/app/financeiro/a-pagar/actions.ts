@@ -1260,41 +1260,74 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
       unmatched.push({ receipt: label, reason: "valor não identificado no comprovante" });
       continue;
     }
-    // Candidatos: títulos PAGOS de MESMO valor (centavo), sem comprovante ainda.
-    // A data restringe quando o comprovante traz uma (± 5 dias do pagamento).
+    // Candidatos: títulos de MESMO valor (centavo), sem comprovante ainda —
+    // PAGOS (data de pagamento ± 5 dias, quando o comprovante traz data) e
+    // também EM ABERTO (pendente/atrasado): o comprovante costuma chegar antes
+    // da baixa no sistema.
+    const dateMs =
+      r.data && !Number.isNaN(Date.parse(`${r.data}T00:00:00Z`))
+        ? Date.parse(`${r.data}T00:00:00Z`)
+        : null;
     const candidates = await prisma.payable.findMany({
       where: {
-        status: "PAGO",
         amount: { gte: r.valor - 0.005, lte: r.valor + 0.005 },
         id: { notIn: Array.from(usedPayables) },
         attachments: { none: { kind: "COMPROVANTE" } },
-        ...(r.data && !Number.isNaN(Date.parse(`${r.data}T00:00:00Z`))
-          ? {
-              paymentDate: {
-                gte: new Date(Date.parse(`${r.data}T00:00:00Z`) - 5 * 86400000),
-                lte: new Date(Date.parse(`${r.data}T00:00:00Z`) + 5 * 86400000),
-              },
-            }
-          : {}),
+        OR: [
+          {
+            status: "PAGO",
+            ...(dateMs
+              ? {
+                  paymentDate: {
+                    gte: new Date(dateMs - 5 * 86400000),
+                    lte: new Date(dateMs + 5 * 86400000),
+                  },
+                }
+              : {}),
+          },
+          { status: { not: "PAGO" } },
+        ],
       },
-      select: { id: true, orderNumber: true, description: true },
-      take: 3,
+      select: { id: true, orderNumber: true, description: true, status: true, dueDate: true },
+      take: 5,
     });
-    if (candidates.length === 0) {
-      unmatched.push({ receipt: label, reason: "nenhum título pago com esse valor (sem comprovante) foi encontrado" });
-      continue;
+
+    // Desempate, sempre sem "chutar": 1 candidato → usa; senão, se houver um
+    // único PAGO (a baixa casa com a data do comprovante) → usa; senão, se
+    // sobrar um único EM ABERTO com vencimento perto da data do comprovante
+    // (± 30 dias — descarta ocorrências de outros meses da mesma recorrência)
+    // → usa; qualquer outra combinação volta como "anexe manualmente".
+    let pick = candidates;
+    if (pick.length > 1) {
+      const pagos = pick.filter((c) => c.status === "PAGO");
+      if (pagos.length === 1) {
+        pick = pagos;
+      } else if (dateMs) {
+        const near = pick.filter(
+          (c) => c.status !== "PAGO" && Math.abs(c.dueDate.getTime() - dateMs) <= 30 * 86400000,
+        );
+        if (near.length === 1) pick = near;
+      }
     }
-    if (candidates.length > 1) {
+
+    if (pick.length === 0) {
       unmatched.push({
         receipt: label,
-        reason: `mais de um título pago com esse valor (${candidates
+        reason: "nenhum título (pago ou em aberto) com esse valor e sem comprovante foi encontrado",
+      });
+      continue;
+    }
+    if (pick.length > 1) {
+      unmatched.push({
+        receipt: label,
+        reason: `mais de um título com esse valor (${pick
           .map((c) => `nº ${String(c.orderNumber).padStart(4, "0")}`)
           .join(", ")}) — anexe manualmente`,
       });
       continue;
     }
 
-    const target = candidates[0];
+    const target = pick[0];
     // Recorta SÓ a página do comprovante num PDF próprio.
     let pageBytes: Uint8Array;
     if (r.pagina >= 1 && r.pagina <= pageCount) {
@@ -1319,7 +1352,9 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
     });
     usedPayables.add(target.id);
     attached.push({
-      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}`,
+      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}${
+        target.status !== "PAGO" ? " (título em aberto — falta dar baixa)" : ""
+      }`,
       receipt: label,
     });
   }
