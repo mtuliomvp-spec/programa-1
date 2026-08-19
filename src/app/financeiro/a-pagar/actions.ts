@@ -1614,21 +1614,38 @@ export async function importNfeAction(base64: string, filename: string): Promise
   }
   if (!base64) return { ok: false, error: "Anexe o PDF da NF-e.", outcomes: [] };
 
-  let nfe;
+  // Um PDF pode trazer VÁRIAS NF-e (DANFEs concatenadas): a IA devolve cada
+  // nota com o intervalo de páginas, e cada uma é processada por vez.
+  let notas;
   try {
-    const { extractNfe } = await import("@/lib/nfe-ai");
-    nfe = await extractNfe(base64, "application/pdf");
+    const { extractNfeLote } = await import("@/lib/nfe-ai");
+    notas = await extractNfeLote(base64);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a NF-e.", outcomes: [] };
   }
+  if (notas.length === 0) {
+    return { ok: false, error: "Nenhuma NF-e encontrada no PDF.", outcomes: [] };
+  }
+
+  const { PDFDocument } = await import("pdf-lib");
+  const fullBytes = Buffer.from(base64, "base64");
+  const original = await PDFDocument.load(fullBytes);
+  const pageCount = original.getPageCount();
 
   const digits = (s: string | null) => (s || "").replace(/\D/g, "");
+  const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+  const suppliers = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
+  const outcomes: string[] = [];
+
+  for (const nfe of notas) {
   const numero = digits(nfe.numero).replace(/^0+/, "");
-  if (!numero) return { ok: false, error: "Número da NF não identificado no PDF.", outcomes: [] };
+  if (!numero) {
+    outcomes.push("Nota sem número identificado — pulada.");
+    continue;
+  }
 
   // Fornecedor: CNPJ exato → mesma raiz (filial diferente) → nome (cria).
   const cnpj = digits(nfe.emitenteCnpj);
-  const suppliers = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
   let supplier =
     (cnpj ? suppliers.find((s) => digits(s.document) === cnpj) : undefined) ??
     (cnpj.length === 14
@@ -1637,9 +1654,13 @@ export async function importNfeAction(base64: string, filename: string): Promise
     null;
   if (!supplier) {
     const nome = (nfe.emitenteNome || "").trim();
-    if (!nome) return { ok: false, error: "Fornecedor (emitente) não identificado na NF.", outcomes: [] };
+    if (!nome) {
+      outcomes.push(`NF ${numero}: fornecedor (emitente) não identificado — pulada.`);
+      continue;
+    }
     const id = await resolveSupplierByName(nome);
     supplier = { id, name: nome, document: null };
+    suppliers.push(supplier);
   }
   const supplierId = supplier.id;
 
@@ -1660,7 +1681,8 @@ export async function importNfeAction(base64: string, filename: string): Promise
         ? [{ vencimento: nfe.emitidaEm || new Date().toISOString().slice(0, 10), valor: nfe.valorTotal }]
         : [];
   if (parcelas.length === 0) {
-    return { ok: false, error: "Valor/vencimento não identificados na NF.", outcomes: [] };
+    outcomes.push(`NF ${numero}: valor/vencimento não identificados — pulada.`);
+    continue;
   }
 
   // Títulos existentes para o dedup (globais, como na relação de duplicatas).
@@ -1674,9 +1696,27 @@ export async function importNfeAction(base64: string, filename: string): Promise
     },
     select: { id: true, orderNumber: true, documentNumber: true, amount: true, dueDate: true, supplierId: true, notes: true },
   });
-  const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+  // Recorta as páginas DESTA nota (PDF com várias NF-e); com uma nota só, ou
+  // intervalo inválido, o anexo é o PDF inteiro.
+  let notaBytes: Buffer = fullBytes;
+  if (
+    notas.length > 1 &&
+    nfe.paginaInicial != null &&
+    nfe.paginaFinal != null &&
+    nfe.paginaInicial >= 1 &&
+    nfe.paginaFinal >= nfe.paginaInicial &&
+    nfe.paginaFinal <= pageCount
+  ) {
+    const single = await PDFDocument.create();
+    const idxs = Array.from(
+      { length: nfe.paginaFinal - nfe.paginaInicial + 1 },
+      (_, k) => (nfe.paginaInicial as number) - 1 + k,
+    );
+    const pages = await single.copyPages(original, idxs);
+    for (const pg of pages) single.addPage(pg);
+    notaBytes = Buffer.from(await single.save());
+  }
 
-  const pdfBytes = Buffer.from(base64, "base64");
   const attachNfe = async (payableId: string) => {
     const already = await prisma.payableAttachment.findFirst({
       where: { payableId, description: `NF-e ${numero}` },
@@ -1688,15 +1728,14 @@ export async function importNfeAction(base64: string, filename: string): Promise
         payableId,
         kind: "OUTRO",
         description: `NF-e ${numero}`,
-        filename: filename || `nfe-${numero}.pdf`,
+        filename: notas.length > 1 ? `nfe-${numero}.pdf` : filename || `nfe-${numero}.pdf`,
         mimeType: "application/pdf",
-        size: pdfBytes.byteLength,
-        data: pdfBytes,
+        size: notaBytes.byteLength,
+        data: new Uint8Array(notaBytes),
       },
     });
   };
 
-  const outcomes: string[] = [];
   for (const [idx, parc] of parcelas.entries()) {
     const parcela = idx + 1;
     const due = new Date(`${parc.vencimento}T12:00:00Z`);
@@ -1758,6 +1797,7 @@ export async function importNfeAction(base64: string, filename: string): Promise
     });
     outcomes.push(`${label} → título nº ${String(payable.orderNumber).padStart(4, "0")} criado (com as peças)`);
   }
+  } // fim do loop das notas
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");

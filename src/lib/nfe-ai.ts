@@ -109,14 +109,17 @@ const NFE_JSON_SCHEMA = {
       },
     },
     duplicatas: {
+      // Sem tipos anuláveis aqui de propósito: o structured output limita a 16
+      // parâmetros com union/null no schema inteiro — parcela ilegível fica de
+      // FORA da lista (regra no prompt), em vez de vir null.
       type: "array",
       items: {
         type: "object",
         additionalProperties: false,
         required: ["vencimento", "valor"],
         properties: {
-          vencimento: { type: ["string", "null"], description: "vencimento da parcela, aaaa-mm-dd" },
-          valor: { type: ["number", "null"], description: "valor da parcela, como número" },
+          vencimento: { type: "string", description: "vencimento da parcela, aaaa-mm-dd" },
+          valor: { type: "number", description: "valor da parcela, como número" },
         },
       },
     },
@@ -139,7 +142,8 @@ const SYSTEM_PROMPT =
   "Pneus, Serviço, Combustível, Documentação de veículo, Despesa operacional, Outros. " +
   "9) DUPLICATAS: o campo FATURA/DUPLICATAS do DANFE lista as parcelas de cobrança " +
   "(ex.: 'VENC - 31-08-2026 - R$ 91,35') — devolva uma entrada por parcela, com vencimento " +
-  "(aaaa-mm-dd) e valor. Sem parcelas na nota, devolva a lista vazia. " +
+  "(aaaa-mm-dd) e valor. Sem parcelas na nota, devolva a lista vazia; parcela que você não " +
+  "conseguir ler com segurança fica DE FORA da lista (não devolva null). " +
   "10) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
   "11) Responda somente com o JSON pedido.";
 
@@ -238,4 +242,127 @@ export async function extractNfe(base64: string, mimeType: string): Promise<NfeE
     throw new Error("A IA não devolveu os dados da nota no formato esperado. Tente novamente.");
   }
   return result.data;
+}
+
+// ---------------------------------------------------------------------------
+// Lote: um PDF com VÁRIAS NF-e (DANFEs concatenadas). Devolve cada nota com o
+// intervalo de páginas dela, para o chamador recortar o PDF por nota.
+// ---------------------------------------------------------------------------
+
+const nfeLoteNotaSchema = nfeSchema.extend({
+  paginaInicial: z.number().int().nullable(),
+  paginaFinal: z.number().int().nullable(),
+});
+
+const nfeLoteSchema = z.object({ notas: z.array(nfeLoteNotaSchema) });
+
+export type NfeLoteNota = z.infer<typeof nfeLoteNotaSchema>;
+
+const NFE_LOTE_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["notas"],
+  properties: {
+    notas: {
+      type: "array",
+      items: {
+        ...NFE_JSON_SCHEMA,
+        required: [...NFE_JSON_SCHEMA.required, "paginaInicial", "paginaFinal"],
+        properties: {
+          ...NFE_JSON_SCHEMA.properties,
+          // Não-anuláveis (limite de 16 unions do structured output): a página
+          // sempre existe — é onde a nota está no PDF.
+          paginaInicial: {
+            type: "integer",
+            description: "primeira página do PDF em que esta nota aparece (começando em 1)",
+          },
+          paginaFinal: {
+            type: "integer",
+            description: "última página do PDF desta nota (igual à inicial quando é uma página só)",
+          },
+        },
+      },
+    },
+  },
+} as const;
+
+const LOTE_PROMPT =
+  SYSTEM_PROMPT +
+  " ATENÇÃO: este PDF pode conter VÁRIAS notas fiscais (DANFEs) — uma por página ou em blocos de " +
+  "páginas. Devolva UMA entrada por nota (não misture itens de notas diferentes) e informe, em cada " +
+  "uma, a primeira e a última página em que ela aparece (contando a partir de 1).";
+
+/** Lê um PDF com uma ou várias NF-e; cada nota volta com o intervalo de páginas. */
+export async function extractNfeLote(base64: string): Promise<NfeLoteNota[]> {
+  const config = await getParecerConfig();
+  if (!config.configured || !config.apiKey) {
+    throw new Error("A IA ainda não está configurada. Cadastre a chave em Parâmetros › Parecer IA.");
+  }
+  if (config.provider !== "ANTHROPIC") {
+    throw new Error("A leitura da nota fiscal requer o provedor Anthropic (Parâmetros › Parecer IA).");
+  }
+
+  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 2 });
+
+  let response: Anthropic.Beta.BetaMessage;
+  try {
+    response = await client.beta.messages.create({
+      model: "claude-opus-5",
+      max_tokens: 16000,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: {
+        effort: "low",
+        format: { type: "json_schema", schema: NFE_LOTE_JSON_SCHEMA },
+      },
+      system: LOTE_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
+            { type: "text", text: "Transcreva todas as notas fiscais deste PDF." },
+          ],
+        },
+      ],
+    });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) {
+      throw new Error("Chave de IA inválida. Confira nos Parâmetros.");
+    }
+    if (e instanceof Anthropic.RateLimitError) {
+      throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos e tente de novo.");
+    }
+    if (e instanceof Anthropic.APIError) {
+      const detalhe = (e.message || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(
+        `A IA recusou o pedido (${e.status})${detalhe ? `: ${detalhe}` : "."} Tente novamente.`,
+      );
+    }
+    throw e;
+  }
+
+  if (response.stop_reason === "refusal") {
+    throw new Error("A IA não pôde ler este arquivo. Lance os títulos à mão.");
+  }
+  if (response.stop_reason === "max_tokens") {
+    throw new Error("O PDF tem notas demais para uma leitura só — divida em arquivos menores.");
+  }
+
+  const text = response.content
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("A IA não devolveu as notas no formato esperado. Tente novamente.");
+  }
+  const result = nfeLoteSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("A IA não devolveu as notas no formato esperado. Tente novamente.");
+  }
+  return result.data.notas;
 }
