@@ -1204,6 +1204,130 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   return { ok: deleted > 0, deleted, skipped };
 }
 
+export type ImportReceiptsResult = {
+  ok: boolean;
+  error?: string;
+  attached: { title: string; receipt: string }[];
+  unmatched: { receipt: string; reason: string }[];
+};
+
+/**
+ * Importa um PDF de COMPROVANTES DE PAGAMENTO (lote do banco, um por página):
+ * a IA lê valor/data/descrição de cada comprovante e o sistema casa com o
+ * título PAGO de mesmo valor (data de pagamento próxima) que ainda não tem
+ * comprovante — anexando SÓ a página daquele comprovante ao título (slot
+ * COMPROVANTE do "Boleto e comprovante"). Comprovantes sem correspondência
+ * única voltam listados com o motivo, para anexar manualmente.
+ */
+export async function importPaymentReceiptsAction(base64: string): Promise<ImportReceiptsResult> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", attached: [], unmatched: [] };
+  }
+  if (!base64) return { ok: false, error: "Anexe o PDF de comprovantes.", attached: [], unmatched: [] };
+
+  let receipts;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    receipts = await extractPaymentReceipts(base64);
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Não foi possível ler os comprovantes.",
+      attached: [],
+      unmatched: [],
+    };
+  }
+  if (receipts.length === 0) {
+    return { ok: false, error: "Nenhum comprovante encontrado no PDF.", attached: [], unmatched: [] };
+  }
+
+  const { PDFDocument } = await import("pdf-lib");
+  const original = await PDFDocument.load(Buffer.from(base64, "base64"));
+  const pageCount = original.getPageCount();
+
+  const attached: { title: string; receipt: string }[] = [];
+  const unmatched: { receipt: string; reason: string }[] = [];
+  const usedPayables = new Set<string>();
+
+  for (const r of receipts) {
+    const label = `${r.descricao || "Comprovante"}${r.valor != null ? ` — ${brl(r.valor)}` : ""}${r.data ? ` (${r.data})` : ""}`;
+    if (r.valor == null || r.valor <= 0) {
+      unmatched.push({ receipt: label, reason: "valor não identificado no comprovante" });
+      continue;
+    }
+    // Candidatos: títulos PAGOS de MESMO valor (centavo), sem comprovante ainda.
+    // A data restringe quando o comprovante traz uma (± 5 dias do pagamento).
+    const candidates = await prisma.payable.findMany({
+      where: {
+        status: "PAGO",
+        amount: { gte: r.valor - 0.005, lte: r.valor + 0.005 },
+        id: { notIn: Array.from(usedPayables) },
+        attachments: { none: { kind: "COMPROVANTE" } },
+        ...(r.data && !Number.isNaN(Date.parse(`${r.data}T00:00:00Z`))
+          ? {
+              paymentDate: {
+                gte: new Date(Date.parse(`${r.data}T00:00:00Z`) - 5 * 86400000),
+                lte: new Date(Date.parse(`${r.data}T00:00:00Z`) + 5 * 86400000),
+              },
+            }
+          : {}),
+      },
+      select: { id: true, orderNumber: true, description: true },
+      take: 3,
+    });
+    if (candidates.length === 0) {
+      unmatched.push({ receipt: label, reason: "nenhum título pago com esse valor (sem comprovante) foi encontrado" });
+      continue;
+    }
+    if (candidates.length > 1) {
+      unmatched.push({
+        receipt: label,
+        reason: `mais de um título pago com esse valor (${candidates
+          .map((c) => `nº ${String(c.orderNumber).padStart(4, "0")}`)
+          .join(", ")}) — anexe manualmente`,
+      });
+      continue;
+    }
+
+    const target = candidates[0];
+    // Recorta SÓ a página do comprovante num PDF próprio.
+    let pageBytes: Uint8Array;
+    if (r.pagina >= 1 && r.pagina <= pageCount) {
+      const single = await PDFDocument.create();
+      const [page] = await single.copyPages(original, [r.pagina - 1]);
+      single.addPage(page);
+      pageBytes = await single.save();
+    } else {
+      pageBytes = new Uint8Array(Buffer.from(base64, "base64")); // página inválida: anexa o PDF inteiro
+    }
+
+    await prisma.payableAttachment.create({
+      data: {
+        payableId: target.id,
+        kind: "COMPROVANTE",
+        description: "Comprovante de pagamento",
+        filename: `comprovante-${String(target.orderNumber).padStart(4, "0")}.pdf`,
+        mimeType: "application/pdf",
+        size: pageBytes.byteLength,
+        data: Buffer.from(pageBytes),
+      },
+    });
+    usedPayables.add(target.id);
+    attached.push({
+      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}`,
+      receipt: label,
+    });
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: attached.length > 0, attached, unmatched };
+}
+
 // ---------------------------------------------------------------------------
 // Anexos do título (nota fiscal, comprovante…)
 // ---------------------------------------------------------------------------

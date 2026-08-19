@@ -13,6 +13,7 @@ import Can from "@/components/Can";
 import { userCan } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
 import SolicitedCombosCard, { type SolicitedCombo } from "./SolicitedCombosCard";
+import ImportReceiptsButton from "./ImportReceiptsButton";
 
 export const dynamic = "force-dynamic";
 
@@ -351,6 +352,7 @@ export default async function ContasAPagarPage({
         action={
           <Can module="financeiro" action="criar">
             <div className="flex flex-wrap gap-2">
+              <ImportReceiptsButton />
               <LinkButton href="/financeiro/a-pagar/contrato-locacao" variant="secondary">
                 🏠 Contrato de locação
               </LinkButton>
