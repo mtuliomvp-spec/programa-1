@@ -761,9 +761,10 @@ function originBlockReason(p: {
   purchaseRequestId: string | null;
 }): string | null {
   if (p.status === "PAGO") return "pago";
-  // Veículo é permitido excluir (remove o custo do veículo junto). Recorrência/
-  // consórcio se regeneram; venda/peça/espelho têm origem própria.
-  if (p.partId || p.recurringId || p.consortiumId || p.employeeId || p.saleId || p.purchaseRequestId) {
+  // Veículo é permitido excluir (remove o custo do veículo junto). Recorrência
+  // não pago também pode: o dia excluído vira "pulado" na recorrência (não
+  // regenera). Consórcio se regenera; venda/peça/espelho têm origem própria.
+  if (p.partId || p.consortiumId || p.employeeId || p.saleId || p.purchaseRequestId) {
     return "origem";
   }
   return null;
@@ -1160,13 +1161,25 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   // linhas levava centenas de idas ao banco (a checagem é só em memória).
   const rows = await prisma.payable.findMany({
     where: { id: { in: ids } },
-    select: { id: true, ...ORIGIN_SELECT },
+    select: { id: true, dueDate: true, ...ORIGIN_SELECT },
   });
-  const okIds = rows.filter((p) => !originBlockReason(p)).map((p) => p.id);
+  const okRows = rows.filter((p) => !originBlockReason(p));
+  const okIds = okRows.map((p) => p.id);
   const deleted = okIds.length;
   const skipped = ids.length - deleted;
 
   if (okIds.length) {
+    // Título de RECORRÊNCIA: o dia do vencimento vira "pulado" na recorrência,
+    // senão a geração automática recriaria o título excluído.
+    const skipByRecurring = new Map<string, string[]>();
+    for (const p of okRows) {
+      if (p.recurringId) {
+        const key = p.dueDate.toISOString().slice(0, 10);
+        const list = skipByRecurring.get(p.recurringId) ?? [];
+        if (!list.includes(key)) list.push(key);
+        skipByRecurring.set(p.recurringId, list);
+      }
+    }
     await prisma.$transaction([
       // O custo do veículo perderia o vínculo (SetNull) e a movimentação de
       // capital não tem cascade — os dois saem junto com o título. A troca de
@@ -1175,6 +1188,12 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
       prisma.capitalTransaction.deleteMany({ where: { payableId: { in: okIds } } }),
       prisma.investmentAllocation.deleteMany({ where: { payableId: { in: okIds } } }),
       prisma.payable.deleteMany({ where: { id: { in: okIds } } }),
+      ...Array.from(skipByRecurring.entries()).map(([recurringId, days]) =>
+        prisma.recurringEntry.update({
+          where: { id: recurringId },
+          data: { skippedDays: { push: days } },
+        }),
+      ),
     ]);
   }
 

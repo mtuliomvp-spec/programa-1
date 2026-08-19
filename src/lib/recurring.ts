@@ -172,6 +172,9 @@ async function recurringGenerated(leadDays: number): Promise<number> {
     const existingDays = new Set(
       [...entry.payables, ...entry.receivables].map((t) => dayKey(t.dueDate)),
     );
+    // Ocorrências excluídas pelo usuário: contam como "já existentes" para a
+    // geração não recriar o título apagado.
+    for (const d of entry.skippedDays) existingDays.add(d);
 
     // Datas de vencimento candidatas: mensal (mês corrente + próximo) ou por
     // intervalo. Só entram as que vencem até o horizonte e a partir do início.

@@ -207,7 +207,7 @@ export default function PayablesTable({
   function remove() {
     const ids = [...selected];
     if (!ids.length) return;
-    if (!confirm(`Excluir ${ids.length} ${ids.length === 1 ? "título selecionado" : "títulos selecionados"}? Só valem os manuais e não pagos.`)) {
+    if (!confirm(`Excluir ${ids.length} ${ids.length === 1 ? "título selecionado" : "títulos selecionados"}? Valem os não pagos (manuais e de recorrência — a ocorrência excluída não é gerada de novo).`)) {
       return;
     }
     setMsg(null);
@@ -219,7 +219,9 @@ export default function PayablesTable({
       }
       setMsg(
         `${res.deleted} excluído(s)` +
-          (res.skipped > 0 ? ` · ${res.skipped} ignorado(s) (pago ou de outra operação)` : ""),
+          (res.skipped > 0
+            ? ` · ${res.skipped} ignorado(s) — título pago (reverta antes) ou de outra operação (venda, peça, consórcio, funcionário, compra)`
+            : ""),
       );
       setSelected(new Set());
     });
