@@ -1490,13 +1490,30 @@ export async function createDuplicatasAction(input: {
     await prisma.supplier.update({ where: { id: supplierId }, data: { document: input.cnpj } });
   }
 
-  // Títulos já lançados do fornecedor, para deduplicar em memória.
-  const existing = await prisma.payable.findMany({
-    where: { supplierId },
-    select: { orderNumber: true, documentNumber: true, amount: true, dueDate: true },
-  });
   const digits = (s: string | null) => (s || "").replace(/\D/g, "");
   const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+
+  // Títulos já lançados, para deduplicar em memória. A busca é GLOBAL (não só o
+  // fornecedor escolhido): as NFs podem ter sido lançadas sob OUTRO cadastro do
+  // mesmo fornecedor (ex.: "PMZ" × "Pemaza") — deduplicar só pelo fornecedor
+  // deixava passar duplicatas. Traz os títulos do fornecedor + qualquer título
+  // cujo documento contenha o nº de uma das NFs + títulos com os mesmos valores.
+  const notas = Array.from(
+    new Set(report.duplicatas.map((d) => digits(d.nota)).filter((n) => n.length >= 4)),
+  );
+  const valores = Array.from(
+    new Set(report.duplicatas.filter((d) => d.valor != null && d.valor > 0).map((d) => d.valor as number)),
+  );
+  const existing = await prisma.payable.findMany({
+    where: {
+      OR: [
+        { supplierId },
+        ...notas.map((n) => ({ documentNumber: { contains: n } })),
+        ...(valores.length ? [{ amount: { in: valores } }] : []),
+      ],
+    },
+    select: { orderNumber: true, documentNumber: true, amount: true, dueDate: true, supplierId: true },
+  });
 
   // Total de parcelas por fatura (para a descrição "parc. 1/2").
   const parcelasPorFatura = new Map<string, number>();
@@ -1520,15 +1537,24 @@ export async function createDuplicatasAction(input: {
     const due = new Date(`${dup.vencimento}T12:00:00Z`);
     const notaDigits = digits(dup.nota);
 
-    const match = existing.find(
-      (p) =>
-        (p.documentNumber === docNum && Math.abs(p.amount - dup.valor!) <= 0.005) ||
-        (notaDigits.length >= 4 &&
-          digits(p.documentNumber).includes(notaDigits) &&
-          Math.abs(p.amount - dup.valor!) <= 0.005) ||
-        (Math.abs(p.amount - dup.valor!) <= 0.005 && sameDay(p.dueDate, due)),
+    // Duplicata já lançada? Mesmo VALOR e: documento com o nº da NF (qualquer
+    // fornecedor) OU mesmo vencimento no fornecedor escolhido. Preferência para
+    // o vencimento igual (desempata parcelas de mesmo valor da mesma NF) e cada
+    // título existente é CONSUMIDO — deduplica no máximo uma parcela, para a
+    // parcela 2/2 nova não ser pulada por causa da 1/2 já lançada.
+    const sameAmount = (p: (typeof existing)[number]) => Math.abs(p.amount - dup.valor!) <= 0.005;
+    const docMatch = (p: (typeof existing)[number]) =>
+      p.documentNumber === docNum ||
+      (notaDigits.length >= 4 && digits(p.documentNumber).includes(notaDigits));
+    const candidates = existing.filter(
+      (p) => sameAmount(p) && (docMatch(p) || (p.supplierId === supplierId && sameDay(p.dueDate, due))),
     );
+    const match =
+      candidates.find((p) => docMatch(p) && sameDay(p.dueDate, due)) ??
+      candidates.find(docMatch) ??
+      candidates[0];
     if (match) {
+      existing.splice(existing.indexOf(match), 1);
       skipped.push({
         title,
         reason: `já lançada (título nº ${String(match.orderNumber).padStart(4, "0")})`,
@@ -1556,7 +1582,7 @@ export async function createDuplicatasAction(input: {
       alreadyPaid: false,
     });
     // Entra no dedup para o caso de o mesmo PDF trazer a parcela duplicada.
-    existing.push({ orderNumber: payable.orderNumber, documentNumber: docNum, amount: dup.valor, dueDate: due });
+    existing.push({ orderNumber: payable.orderNumber, documentNumber: docNum, amount: dup.valor, dueDate: due, supplierId });
     created.push(`nº ${String(payable.orderNumber).padStart(4, "0")} — ${title}`);
   }
 
