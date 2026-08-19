@@ -23,6 +23,11 @@ const itemSchema = z.object({
   valorTotal: z.number().nullable(),
 });
 
+const duplicataNfeSchema = z.object({
+  vencimento: z.string().nullable(),
+  valor: z.number().nullable(),
+});
+
 const nfeSchema = z.object({
   numero: z.string().nullable(),
   serie: z.string().nullable(),
@@ -37,6 +42,9 @@ const nfeSchema = z.object({
   formaPagamento: z.string().nullable(),
   categoria: z.string().nullable(),
   itens: z.array(itemSchema),
+  // Fatura/duplicatas do DANFE (parcelas com vencimento e valor). Vazio quando
+  // a nota não traz cobrança parcelada.
+  duplicatas: z.array(duplicataNfeSchema),
 });
 
 export type NfeExtraida = z.infer<typeof nfeSchema>;
@@ -61,6 +69,7 @@ const NFE_JSON_SCHEMA = {
     "formaPagamento",
     "categoria",
     "itens",
+    "duplicatas",
   ],
   properties: {
     numero: { type: ["string", "null"], description: "número da nota, só dígitos" },
@@ -99,6 +108,18 @@ const NFE_JSON_SCHEMA = {
         },
       },
     },
+    duplicatas: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["vencimento", "valor"],
+        properties: {
+          vencimento: { type: ["string", "null"], description: "vencimento da parcela, aaaa-mm-dd" },
+          valor: { type: ["number", "null"], description: "valor da parcela, como número" },
+        },
+      },
+    },
   },
 } as const;
 
@@ -116,8 +137,11 @@ const SYSTEM_PROMPT =
   "7) FORMA DE PAGAMENTO só se constar em algum lugar da nota (costuma vir em 'Dados adicionais'). " +
   "8) CATEGORIA: escolha exatamente uma destas, sem inventar outra — Peças, Óleo e lubrificantes, " +
   "Pneus, Serviço, Combustível, Documentação de veículo, Despesa operacional, Outros. " +
-  "9) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "10) Responda somente com o JSON pedido.";
+  "9) DUPLICATAS: o campo FATURA/DUPLICATAS do DANFE lista as parcelas de cobrança " +
+  "(ex.: 'VENC - 31-08-2026 - R$ 91,35') — devolva uma entrada por parcela, com vencimento " +
+  "(aaaa-mm-dd) e valor. Sem parcelas na nota, devolva a lista vazia. " +
+  "10) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "11) Responda somente com o JSON pedido.";
 
 /** Tipos de imagem que a API aceita no bloco `image`. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;

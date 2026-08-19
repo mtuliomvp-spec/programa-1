@@ -7,12 +7,29 @@ import { formatCurrency } from "@/lib/format";
 import {
   readDuplicatasAction,
   createDuplicatasAction,
+  importNfeAction,
   type ReadDuplicatasResult,
   type ImportDuplicatasResult,
 } from "./actions";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const NEW_SUPPLIER = "__new__";
+
+type NfeFileResult = { file: string; outcomes: string[]; error?: string };
+
+/** DANFE/NF-e baixada tem "procNFe" ou a chave de 44 dígitos no nome. */
+function looksLikeNfe(name: string): boolean {
+  return /procnfe/i.test(name) || /\d{44}/.test(name);
+}
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(new Error("Falha ao ler o arquivo."));
+    r.readAsDataURL(file);
+  });
+}
 
 /**
  * "Importar NFs do fornecedor" em duas etapas: (1) a IA lê o PDF da relação de
@@ -29,34 +46,57 @@ export default function ImportDuplicatasButton() {
   const [supplierId, setSupplierId] = useState<string>("");
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<ImportDuplicatasResult | null>(null);
+  const [nfeResults, setNfeResults] = useState<NfeFileResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setError(null);
     setRead(null);
     setResult(null);
+    setNfeResults(null);
     setSupplierId("");
     setChecked(new Set());
   }
 
-  async function handleFile(file: File) {
+  async function handleFiles(files: File[]) {
     reset();
-    if (file.type !== "application/pdf") {
-      setError("Envie o relatório de duplicatas em PDF.");
-      return;
-    }
-    if (file.size > MAX_BYTES) {
-      setError("Arquivo muito grande (máximo 15 MB).");
-      return;
+    for (const f of files) {
+      if (f.type !== "application/pdf") {
+        setError("Envie PDFs (relatório de duplicatas ou NF-e/DANFE).");
+        return;
+      }
+      if (f.size > MAX_BYTES) {
+        setError(`"${f.name}" é muito grande (máximo 15 MB).`);
+        return;
+      }
     }
     setBusy(true);
     try {
-      const base64 = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
-        r.onerror = () => reject(new Error("Falha ao ler o arquivo."));
-        r.readAsDataURL(file);
-      });
+      // NF-e (DANFE): uma ou várias — cada nota vira anexo no título existente
+      // ou um título novo com as peças. Relatório de duplicatas: um por vez,
+      // com a confirmação do fornecedor.
+      const nfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1;
+      if (nfe) {
+        const results: NfeFileResult[] = [];
+        for (const f of files) {
+          try {
+            const base64 = await fileToBase64(f);
+            const res = await importNfeAction(base64, f.name);
+            results.push(
+              res.ok
+                ? { file: f.name, outcomes: res.outcomes }
+                : { file: f.name, outcomes: [], error: res.error || "Não foi possível importar." },
+            );
+          } catch {
+            results.push({ file: f.name, outcomes: [], error: "Não foi possível importar." });
+          }
+        }
+        setNfeResults(results);
+        router.refresh();
+        return;
+      }
+
+      const base64 = await fileToBase64(files[0]);
       const res = await readDuplicatasAction(base64);
       if (!res.ok) {
         setError(res.error || "Não foi possível ler o relatório.");
@@ -104,7 +144,7 @@ export default function ImportDuplicatasButton() {
     }
   }
 
-  const open = Boolean(error || read || result);
+  const open = Boolean(error || read || result || nfeResults);
 
   return (
     <>
@@ -112,14 +152,15 @@ export default function ImportDuplicatasButton() {
         ref={fileRef}
         type="file"
         accept="application/pdf"
+        multiple
         className="hidden"
         onChange={(e) => {
-          const f = e.target.files?.[0];
-          if (f) void handleFile(f);
+          const fs = Array.from(e.target.files ?? []);
+          if (fs.length) void handleFiles(fs);
         }}
       />
       <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
-        {busy ? "Lendo o relatório…" : "🧾 Importar NFs do fornecedor"}
+        {busy ? "Lendo as notas…" : "🧾 Importar NFs do fornecedor"}
       </Button>
 
       {open ? (
@@ -251,6 +292,29 @@ export default function ImportDuplicatasButton() {
                     </ul>
                   </div>
                 ) : null}
+              </div>
+            ) : null}
+
+            {nfeResults ? (
+              <div className="mt-3 space-y-3 text-sm">
+                {nfeResults.map((r, i) => (
+                  <div key={i}>
+                    <p className="break-all font-medium text-slate-700">📄 {r.file}</p>
+                    {r.error ? (
+                      <p className="mt-1 text-rose-600">{r.error}</p>
+                    ) : (
+                      <ul className="mt-1 list-inside list-disc text-slate-600">
+                        {r.outcomes.map((o, j) => (
+                          <li key={j}>{o}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ))}
+                <p className="text-xs text-slate-400">
+                  Nos títulos criados, as peças da nota já estão na descrição/observações — falta só
+                  vincular o veículo.
+                </p>
               </div>
             ) : null}
 
