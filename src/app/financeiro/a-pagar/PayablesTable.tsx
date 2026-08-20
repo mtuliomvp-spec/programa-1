@@ -27,6 +27,8 @@ export type PayableRow = {
   documentNumber: string | null;
   supplierName: string | null;
   beneficiaryName: string | null;
+  /** Nome do sócio do capital, quando o título é de beneficiário do capital. */
+  capitalBeneficiaryName: string | null;
   vehicleLabel: string | null;
   dueDate: string; // ISO
   amount: number;
@@ -299,6 +301,14 @@ export default function PayablesTable({
                   ) : null}
                   {p.documentNumber ? (
                     <p className="mt-0.5 text-[11px] font-normal text-slate-400">Doc. {p.documentNumber}</p>
+                  ) : null}
+                  {p.capitalBeneficiaryName ? (
+                    <span
+                      className="mt-1 inline-flex w-fit items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                      title="Título de beneficiário do capital: a baixa vira retirada do capital deste sócio"
+                    >
+                      💼 Capital: {p.capitalBeneficiaryName}
+                    </span>
                   ) : null}
                   {p.combo ? (
                     <Link
