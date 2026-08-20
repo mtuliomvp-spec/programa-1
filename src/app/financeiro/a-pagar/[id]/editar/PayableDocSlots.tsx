@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import ShareFileButton from "@/components/ShareFileButton";
 import { formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import { uploadPayableAttachmentAction, deletePayableAttachmentAction } from "../../actions";
@@ -90,6 +91,7 @@ function Slot({
             >
               Baixar
             </a>
+            <ShareFileButton url={`/financeiro/a-pagar/anexos/${current.id}`} filename={current.filename} />
             <button
               type="button"
               disabled={removing}
@@ -159,6 +161,7 @@ function OtherAttachments({ payableId, docs }: { payableId: string; docs: DocWit
               >
                 Baixar
               </a>
+              <ShareFileButton url={`/financeiro/a-pagar/anexos/${d.id}`} filename={d.filename} />
               <button
                 type="button"
                 disabled={removing}
