@@ -474,12 +474,16 @@ export default function PayablesTable({
             ) : null}
             {canCombo && openCombos.length > 0 ? (
               <label className="flex flex-col gap-1 text-xs text-slate-500">
-                Adicionar ao combo
-                <span className="flex items-center gap-2">
+                🧺 Adicionar os selecionados ao combo:
+                {/* Controle "colado" (seletor + botão num só bloco) e o nome do
+                    combo repetido no botão: fica claro que o Adicionar joga os
+                    títulos NO combo escolhido ao lado. */}
+                <span className="flex items-stretch overflow-hidden rounded-lg border border-blue-300">
                   <select
                     value={comboId}
                     onChange={(e) => setComboId(e.target.value)}
-                    className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+                    className="h-9 max-w-[180px] border-r border-blue-200 bg-white px-2 text-sm text-slate-900 focus:outline-none"
+                    title="Escolha o combo de pagamento"
                   >
                     {openCombos.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -491,9 +495,12 @@ export default function PayablesTable({
                     type="button"
                     disabled={addingCombo || !comboId}
                     onClick={addToCombo}
-                    className="h-9 rounded-lg border border-blue-300 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                    className="h-9 bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+                    title={`Adicionar os títulos selecionados ao combo "${openCombos.find((c) => c.id === comboId)?.name ?? ""}"`}
                   >
-                    {addingCombo ? "Adicionando..." : "🧺 Adicionar"}
+                    {addingCombo
+                      ? "Adicionando..."
+                      : `Adicionar a "${openCombos.find((c) => c.id === comboId)?.name ?? "…"}"`}
                   </button>
                 </span>
               </label>
