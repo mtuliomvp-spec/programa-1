@@ -57,7 +57,7 @@ export default async function EditarPayablePage({
       },
       attachments: {
         orderBy: { createdAt: "desc" },
-        select: { id: true, kind: true, filename: true, size: true, createdAt: true },
+        select: { id: true, kind: true, description: true, filename: true, size: true, createdAt: true },
       },
     },
   });
@@ -221,6 +221,7 @@ export default async function EditarPayablePage({
           payableId={payable.id}
           boleto={payable.attachments.find((a) => a.kind === "BOLETO") ?? null}
           comprovante={payable.attachments.find((a) => a.kind === "COMPROVANTE") ?? null}
+          others={payable.attachments.filter((a) => a.kind !== "BOLETO" && a.kind !== "COMPROVANTE")}
         />
       </Card>
     </div>

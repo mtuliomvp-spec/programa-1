@@ -63,7 +63,14 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
       account: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true } },
       capitalBeneficiary: { select: { name: true } },
-      attachments: { orderBy: { createdAt: "desc" } },
+      // Só os METADADOS dos anexos: sem o select, os BYTES de cada arquivo
+      // (PDFs de NF/boleto, centenas de KB) iam inteiros para o navegador e a
+      // página estourava ("This page couldn't load"). O conteúdo é servido pela
+      // rota /financeiro/a-pagar/anexos/[id].
+      attachments: {
+        orderBy: { createdAt: "desc" },
+        select: { id: true, kind: true, description: true, filename: true, size: true, createdAt: true },
+      },
       purchaseRequest: {
         select: { attachments: { orderBy: { createdAt: "desc" }, select: { id: true, filename: true, size: true } } },
       },

@@ -127,15 +127,75 @@ function Slot({
   );
 }
 
-/** Dois slots (Boleto e Comprovante), um arquivo cada. */
+/** Outros anexos do título (NF-e importada, nota fiscal da ordem…). */
+function OtherAttachments({ payableId, docs }: { payableId: string; docs: DocWithDescription[] }) {
+  const router = useRouter();
+  const [removing, startRemove] = useTransition();
+  if (docs.length === 0) return null;
+  return (
+    <div className="rounded-lg border border-slate-200 p-3 sm:col-span-2">
+      <p className="text-sm font-semibold text-slate-700">Outros anexos (NF-e, nota fiscal…)</p>
+      <ul className="mt-2 divide-y divide-slate-100">
+        {docs.map((d) => (
+          <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm text-slate-700">📎 {d.description}</p>
+              <p className="truncate text-xs text-slate-400">
+                {d.filename} · {humanSize(d.size)} · {formatDate(d.createdAt)}
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3 text-sm">
+              <a
+                href={`/financeiro/a-pagar/anexos/${d.id}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-blue-700 hover:underline"
+              >
+                Abrir
+              </a>
+              <a
+                href={`/financeiro/a-pagar/anexos/${d.id}?download=1`}
+                className="font-medium text-slate-600 hover:underline"
+              >
+                Baixar
+              </a>
+              <button
+                type="button"
+                disabled={removing}
+                onClick={() => {
+                  if (confirm(`Excluir o anexo "${d.description}"?`)) {
+                    startRemove(async () => {
+                      await deletePayableAttachmentAction(d.id, payableId);
+                      router.refresh();
+                    });
+                  }
+                }}
+                className="font-medium text-rose-600 hover:underline disabled:opacity-50"
+              >
+                Excluir
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+type DocWithDescription = Doc & { description: string };
+
+/** Dois slots (Boleto e Comprovante), um arquivo cada + demais anexos. */
 export default function PayableDocSlots({
   payableId,
   boleto,
   comprovante,
+  others = [],
 }: {
   payableId: string;
   boleto: Doc | null;
   comprovante: Doc | null;
+  /** Anexos de outros tipos (ex.: NF-e importada), só listados. */
+  others?: DocWithDescription[];
 }) {
   return (
     <div className="grid grid-cols-1 gap-3 p-5 sm:grid-cols-2">
@@ -153,6 +213,7 @@ export default function PayableDocSlots({
         hint="Anexe o comprovante do pagamento (PDF ou foto)."
         current={comprovante}
       />
+      <OtherAttachments payableId={payableId} docs={others} />
     </div>
   );
 }
