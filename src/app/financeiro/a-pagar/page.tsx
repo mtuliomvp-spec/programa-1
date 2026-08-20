@@ -210,6 +210,7 @@ export default async function ContasAPagarPage({
     documentNumber: p.documentNumber ?? null,
     supplierName: p.supplier?.name ?? null,
     beneficiaryName: p.beneficiaryUser?.name ?? p.capitalBeneficiary?.name ?? null,
+    capitalBeneficiaryName: p.capitalBeneficiary?.name ?? null,
     vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : null,
     dueDate: p.dueDate.toISOString(),
     amount: p.amount,
