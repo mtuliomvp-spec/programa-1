@@ -2,11 +2,23 @@
 
 import { useState } from "react";
 
+/** Celular/tablet? (inclui iPad que se apresenta como Mac, mas tem toque) */
+function isMobileDevice(): boolean {
+  const nav = navigator as Navigator & { userAgentData?: { mobile?: boolean } };
+  if (nav.userAgentData?.mobile != null) return nav.userAgentData.mobile;
+  const ua = navigator.userAgent;
+  return /android|iphone|ipad|ipod/i.test(ua) || (/mac/i.test(ua) && navigator.maxTouchPoints > 1);
+}
+
 /**
- * "Enviar" um arquivo pelo compartilhamento nativo (Web Share): no celular abre
- * a folha do sistema com WhatsApp/e-mail etc. — é o caminho para mandar um
- * anexo (boleto, NF, comprovante) direto no WhatsApp. Onde o navegador não
- * suporta compartilhar arquivos (desktop antigo), cai no download com aviso.
+ * "Enviar" um arquivo pelo WhatsApp:
+ * - CELULAR: folha de compartilhamento nativa (Web Share) — o arquivo vai
+ *   anexado direto na conversa.
+ * - COMPUTADOR: nenhum navegador consegue anexar arquivo direto no WhatsApp, e
+ *   a folha do Windows costuma falhar/não listar o WhatsApp (o clique "expira"
+ *   após o fetch e o share é recusado, deixando o botão pendurado). Então no
+ *   desktop nem tenta o share: baixa o arquivo e abre o WhatsApp (app se
+ *   registrado + WhatsApp Web) para anexar pelo clipe.
  */
 export default function ShareFileButton({
   url,
@@ -20,6 +32,29 @@ export default function ShareFileButton({
 }) {
   const [busy, setBusy] = useState(false);
 
+  function desktopFallback(blob: Blob) {
+    // Baixa o arquivo…
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = filename || "arquivo";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    // …tenta o aplicativo do WhatsApp (protocolo registrado)…
+    try {
+      const frame = document.createElement("iframe");
+      frame.style.display = "none";
+      frame.src = "whatsapp://send";
+      document.body.appendChild(frame);
+      setTimeout(() => frame.remove(), 2000);
+    } catch {
+      /* protocolo não registrado — segue o Web */
+    }
+    // …e abre o WhatsApp Web, que funciona sempre.
+    window.open("https://web.whatsapp.com", "_blank", "noopener");
+    alert("Arquivo baixado. No WhatsApp, abra a conversa e anexe-o pelo clipe 📎 (pasta Downloads).");
+  }
+
   async function share() {
     setBusy(true);
     try {
@@ -29,38 +64,19 @@ export default function ShareFileButton({
       const file = new File([blob], filename || "arquivo", {
         type: blob.type || "application/octet-stream",
       });
-      if (typeof navigator.canShare === "function" && navigator.canShare({ files: [file] })) {
-        // Celular (e Windows com folha de compartilhamento): abre a folha do
-        // sistema com o WhatsApp — o arquivo vai anexado direto.
+      const canNativeShare =
+        typeof navigator.canShare === "function" && navigator.canShare({ files: [file] });
+
+      if (isMobileDevice() && canNativeShare) {
         try {
           await navigator.share({ files: [file] });
-        } catch {
-          // usuário cancelou a folha de compartilhamento — não é erro
+        } catch (e) {
+          // AbortError = usuário fechou a folha (não é erro). Qualquer outra
+          // falha (gesto expirado, folha indisponível) cai no plano B.
+          if (!(e instanceof DOMException && e.name === "AbortError")) desktopFallback(blob);
         }
       } else {
-        // Computador sem folha de compartilhamento: nenhum navegador consegue
-        // anexar arquivo direto no WhatsApp. Fluxo mais curto possível: baixa o
-        // arquivo E abre o WhatsApp (o app, se instalado; senão o WhatsApp Web)
-        // — é só anexar na conversa (clipe 📎) a partir de Downloads.
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = filename || "arquivo";
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        // Tenta o aplicativo do WhatsApp (protocolo registrado); em paralelo
-        // abre o WhatsApp Web, que funciona sempre e ainda oferece o app.
-        try {
-          const frame = document.createElement("iframe");
-          frame.style.display = "none";
-          frame.src = "whatsapp://send";
-          document.body.appendChild(frame);
-          setTimeout(() => frame.remove(), 2000);
-        } catch {
-          /* protocolo não registrado — segue o Web */
-        }
-        window.open("https://web.whatsapp.com", "_blank", "noopener");
-        alert("Arquivo baixado. No WhatsApp, abra a conversa e anexe-o pelo clipe 📎 (pasta Downloads).");
+        desktopFallback(blob);
       }
     } catch {
       alert("Não foi possível preparar o arquivo. Tente novamente.");
@@ -74,7 +90,7 @@ export default function ShareFileButton({
       type="button"
       onClick={share}
       disabled={busy}
-      title="Compartilhar (WhatsApp, e-mail…)"
+      title="Enviar pelo WhatsApp"
       className="font-medium text-emerald-700 hover:underline disabled:opacity-50"
     >
       {busy ? "Preparando…" : label}
