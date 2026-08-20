@@ -2,6 +2,7 @@
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
+import ShareFileButton from "@/components/ShareFileButton";
 import { formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
@@ -86,6 +87,7 @@ export default function PayableAttachments({
                 >
                   Baixar
                 </a>
+                <ShareFileButton url={`/financeiro/a-pagar/anexos/${a.id}`} filename={a.filename} />
                 {canManage ? (
                   <button
                     type="button"
