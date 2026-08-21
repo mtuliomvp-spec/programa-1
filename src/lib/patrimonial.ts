@@ -68,6 +68,7 @@ async function patrimonialStats(
         dueDate: true,
         vehicleId: true,
         saleId: true,
+        partId: true,
         consortiumId: true,
         category: true,
         vehicle: { select: { status: true } },
@@ -133,7 +134,13 @@ async function patrimonialStats(
       // Só conta se NÃO for um custo de veículo (vehicleId): uma compra de peça
       // ligada a um carro virou custo do veículo (VehicleCost), não entrou no
       // almoxarifado — quem cuida dela é a lógica de veículos, não esta.
-      if (p.category === "COMPRA_PECA" && !p.vehicleId) {
+      // E só quando veio do MÓDULO PEÇAS (partId): é a peça no almoxarifado
+      // (ativo) que compensa este passivo. Um título avulso/importado com a
+      // categoria "Compra de peças" mas sem peça cadastrada não tem ativo do
+      // outro lado — contá-lo derrubava o farol (ex.: NF importada ainda não
+      // vinculada ao veículo); ele se comporta como despesa comum: nada
+      // pendente, despesa no L/P quando pago.
+      if (p.category === "COMPRA_PECA" && !p.vehicleId && p.partId) {
         pecasAPagar += p.amount;
       }
       // Dívida de COMPRA de um veículo já VENDIDO (ex.: quitação ao banco e
