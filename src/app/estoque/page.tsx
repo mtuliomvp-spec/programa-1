@@ -145,12 +145,14 @@ export default async function EstoquePage({
         include: {
           // Descrição junto: detecta o custo de transferência (DETRAN) para o
           // selo "Processo de transferência em aberto".
-          costs: { select: { amount: true, description: true, capitalBeneficiaryId: true } },
+          // createdAt junto: um CRLV no nosso nome anexado DEPOIS do lançamento
+          // da transferência marca o processo como concluído.
+          costs: { select: { amount: true, description: true, capitalBeneficiaryId: true, createdAt: true } },
           // description junto: uma conta a pagar com "transferência" (pagamento
           // ao despachante) também acende o selo "em processo de transferência".
-          payables: { select: { amount: true, status: true, description: true } },
+          payables: { select: { amount: true, status: true, description: true, createdAt: true } },
           // Só precisa saber SE há comunicação de venda e foto do cliente anexadas.
-          attachments: { select: { kind: true, description: true } },
+          attachments: { select: { kind: true, description: true, createdAt: true } },
           // Se este veículo foi RECEBIDO EM TROCA, ele é o tradeInVehicle de uma
           // venda — a relação inversa traz o nº da venda e o carro que saiu nela.
           tradeInForSale: {
@@ -195,14 +197,34 @@ export default async function EstoquePage({
     if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
   }
 
-  const allRows = vehicles.map((v) => ({
+  const allRows = vehicles.map((v) => {
+    // Momento do ÚLTIMO lançamento de transferência (custo/conta com a palavra)
+    // e do ÚLTIMO CRLV anexado. Um CRLV no NOSSO nome anexado DEPOIS do
+    // lançamento significa que a transferência paga era a mudança para o nosso
+    // nome e ela CONCLUIU — o selo "em processo" deve dar lugar ao
+    // "Transferido" (o caso contrário — CRLV antigo, transferência ao comprador
+    // em andamento — mantém o "em processo").
+    const transferSignals = [
+      ...v.costs.filter((c) => /transfer[eê]ncia/i.test(c.description)),
+      ...v.payables.filter((p) => /transfer[eê]ncia/i.test(p.description)),
+    ].map((x) => x.createdAt.getTime());
+    const lastTransferAt = transferSignals.length ? Math.max(...transferSignals) : null;
+    const crlvTimes = v.attachments
+      .filter((a) => a.kind === "CRLV")
+      .map((a) => a.createdAt.getTime());
+    const lastCrlvAt = crlvTimes.length ? Math.max(...crlvTimes) : null;
+    const docOwnerIsOurs = v.docOwnerName ? isOwnName(v.docOwnerName, houseKeys) : false;
+    const transferConcluded =
+      docOwnerIsOurs && lastCrlvAt != null && lastTransferAt != null && lastCrlvAt > lastTransferAt;
+
+    return {
     ...v,
     preSaleNumber: preSaleByVehicle.get(v.id) ?? null,
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
     // Documento no nome da loja/sócio (verde) ou de terceiro (vermelho).
-    docOwnerIsOurs: v.docOwnerName ? isOwnName(v.docOwnerName, houseKeys) : false,
+    docOwnerIsOurs,
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
@@ -230,8 +252,12 @@ export default async function EstoquePage({
       (v.status === "VENDIDO" || preSaleByVehicle.has(v.id)) &&
       !v.sale?.transferDoneAt &&
       (v.transferInProgress ||
-        v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
-        v.payables.some((p) => /transfer[eê]ncia/i.test(p.description))),
+        // Detecção automática só enquanto o processo NÃO concluiu (CRLV no
+        // nosso nome anexado depois do lançamento encerra o aviso); a marca
+        // MANUAL continua valendo até ser desfeita na ficha.
+        (!transferConcluded &&
+          (v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
+            v.payables.some((p) => /transfer[eê]ncia/i.test(p.description))))),
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
     crlvYear:
       v.attachments
@@ -261,7 +287,8 @@ export default async function EstoquePage({
           ? ` (${v.tradeInForSale.vehicle.brand} ${v.tradeInForSale.vehicle.model} - ${v.tradeInForSale.vehicle.plate})`
           : "")
       : null,
-  }));
+    };
+  });
 
   // Filtro derivado "Pré-vendido": em estoque (não vendido) e com pré-venda aberta.
   const statusFiltered = preVendidoFilter
