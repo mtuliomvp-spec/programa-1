@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import MoneyInput from "@/components/MoneyInput";
 import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
@@ -134,7 +135,7 @@ export default function ManualPayableForm({
           </Select>
         </Field>
         <Field label={paymentMode === "PARCELADO" ? "Valor total (soma das parcelas)" : "Valor"} required>
-          <Input type="number" step="0.01" min={0.01} name="amount" required />
+          <MoneyInput name="amount" required />
         </Field>
         {paymentMode === "PARCELADO" ? (
           <>
