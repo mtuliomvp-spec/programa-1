@@ -30,6 +30,9 @@ import { effectiveStructuralKey, isStructuralKey } from "@/lib/structural-flows"
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const MATCH_WINDOW_DAYS = 7;
+// Título em aberto pago com ATRASO (linha do extrato depois do vencimento):
+// janela bem maior — boleto vencido costuma ser pago semanas depois.
+const LATE_WINDOW_DAYS = 90;
 /** Janela maior na escolha manual: o usuário sabe o que está procurando. */
 const PICK_WINDOW_DAYS = 30;
 
@@ -142,7 +145,15 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
 
   const [payables, receivables] = await Promise.all([
     prisma.payable.findMany({
-      where: { dueDate: { gte: rangeStart, lte: rangeEnd } },
+      // Além da janela do extrato, inclui os títulos EM ABERTO vencidos antes
+      // dela: boleto atrasado costuma ser pago semanas depois do vencimento e
+      // ficava fora até da busca (a linha aparecia "sem correspondência").
+      where: {
+        OR: [
+          { dueDate: { gte: rangeStart, lte: rangeEnd } },
+          { status: { not: "PAGO" }, dueDate: { lt: rangeStart } },
+        ],
+      },
       // Ordem fixa: com dois títulos do mesmo valor no mesmo dia, o casamento
       // automático precisa ser sempre o mesmo (o usuário confere e troca).
       orderBy: [{ dueDate: "asc" }, { id: "asc" }],
@@ -159,7 +170,12 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
       },
     }),
     prisma.receivable.findMany({
-      where: { dueDate: { gte: rangeStart, lte: rangeEnd } },
+      where: {
+        OR: [
+          { dueDate: { gte: rangeStart, lte: rangeEnd } },
+          { status: { not: "RECEBIDO" }, dueDate: { lt: rangeStart } },
+        ],
+      },
       orderBy: [{ dueDate: "asc" }, { id: "asc" }],
       select: {
         id: true,
@@ -234,14 +250,19 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
         // verdade — a confirmação fará a transferência para a conta da empresa.
         const settled =
           Boolean(settledDate) && (isOut || !pendingAtFinancer(c as unknown as ReceivableFinInfo));
-        return { c, diff: dayDiff(refDate, txn.date), settled };
+        // Pagamento DEPOIS do vencimento de um título em aberto = atraso
+        // (boleto vencido pago semanas depois): janela larga só nesse sentido.
+        const late = !settled && txn.date >= isoDay(refDate);
+        return { c, diff: dayDiff(refDate, txn.date), settled, late };
       })
       // Título JÁ BAIXADO só é o par da linha se a baixa for do mesmo dia (D+1
       // no máximo): dinheiro anda no dia. Um título pago dias antes é OUTRO
       // dinheiro — tarifas recorrentes de mesmo valor caíam nessa armadilha
       // (linha de 10/08 casada com a tarifa paga em 07/08). Pendentes mantêm a
-      // janela cheia (vencimento desliza mesmo).
-      .filter((x) => x.diff <= (x.settled ? 1 : MATCH_WINDOW_DAYS))
+      // janela cheia (vencimento desliza mesmo) e, quando o pagamento vem
+      // DEPOIS do vencimento (atraso), a janela estica para LATE_WINDOW_DAYS —
+      // a ordenação por proximidade continua escolhendo o título mais próximo.
+      .filter((x) => x.diff <= (x.settled ? 1 : x.late ? LATE_WINDOW_DAYS : MATCH_WINDOW_DAYS))
       // Data mais próxima primeiro; empate → o já baixado (pura conciliação).
       // A ordem inversa (baixado primeiro) roubava o lugar do título certo:
       // tarifas recorrentes de mesmo valor faziam a linha casar com um título
@@ -267,7 +288,7 @@ export async function parseAndMatchAction(formData: FormData): Promise<Reconcile
             dayDiff(r.dueDate, txn.date) <= MATCH_WINDOW_DAYS,
         )
         .sort((a, b) => Math.abs(a.amount - target) - Math.abs(b.amount - target));
-      if (near[0]) best = { c: near[0], diff: dayDiff(near[0].dueDate, txn.date), settled: false };
+      if (near[0]) best = { c: near[0], diff: dayDiff(near[0].dueDate, txn.date), settled: false, late: false };
     }
     if (best) {
       used.add(best.c.id);
@@ -371,7 +392,9 @@ export async function searchTitlesAction(input: {
                 { documentNumber: { contains: q, mode: "insensitive" } },
               ],
             }
-          : { dueDate: { gte, lte } }),
+          : // Janela em volta da linha + TODOS os vencidos em aberto anteriores
+            // (boleto atrasado é pago semanas depois e ficava fora da lista).
+            { OR: [{ dueDate: { gte, lte } }, { dueDate: { lt: gte } }] }),
       },
       orderBy: [{ dueDate: "asc" }, { id: "asc" }],
       take: 100,
@@ -408,7 +431,10 @@ export async function searchTitlesAction(input: {
               { documentNumber: { contains: q, mode: "insensitive" } },
             ],
           }
-        : { dueDate: { gte, lte } }),
+        : // Janela + vencidos EM ABERTO anteriores (mesma regra dos pagáveis;
+          // aqui o "em aberto" precisa ser explícito — recebidos antigos iam
+          // lotar o take antes do filtro de pendentes).
+          { OR: [{ dueDate: { gte, lte } }, { dueDate: { lt: gte }, receivedDate: null }] }),
     },
     orderBy: [{ dueDate: "asc" }, { id: "asc" }],
     // Margem para o filtro de pendentes abaixo (o corte fica no map final).

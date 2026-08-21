@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Badge, Button, Card, CardHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import MatchPicker from "./MatchPicker";
@@ -16,6 +16,25 @@ import {
 
 type Option = { id: string; name: string };
 type Vehicle = { id: string; label: string };
+
+/**
+ * Rascunho do extrato no NAVEGADOR: sair da conciliação sem finalizar obrigava
+ * a anexar o OFX de novo. O arquivo fica salvo (base64, preserva a codificação)
+ * e, ao voltar, o sistema pergunta se quer continuar de onde parou — a análise
+ * roda de novo sobre o mesmo arquivo, e o que já foi conciliado aparece como
+ * "já conciliado".
+ */
+const DRAFT_KEY = "conciliacao-extrato-rascunho";
+type ExtratoDraft = { filename: string; accountId: string; savedAt: string; ofxBase64: string };
+
+function fileToBase64(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
+    r.onerror = () => reject(new Error("read"));
+    r.readAsDataURL(f);
+  });
+}
 
 export default function ReconcileClient({
   accounts,
@@ -46,6 +65,21 @@ export default function ReconcileClient({
   const [accountId, setAccountId] = useState(accounts[0]?.id ?? "");
   const [pickerFor, setPickerFor] = useState<BankTxn | null>(null);
   const [createFor, setCreateFor] = useState<BankTxn | null>(null);
+  const [draft, setDraft] = useState<ExtratoDraft | null>(null);
+
+  // Carrega o rascunho salvo (setTimeout: setState síncrono em effect é vetado
+  // pelo lint, e adiar um tick também evita divergência de hidratação).
+  useEffect(() => {
+    const t = setTimeout(() => {
+      try {
+        const raw = localStorage.getItem(DRAFT_KEY);
+        if (raw) setDraft(JSON.parse(raw) as ExtratoDraft);
+      } catch {
+        /* sem rascunho / storage indisponível */
+      }
+    }, 0);
+    return () => clearTimeout(t);
+  }, []);
 
   const accountName = accounts.find((a) => a.id === accountId)?.name ?? "conta padrão";
   const entriesOf = (r: MatchRow) => overrides[r.txn.fitId] ?? r.matches;
@@ -65,7 +99,44 @@ export default function ReconcileClient({
       setSelected(
         new Set((result.rows ?? []).filter((r) => r.status === "casou").map((r) => r.txn.fitId)),
       );
+      // Análise ok → salva o rascunho para retomar depois sem reanexar.
+      const f = formData.get("ofx");
+      if (f instanceof File && f.size > 0) {
+        try {
+          const d: ExtratoDraft = {
+            filename: f.name || "extrato.ofx",
+            accountId,
+            savedAt: new Date().toISOString(),
+            ofxBase64: await fileToBase64(f),
+          };
+          localStorage.setItem(DRAFT_KEY, JSON.stringify(d));
+          setDraft(d);
+        } catch {
+          /* storage cheio/indisponível — segue sem rascunho */
+        }
+      }
     });
+  }
+
+  function continueDraft() {
+    if (!draft) return;
+    if (draft.accountId && accounts.some((a) => a.id === draft.accountId)) {
+      setAccountId(draft.accountId);
+    }
+    const bytes = Uint8Array.from(atob(draft.ofxBase64), (ch) => ch.charCodeAt(0));
+    const file = new File([bytes], draft.filename || "extrato.ofx", { type: "text/plain" });
+    const fd = new FormData();
+    fd.set("ofx", file);
+    handleUpload(fd);
+  }
+
+  function discardDraft() {
+    try {
+      localStorage.removeItem(DRAFT_KEY);
+    } catch {
+      /* indiferente */
+    }
+    setDraft(null);
   }
 
   function handleConfirm() {
@@ -156,6 +227,29 @@ export default function ReconcileClient({
           title="1. Importar extrato"
           description="No app ou site do seu banco, exporte o extrato em formato OFX (Money) e envie aqui"
         />
+        {draft && !rows ? (
+          <div className="mx-5 mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+            <p className="text-sm text-amber-800">
+              📄 Você tem um extrato em análise salvo: <strong>{draft.filename}</strong>{" "}
+              <span className="text-amber-700">
+                ({new Date(draft.savedAt).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })})
+              </span>
+              . Quer continuar de onde parou?
+            </p>
+            <span className="flex shrink-0 items-center gap-2">
+              <Button type="button" onClick={continueDraft} disabled={pending}>
+                {pending ? "Analisando..." : "Continuar de onde parei"}
+              </Button>
+              <button
+                type="button"
+                onClick={discardDraft}
+                className="text-sm font-medium text-slate-500 hover:underline"
+              >
+                Descartar
+              </button>
+            </span>
+          </div>
+        ) : null}
         <form action={handleUpload} className="flex flex-wrap items-center gap-3 px-5 py-4">
           <input
             type="file"

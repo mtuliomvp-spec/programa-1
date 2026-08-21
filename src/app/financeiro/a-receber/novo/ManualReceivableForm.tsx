@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import MoneyInput from "@/components/MoneyInput";
 import StructuralFlowSelect from "@/components/StructuralFlowSelect";
 import { createManualReceivableAction, type ManualReceivableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
@@ -39,7 +40,7 @@ export default function ManualReceivableForm({
           </Select>
         </Field>
         <Field label="Valor" required>
-          <Input type="number" step="0.01" min={0.01} name="amount" required />
+          <MoneyInput name="amount" required />
         </Field>
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
