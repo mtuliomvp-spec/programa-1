@@ -101,7 +101,10 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       where: {
         status: "PAGO",
         paymentDate: { gte: rangeStart, lt: rangeEnd },
-        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
+        // COMPRA_PECA aqui é só a compra AVULSA (sem partId): peça do
+        // almoxarifado entra no custo quando a peça é VENDIDA, não no pagamento.
+        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS", "COMPRA_PECA"] },
+        partId: null, // peça do almoxarifado: custo entra na venda da peça
         vehicleCost: null, // custos de veículo já entram no custo da venda
         vehicleId: null, // idem para contas manuais ligadas a veículos
         saleId: null, // comissão de venda entra por competência (abaixo)
@@ -360,7 +363,9 @@ async function profitLossStatement(
       where: {
         status: "PAGO",
         paymentDate: { gte: rangeStart, lt: rangeEnd },
-        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS"] },
+        // COMPRA_PECA só a avulsa (sem partId) — igual ao getProfitLossStatement.
+        category: { in: ["DESPESA_OPERACIONAL", "COMISSAO", "SALARIO", "COMBUSTIVEL", "OUTROS", "COMPRA_PECA"] },
+        partId: null,
         vehicleCost: null,
         vehicleId: null,
         saleId: null,
