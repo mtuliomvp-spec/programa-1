@@ -7,6 +7,7 @@ import { Badge, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
+import ContabilizarButton from "./ContabilizarButton";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +130,9 @@ export default async function CapitalPage({
                       >
                         {formatCurrency(b.saldo)}
                       </p>
+                      {canManage && Math.abs(b.saldo) >= 0.01 ? (
+                        <ContabilizarButton beneficiaryId={b.id} name={b.name} saldo={b.saldo} />
+                      ) : null}
                     </div>
                   </div>
                   {caucaoByParent.has(b.id) ? (

@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { structuralCenterId } from "@/lib/structural";
 import { parseDateInput } from "@/lib/format";
-import { getDefaultAccountId } from "@/lib/accounts";
+import { getDefaultAccountId, getNeutralAccountId } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { markPayablePending, markReceivablePending } from "@/lib/finance";
@@ -309,6 +309,158 @@ export async function withdrawWithSubstituteAction(
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
   return {};
+}
+
+export type ContabilizarResult = { ok: boolean; error?: string; message?: string };
+
+/**
+ * "Contabilizar" o saldo do sócio: zera o capital contra o fluxo
+ * ADMINISTRATIVO, sem mover dinheiro real (par no Banco Neutro):
+ *  - saldo NEGATIVO (devedor): APORTE no sócio do valor devido + DESPESA
+ *    administrativa paga do mesmo valor — a loja absorve o saldo devedor.
+ *  - saldo POSITIVO (credor): RETIRADA do sócio + RECEITA administrativa —
+ *    o saldo credor é transferido ao resultado da loja.
+ * Farol: no devedor o capital sobe X e a despesa derruba o L/P em X; no
+ * credor o capital cai X e a receita sobe o L/P em X — equação e L/P andam
+ * juntos, e o Banco Neutro fecha em zero (um pagável + um recebível iguais).
+ */
+export async function contabilizarCapitalAction(beneficiaryId: string): Promise<ContabilizarResult> {
+  try {
+    await assertCan("administrativo", "capital");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
+  const { getCashboxWorkDate } = await import("@/lib/cashbox");
+  const date = await getCashboxWorkDate();
+  try {
+    const { assertMonthOpen } = await import("@/lib/monthly-closing");
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const beneficiary = await prisma.capitalBeneficiary.findUnique({
+    where: { id: beneficiaryId },
+    select: { name: true, active: true },
+  });
+  if (!beneficiary) return { ok: false, error: "Sócio não encontrado." };
+
+  const txs = await prisma.capitalTransaction.findMany({
+    where: { beneficiaryId },
+    select: { kind: true, amount: true },
+  });
+  const sum = (k: string) => txs.filter((t) => t.kind === k).reduce((s, t) => s + t.amount, 0);
+  const saldo = Math.round((sum("APORTE") - sum("RETIRADA")) * 100) / 100;
+  if (Math.abs(saldo) < 0.01) return { ok: false, error: "O saldo deste sócio já está zerado." };
+
+  const [neutro, capitalCenter, adminCenter] = await Promise.all([
+    getNeutralAccountId(),
+    structuralCenterId("CAPITAL"),
+    structuralCenterId("ADMINISTRATIVO"),
+  ]);
+  const valor = Math.abs(saldo);
+
+  if (saldo < 0) {
+    // Devedor: aporte no sócio + despesa administrativa (loja absorve).
+    await prisma.$transaction(async (tx) => {
+      const receivable = await tx.receivable.create({
+        data: {
+          costCenterId: capitalCenter,
+          description: `Contabilização de capital — cobertura do saldo devedor de ${beneficiary.name}`,
+          category: "OUTROS",
+          amount: valor,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId: neutro,
+          capitalBeneficiaryId: beneficiaryId,
+        },
+      });
+      // Vínculo na movimentação: exclui o aporte das "Outras receitas" do L/P
+      // e permite o estorno completo pela tela de movimentações.
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId,
+          kind: "APORTE",
+          amount: valor,
+          date,
+          description: "Contabilização — saldo devedor absorvido pela loja",
+          receivableId: receivable.id,
+        },
+      });
+      await tx.payable.create({
+        data: {
+          costCenterId: adminCenter,
+          description: `Contabilização de capital — saldo devedor de ${beneficiary.name} absorvido pela loja`,
+          category: "OUTROS",
+          categoryLabel: "Acerto de capital",
+          amount: valor,
+          dueDate: date,
+          paymentDate: date,
+          status: "PAGO",
+          accountId: neutro,
+        },
+      });
+    });
+  } else {
+    // Credor: retirada do sócio + receita administrativa (vai ao resultado).
+    await prisma.$transaction(async (tx) => {
+      const payable = await tx.payable.create({
+        data: {
+          costCenterId: capitalCenter,
+          description: `Contabilização de capital — zeragem do saldo credor de ${beneficiary.name}`,
+          category: "OUTROS",
+          amount: valor,
+          dueDate: date,
+          paymentDate: date,
+          status: "PAGO",
+          accountId: neutro,
+          capitalBeneficiaryId: beneficiaryId,
+        },
+      });
+      await tx.capitalTransaction.create({
+        data: {
+          beneficiaryId,
+          kind: "RETIRADA",
+          amount: valor,
+          date,
+          description: "Contabilização — saldo credor transferido à loja",
+          payableId: payable.id,
+        },
+      });
+      await tx.receivable.create({
+        data: {
+          costCenterId: adminCenter,
+          description: `Contabilização de capital — saldo credor de ${beneficiary.name} transferido à loja`,
+          category: "OUTROS",
+          categoryLabel: "Acerto de capital",
+          amount: valor,
+          dueDate: date,
+          receivedDate: date,
+          status: "RECEBIDO",
+          accountId: neutro,
+        },
+      });
+    });
+  }
+
+  revalidatePath("/capital");
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/lucro-prejuizo");
+  revalidatePath("/");
+  return {
+    ok: true,
+    message:
+      saldo < 0
+        ? `Saldo devedor de ${beneficiary.name} zerado: a loja absorveu o valor como despesa (Acerto de capital), sem movimentar dinheiro.`
+        : `Saldo credor de ${beneficiary.name} zerado: o valor foi transferido ao resultado da loja como receita (Acerto de capital), sem movimentar dinheiro.`,
+  };
 }
 
 export async function deleteCapitalTransactionAction(id: string, beneficiaryId: string) {
