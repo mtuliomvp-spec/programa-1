@@ -8,6 +8,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
 import ContabilizarButton from "./ContabilizarButton";
+import ZeroBalanceSection from "./ZeroBalanceSection";
 
 export const dynamic = "force-dynamic";
 
@@ -67,6 +68,64 @@ export default async function CapitalPage({
 
   // A LISTA de cards esconde os vinculados (aparecem sob o responsável).
   const cards = filtered.filter((b) => b.parentId == null);
+  // Sócios com saldo ZERADO vão para uma seção recolhível (o usuário pode
+  // ocultá-los). Qualquer movimentação tira o sócio do grupo automaticamente —
+  // com saldo ≠ 0 ele volta para a lista normal.
+  const comSaldo = cards.filter((b) => Math.abs(b.saldo) >= 0.005);
+  const zerados = cards.filter((b) => Math.abs(b.saldo) < 0.005);
+
+  const renderCard = (b: (typeof cards)[number]) => (
+    <Link key={b.id} href={`/capital/${b.id}`} className="block">
+      <Card className="px-5 py-4 transition-shadow hover:shadow-md">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="flex items-center gap-2 font-semibold text-slate-900">
+              {b.name}
+              {b.isCompany ? <Badge tone="info">Empresa</Badge> : null}
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Aportes {formatCurrency(b.aportes)} · Retiradas {formatCurrency(b.retiradas)}
+              {b.proLabore > 0 ? ` · Pró-labore pago ${formatCurrency(b.proLabore)}` : ""}
+            </p>
+            {b.aplicado > 0 ? (
+              <p className="mt-0.5 text-xs font-medium text-emerald-700">
+                📈 Aplicado {formatCurrency(b.aplicado)} ·{" "}
+                <span className={b.livre < 0 ? "text-rose-600" : ""}>
+                  Livre {formatCurrency(b.livre)}
+                </span>
+              </p>
+            ) : null}
+          </div>
+          <div className="text-right">
+            <p className="text-xs uppercase tracking-wide text-slate-400">Saldo investido</p>
+            <p
+              className={`text-lg font-bold ${b.saldo >= 0 ? "text-emerald-600" : "text-rose-600"}`}
+            >
+              {formatCurrency(b.saldo)}
+            </p>
+            {canManage && Math.abs(b.saldo) >= 0.01 ? (
+              <ContabilizarButton beneficiaryId={b.id} name={b.name} saldo={b.saldo} />
+            ) : null}
+          </div>
+        </div>
+        {caucaoByParent.has(b.id) ? (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2">
+            <div className="min-w-0">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+                🏠 Caução de terceiros · {caucaoByParent.get(b.id)!.count} vinculado(s)
+              </p>
+              <p className="text-[11px] text-amber-700/80">
+                Guardada em nome de terceiros — <strong>não entra</strong> no saldo investido dele.
+              </p>
+            </div>
+            <p className="text-base font-bold text-amber-700">
+              {formatCurrency(caucaoByParent.get(b.id)!.total)}
+            </p>
+          </div>
+        ) : null}
+      </Card>
+    </Link>
+  );
 
   return (
     <div>
@@ -101,58 +160,14 @@ export default async function CapitalPage({
               />
             </Card>
           ) : (
-            cards.map((b) => (
-              <Link key={b.id} href={`/capital/${b.id}`} className="block">
-                <Card className="px-5 py-4 transition-shadow hover:shadow-md">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="flex items-center gap-2 font-semibold text-slate-900">
-                        {b.name}
-                        {b.isCompany ? <Badge tone="info">Empresa</Badge> : null}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        Aportes {formatCurrency(b.aportes)} · Retiradas {formatCurrency(b.retiradas)}
-                        {b.proLabore > 0 ? ` · Pró-labore pago ${formatCurrency(b.proLabore)}` : ""}
-                      </p>
-                      {b.aplicado > 0 ? (
-                        <p className="mt-0.5 text-xs font-medium text-emerald-700">
-                          📈 Aplicado {formatCurrency(b.aplicado)} ·{" "}
-                          <span className={b.livre < 0 ? "text-rose-600" : ""}>
-                            Livre {formatCurrency(b.livre)}
-                          </span>
-                        </p>
-                      ) : null}
-                    </div>
-                    <div className="text-right">
-                      <p className="text-xs uppercase tracking-wide text-slate-400">Saldo investido</p>
-                      <p
-                        className={`text-lg font-bold ${b.saldo >= 0 ? "text-emerald-600" : "text-rose-600"}`}
-                      >
-                        {formatCurrency(b.saldo)}
-                      </p>
-                      {canManage && Math.abs(b.saldo) >= 0.01 ? (
-                        <ContabilizarButton beneficiaryId={b.id} name={b.name} saldo={b.saldo} />
-                      ) : null}
-                    </div>
-                  </div>
-                  {caucaoByParent.has(b.id) ? (
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2">
-                      <div className="min-w-0">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                          🏠 Caução de terceiros · {caucaoByParent.get(b.id)!.count} vinculado(s)
-                        </p>
-                        <p className="text-[11px] text-amber-700/80">
-                          Guardada em nome de terceiros — <strong>não entra</strong> no saldo investido dele.
-                        </p>
-                      </div>
-                      <p className="text-base font-bold text-amber-700">
-                        {formatCurrency(caucaoByParent.get(b.id)!.total)}
-                      </p>
-                    </div>
-                  ) : null}
-                </Card>
-              </Link>
-            ))
+            <>
+              {comSaldo.map(renderCard)}
+              {zerados.length > 0 ? (
+                <ZeroBalanceSection count={zerados.length}>
+                  {zerados.map(renderCard)}
+                </ZeroBalanceSection>
+              ) : null}
+            </>
           )}
         </div>
 
