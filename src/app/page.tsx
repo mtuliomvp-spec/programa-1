@@ -15,6 +15,7 @@ import { maturityStatus } from "@/lib/status";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
 import PatrimonialCard from "@/components/PatrimonialCard";
+import DemoBanner from "@/components/DemoBanner";
 import { getSessionUser } from "@/lib/auth";
 import { hasModuleAccess } from "@/lib/permissions";
 import { firstAccessibleHref } from "@/lib/nav";
@@ -106,6 +107,8 @@ export default async function DashboardPage() {
           </Link>
         }
       />
+
+      <DemoBanner />
 
       {/* Posição patrimonial — estilo Agrasty, com a equação patrimonial */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
