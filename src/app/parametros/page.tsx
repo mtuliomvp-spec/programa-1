@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
+import { getParecerConfig } from "@/lib/parecer-ia";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import CompanyForm from "./CompanyForm";
 
@@ -12,8 +13,11 @@ export default async function ParametrosPage() {
 
   const company = await getCompany();
   // A chave da IA NUNCA vai ao cliente — envia só o indicador de que existe.
+  // `aiKeyFromEnv` avisa que a instalação já tem uma chave própria (variável de
+  // ambiente), então a IA funciona mesmo sem nada salvo aqui.
   const { aiApiKey, ...rest } = company;
-  const companyForClient = { ...rest, hasAiKey: !!aiApiKey?.trim() };
+  const { fromEnv: aiKeyFromEnv } = await getParecerConfig();
+  const companyForClient = { ...rest, hasAiKey: !!aiApiKey?.trim(), aiKeyFromEnv };
 
   return (
     <div className="mx-auto max-w-3xl">
