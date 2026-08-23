@@ -1,3 +1,16 @@
+/**
+ * Carga de DEMONSTRAÇÃO — dados 100% fictícios para apresentar o sistema.
+ *
+ * Uso (numa instalação de demonstração, NUNCA na de produção):
+ *   npm run db:seed
+ *
+ * O seed usa as MESMAS funções de negócio do sistema (src/lib/finance.ts),
+ * então todo o financeiro sai consistente: contas, caixa, capital dos sócios,
+ * equação patrimonial e Lucro/Prejuízo convergem — o farol fica verde.
+ *
+ * Ele NÃO mexe nos usuários: num banco novo, o primeiro acesso pelo site cria
+ * o administrador normalmente (tela de "primeiro acesso").
+ */
 import { prisma } from "../src/lib/prisma";
 import {
   createVehicleWithPayable,
@@ -9,6 +22,9 @@ import {
   createManualPayable,
   addVehicleCostWithPayable,
 } from "../src/lib/finance";
+import { getDefaultAccountId } from "../src/lib/accounts";
+import { structuralCenterId } from "../src/lib/structural";
+import { getBooksHealth } from "../src/lib/books-health";
 
 function daysAgo(n: number) {
   return new Date(Date.now() - n * 24 * 60 * 60 * 1000);
@@ -18,35 +34,138 @@ function daysFromNow(n: number) {
   return new Date(Date.now() + n * 24 * 60 * 60 * 1000);
 }
 
-async function main() {
-  console.log("Limpando banco de dados...");
+/** Aporte de capital espelhando a action do módulo Capital (recebível RECEBIDO + movimentação). */
+async function aporteCapital(beneficiaryId: string, name: string, amount: number, date: Date) {
+  const accountId = await getDefaultAccountId();
+  const capitalCenterId = await structuralCenterId("CAPITAL");
+  await prisma.$transaction(async (tx) => {
+    const receivable = await tx.receivable.create({
+      data: {
+        costCenterId: capitalCenterId,
+        description: `Aporte de capital - ${name}`,
+        category: "OUTROS",
+        amount,
+        dueDate: date,
+        receivedDate: date,
+        status: "RECEBIDO",
+        accountId,
+      },
+    });
+    await tx.capitalTransaction.create({
+      data: { beneficiaryId, kind: "APORTE", amount, date, receivableId: receivable.id },
+    });
+  });
+}
+
+/** Pró-labore pago, espelhando a action do módulo Capital. */
+async function proLabore(beneficiaryId: string, name: string, amount: number, date: Date) {
+  const accountId = await getDefaultAccountId();
+  const capitalCenterId = await structuralCenterId("CAPITAL");
+  await prisma.$transaction(async (tx) => {
+    const payable = await tx.payable.create({
+      data: {
+        costCenterId: capitalCenterId,
+        description: `Pró-labore - ${name}`,
+        category: "SALARIO",
+        amount,
+        dueDate: date,
+        paymentDate: date,
+        status: "PAGO",
+        accountId,
+      },
+    });
+    await tx.capitalTransaction.create({
+      data: { beneficiaryId, kind: "PRO_LABORE", amount, date, payableId: payable.id },
+    });
+  });
+}
+
+async function limparBanco() {
+  console.log("Limpando os dados de negócio (usuários e parâmetros ficam)...");
+  // Ordem respeita as chaves estrangeiras: filhos antes dos pais.
+  await prisma.cardInvoiceItem.deleteMany();
+  await prisma.payableAttachment.deleteMany();
   await prisma.vehicleCost.deleteMany();
+  await prisma.investmentAllocation.deleteMany();
+  await prisma.capitalTransaction.deleteMany();
   await prisma.receivable.deleteMany();
   await prisma.payable.deleteMany();
+  await prisma.paymentCombo.deleteMany();
+  await prisma.accountTransfer.deleteMany();
   await prisma.recurringEntry.deleteMany();
   await prisma.partSale.deleteMany();
   await prisma.sale.deleteMany();
+  await prisma.preSale.deleteMany();
   await prisma.part.deleteMany();
+  await prisma.vehicleAttachment.deleteMany();
+  await prisma.vehicleAppraisalPhoto.deleteMany();
+  await prisma.vehicleAppraisal.deleteMany();
   await prisma.vehicle.deleteMany();
   await prisma.customer.deleteMany();
-  await prisma.supplier.deleteMany();
+  // Fornecedores-espelho de usuários ficam (sincronizados com o cadastro de usuários).
+  await prisma.supplier.deleteMany({ where: { userId: null } });
+  await prisma.consortium.deleteMany();
+  await prisma.fuelEntry.deleteMany();
+  await prisma.employee.deleteMany();
+  await prisma.purchaseRequestAttachment.deleteMany();
+  await prisma.purchaseRequest.deleteMany();
+  await prisma.financialAccount.deleteMany();
+  await prisma.capitalBeneficiary.deleteMany({ where: { userId: null } });
+  await prisma.monthlyClosing.deleteMany();
+  await prisma.stockInterestRun.deleteMany();
+  await prisma.cashboxSession.deleteMany();
+  await prisma.dashboardSnapshot.deleteMany();
+}
+
+async function main() {
+  await limparBanco();
+
+  console.log("Criando contas financeiras...");
+  await prisma.financialAccount.create({
+    data: {
+      name: "Banco Demo S.A.",
+      type: "BANCO",
+      bankName: "Banco Demo",
+      agency: "0001",
+      accountNumber: "12345-6",
+      isDefault: true,
+    },
+  });
+  await prisma.financialAccount.create({
+    data: { name: "Caixa da loja (dinheiro)", type: "CAIXA" },
+  });
+  const contaFinanceira = await prisma.financialAccount.create({
+    data: {
+      name: "Financeira Demo Crédito",
+      type: "FINANCEIRA",
+      returnTaxPercent: 15,
+      notes: "Financeira fictícia para demonstrar o repasse de financiamento.",
+    },
+  });
+
+  console.log("Criando sócios e aportes de capital...");
+  const socioCarlos = await prisma.capitalBeneficiary.create({ data: { name: "Carlos Andrade (Sócio)" } });
+  const socioFernanda = await prisma.capitalBeneficiary.create({ data: { name: "Fernanda Souza (Sócia)" } });
+  await aporteCapital(socioCarlos.id, socioCarlos.name, 250000, daysAgo(120));
+  await aporteCapital(socioFernanda.id, socioFernanda.name, 150000, daysAgo(115));
+  await proLabore(socioCarlos.id, socioCarlos.name, 8000, daysAgo(20));
 
   console.log("Criando fornecedores...");
   const [fornecedorA, fornecedorB, fornecedorPecas] = await Promise.all([
     prisma.supplier.create({
-      data: { name: "Auto Leilões BR", document: "12.345.678/0001-90", phone: "(11) 4000-1111", email: "contato@autoleiloesbr.com" },
+      data: { name: "Auto Leilões Demo", document: "12.345.678/0001-90", phone: "(11) 4000-1111", email: "contato@autoleiloesdemo.com.br" },
     }),
     prisma.supplier.create({
       data: { name: "José Repasse de Veículos", document: "123.456.789-00", phone: "(11) 98888-2222" },
     }),
     prisma.supplier.create({
-      data: { name: "Distribuidora AutoPeças Sul", document: "98.765.432/0001-11", phone: "(11) 4000-3333", email: "vendas@autopecassul.com" },
+      data: { name: "Distribuidora AutoPeças Sul", document: "98.765.432/0001-11", phone: "(11) 4000-3333", email: "vendas@autopecassul.com.br" },
     }),
   ]);
 
   console.log("Criando clientes...");
   const [clienteAna, clienteBruno, clienteCarla, clienteDaniel] = await Promise.all([
-    prisma.customer.create({ data: { name: "Ana Souza", document: "111.222.333-44", phone: "(11) 99111-1111", email: "ana.souza@email.com" } }),
+    prisma.customer.create({ data: { name: "Ana Souza", document: "111.222.333-44", phone: "(11) 99111-1111", email: "ana.souza@email.com", address: "Rua das Flores, 120 - São Paulo/SP" } }),
     prisma.customer.create({ data: { name: "Bruno Lima", document: "222.333.444-55", phone: "(11) 99222-2222", email: "bruno.lima@email.com" } }),
     prisma.customer.create({ data: { name: "Carla Mendes", document: "333.444.555-66", phone: "(11) 99333-3333", email: "carla.mendes@email.com" } }),
     prisma.customer.create({ data: { name: "Daniel Ferreira", document: "444.555.666-77", phone: "(11) 99444-4444", email: "daniel.ferreira@email.com" } }),
@@ -61,6 +180,7 @@ async function main() {
     modelYear: 2020,
     plate: "ABC1D23",
     chassi: "9BWZZZ377VT004251",
+    renavam: "01126794570",
     color: "Branco",
     km: 45000,
     fuel: "Flex",
@@ -80,6 +200,7 @@ async function main() {
     modelYear: 2021,
     plate: "DEF4E56",
     chassi: "9BGKS48U0MG123456",
+    renavam: "01234567890",
     color: "Prata",
     km: 28000,
     fuel: "Flex",
@@ -88,8 +209,7 @@ async function main() {
     salePrice: 69900,
     entryDate: daysAgo(40),
     supplierId: fornecedorB.id,
-    alreadyPaid: false,
-    dueDate: daysFromNow(5),
+    alreadyPaid: true,
   });
 
   const vHb20 = await createVehicleWithPayable({
@@ -99,6 +219,8 @@ async function main() {
     manufactureYear: 2020,
     modelYear: 2020,
     plate: "GHI7F89",
+    chassi: "9BHBG51CAKP123789",
+    renavam: "00987654321",
     color: "Vermelho",
     km: 51000,
     fuel: "Flex",
@@ -107,8 +229,7 @@ async function main() {
     salePrice: 48900,
     entryDate: daysAgo(20),
     supplierId: fornecedorA.id,
-    alreadyPaid: false,
-    dueDate: daysFromNow(-3),
+    alreadyPaid: true,
   });
 
   const vCorolla = await createVehicleWithPayable({
@@ -118,6 +239,8 @@ async function main() {
     manufactureYear: 2022,
     modelYear: 2022,
     plate: "JKL0G12",
+    chassi: "9BRBLWHEXK5123456",
+    renavam: "01122334455",
     color: "Preto",
     km: 15000,
     fuel: "Flex",
@@ -128,13 +251,15 @@ async function main() {
     alreadyPaid: true,
   });
 
-  await createVehicleWithPayable({
+  const vStrada = await createVehicleWithPayable({
     brand: "Fiat",
     model: "Strada",
     version: "1.4 Endurance",
     manufactureYear: 2021,
     modelYear: 2022,
     plate: "MNO3H45",
+    chassi: "9BD281A2XPY123456",
+    renavam: "01599887766",
     color: "Branco",
     km: 32000,
     fuel: "Flex",
@@ -145,6 +270,27 @@ async function main() {
     supplierId: fornecedorB.id,
     alreadyPaid: false,
     dueDate: daysFromNow(15),
+  });
+
+  const vRenegade = await createVehicleWithPayable({
+    brand: "Jeep",
+    model: "Renegade",
+    version: "1.3 T270 Sport",
+    manufactureYear: 2023,
+    modelYear: 2023,
+    plate: "PQR6J78",
+    chassi: "98861732XPK123456",
+    renavam: "01677889900",
+    color: "Cinza",
+    km: 22000,
+    fuel: "Flex",
+    transmission: "Automático",
+    purchasePrice: 89000,
+    salePrice: 104900,
+    entryDate: daysAgo(3),
+    supplierId: fornecedorA.id,
+    alreadyPaid: false,
+    dueDate: daysFromNow(7),
   });
 
   console.log("Lançando custos de preparação dos veículos...");
@@ -191,7 +337,8 @@ async function main() {
     downPayment: 0,
     installmentsCount: 0,
     paymentMethod: "A_VISTA",
-    sellerName: "Marcos Vendedor",
+    sellerName: "Marcos Andrade",
+    commissionAmount: 800,
   });
 
   await registerVehicleSale({
@@ -202,8 +349,8 @@ async function main() {
     downPayment: 15000,
     installmentsCount: 12,
     paymentMethod: "PARCELADO",
-    sellerName: "Marcos Vendedor",
-    notes: "Cliente pagou entrada em dinheiro, restante em 12x no carnê da loja.",
+    sellerName: "Marcos Andrade",
+    notes: "Cliente pagou entrada, restante em 12x no carnê da loja.",
   });
 
   await registerVehicleSale({
@@ -214,12 +361,21 @@ async function main() {
     downPayment: 0,
     installmentsCount: 0,
     paymentMethod: "FINANCIADO",
-    sellerName: "Juliana Vendedora",
+    sellerName: "Juliana Prado",
+    financerName: "Financeira Demo Crédito",
+    financedAmount: 35000,
+    financerAccountId: contaFinanceira.id,
   });
-  // vCorolla e Strada permanecem em estoque para demonstrar o módulo de estoque
+  // Corolla, Strada e Renegade permanecem em estoque (vitrine/estoque).
 
   console.log("Reservando um veículo...");
   await prisma.vehicle.update({ where: { id: vCorolla.id }, data: { status: "RESERVADO" } });
+
+  console.log("Publicando os veículos em estoque na vitrine...");
+  await prisma.vehicle.updateMany({
+    where: { id: { in: [vStrada.id, vRenegade.id] } },
+    data: { published: true, publishedAt: new Date() },
+  });
 
   console.log("Cadastrando peças...");
   const filtro = await createPartWithPayable({
@@ -271,8 +427,7 @@ async function main() {
     quantity: 2,
     unitPrice: 189.9,
     saleDate: daysAgo(1),
-    paymentMethod: "PARCELADO",
-    installmentsCount: 2,
+    paymentMethod: "A_VISTA",
     notes: "Venda de balcão",
   });
 
@@ -325,25 +480,58 @@ async function main() {
     alreadyPaid: true,
   });
 
-  await createManualPayable({
-    description: "Comissão vendedor Marcos",
-    category: "COMISSAO",
-    amount: 1800,
-    dueDate: daysFromNow(2),
-    alreadyPaid: false,
-  });
-
-  console.log("Confirmando alguns recebimentos/pagamentos já baixados...");
-  const paidGolPayable = await prisma.payable.findFirst({ where: { vehicleId: vGol.id } });
-  if (paidGolPayable && paidGolPayable.status !== "PAGO") {
-    await markPayablePaid(paidGolPayable.id, daysAgo(59));
-  }
+  console.log("Baixando o recebimento da venda à vista...");
+  const contaPadrao = await getDefaultAccountId();
   const receivedGol = await prisma.receivable.findFirst({ where: { sale: { vehicleId: vGol.id } } });
   if (receivedGol && receivedGol.status !== "RECEBIDO") {
-    await markReceivableReceived(receivedGol.id, daysAgo(15));
+    await markReceivableReceived(receivedGol.id, daysAgo(15), contaPadrao ?? undefined);
+  }
+  // Comissão do vendedor da venda à vista: paga.
+  const comissao = await prisma.payable.findFirst({
+    where: { category: "COMISSAO", status: { not: "PAGO" } },
+  });
+  if (comissao) {
+    await markPayablePaid(comissao.id, daysAgo(14), contaPadrao ?? undefined);
   }
 
-  console.log("Seed concluído com sucesso.");
+  console.log("Criando uma avaliação de veículo...");
+  await prisma.vehicleAppraisal.create({
+    data: {
+      plate: "STU9K01",
+      brand: "Renault",
+      model: "Kwid",
+      version: "1.0 Zen",
+      manufactureYear: 2022,
+      modelYear: 2022,
+      color: "Laranja",
+      fuel: "Flex",
+      transmission: "Manual",
+      km: 30500,
+      fipePrice: 42000,
+      appraisalPrice: 35500,
+      ownerAskingPrice: 38000,
+      ownerName: "Paulo Ribeiro",
+      ownerPhone: "(11) 97777-5555",
+      notes: "Pintura ok, pneus meia-vida. Proprietário tem pressa na venda.",
+      optionals: ["Ar-condicionado", "Direção elétrica", "Multimídia"],
+    },
+  });
+
+  console.log("Conferindo o farol (integridade do financeiro)...");
+  const health = await getBooksHealth();
+  console.log(
+    `  Check 1 (saldos): ${health.check1.ok ? "VERDE" : "VERMELHO"} · ` +
+      `Contas ${health.check1.contasTotal.toFixed(2)} × Caixa ${health.check1.caixaGeral.toFixed(2)} × Extrato ${health.check1.extrato.toFixed(2)}`,
+  );
+  console.log(
+    `  Check 2 (patrimônio × L/P): ${health.check2.ok ? "VERDE" : "VERMELHO"} · ` +
+      `equação ${health.check2.equacao.toFixed(2)} × L/P ${health.check2.lucroPrejuizo.toFixed(2)}`,
+  );
+  if (!health.allOk) {
+    throw new Error("Farol divergente após o seed — revisar os lançamentos de demonstração.");
+  }
+
+  console.log("Seed de demonstração concluído com sucesso (farol verde).");
 }
 
 main()

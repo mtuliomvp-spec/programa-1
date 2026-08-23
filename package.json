@@ -14,7 +14,7 @@
     "db:reset": "prisma migrate reset"
   },
   "prisma": {
-    "seed": "tsx prisma/seed.ts"
+    "seed": "tsx --conditions=react-server prisma/seed.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.115.0",
@@ -38,6 +38,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
     "prisma": "^6.19.3",
+    "server-only": "^0.0.1",
     "tailwindcss": "^4",
     "tsx": "^4.23.0",
     "typescript": "^5"
