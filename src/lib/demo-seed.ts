@@ -26,7 +26,7 @@ import {
   createManualPayable,
   addVehicleCostWithPayable,
 } from "@/lib/finance";
-import { getDefaultAccountId } from "@/lib/accounts";
+import { getDefaultAccountId, ensureNeutralAccount } from "@/lib/accounts";
 import { structuralCenterId } from "@/lib/structural";
 import { getBooksHealth } from "@/lib/books-health";
 
@@ -113,7 +113,8 @@ async function limparBanco() {
   await prisma.employee.deleteMany();
   await prisma.purchaseRequestAttachment.deleteMany();
   await prisma.purchaseRequest.deleteMany();
-  await prisma.financialAccount.deleteMany();
+  // A conta estrutural (Banco Neutro) é do sistema: nunca é apagada.
+  await prisma.financialAccount.deleteMany({ where: { structural: false } });
   await prisma.capitalBeneficiary.deleteMany({ where: { userId: null } });
   await prisma.monthlyClosing.deleteMany();
   await prisma.stockInterestRun.deleteMany();
@@ -125,6 +126,7 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   await limparBanco();
 
   console.log("Criando contas financeiras...");
+  await ensureNeutralAccount();
   await prisma.financialAccount.create({
     data: {
       name: "Banco Demo S.A.",

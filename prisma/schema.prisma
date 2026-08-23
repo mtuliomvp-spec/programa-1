@@ -153,6 +153,11 @@ enum StatusSolicitacao {
 model FinancialAccount {
   id             String            @id @default(cuid())
   name           String
+  // Contas ESTRUTURAIS (hoje só o Banco Neutro): criadas pelo próprio sistema,
+  // identificadas pela chave fixa e protegidas contra desativação, exclusão e
+  // virar conta padrão. Mesmo padrão dos centros de custo estruturais.
+  key            String?           @unique
+  structural     Boolean           @default(false)
   type           TipoConta         @default(CAIXA)
   bankName       String?
   agency         String?

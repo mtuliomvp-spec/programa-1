@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-import { NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
 
 /**
  * Extrato de caixa por conta para o Boletim de Caixa. Para cada conta (exceto o
@@ -50,7 +49,8 @@ export async function buildCashStatement(start: Date, end: Date): Promise<CashSt
 
   const [accounts, paid, recv, transfers] = await Promise.all([
     prisma.financialAccount.findMany({
-      where: { name: { not: NEUTRAL_ACCOUNT_NAME } },
+      // Fora as estruturais (Banco Neutro): é conta de compensação, não caixa.
+      where: { structural: false },
       orderBy: [{ isDefault: "desc" }, { name: "asc" }],
       select: { id: true, name: true, initialBalance: true },
     }),

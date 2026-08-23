@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances } from "@/lib/accounts";
+import { getAccountsWithBalances, ensureNeutralAccount } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
 import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -58,6 +58,9 @@ export default async function ContasPage({
   searchParams: Promise<{ q?: string }>;
 }) {
   const q = ((await searchParams).q || "").trim();
+  // Conta estrutural do sistema: existe desde a primeira visita a esta tela,
+  // sem depender de alguém fazer uma operação interna primeiro.
+  await ensureNeutralAccount();
   // O farol também precisa dos saldos: pede-se UMA vez e repassa-se a promessa
   // (antes esta tela calculava a mesma soma três vezes por visita).
   const accountsPromise = getAccountsWithBalances();
@@ -123,7 +126,10 @@ export default async function ContasPage({
   const active = accounts.filter((a) => a.active);
   // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
   // "Aplicar" da própria conta). Vale para o formulário e para o atalho.
-  const podeTransferir = canContas && active.filter((a) => !a.isInvestment).length >= 2;
+  // Transferência entre contas: fora as de Aplicação e as estruturais (o Banco
+  // Neutro só é movimentado pelas operações internas, que sempre o zeram).
+  const transferiveis = active.filter((a) => !a.isInvestment && !a.structural);
+  const podeTransferir = canContas && transferiveis.length >= 2;
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
@@ -141,6 +147,7 @@ export default async function ContasPage({
             {a.isInvestment ? "📈" : a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
             <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
             {a.isDefault ? <Badge tone="info">Padrão</Badge> : null}
+            {a.structural ? <Badge tone="warning">⚙️ Estrutural do sistema</Badge> : null}
             {ownerByAccount.get(a.id) ? (
               <Badge tone="warning">👤 Titular: {ownerByAccount.get(a.id)}</Badge>
             ) : null}
@@ -176,7 +183,13 @@ export default async function ContasPage({
                 📈 Aplicar
               </LinkButton>
             ) : null}
-            <AccountRowActions id={a.id} active={a.active} isDefault={a.isDefault} canManage={canContas} />
+            <AccountRowActions
+              id={a.id}
+              active={a.active}
+              isDefault={a.isDefault}
+              structural={a.structural}
+              canManage={canContas}
+            />
           </div>
         </div>
       </div>
@@ -308,7 +321,7 @@ export default async function ContasPage({
                   <CardHeader title="Transferir entre contas" />
                   <div className="p-5">
                     <TransferForm
-                      accounts={active.filter((a) => !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+                      accounts={transferiveis.map((a) => ({ id: a.id, name: a.name }))}
                       cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
                     />
                   </div>

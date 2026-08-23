@@ -22,33 +22,66 @@ export async function getDefaultAccountId(): Promise<string | null> {
  * recebido em troca — uma quita a outra). Cada operação lança um par que se
  * anula, então o Banco Neutro sempre fica com saldo ZERO. Assim nenhum
  * lançamento fica "sem conta" e o saldo das contas bate com o livro caixa.
- * Encontra a conta pelo nome; cria se ainda não existir.
+ *
+ * É uma conta ESTRUTURAL: pertence ao sistema, não ao usuário. Nasce sozinha
+ * (chave fixa `NEUTRO`), não aparece nos seletores de baixa/transferência e
+ * não pode ser desativada, excluída nem virar conta padrão — as travas ficam
+ * nas actions de Contas. Identificar pela CHAVE (e não pelo nome) é o que
+ * garante que renomear a conta não quebre o farol nem o livro caixa.
  */
 export const NEUTRAL_ACCOUNT_NAME = "Banco Neutro";
+export const NEUTRAL_ACCOUNT_KEY = "NEUTRO";
 
-export async function getNeutralAccountId(): Promise<string> {
-  const existing = await prisma.financialAccount.findFirst({
-    where: { name: NEUTRAL_ACCOUNT_NAME },
+const NEUTRAL_NOTES =
+  "Conta estrutural do sistema: compensa as transações internas (troca, capital, acertos). Fica sempre em zero e não pode ser excluída.";
+
+/**
+ * Garante a existência da conta estrutural Banco Neutro (idempotente).
+ * Instalações antigas têm a conta criada só pelo nome — nesse caso ela é
+ * ADOTADA (ganha a chave), em vez de nascer uma segunda.
+ */
+export async function ensureNeutralAccount(): Promise<string> {
+  const byKey = await prisma.financialAccount.findUnique({
+    where: { key: NEUTRAL_ACCOUNT_KEY },
     select: { id: true },
   });
-  if (existing) return existing.id;
+  if (byKey) return byKey.id;
+
+  const byName = await prisma.financialAccount.findFirst({
+    where: { name: NEUTRAL_ACCOUNT_NAME },
+    orderBy: { createdAt: "asc" },
+    select: { id: true },
+  });
+  if (byName) {
+    await prisma.financialAccount.update({
+      where: { id: byName.id },
+      data: { key: NEUTRAL_ACCOUNT_KEY, structural: true, active: true, isDefault: false },
+    });
+    return byName.id;
+  }
+
   const created = await prisma.financialAccount.create({
     data: {
+      key: NEUTRAL_ACCOUNT_KEY,
+      structural: true,
       name: NEUTRAL_ACCOUNT_NAME,
       type: "OUTRO",
       initialBalance: 0,
-      notes: "Conta de compensação para transações internas (troca). Deve ficar sempre em zero.",
+      notes: NEUTRAL_NOTES,
     },
     select: { id: true },
   });
   return created.id;
 }
 
+export const getNeutralAccountId = ensureNeutralAccount;
+
 // Usada nos seletores de baixa (a-pagar/a-receber/estoque/conciliação): exclui
-// contas de Aplicação — o dinheiro delas só entra/sai pelo fluxo de aplicação.
+// contas de Aplicação — o dinheiro delas só entra/sai pelo fluxo de aplicação —
+// e as estruturais (Banco Neutro), que só o sistema movimenta.
 export async function getActiveAccounts() {
   return prisma.financialAccount.findMany({
-    where: { active: true, isInvestment: false },
+    where: { active: true, isInvestment: false, structural: false },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     select: { id: true, name: true, type: true, isDefault: true },
   });
@@ -57,11 +90,11 @@ export async function getActiveAccounts() {
 /**
  * Contas comuns para os seletores de baixa/transferência: exclui as contas de
  * Aplicação (o dinheiro delas só entra/sai pelas operações de aplicação, que
- * mantêm a razão do capital por sócio batendo com o saldo).
+ * mantêm a razão do capital por sócio batendo com o saldo) e as estruturais.
  */
 export async function getSelectableAccounts() {
   return prisma.financialAccount.findMany({
-    where: { active: true, isInvestment: false },
+    where: { active: true, isInvestment: false, structural: false },
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
     select: { id: true, name: true, type: true, isDefault: true },
   });
@@ -78,6 +111,8 @@ export async function getInvestmentAccounts() {
 export type AccountWithBalance = {
   id: string;
   name: string;
+  /** Conta do sistema (Banco Neutro): protegida contra alteração/exclusão. */
+  structural: boolean;
   type: "CAIXA" | "BANCO" | "POUPANCA" | "FINANCEIRA" | "OUTRO";
   bankName: string | null;
   agency: string | null;
@@ -132,6 +167,7 @@ async function accountsWithBalances(): Promise<AccountWithBalance[]> {
     return {
       id: account.id,
       name: account.name,
+      structural: account.structural,
       type: account.type,
       bankName: account.bankName,
       agency: account.agency,
