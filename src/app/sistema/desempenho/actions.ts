@@ -7,7 +7,7 @@ import { resetPerf } from "@/lib/perf";
 
 async function assertAdmin() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") throw new Error("Apenas administradores.");
+  if (!user || user.role !== "SUPER_ADMIN") throw new Error("Acesso restrito ao Super Admin.");
 }
 
 /**

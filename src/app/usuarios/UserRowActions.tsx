@@ -38,7 +38,7 @@ export default function UserRowActions({
   active: boolean;
   pending: boolean;
   isSelf: boolean;
-  role: "ADMIN" | "OPERADOR";
+  role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN";
   permissions: string[];
   bank: UserBank;
   profiles: ProfileOption[];

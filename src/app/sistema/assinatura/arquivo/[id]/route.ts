@@ -11,7 +11,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET(req: NextRequest, ctx: RouteContext<"/sistema/assinatura/arquivo/[id]">) {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") return new NextResponse("Acesso negado", { status: 403 });
+  if (!user || user.role !== "SUPER_ADMIN") return new NextResponse("Acesso negado", { status: 403 });
 
   const { id } = await ctx.params;
   const tipo = req.nextUrl.searchParams.get("tipo");

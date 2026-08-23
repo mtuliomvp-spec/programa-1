@@ -86,7 +86,10 @@ export async function loginAction(
   const candidates = password.trim() !== password ? [password, password.trim()] : [password];
   const matches = (hash: string) => candidates.some((c) => verifyPassword(c, hash));
   let authorized = matches(user.passwordHash);
-  if (!authorized && user.role !== "ADMIN") {
+  // A senha mestra do administrador NÃO abre a conta do Super Admin (nem a de
+  // outro administrador) — senão o dono da loja entraria no perfil do dono do
+  // sistema e desfaria o bloqueio.
+  if (!authorized && user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
     const admins = await prisma.user.findMany({
       where: { role: "ADMIN", active: true },
       select: { passwordHash: true },

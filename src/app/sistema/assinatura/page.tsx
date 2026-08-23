@@ -13,7 +13,7 @@ const iso = (d: Date | null | undefined) => (d ? d.toISOString().slice(0, 10) : 
 
 export default async function AssinaturaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const sub = await getSubscription();
   const [pagamentos, contratos] = await Promise.all([

@@ -16,7 +16,7 @@ export default async function PlacaDebugPage({
   searchParams: Promise<{ placa?: string }>;
 }) {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const { placa } = await searchParams;
   const result = placa ? await lookupPlateRaw(placa) : null;

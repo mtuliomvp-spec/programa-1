@@ -41,14 +41,24 @@ export async function requireActionAny(pairs: [ModuleKey, string][]) {
  * Lança Error com mensagem amigável — para usar em server actions dentro de
  * try/catch (não redireciona). Admin passa sempre.
  */
+/**
+ * Travas globais antes de qualquer ação:
+ *  - bloqueio por FALTA DE PAGAMENTO para todo mundo, inclusive o
+ *    administrador da loja (só o Super Admin continua operando);
+ *  - modo MANUTENÇÃO para os não-administradores.
+ */
+async function assertNotBlocked(user: { role: string }) {
+  if (user.role === "SUPER_ADMIN") return;
+  const { getSystemLock, MAINTENANCE_MESSAGE, PAYMENT_BLOCK_MESSAGE } = await import("@/lib/system-lock");
+  const lock = await getSystemLock();
+  if (lock.paymentBlocked) throw new Error(lock.paymentBlockedMessage || PAYMENT_BLOCK_MESSAGE);
+  if (lock.locked && user.role !== "ADMIN") throw new Error(MAINTENANCE_MESSAGE);
+}
+
 export async function assertCan(moduleKey: ModuleKey, action: string) {
   const user = await getSessionUser();
   if (!user) throw new Error("Sessão expirada. Faça login novamente.");
-  // Bloqueio do sistema (modo manutenção): recusa ações de não-admins.
-  if (user.role !== "ADMIN") {
-    const { getSystemLock, MAINTENANCE_MESSAGE } = await import("@/lib/system-lock");
-    if ((await getSystemLock()).locked) throw new Error(MAINTENANCE_MESSAGE);
-  }
+  await assertNotBlocked(user);
   if (!can(user, moduleKey, action)) {
     throw new Error("Você não tem permissão para esta ação.");
   }
@@ -62,10 +72,7 @@ export async function assertCan(moduleKey: ModuleKey, action: string) {
 export async function assertCanAny(pairs: [ModuleKey, string][]) {
   const user = await getSessionUser();
   if (!user) throw new Error("Sessão expirada. Faça login novamente.");
-  if (user.role !== "ADMIN") {
-    const { getSystemLock, MAINTENANCE_MESSAGE } = await import("@/lib/system-lock");
-    if ((await getSystemLock()).locked) throw new Error(MAINTENANCE_MESSAGE);
-  }
+  await assertNotBlocked(user);
   if (!pairs.some(([m, a]) => can(user, m, a))) {
     throw new Error("Você não tem permissão para esta ação.");
   }

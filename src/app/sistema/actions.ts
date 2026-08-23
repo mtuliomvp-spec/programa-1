@@ -15,7 +15,7 @@ export async function resetSystemDataAction(
   formData: FormData,
 ): Promise<ResetState> {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || user.role !== "SUPER_ADMIN") {
     return { error: "Apenas administradores podem zerar os dados." };
   }
   const confirm = String(formData.get("confirm") || "").trim();
@@ -86,7 +86,7 @@ export async function restoreBackupAction(
   formData: FormData,
 ): Promise<ResetState> {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || user.role !== "SUPER_ADMIN") {
     return { error: "Apenas administradores podem restaurar backup." };
   }
   const file = formData.get("backup");
@@ -241,7 +241,7 @@ export async function toggleSystemLockAction(
   lock: boolean,
 ): Promise<{ ok: boolean; locked?: boolean; error?: string }> {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || user.role !== "SUPER_ADMIN") {
     return { ok: false, error: "Apenas administradores podem bloquear o sistema." };
   }
   await prisma.companySettings.upsert({

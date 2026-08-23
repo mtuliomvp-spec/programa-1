@@ -10,7 +10,7 @@ const nf = new Intl.NumberFormat("pt-BR");
 
 export default async function UsoPlataformaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const u = await getPlatformUsage();
 

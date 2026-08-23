@@ -12,7 +12,7 @@ export default function UserFooter({
   dark = false,
   systemLocked = false,
 }: {
-  user: { name: string; role: "ADMIN" | "OPERADOR" };
+  user: { name: string; role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN" };
   roleLabel?: string;
   dark?: boolean;
   systemLocked?: boolean;
@@ -20,7 +20,9 @@ export default function UserFooter({
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const label = roleLabel ?? (user.role === "ADMIN" ? "Administrador" : "Operador");
+  const label =
+    roleLabel ??
+    (user.role === "SUPER_ADMIN" ? "Super Admin" : user.role === "ADMIN" ? "Administrador" : "Operador");
 
   function toggleLock() {
     const question = systemLocked
@@ -40,7 +42,8 @@ export default function UserFooter({
 
   return (
     <div className="space-y-2">
-      {user.role === "ADMIN" ? (
+      {/* Bloquear/desbloquear é do dono do sistema — some para a loja. */}
+      {user.role === "SUPER_ADMIN" ? (
         <button
           type="button"
           onClick={toggleLock}

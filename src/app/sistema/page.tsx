@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function SistemaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const [vehicles, sales, payables, receivables] = await Promise.all([
     prisma.vehicle.count(),
