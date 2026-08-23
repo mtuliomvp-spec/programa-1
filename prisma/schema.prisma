@@ -1445,6 +1445,72 @@ model AiUsage {
   @@map("ai_usage")
 }
 
+// Assinatura da própria plataforma: o contrato desta empresa com o fornecedor
+// do sistema. Linha única (id fixo "subscription"), visível só ao administrador.
+model Subscription {
+  id            String    @id @default("subscription")
+  // TESTE | EM_DIA | A_VENCER | ATRASADO | BLOQUEADO
+  status        String    @default("TESTE")
+  planName      String    @default("Padrão")
+  monthlyAmount Float     @default(0)
+  dueDay        Int       @default(10)
+  nextChargeAt  DateTime?
+  startedAt     DateTime?
+  notes         String?
+  // Dados da CONTRATADA (fornecedora do sistema), usados no contrato.
+  providerName     String?
+  providerDocument String?
+  providerAddress  String?
+  providerEmail    String?
+  providerPhone    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  payments  SubscriptionPayment[]
+  contracts SubscriptionContract[]
+
+  @@map("subscription")
+}
+
+// Mensalidade paga, com o comprovante guardado dentro da plataforma.
+model SubscriptionPayment {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  /// Mês de competência no formato AAAA-MM.
+  competencia    String
+  paidAt         DateTime
+  amount         Float
+  method         String?
+  notes          String?
+  // Comprovante (opcional): bytes no banco, servido só a quem está logado.
+  proofFilename  String?
+  proofMimeType  String?
+  proofSize      Int?
+  proofData      Bytes?
+  createdAt      DateTime     @default(now())
+
+  @@index([subscriptionId, paidAt])
+  @@map("subscription_payments")
+}
+
+// Via assinada do contrato, anexada depois de coletar as assinaturas.
+model SubscriptionContract {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  signedAt       DateTime?
+  notes          String?
+  filename       String
+  mimeType       String
+  size           Int
+  data           Bytes
+  createdAt      DateTime     @default(now())
+
+  @@index([subscriptionId])
+  @@map("subscription_contracts")
+}
+
 model LoginThrottle {
   id          String    @id @default(cuid())
   key         String    @unique
