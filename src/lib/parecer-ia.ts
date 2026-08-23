@@ -18,6 +18,8 @@ export type ParecerConfig = {
   apiKey: string | null;
   model: string;
   configured: boolean;
+  /** true quando a chave em uso veio do ambiente, não dos Parâmetros. */
+  fromEnv: boolean;
 };
 
 const DEFAULT_MODEL: Record<string, string> = {
@@ -27,15 +29,29 @@ const DEFAULT_MODEL: Record<string, string> = {
   OPENAI: "gpt-4o-mini",
 };
 
+/**
+ * Chave da IA vinda do AMBIENTE (variável da instalação). É o que faz uma
+ * instalação nova — demonstração ou cliente novo — já nascer com a leitura de
+ * documentos e o parecer funcionando, sem ninguém precisar colar a chave nos
+ * Parâmetros. A chave dos Parâmetros, quando existe, tem prioridade: o cliente
+ * que quiser usar (e pagar) a própria chave é atendido.
+ */
+function envAiKey(provider: "ANTHROPIC" | "OPENAI"): string | null {
+  const especifica = provider === "OPENAI" ? process.env.OPENAI_API_KEY : process.env.ANTHROPIC_API_KEY;
+  return (process.env.AI_API_KEY || especifica || "").trim() || null;
+}
+
 export async function getParecerConfig(): Promise<ParecerConfig> {
   const c = await prisma.companySettings.findUnique({
     where: { id: "company" },
     select: { aiProvider: true, aiApiKey: true, aiModel: true },
   });
-  const provider = c?.aiProvider === "OPENAI" ? "OPENAI" : "ANTHROPIC";
-  const apiKey = c?.aiApiKey?.trim() || null;
-  const model = (c?.aiModel?.trim() || DEFAULT_MODEL[provider]) as string;
-  return { provider, apiKey, model, configured: !!apiKey };
+  const envProvider = process.env.AI_PROVIDER?.trim().toUpperCase() === "OPENAI" ? "OPENAI" : null;
+  const provider = c?.aiProvider === "OPENAI" ? "OPENAI" : c?.aiProvider === "ANTHROPIC" ? "ANTHROPIC" : (envProvider ?? "ANTHROPIC");
+  const dbKey = c?.aiApiKey?.trim() || null;
+  const apiKey = dbKey ?? envAiKey(provider);
+  const model = (c?.aiModel?.trim() || process.env.AI_MODEL?.trim() || DEFAULT_MODEL[provider]) as string;
+  return { provider, apiKey, model, configured: !!apiKey, fromEnv: !dbKey && !!apiKey };
 }
 
 export type Risco = { descricao: string; severidade: "baixa" | "media" | "alta" };

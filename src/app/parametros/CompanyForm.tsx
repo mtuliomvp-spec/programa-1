@@ -22,6 +22,8 @@ type Company = {
   // indicador de que existe).
   aiProvider: string | null;
   aiModel: string | null;
+  /** A instalação já tem chave de IA própria (variável de ambiente). */
+  aiKeyFromEnv?: boolean;
   hasAiKey: boolean;
 };
 
@@ -180,6 +182,10 @@ export default function CompanyForm({ company }: { company: Company }) {
           chave de API do provedor escolhido. Há custo por geração, cobrado direto pelo provedor.
           {company.hasAiKey ? (
             <span className="ml-1 font-medium text-emerald-700">Chave configurada ✓</span>
+          ) : company.aiKeyFromEnv ? (
+            <span className="ml-1 font-medium text-emerald-700">
+              Ativa pela chave da instalação ✓ — preencha abaixo só se quiser usar uma chave própria.
+            </span>
           ) : (
             <span className="ml-1 font-medium text-amber-700">Sem chave — o parecer fica indisponível.</span>
           )}
