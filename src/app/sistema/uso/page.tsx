@@ -10,7 +10,10 @@ const nf = new Intl.NumberFormat("pt-BR");
 
 export default async function UsoPlataformaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
+  // Tela de leitura: o administrador do cliente também acompanha o volume da
+  // própria instância (transparência do que a assinatura cobre).
+  if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) redirect("/");
+  const superAdmin = user.role === "SUPER_ADMIN";
 
   const u = await getPlatformUsage();
 
@@ -63,11 +66,18 @@ export default async function UsoPlataformaPage() {
             </p>
             <p>
               <strong className="text-slate-900">Exportação completa dos dados</strong> disponível a qualquer
-              momento — os dados são da empresa. Em{" "}
-              <Link href="/sistema" className="font-medium text-blue-700 hover:underline">
-                Sistema
-              </Link>{" "}
-              você gera o backup quando quiser.
+              momento — os dados são da empresa.{" "}
+              {superAdmin ? (
+                <>
+                  Em{" "}
+                  <Link href="/sistema" className="font-medium text-blue-700 hover:underline">
+                    Sistema
+                  </Link>{" "}
+                  você gera o backup quando quiser.
+                </>
+              ) : (
+                "Peça a exportação ao fornecedor do sistema quando precisar."
+              )}
             </p>
             <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
               Sua instância é <strong>dedicada</strong>: os números acima refletem apenas os dados da sua

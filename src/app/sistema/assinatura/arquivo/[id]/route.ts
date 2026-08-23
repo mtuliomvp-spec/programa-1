@@ -6,12 +6,15 @@ export const dynamic = "force-dynamic";
 
 /**
  * Serve o comprovante de uma mensalidade ou a via assinada do contrato
- * (bytes no banco). Armazenamento privado: só o administrador logado abre.
+ * (bytes no banco). Armazenamento privado: administrador da loja (leitura) e
+ * Super Admin. Nunca fica público.
  * `?tipo=contrato` busca a via assinada; sem isso, o comprovante do pagamento.
  */
 export async function GET(req: NextRequest, ctx: RouteContext<"/sistema/assinatura/arquivo/[id]">) {
   const user = await getSessionUser();
-  if (!user || user.role !== "SUPER_ADMIN") return new NextResponse("Acesso negado", { status: 403 });
+  if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) {
+    return new NextResponse("Acesso negado", { status: 403 });
+  }
 
   const { id } = await ctx.params;
   const tipo = req.nextUrl.searchParams.get("tipo");
