@@ -1,7 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/perf";
-import { getAccountsWithBalances, NEUTRAL_ACCOUNT_NAME, type AccountWithBalance } from "@/lib/accounts";
+import { getAccountsWithBalances, type AccountWithBalance } from "@/lib/accounts";
 
 type AccountsInput = AccountWithBalance[] | Promise<AccountWithBalance[]>;
 import { getPatrimonialStats } from "@/lib/patrimonial";
@@ -107,8 +107,10 @@ async function booksHealth(preloadedAccounts?: AccountsInput): Promise<BooksHeal
   const payTotal = paySemConta.reduce((s, p) => s + p.amount, 0);
   const baixasSemConta = round2(recTotal - payTotal);
   const extrato = round2(contasTotal + baixasSemConta);
+  // Pela flag estrutural (não pelo nome): renomear a conta não pode escondê-la
+  // do farol.
   const bancoNeutro = round2(
-    accounts.filter((a) => a.name === NEUTRAL_ACCOUNT_NAME).reduce((s, a) => s + a.balance, 0),
+    accounts.filter((a) => a.structural).reduce((s, a) => s + a.balance, 0),
   );
   const itens: UnattributedItem[] = [
     ...recSemConta.map((r) => ({ tipo: "entrada" as const, descricao: r.description, valor: r.amount })),

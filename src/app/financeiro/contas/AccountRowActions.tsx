@@ -7,16 +7,28 @@ export default function AccountRowActions({
   id,
   active,
   isDefault,
+  structural = false,
   canManage = true,
 }: {
   id: string;
   active: boolean;
   isDefault: boolean;
+  /** Conta do sistema (Banco Neutro): não se desativa nem vira padrão. */
+  structural?: boolean;
   canManage?: boolean;
 }) {
   const [pending, startTransition] = useTransition();
 
   if (!canManage) return null;
+
+  // Conta estrutural: nenhuma ação do usuário — ela é mantida pelo sistema.
+  if (structural) {
+    return (
+      <p className="text-right text-xs text-slate-400" title="Conta mantida pelo sistema">
+        🔒 conta do sistema
+      </p>
+    );
+  }
 
   return (
     <div className="flex flex-col items-end gap-1 text-sm font-medium">

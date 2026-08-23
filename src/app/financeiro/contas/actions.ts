@@ -3,6 +3,7 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
+import { NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
@@ -130,6 +131,16 @@ export async function createAccountAction(
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const data = parsed.data;
 
+  // O Banco Neutro é criado pelo sistema: impede o usuário de cadastrar uma
+  // segunda conta com esse nome (duas contas de compensação bagunçariam o
+  // farol e o livro caixa).
+  if (data.name.trim().toLowerCase() === NEUTRAL_ACCOUNT_NAME.toLowerCase()) {
+    return {
+      error:
+        "\"Banco Neutro\" é uma conta do próprio sistema, criada automaticamente. Escolha outro nome.",
+    };
+  }
+
   const count = await prisma.financialAccount.count();
   // Conta de Aplicação nunca é a conta padrão das baixas nem começa com saldo:
   // o saldo dela é construído pelas operações de aplicação (razão por sócio).
@@ -211,6 +222,11 @@ export async function setAccountOwnerAction(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
+  const alvo = await prisma.financialAccount.findUnique({
+    where: { id },
+    select: { structural: true },
+  });
+  if (alvo?.structural) return { ok: false, error: STRUCTURAL_BLOCK };
   if (beneficiaryId) {
     const b = await prisma.capitalBeneficiary.findUnique({ where: { id: beneficiaryId }, select: { id: true } });
     if (!b) return { ok: false, error: "Beneficiário não encontrado." };
@@ -255,8 +271,26 @@ export async function updateFinancerTaxAction(
   return { ok: true };
 }
 
+/**
+ * Contas estruturais (Banco Neutro) são do SISTEMA, não do usuário: nascem
+ * sozinhas e não podem ser desativadas, viradas em conta padrão nem ter o
+ * titular trocado. A interface já esconde essas ações; isto é a defesa no
+ * servidor.
+ */
+const STRUCTURAL_BLOCK =
+  "O Banco Neutro faz parte da estrutura do sistema (conta de compensação) e não pode ser alterado nem excluído.";
+
+async function assertNotStructural(id: string) {
+  const account = await prisma.financialAccount.findUnique({
+    where: { id },
+    select: { structural: true },
+  });
+  if (account?.structural) throw new Error(STRUCTURAL_BLOCK);
+}
+
 export async function setDefaultAccountAction(id: string) {
   await assertCan("financeiro", "contas");
+  await assertNotStructural(id);
   await prisma.$transaction(async (tx) => {
     await tx.financialAccount.updateMany({ data: { isDefault: false } });
     await tx.financialAccount.update({ where: { id }, data: { isDefault: true, active: true } });
@@ -266,6 +300,7 @@ export async function setDefaultAccountAction(id: string) {
 
 export async function toggleAccountAction(id: string, active: boolean) {
   await assertCan("financeiro", "contas");
+  await assertNotStructural(id);
   await prisma.financialAccount.update({
     where: { id },
     data: { active, isDefault: active ? undefined : false },
@@ -305,6 +340,13 @@ export async function createTransferAction(
         "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).",
     };
   }
+  // O Banco Neutro só é movimentado pelas operações internas (que sempre lançam
+  // o par que o zera). Uma transferência manual o tiraria de zero.
+  const estruturais = await prisma.financialAccount.findMany({
+    where: { id: { in: [data.fromId, data.toId] }, structural: true },
+    select: { id: true },
+  });
+  if (estruturais.length > 0) return { error: STRUCTURAL_BLOCK };
   // A transferência segue a data de trabalho do caixa aberto (como as baixas).
   const date = await getCashboxWorkDate();
   try {
