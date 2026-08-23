@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { getPlateToken } from "@/lib/api-keys";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import CompanyForm from "./CompanyForm";
 
@@ -12,12 +13,21 @@ export default async function ParametrosPage() {
   if (!user || user.role !== "ADMIN") redirect("/");
 
   const company = await getCompany();
-  // A chave da IA NUNCA vai ao cliente — envia só o indicador de que existe.
-  // `aiKeyFromEnv` avisa que a instalação já tem uma chave própria (variável de
-  // ambiente), então a IA funciona mesmo sem nada salvo aqui.
-  const { aiApiKey, ...rest } = company;
-  const { fromEnv: aiKeyFromEnv } = await getParecerConfig();
-  const companyForClient = { ...rest, hasAiKey: !!aiApiKey?.trim(), aiKeyFromEnv };
+  // Nenhuma chave NUNCA vai ao cliente — só o indicador de que existe.
+  // Os `*FromEnv` avisam que a instalação já tem chave própria (variável de
+  // ambiente), então o recurso funciona mesmo sem nada salvo aqui.
+  const { aiApiKey, plateApiToken, ...rest } = company;
+  const [{ fromEnv: aiKeyFromEnv }, plateToken] = await Promise.all([
+    getParecerConfig(),
+    getPlateToken(),
+  ]);
+  const companyForClient = {
+    ...rest,
+    hasAiKey: !!aiApiKey?.trim(),
+    aiKeyFromEnv,
+    hasPlateToken: !!plateApiToken?.trim(),
+    plateTokenFromEnv: plateToken.fromEnv,
+  };
 
   return (
     <div className="mx-auto max-w-3xl">

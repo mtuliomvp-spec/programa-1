@@ -23,6 +23,8 @@ const schema = z.object({
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
   aiApiKeyClear: z.string().optional(),
+  plateApiToken: z.string().optional(),
+  plateApiTokenClear: z.string().optional(),
 });
 
 export type CompanyFormState = { error?: string; success?: boolean };
@@ -75,6 +77,12 @@ export async function saveCompanyAction(
       ? { aiApiKey: null }
       : d.aiApiKey && d.aiApiKey.trim()
         ? { aiApiKey: d.aiApiKey.trim() }
+        : {}),
+    // Consulta por placa: mesma regra da chave da IA (em branco = mantém).
+    ...(d.plateApiTokenClear === "true"
+      ? { plateApiToken: null }
+      : d.plateApiToken && d.plateApiToken.trim()
+        ? { plateApiToken: d.plateApiToken.trim() }
         : {}),
     // string vazia = manter a logo atual; "remover" = apagar
     ...(d.logoDataUrl === "remover"
