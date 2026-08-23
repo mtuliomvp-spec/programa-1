@@ -25,7 +25,8 @@ function Clausula({ n, titulo, children }: { n: number; titulo: string; children
 
 export default async function ContratoAssinaturaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
+  if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) redirect("/");
+  const superAdmin = user.role === "SUPER_ADMIN";
 
   const [sub, company] = await Promise.all([getSubscription(), getCompany()]);
 
@@ -225,12 +226,21 @@ export default async function ContratoAssinaturaPage() {
       </article>
 
       <p className="mx-auto mt-6 max-w-3xl text-xs text-slate-500 print:hidden">
-        Modelo de contrato para uso comercial — recomendamos revisão por advogado antes da assinatura. Os dados
-        da contratada são preenchidos em{" "}
-        <Link href="/sistema/assinatura" className="font-medium text-blue-700 hover:underline">
-          Assinatura › Editar contrato
-        </Link>
-        ; os da contratante vêm dos Parâmetros da empresa.
+        {superAdmin ? (
+          <>
+            Modelo de contrato para uso comercial — recomendamos revisão por advogado antes da assinatura. Os
+            dados da contratada são preenchidos em{" "}
+            <Link href="/sistema/assinatura" className="font-medium text-blue-700 hover:underline">
+              Assinatura › Editar contrato
+            </Link>
+            ; os da contratante vêm dos Parâmetros da empresa.
+          </>
+        ) : (
+          <>
+            Esta é a via do contrato de licenciamento da sua empresa, gerada pelo sistema. Para baixar em PDF
+            ou imprimir, use os botões acima.
+          </>
+        )}
       </p>
     </div>
   );
