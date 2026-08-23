@@ -167,10 +167,11 @@ export const DEFAULT_OPERATOR_PERMISSIONS: string[] = MODULES.map((m) => `${m.ke
 
 /** Acesso ao módulo (ver o item no menu / entrar): precisa de "visualizar". */
 export function hasModuleAccess(
-  user: { role: "ADMIN" | "OPERADOR"; permissions: string[] },
+  user: { role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN"; permissions: string[] },
   moduleKey: ModuleKey,
 ): boolean {
-  if (user.role === "ADMIN") return true;
+  // Super Admin (dono do sistema) enxerga tudo, como o administrador.
+  if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") return true;
   return (
     user.permissions.includes(`${moduleKey}.visualizar`) ||
     user.permissions.includes(moduleKey) // formato antigo: módulo inteiro
@@ -179,11 +180,12 @@ export function hasModuleAccess(
 
 /** Pode executar uma ação específica dentro de um módulo. */
 export function can(
-  user: { role: "ADMIN" | "OPERADOR"; permissions: string[] },
+  user: { role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN"; permissions: string[] },
   moduleKey: ModuleKey,
   action: string,
 ): boolean {
-  if (user.role === "ADMIN") return true;
+  // Super Admin (dono do sistema) enxerga tudo, como o administrador.
+  if (user.role === "ADMIN" || user.role === "SUPER_ADMIN") return true;
   return (
     user.permissions.includes(`${moduleKey}.${action}`) ||
     user.permissions.includes(moduleKey) // formato antigo concede tudo

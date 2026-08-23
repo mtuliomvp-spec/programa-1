@@ -23,8 +23,8 @@ export async function loadDemoDataAction(): Promise<LoadDemoState> {
   }
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
-  if (user.role !== "ADMIN") {
-    return { ok: false, error: "Apenas o administrador pode carregar os dados de demonstração." };
+  if (user.role !== "SUPER_ADMIN") {
+    return { ok: false, error: "Acesso restrito ao Super Admin." };
   }
 
   try {

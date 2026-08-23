@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
  */
 export async function GET() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || user.role !== "SUPER_ADMIN") {
     return NextResponse.json({ error: "Acesso negado" }, { status: 403 });
   }
 

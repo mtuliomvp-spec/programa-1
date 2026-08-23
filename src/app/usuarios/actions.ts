@@ -13,8 +13,19 @@ export type UserFormState = { error?: string; success?: string };
 
 async function requireAdmin() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") throw new Error("Acesso negado");
+  if (!user || (user.role !== "ADMIN" && user.role !== "SUPER_ADMIN")) throw new Error("Acesso negado");
   return user;
+}
+
+/**
+ * Nenhuma ação desta tela toca um Super Admin: para a loja ele não existe, e
+ * deixar passar abriria caminho para o administrador desativar, renomear ou
+ * trocar a senha do dono do sistema. Erro genérico de propósito — não revela
+ * que a conta existe.
+ */
+async function assertAlvoVisivel(userId: string) {
+  const alvo = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!alvo || alvo.role === "SUPER_ADMIN") throw new Error("Usuário não encontrado");
 }
 
 const bankSchema = {
@@ -51,6 +62,11 @@ export async function updateUserIdentityAction(
   const parsed = identitySchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const { userId, name } = parsed.data;
+  try {
+    await assertAlvoVisivel(userId);
+  } catch {
+    return { error: "Usuário não encontrado." };
+  }
   const beneficiaryId = (parsed.data.beneficiaryId || "").trim();
 
   // Beneficiário escolhido não pode ser o da empresa.
@@ -116,7 +132,7 @@ const createSchema = z.object({
 async function resolvePerfil(
   perfil: string,
   formData: FormData,
-): Promise<{ role: "ADMIN" | "OPERADOR"; permissions: string[]; profileId: string | null }> {
+): Promise<{ role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN"; permissions: string[]; profileId: string | null }> {
   if (perfil === "ADMIN") return { role: "ADMIN", permissions: [], profileId: null };
   if (perfil === "MANUAL") {
     return { role: "OPERADOR", permissions: formData.getAll("permissions").map(String), profileId: null };
@@ -130,6 +146,7 @@ async function resolvePerfil(
 export async function applyProfileAction(userId: string, profileId: string): Promise<UserFormState> {
   try {
     await requireAdmin();
+    await assertAlvoVisivel(userId);
   } catch {
     return { error: "Apenas administradores podem gerenciar usuários." };
   }
@@ -164,6 +181,11 @@ export async function updateUserBankAction(
   }
   const parsed = bankUpdateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  try {
+    await assertAlvoVisivel(parsed.data.userId);
+  } catch {
+    return { error: "Usuário não encontrado." };
+  }
   await prisma.user.update({ where: { id: parsed.data.userId }, data: bankData(parsed.data) });
   await syncUserSupplier(parsed.data.userId);
   revalidatePath("/usuarios");
@@ -215,6 +237,11 @@ export async function updatePermissionsAction(
   }
   const userId = String(formData.get("userId") || "");
   if (!userId) return { error: "Usuário inválido." };
+  try {
+    await assertAlvoVisivel(userId);
+  } catch {
+    return { error: "Usuário não encontrado." };
+  }
   const permissions = formData.getAll("permissions").map(String);
   await prisma.user.update({ where: { id: userId }, data: { permissions } });
   revalidatePath("/usuarios");
@@ -223,6 +250,7 @@ export async function updatePermissionsAction(
 
 export async function approveUserAction(id: string) {
   await requireAdmin();
+  await assertAlvoVisivel(id);
   // Cadastro novo nasce sem permissão nenhuma; aprovar sem liberar nada
   // deixaria o usuário preso numa tela de aviso. Concede o padrão de operador
   // (só visualizar) — o administrador ajusta depois na tela de permissões.
@@ -254,12 +282,14 @@ export async function approveUserAction(id: string) {
 
 export async function rejectUserAction(id: string) {
   await requireAdmin();
+  await assertAlvoVisivel(id);
   await prisma.user.delete({ where: { id, pending: true } });
   revalidatePath("/usuarios");
 }
 
 export async function toggleUserAction(id: string, active: boolean) {
   const admin = await requireAdmin();
+  await assertAlvoVisivel(id);
   if (admin.id === id) throw new Error("Você não pode desativar a si mesmo.");
   await prisma.user.update({ where: { id }, data: { active } });
   revalidatePath("/usuarios");
@@ -282,6 +312,11 @@ export async function resetPasswordAction(
   const parsed = resetSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
 
+  try {
+    await assertAlvoVisivel(parsed.data.userId);
+  } catch {
+    return { error: "Usuário não encontrado." };
+  }
   await prisma.user.update({
     where: { id: parsed.data.userId },
     data: { passwordHash: hashPassword(parsed.data.password), resetRequestedAt: null },

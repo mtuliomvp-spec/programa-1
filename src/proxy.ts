@@ -47,6 +47,12 @@ export default function proxy(request: NextRequest) {
   // Verificação pública de autenticidade (QR Code da Ordem de Pagamento).
   if (pathname.startsWith("/verificar/")) return NextResponse.next();
 
+  // Painel oculto do dono do sistema: a própria página exige a senha mestra da
+  // instalação (e devolve 404 quando ela não está configurada). Passa sem
+  // sessão de propósito — é por onde o fornecedor entra mesmo que o acesso da
+  // loja esteja suspenso ou algo esteja errado com as contas.
+  if (pathname === "/super" || pathname.startsWith("/super/")) return NextResponse.next();
+
   // Vitrine pública dos veículos à venda (inclui as fotos públicas).
   if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();
 

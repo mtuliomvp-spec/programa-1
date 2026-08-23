@@ -42,7 +42,7 @@ function Totais({ t }: { t: AiUsageTotals }) {
 
 export default async function UsoIaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const resumo = await getAiUsageSummary();
   const vazio = resumo.total.chamadas === 0;

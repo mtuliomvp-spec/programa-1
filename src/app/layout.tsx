@@ -3,6 +3,7 @@ import "./globals.css";
 import Sidebar from "@/components/Sidebar";
 import MobileNav from "@/components/MobileNav";
 import SystemLockWatcher from "@/components/SystemLockWatcher";
+import PaymentBlockScreen from "@/components/PaymentBlockScreen";
 import { getSessionUser } from "@/lib/auth";
 
 export const metadata: Metadata = {
@@ -37,7 +38,11 @@ export default async function RootLayout({
   // Rótulo do cargo mostrado no rodapé do menu: administrador, o nome do perfil
   // (ex.: "Vendedor") quando houver, ou "Operador" como padrão.
   const roleLabel =
-    user.role === "ADMIN" ? "Administrador" : user.profile?.name || "Operador";
+    user.role === "SUPER_ADMIN"
+      ? "Super Admin"
+      : user.role === "ADMIN"
+        ? "Administrador"
+        : user.profile?.name || "Operador";
   const sessionUser = {
     name: user.name,
     role: user.role,
@@ -51,7 +56,32 @@ export default async function RootLayout({
     logoDataUrl: company?.logoDataUrl || null,
   };
   const systemLocked = !!company?.systemLocked;
-  const isAdmin = user.role === "ADMIN";
+  const isSuper = user.role === "SUPER_ADMIN";
+  // O Super Admin atravessa a manutenção como o administrador atravessa.
+  const isAdmin = user.role === "ADMIN" || isSuper;
+
+  // Bloqueio por FALTA DE PAGAMENTO: para a loja inteira, inclusive o
+  // administrador. Só o Super Admin (dono do sistema) continua entrando — é
+  // ele quem libera depois de regularizada a mensalidade.
+  if (company?.paymentBlocked && !isSuper) {
+    const { getSubscription } = await import("@/lib/subscription");
+    const { PAYMENT_BLOCK_MESSAGE } = await import("@/lib/system-lock");
+    const sub = await getSubscription().catch(() => null);
+    return (
+      <html lang="pt-BR" className="h-full antialiased">
+        <body className="min-h-screen bg-slate-950">
+          <PaymentBlockScreen
+            message={company.paymentBlockedMessage || PAYMENT_BLOCK_MESSAGE}
+            contato={{
+              nome: sub?.providerName ?? null,
+              telefone: sub?.providerPhone ?? null,
+              email: sub?.providerEmail ?? null,
+            }}
+          />
+        </body>
+      </html>
+    );
+  }
 
   // Bloqueio do sistema: não-admin com o sistema bloqueado não recebe o app —
   // só a tela de manutenção (defesa no servidor; o watcher recarrega sozinho

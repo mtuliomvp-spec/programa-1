@@ -108,6 +108,8 @@ enum TipoAplicacao {
 }
 
 enum UserRole {
+  // Dono do sistema (operadora do SaaS): invisível para os demais perfis.
+  SUPER_ADMIN
   ADMIN
   OPERADOR
 }
@@ -1546,6 +1548,12 @@ model CompanySettings {
   systemLocked      Boolean  @default(false)
   systemLockedBy    String?
   systemLockedAt    DateTime?
+  // Bloqueio por falta de pagamento: só o Super Admin liga/desliga e, enquanto
+  // ativo, NINGUÉM da loja entra (nem o administrador) — diferente da
+  // manutenção, que deixa o administrador trabalhando.
+  paymentBlocked        Boolean   @default(false)
+  paymentBlockedAt      DateTime?
+  paymentBlockedMessage String?
   // Parecer IA: configuração da inteligência artificial (provedor, chave, modelo).
   // A chave nunca é devolvida ao cliente; sem chave, o parecer fica indisponível.
   aiProvider        String?

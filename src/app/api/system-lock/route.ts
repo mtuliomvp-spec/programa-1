@@ -7,10 +7,10 @@ export const dynamic = "force-dynamic";
 /** Estado do bloqueio do sistema — os clientes consultam a cada 10 s. */
 export async function GET() {
   const user = await getSessionUser();
-  if (!user) return NextResponse.json({ locked: false, admin: false });
-  const { locked } = await getSystemLock();
+  if (!user) return NextResponse.json({ locked: false, admin: false, paymentBlocked: false });
+  const { locked, paymentBlocked } = await getSystemLock();
   return NextResponse.json(
-    { locked, admin: user.role === "ADMIN" },
+    { locked, paymentBlocked, admin: user.role === "SUPER_ADMIN" },
     { headers: { "cache-control": "no-store" } },
   );
 }

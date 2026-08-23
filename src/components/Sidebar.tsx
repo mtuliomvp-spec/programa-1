@@ -9,7 +9,7 @@ import UserFooter from "@/components/UserFooter";
 
 type SessionUser = {
   name: string;
-  role: "ADMIN" | "OPERADOR";
+  role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN";
   permissions: string[];
   roleLabel?: string;
 };

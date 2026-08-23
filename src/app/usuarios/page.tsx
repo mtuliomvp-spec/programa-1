@@ -27,7 +27,7 @@ function ProfileTag({
   profile,
   permissions,
 }: {
-  role: "ADMIN" | "OPERADOR";
+  role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN";
   profile: { permissions: string[] } | null;
   permissions: string[];
 }) {
@@ -55,10 +55,13 @@ function bankOf(u: UserBank): UserBank {
 
 export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
-  if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "SUPER_ADMIN")) redirect("/");
 
   const [users, profiles, beneficiaries, accessCodes] = await Promise.all([
     prisma.user.findMany({
+      // O Super Admin (dono do sistema) não existe para a loja: fica fora da
+      // lista, das contagens e de qualquer ação desta tela.
+      where: { role: { not: "SUPER_ADMIN" } },
       orderBy: { createdAt: "asc" },
       include: {
         profile: { select: { name: true, permissions: true } },

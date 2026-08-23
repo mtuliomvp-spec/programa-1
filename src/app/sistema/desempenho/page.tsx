@@ -12,7 +12,7 @@ const ms = (n: number) => `${n.toFixed(0)} ms`;
 
 export default async function DesempenhoPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const perf = getPerfSnapshot();
   const db = getDbInfo();

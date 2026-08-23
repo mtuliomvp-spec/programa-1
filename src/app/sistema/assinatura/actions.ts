@@ -13,7 +13,7 @@ export type SubscriptionFormState = { error?: string; success?: string };
 async function assertAdmin() {
   const user = await getSessionUser();
   if (!user) throw new Error("Sessão expirada. Faça login novamente.");
-  if (user.role !== "ADMIN") throw new Error("Apenas o administrador acessa a assinatura.");
+  if (user.role !== "SUPER_ADMIN") throw new Error("Acesso restrito ao Super Admin.");
   return user;
 }
 

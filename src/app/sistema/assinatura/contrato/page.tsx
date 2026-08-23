@@ -25,7 +25,7 @@ function Clausula({ n, titulo, children }: { n: number; titulo: string; children
 
 export default async function ContratoAssinaturaPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const [sub, company] = await Promise.all([getSubscription(), getCompany()]);
 

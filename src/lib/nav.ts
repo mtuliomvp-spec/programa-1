@@ -7,6 +7,8 @@ export type NavItem = {
   icon: string;
   module?: ModuleKey;
   adminOnly?: boolean;
+  /** Só o Super Admin (dono do sistema) enxerga — invisível até para o ADMIN. */
+  superOnly?: boolean;
 };
 
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -78,11 +80,12 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/usuarios", label: "Usuários", icon: "🔐", adminOnly: true },
       { href: "/usuarios/perfis", label: "Perfis de acesso", icon: "🧩", adminOnly: true },
       { href: "/parametros", label: "Parâmetros da empresa", icon: "⚙️", adminOnly: true },
-      { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", adminOnly: true },
-      { href: "/sistema/uso", label: "Uso da plataforma", icon: "📶", adminOnly: true },
-      { href: "/sistema/assinatura", label: "Assinatura", icon: "💳", adminOnly: true },
-      { href: "/sistema/uso-ia", label: "Uso de IA", icon: "🤖", adminOnly: true },
-      { href: "/sistema/desempenho", label: "Desempenho", icon: "⚡", adminOnly: true },
+      { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", superOnly: true },
+      { href: "/sistema/uso", label: "Uso da plataforma", icon: "📶", superOnly: true },
+      { href: "/sistema/assinatura", label: "Assinatura", icon: "💳", superOnly: true },
+      { href: "/sistema/uso-ia", label: "Uso de IA", icon: "🤖", superOnly: true },
+      { href: "/sistema/desempenho", label: "Desempenho", icon: "⚡", superOnly: true },
+      { href: "/super", label: "Painel Super Admin", icon: "🛡️", superOnly: true },
     ],
   },
   {
@@ -98,10 +101,13 @@ export function isNavActive(href: string, pathname: string) {
   return href === "/" ? pathname === "/" : pathname.startsWith(href);
 }
 
-type NavUser = { role: "ADMIN" | "OPERADOR"; permissions: string[] };
+type NavUser = { role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN"; permissions: string[] };
 
 function canSeeItem(user: NavUser, item: NavItem) {
-  if (item.adminOnly) return user.role === "ADMIN";
+  const superAdmin = user.role === "SUPER_ADMIN";
+  // Itens do dono do sistema não existem para a loja — nem para o ADMIN.
+  if (item.superOnly) return superAdmin;
+  if (item.adminOnly) return user.role === "ADMIN" || superAdmin;
   if (item.module) return hasModuleAccess(user, item.module);
   return true;
 }

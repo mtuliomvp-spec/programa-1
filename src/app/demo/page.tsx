@@ -69,9 +69,9 @@ export default async function DemoPage() {
               Faça o <Link href="/login" className="font-semibold text-blue-700 underline">login como administrador</Link>{" "}
               para liberar o botão de carga.
             </p>
-          ) : user.role !== "ADMIN" ? (
+          ) : user.role !== "SUPER_ADMIN" ? (
             <p className="rounded-lg border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700">
-              Apenas o administrador pode carregar os dados de demonstração.
+              Acesso restrito ao Super Admin.
             </p>
           ) : (
             <LoadDemoButton temDados={temDados} />
