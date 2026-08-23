@@ -2,10 +2,11 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, Field, Input } from "@/components/ui";
+import { Button, Field, Input, Select } from "@/components/ui";
 import {
   createSuperAdminAction,
   demoteSuperAdminAction,
+  promoteUserAction,
   setMaintenanceAction,
   setPaymentBlockAction,
   type SuperFormState,
@@ -106,7 +107,56 @@ export function MaintenanceButton({ locked }: { locked: boolean }) {
   );
 }
 
-/** Criação/promoção de Super Admin. */
+/** Promoção de um usuário que já existe — mantendo a senha dele. */
+export function PromoteUserForm({
+  usuarios,
+}: {
+  usuarios: { id: string; name: string; email: string; role: string; active: boolean }[];
+}) {
+  const [state, formAction, pending] = useActionState(promoteUserAction, vazio);
+
+  if (usuarios.length === 0) {
+    return (
+      <p className="text-sm text-slate-500">
+        Nenhum usuário disponível para promover — cadastre um novo Super Admin abaixo.
+      </p>
+    );
+  }
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <Aviso state={state} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <Field label="Usuário já cadastrado" required>
+          <Select name="userId" defaultValue="" required>
+            <option value="" disabled>
+              Escolha…
+            </option>
+            {usuarios.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name} — {u.email}
+                {u.role === "ADMIN" ? " (administrador)" : ""}
+                {u.active ? "" : " · inativo"}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Nova senha (opcional)">
+          <Input name="password" type="password" autoComplete="new-password" placeholder="deixe em branco para manter" />
+        </Field>
+      </div>
+      <p className="text-xs text-slate-500">
+        A conta mantém o histórico e, se você não informar uma senha nova, <strong>continua com a senha
+        atual</strong>. Ao promover a si mesmo, o menu do dono do sistema aparece na hora.
+      </p>
+      <Button type="submit" disabled={pending}>
+        {pending ? "Promovendo…" : "⬆️ Promover a Super Admin"}
+      </Button>
+    </form>
+  );
+}
+
+/** Criação de um Super Admin novo (login que ainda não existe). */
 export function NewSuperAdminForm() {
   const [state, formAction, pending] = useActionState(createSuperAdminAction, vazio);
   return (

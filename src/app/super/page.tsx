@@ -5,6 +5,7 @@ import { formatDate } from "@/lib/format";
 import {
   bootstrapAllowed,
   currentSuperAdmin,
+  listPromotableUsers,
   listSuperAdmins,
   superGateOpen,
   superPassword,
@@ -16,6 +17,7 @@ import {
   MaintenanceButton,
   NewSuperAdminForm,
   PaymentBlockForm,
+  PromoteUserForm,
 } from "./SuperForms";
 import { closeSuperGateAction, openSuperGateAction } from "./actions";
 
@@ -77,23 +79,34 @@ export default async function SuperPage() {
               em diante só entra quem já é Super Admin (ou quem tiver a senha mestra da instalação).
             </p>
           </div>
-          <div className="p-5">
-            <NewSuperAdminForm />
+          <div className="space-y-5 p-5">
+            <div>
+              <p className="mb-3 text-sm font-semibold text-slate-800">
+                Promover um usuário já cadastrado
+              </p>
+              <PromoteUserForm usuarios={await listPromotableUsers()} />
+            </div>
+
+            <div className="border-t border-slate-200 pt-5">
+              <p className="mb-3 text-sm font-semibold text-slate-800">Ou criar um login novo</p>
+              <NewSuperAdminForm />
+            </div>
           </div>
         </Card>
 
         <p className="mt-4 text-xs text-slate-500">
-          Depois de criar, entre com essa conta: o menu passa a mostrar o Painel Super Admin, a Assinatura,
-          o Uso de IA e o bloqueio do sistema — tudo invisível para a loja.
+          Promovendo a sua própria conta de administrador, o menu do dono do sistema — Painel Super Admin,
+          Assinatura, Uso de IA e o bloqueio — aparece assim que a página recarregar.
         </p>
       </div>
     );
   }
 
-  const [logado, lock, supers] = await Promise.all([
+  const [logado, lock, supers, promoveis] = await Promise.all([
     currentSuperAdmin(),
     getSystemLock(),
     listSuperAdmins(),
+    listPromotableUsers(),
   ]);
 
   return (
@@ -183,7 +196,12 @@ export default async function SuperPage() {
           )}
 
           <div className="rounded-xl border border-dashed border-slate-300 p-4">
-            <p className="mb-3 text-sm font-semibold text-slate-800">Novo Super Admin</p>
+            <p className="mb-3 text-sm font-semibold text-slate-800">Promover um usuário já cadastrado</p>
+            <PromoteUserForm usuarios={promoveis} />
+          </div>
+
+          <div className="rounded-xl border border-dashed border-slate-300 p-4">
+            <p className="mb-3 text-sm font-semibold text-slate-800">Criar um login novo</p>
             <NewSuperAdminForm />
           </div>
         </div>

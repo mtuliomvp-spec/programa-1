@@ -130,6 +130,19 @@ export async function bootstrapAllowed(): Promise<boolean> {
   return user?.role === "ADMIN";
 }
 
+/**
+ * Usuários que podem ser promovidos a Super Admin — os que já existem e ainda
+ * não são. Aguardando aprovação ficam de fora: promover um cadastro que nem
+ * foi liberado seria pular a conferência de quem é a pessoa.
+ */
+export async function listPromotableUsers() {
+  return prisma.user.findMany({
+    where: { role: { not: "SUPER_ADMIN" }, pending: false },
+    orderBy: [{ role: "asc" }, { name: "asc" }],
+    select: { id: true, name: true, email: true, role: true, active: true },
+  });
+}
+
 /** Todos os Super Admins cadastrados (só a própria tela oculta enxerga). */
 export async function listSuperAdmins() {
   return prisma.user.findMany({
