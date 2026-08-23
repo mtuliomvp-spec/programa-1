@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Leitura de BOLETO/GUIA de pagamento anexado ao veículo (PDF ou foto) via IA —
@@ -180,6 +181,14 @@ export async function extractBoletos(base64: string, mimeType: string): Promise<
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "boleto",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Confira os valores à mão.");

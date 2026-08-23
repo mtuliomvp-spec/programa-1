@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Leitura da NF-e (DANFE) via IA — mesma chave do Parecer IA, cadastrada em
@@ -219,6 +220,14 @@ export async function extractNfe(base64: string, mimeType: string): Promise<NfeE
     throw e;
   }
 
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "nfe",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
+
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Lance a compra à mão.");
   }
@@ -341,6 +350,14 @@ export async function extractNfeLote(base64: string): Promise<NfeLoteNota[]> {
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "nfe",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Lance os títulos à mão.");

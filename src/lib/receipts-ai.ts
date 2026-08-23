@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Leitura de um PDF de COMPROVANTES DE PAGAMENTO (lote do banco — um
@@ -108,6 +109,14 @@ export async function extractPaymentReceipts(base64: string): Promise<Comprovant
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "comprovantes",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Anexe os comprovantes manualmente nos títulos.");

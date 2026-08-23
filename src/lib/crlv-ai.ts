@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Leitura do CRLV anexado (PDF ou foto) via IA — mesma chave do Parecer IA,
@@ -154,6 +155,14 @@ export async function extractCrlv(base64: string, mimeType: string): Promise<Crl
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "crlv",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Preencha os dados à mão na ficha do veículo.");

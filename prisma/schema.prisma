@@ -1417,6 +1417,34 @@ model RecurringEntry {
 // Proteção contra força bruta nas portas públicas (login, código de
 // liberação, esqueci a senha): uma linha por chave (e-mail ou IP) com a
 // contagem de falhas na janela e o bloqueio temporário quando estoura.
+// Consumo de IA desta instalação: uma linha por chamada aos leitores de
+// documento e ao Parecer. Serve para acompanhar o custo (a chave costuma ser da
+// operadora do sistema) e para saber qual recurso puxa mais. Só metragem — nada
+// do conteúdo enviado à IA é guardado aqui.
+model AiUsage {
+  id               String   @id @default(cuid())
+  // Recurso que chamou: contrato, nfe, comprovantes, duplicatas, crlv,
+  // boleto, fatura, parecer.
+  feature          String
+  provider         String   @default("ANTHROPIC")
+  model            String
+  inputTokens      Int      @default(0)
+  outputTokens     Int      @default(0)
+  cacheReadTokens  Int      @default(0)
+  cacheWriteTokens Int      @default(0)
+  /// Custo estimado em dólares pela tabela de preços do provedor.
+  costUsd          Float    @default(0)
+  ok               Boolean  @default(true)
+  errorMessage     String?
+  userId           String?
+  userName         String?
+  createdAt        DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([feature])
+  @@map("ai_usage")
+}
+
 model LoginThrottle {
   id          String    @id @default(cuid())
   key         String    @unique
