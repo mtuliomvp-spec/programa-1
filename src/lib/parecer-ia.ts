@@ -1,6 +1,7 @@
 import "server-only";
 import { createHash } from "node:crypto";
 import { prisma } from "@/lib/prisma";
+import { recordAiUsage } from "@/lib/ai-usage";
 import { getCompany } from "@/lib/company";
 import { getPatrimonialStats } from "@/lib/patrimonial";
 import { getProfitLossStatement, getVehicleProfitReport, getStockAging } from "@/lib/reports";
@@ -181,7 +182,14 @@ async function callLLM(
     if (!res.ok) throw new Error(`A IA respondeu com erro (${res.status}). Tente novamente.`);
     const json = (await res.json()) as {
       choices?: { message?: { tool_calls?: { function?: { arguments?: string } }[] } }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    await recordAiUsage({
+      feature: "parecer",
+      provider: config.provider,
+      model: config.model,
+      usage: { input_tokens: json.usage?.prompt_tokens, output_tokens: json.usage?.completion_tokens },
+    });
     const args = json.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
     if (!args) throw new Error("A IA não retornou um parecer estruturado. Tente novamente.");
     try {
@@ -212,7 +220,21 @@ async function callLLM(
   if (res.status === 401) throw new Error("Chave de IA inválida. Confira nos Parâmetros.");
   if (res.status === 429) throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos.");
   if (!res.ok) throw new Error(`A IA respondeu com erro (${res.status}). Tente novamente.`);
-  const json = (await res.json()) as { content?: { type: string; input?: Record<string, unknown> }[] };
+  const json = (await res.json()) as {
+    content?: { type: string; input?: Record<string, unknown> }[];
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      cache_read_input_tokens?: number;
+      cache_creation_input_tokens?: number;
+    };
+  };
+  await recordAiUsage({
+    feature: "parecer",
+    provider: config.provider,
+    model: config.model,
+    usage: json.usage,
+  });
   const toolUse = json.content?.find((c) => c.type === "tool_use");
   if (!toolUse?.input) throw new Error("A IA não retornou um parecer estruturado. Tente novamente.");
   return toolUse.input;

@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Leitura de um RELATÓRIO DE DUPLICATAS EM ABERTO de fornecedor (PDF) via IA —
@@ -122,6 +123,14 @@ export async function extractDuplicatas(base64: string): Promise<RelatorioDuplic
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "duplicatas",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde ler este arquivo. Lance os títulos manualmente.");

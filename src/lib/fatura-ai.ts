@@ -2,6 +2,7 @@ import "server-only";
 import Anthropic from "@anthropic-ai/sdk";
 import { z } from "zod";
 import { getParecerConfig } from "@/lib/parecer-ia";
+import { recordAiUsage } from "@/lib/ai-usage";
 
 /**
  * Extração de fatura de cartão de crédito em PDF via IA (Anthropic — mesma
@@ -130,6 +131,14 @@ export async function extractFaturaFromPdf(pdfBase64: string): Promise<FaturaExt
     }
     throw e;
   }
+
+  // Contador de uso de IA da instalação (não interfere no resultado).
+  await recordAiUsage({
+    feature: "fatura",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
 
   if (response.stop_reason === "refusal") {
     throw new Error("A IA não pôde processar este arquivo. Tente novamente ou digite os lançamentos manualmente.");
