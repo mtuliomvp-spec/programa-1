@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { hasAnySuperAdmin } from "@/lib/super-admin";
 import { getSessionUser } from "@/lib/auth";
 import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -87,6 +88,11 @@ export default async function UsuariosPage() {
   const pendingUsers = users.filter((u) => u.pending);
   const regularUsers = users.filter((u) => !u.pending);
 
+  // Instalação recém-montada: enquanto não existe o perfil do dono do sistema,
+  // o atalho para cadastrá-lo aparece aqui. Criado o Super Admin, some para
+  // sempre — e nenhum administrador consegue se promover depois.
+  const faltaSuperAdmin = !(await hasAnySuperAdmin());
+
   return (
     <div>
       <PageHeader
@@ -94,6 +100,21 @@ export default async function UsuariosPage() {
         description="Quem pode acessar o sistema — administradores gerenciam usuários; operadores usam o restante"
         action={<LinkButton href="/usuarios/perfis" variant="secondary">Perfis de acesso</LinkButton>}
       />
+
+      {faltaSuperAdmin ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-amber-900">
+              🛡️ Esta instalação ainda não tem o Super Admin (dono do sistema)
+            </p>
+            <p className="text-xs text-amber-800">
+              Cadastre-o antes de entregar o sistema — depois de criado, este atalho desaparece e só o
+              próprio Super Admin acessa a área dele.
+            </p>
+          </div>
+          <LinkButton href="/super">Cadastrar Super Admin</LinkButton>
+        </div>
+      ) : null}
 
       <Card className="mb-4">
         <CardHeader

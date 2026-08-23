@@ -110,6 +110,26 @@ export async function assertSuperGate() {
   if (!(await superGateOpen())) throw new Error("Acesso restrito.");
 }
 
+/** Já existe algum Super Admin nesta instalação? */
+export async function hasAnySuperAdmin(): Promise<boolean> {
+  return (await prisma.user.count({ where: { role: "SUPER_ADMIN" } })) > 0;
+}
+
+/**
+ * Porta de PRIMEIRO CADASTRO, aberta pelo próprio sistema.
+ *
+ * Enquanto a instalação não tem nenhum Super Admin, o administrador logado
+ * pode criar o primeiro — é assim que o fornecedor monta a instalação sem
+ * depender de variável de ambiente. Criado o primeiro, a porta se FECHA para
+ * sempre: daí em diante só entra quem já é Super Admin ou quem tem a senha
+ * mestra, e nenhum administrador do cliente consegue se promover.
+ */
+export async function bootstrapAllowed(): Promise<boolean> {
+  if (await hasAnySuperAdmin()) return false;
+  const user = await getSessionUser();
+  return user?.role === "ADMIN";
+}
+
 /** Todos os Super Admins cadastrados (só a própria tela oculta enxerga). */
 export async function listSuperAdmins() {
   return prisma.user.findMany({

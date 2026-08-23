@@ -8,8 +8,10 @@ import { hashPassword } from "@/lib/auth";
 import { clientIp, lockedUntil, registerFailure, clearThrottle, minutesLeft, LOGIN_IP_POLICY } from "@/lib/rate-limit";
 import {
   assertSuperGate,
+  bootstrapAllowed,
   clearSuperGateCookie,
   setSuperGateCookie,
+  superGateOpen,
   superPassword,
 } from "@/lib/super-admin";
 
@@ -67,9 +69,10 @@ export async function createSuperAdminAction(
   _prev: SuperFormState,
   formData: FormData,
 ): Promise<SuperFormState> {
-  try {
-    await assertSuperGate();
-  } catch {
+  // Duas portas: quem já passou pelo portão (Super Admin logado ou senha
+  // mestra) e o PRIMEIRO cadastro feito pelo administrador, enquanto a
+  // instalação ainda não tem nenhum Super Admin.
+  if (!(await superGateOpen()) && !(await bootstrapAllowed())) {
     return { error: "Acesso restrito." };
   }
   const parsed = novoSchema.safeParse(Object.fromEntries(formData.entries()));
