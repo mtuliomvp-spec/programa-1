@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getSystemLock, PAYMENT_BLOCK_MESSAGE } from "@/lib/system-lock";
 import { formatDate } from "@/lib/format";
 import {
+  bootstrapAllowed,
   currentSuperAdmin,
   listSuperAdmins,
   superGateOpen,
@@ -21,19 +22,29 @@ import { closeSuperGateAction, openSuperGateAction } from "./actions";
 export const dynamic = "force-dynamic";
 
 /**
- * Painel do dono do sistema (Super Admin) — tela OCULTA.
+ * Painel do dono do sistema (Super Admin) — tela OCULTA. É daqui que se
+ * suspende o acesso da loja por falta de pagamento.
  *
- * Não aparece no menu de ninguém da loja e, sem a variável de ambiente
- * `SUPER_ADMIN_PASSWORD` configurada na instalação, a rota nem existe (404).
- * É daqui que se suspende o acesso por falta de pagamento.
+ * Quem entra, nesta ordem:
+ *  1. quem já está logado como Super Admin;
+ *  2. quem digitou a senha mestra da instalação (`SUPER_ADMIN_PASSWORD`),
+ *     quando ela estiver configurada — porta de emergência, opcional;
+ *  3. o administrador logado, ENQUANTO a instalação não tiver nenhum Super
+ *     Admin: é o primeiro cadastro, feito pelo próprio sistema. Criado o
+ *     primeiro, essa porta fecha para sempre.
+ *
+ * Fora desses casos a rota devolve 404 — nem para quem descobrir o endereço.
  */
 export default async function SuperPage() {
-  // Sem senha mestra configurada, a tela não existe — nem para quem descobrir
-  // o endereço.
-  if (!superPassword()) notFound();
-
   const aberto = await superGateOpen();
-  if (!aberto) {
+  // Instalação ainda sem nenhum Super Admin: o administrador logado cadastra o
+  // primeiro aqui mesmo. Depois disso a porta fecha para sempre.
+  const primeiroCadastro = !aberto && (await bootstrapAllowed());
+
+  if (!aberto && !primeiroCadastro) {
+    // Sem senha mestra configurada e sem primeiro cadastro pendente, a tela
+    // não existe — nem para quem descobrir o endereço.
+    if (!superPassword()) notFound();
     return (
       <div className="mx-auto flex min-h-[70vh] max-w-md items-center">
         <Card className="w-full p-8">
@@ -44,6 +55,37 @@ export default async function SuperPage() {
           </p>
           <GateForm action={openSuperGateAction} />
         </Card>
+      </div>
+    );
+  }
+
+  // Primeiro cadastro: só o formulário de criação, nada de bloqueio.
+  if (primeiroCadastro) {
+    return (
+      <div className="mx-auto max-w-2xl">
+        <h1 className="text-2xl font-bold text-slate-900">🛡️ Cadastrar o Super Admin</h1>
+        <p className="mt-1 text-sm text-slate-500">
+          Esta instalação ainda não tem o perfil do dono do sistema.
+        </p>
+
+        <Card className="mt-5 border-amber-300">
+          <div className="border-b border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+            <p className="font-semibold">Faça isto agora, antes de entregar o sistema ao cliente.</p>
+            <p className="mt-1">
+              Enquanto não existir nenhum Super Admin, qualquer administrador desta instalação pode criar
+              o primeiro por esta tela. <strong>Assim que você criar o seu, esta porta se fecha</strong> — daí
+              em diante só entra quem já é Super Admin (ou quem tiver a senha mestra da instalação).
+            </p>
+          </div>
+          <div className="p-5">
+            <NewSuperAdminForm />
+          </div>
+        </Card>
+
+        <p className="mt-4 text-xs text-slate-500">
+          Depois de criar, entre com essa conta: o menu passa a mostrar o Painel Super Admin, a Assinatura,
+          o Uso de IA e o bloqueio do sistema — tudo invisível para a loja.
+        </p>
       </div>
     );
   }
