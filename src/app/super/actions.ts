@@ -111,6 +111,58 @@ export async function createSuperAdminAction(
   return { success: `Super Admin ${email} criado.` };
 }
 
+const promoverSchema = z.object({
+  userId: z.string().min(1, "Escolha o usuário"),
+  password: z.string().optional(),
+});
+
+/**
+ * Promove um usuário JÁ CADASTRADO a Super Admin, mantendo a senha atual dele
+ * (informar uma nova é opcional). É o caminho natural para o fornecedor
+ * transformar a própria conta de administrador sem criar um segundo login nem
+ * perder o histórico.
+ */
+export async function promoteUserAction(
+  _prev: SuperFormState,
+  formData: FormData,
+): Promise<SuperFormState> {
+  if (!(await superGateOpen()) && !(await bootstrapAllowed())) {
+    return { error: "Acesso restrito." };
+  }
+  const parsed = promoverSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const novaSenha = parsed.data.password?.trim() || "";
+  if (novaSenha && novaSenha.length < 8) {
+    return { error: "A nova senha precisa ter pelo menos 8 caracteres (ou deixe em branco)." };
+  }
+
+  const alvo = await prisma.user.findUnique({
+    where: { id: parsed.data.userId },
+    select: { id: true, name: true, email: true, role: true },
+  });
+  if (!alvo) return { error: "Usuário não encontrado." };
+  if (alvo.role === "SUPER_ADMIN") return { error: "Este usuário já é Super Admin." };
+
+  await prisma.user.update({
+    where: { id: alvo.id },
+    data: {
+      role: "SUPER_ADMIN",
+      active: true,
+      pending: false,
+      profileId: null,
+      permissions: [],
+      ...(novaSenha ? { passwordHash: hashPassword(novaSenha) } : {}),
+    },
+  });
+
+  revalidatePath("/super");
+  revalidatePath("/usuarios");
+  return {
+    success: `${alvo.name} (${alvo.email}) agora é Super Admin${novaSenha ? " — senha redefinida" : " — a senha continua a mesma"}.`,
+  };
+}
+
 /** Tira o status de Super Admin (a conta vira administrador comum da loja). */
 export async function demoteSuperAdminAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
