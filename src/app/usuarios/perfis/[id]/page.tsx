@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function EditarPerfilPage({ params }: { params: Promise<{ id: string }> }) {
   const sessionUser = await getSessionUser();
-  if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "SUPER_ADMIN")) redirect("/");
 
   const { id } = await params;
   const profile = await prisma.profile.findUnique({ where: { id } });

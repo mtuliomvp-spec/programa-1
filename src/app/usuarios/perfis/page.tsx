@@ -5,12 +5,13 @@ import { getSessionUser } from "@/lib/auth";
 import { Card, CardHeader, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import ProfileForm from "./ProfileForm";
 import DeleteProfileButton from "./DeleteProfileButton";
+import ProfileTransfer from "./ProfileTransfer";
 
 export const dynamic = "force-dynamic";
 
 export default async function PerfisPage() {
   const sessionUser = await getSessionUser();
-  if (!sessionUser || sessionUser.role !== "ADMIN") redirect("/");
+  if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "SUPER_ADMIN")) redirect("/");
 
   const profiles = await prisma.profile.findMany({
     orderBy: { name: "asc" },
@@ -54,11 +55,21 @@ export default async function PerfisPage() {
           )}
         </div>
 
-        <div>
+        <div className="space-y-4">
           <Card>
             <CardHeader title="Novo perfil" />
             <div className="p-5">
               <ProfileForm />
+            </div>
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Copiar perfis entre instalações"
+              description="Leve os mesmos perfis para outro sistema"
+            />
+            <div className="p-5">
+              <ProfileTransfer total={profiles.length} />
             </div>
           </Card>
         </div>
