@@ -1,14 +1,20 @@
 /**
- * Consulta de dados do veículo pela placa (integração com API externa).
+ * Consulta de dados do veículo pela placa (integração com API externa). A
+ * mesma resposta traz o valor FIPE — um único token cobre as duas coisas.
  *
- * Configuração via variáveis de ambiente:
- * - PLACA_API_TOKEN: token contratado no provedor (ex.: wdapi2.com.br)
- * - PLACA_API_URL (opcional): template da URL com {placa} e {token};
- *   padrão: https://wdapi2.com.br/consulta/{placa}/{token}
+ * O token vem dos Parâmetros da empresa (Consulta por placa) ou, na falta
+ * dele, da variável de ambiente `PLACA_API_TOKEN` da instalação — ver
+ * `getPlateToken`. `PLACA_API_URL` (opcional) troca o template da URL, com
+ * {placa} e {token}; padrão: https://wdapi2.com.br/consulta/{placa}/{token}
  *
  * A normalização é defensiva: cada provedor devolve nomes de campos um
  * pouco diferentes, então procuramos os valores em vários lugares comuns.
  */
+import { getPlateToken } from "@/lib/api-keys";
+
+/** Mensagem única de "não configurado", para todos os caminhos avisarem igual. */
+const SEM_TOKEN =
+  "A consulta por placa ainda não está ativada. Contrate um token em um provedor de consulta veicular (ex.: wdapi2.com.br) e cadastre-o em Parâmetros da empresa › Consulta por placa (ou na variável PLACA_API_TOKEN da instalação).";
 
 export type FipeOption = { modelo: string; price: number; ano?: string };
 
@@ -258,10 +264,10 @@ export async function lookupPlateRaw(
   if (!/^[A-Z]{3}\d[A-Z0-9]\d{2}$/.test(plate)) {
     return { ok: false, error: "Placa inválida. Use o formato ABC1D23 ou ABC1234." };
   }
-  const token = process.env.PLACA_API_TOKEN;
+  const { value: token } = await getPlateToken();
   const template = process.env.PLACA_API_URL || DEFAULT_URL_TEMPLATE;
   if (!token && template.includes("{token}")) {
-    return { ok: false, error: "PLACA_API_TOKEN não configurado." };
+    return { ok: false, error: "Token da consulta por placa não configurado (Parâmetros da empresa)." };
   }
   const url = template.replace("{placa}", plate).replace("{token}", token || "");
   try {
@@ -282,15 +288,10 @@ export async function lookupPlate(plateInput: string): Promise<PlateLookupResult
     return { ok: false, error: "Placa inválida. Use o formato ABC1D23 ou ABC1234." };
   }
 
-  const token = process.env.PLACA_API_TOKEN;
+  const { value: token } = await getPlateToken();
   const template = process.env.PLACA_API_URL || DEFAULT_URL_TEMPLATE;
   if (!token && template.includes("{token}")) {
-    return {
-      ok: false,
-      notConfigured: true,
-      error:
-        "A consulta por placa ainda não está ativada. Contrate um token em um provedor de consulta veicular (ex.: wdapi2.com.br) e configure a variável PLACA_API_TOKEN na Vercel.",
-    };
+    return { ok: false, notConfigured: true, error: SEM_TOKEN };
   }
 
   const url = template.replace("{placa}", plate).replace("{token}", token || "");

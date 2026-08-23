@@ -24,6 +24,10 @@ type Company = {
   aiModel: string | null;
   /** A instalação já tem chave de IA própria (variável de ambiente). */
   aiKeyFromEnv?: boolean;
+  /** Token da consulta por placa salvo nestes Parâmetros. */
+  hasPlateToken?: boolean;
+  /** A instalação já tem token de placa próprio (variável de ambiente). */
+  plateTokenFromEnv?: boolean;
   hasAiKey: boolean;
 };
 
@@ -173,6 +177,42 @@ export default function CompanyForm({ company }: { company: Company }) {
         <p className="mt-2 text-xs text-slate-500">
           Aparece no rodapé da vitrine pública. Pode ser o @usuario ou o link completo do perfil.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-4">
+        <p className="mb-1 text-sm font-semibold text-slate-800">🔍 Consulta por placa (e valor FIPE)</p>
+        <p className="mb-3 text-xs text-slate-500">
+          Preenche marca, modelo, ano, cor, chassi e o valor FIPE a partir da placa — um único token
+          atende as duas coisas. Contrate em um provedor de consulta veicular (ex.: wdapi2.com.br);
+          há custo por consulta, cobrado direto pelo provedor.
+          {company.hasPlateToken ? (
+            <span className="ml-1 font-medium text-emerald-700">Token configurado ✓</span>
+          ) : company.plateTokenFromEnv ? (
+            <span className="ml-1 font-medium text-emerald-700">
+              Ativa pelo token da instalação ✓ — preencha abaixo só para usar um token próprio.
+            </span>
+          ) : (
+            <span className="ml-1 font-medium text-amber-700">
+              Sem token — a busca pela placa fica indisponível.
+            </span>
+          )}
+        </p>
+        <Field
+          label={company.hasPlateToken ? "Token do provedor (deixe em branco para manter)" : "Token do provedor"}
+        >
+          <Input
+            type="password"
+            name="plateApiToken"
+            autoComplete="off"
+            placeholder={company.hasPlateToken ? "•••••••••• (token já salvo)" : "Cole aqui o token da consulta por placa"}
+          />
+        </Field>
+        {company.hasPlateToken ? (
+          <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
+            <input type="checkbox" name="plateApiTokenClear" value="true" className="h-4 w-4 rounded border-slate-300" />
+            Remover o token salvo
+          </label>
+        ) : null}
       </div>
 
       <div className="rounded-lg border border-indigo-200 bg-indigo-50/50 p-4">

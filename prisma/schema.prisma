@@ -1485,6 +1485,10 @@ model CompanySettings {
   aiProvider        String?
   aiApiKey          String?
   aiModel           String?
+  // Consulta por placa (traz também o valor FIPE): token do provedor veicular.
+  // Igual à chave da IA — cadastrado aqui vence a variável de ambiente da
+  // instalação, e nunca é devolvido ao cliente.
+  plateApiToken     String?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 

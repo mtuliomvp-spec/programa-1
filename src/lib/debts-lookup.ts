@@ -1,4 +1,5 @@
 import "server-only";
+import { getPlateToken } from "@/lib/api-keys";
 
 /**
  * Consulta de débitos veiculares (IPVA, multas, licenciamento) pela
@@ -120,13 +121,15 @@ export async function lookupVehicleDebts(plateInput: string): Promise<DebtsLooku
     return { ok: false, error: "Placa inválida." };
   }
 
-  const token = process.env.PLACA_API_TOKEN;
+  // Mesmo token da consulta por placa: Parâmetros da empresa primeiro, depois
+  // a variável de ambiente da instalação.
+  const { value: token } = await getPlateToken();
   if (!token) {
     return {
       ok: false,
       notConfigured: true,
       error:
-        "Consulta por placa não configurada. Defina PLACA_API_TOKEN na Vercel (o mesmo token do wdapi2/API Placas).",
+        "Consulta por placa não configurada. Cadastre o token em Parâmetros da empresa › Consulta por placa (o mesmo do wdapi2/API Placas).",
     };
   }
 
