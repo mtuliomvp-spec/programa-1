@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { isAdminRole } from "@/lib/permissions";
+import { listBcbInstitutions, syncBcbRates } from "@/lib/bcb-rates";
 
 export type RateFormState = { error?: string; success?: string };
 
@@ -108,4 +109,54 @@ export async function toggleSimulatorAction(on: boolean): Promise<{ ok: boolean;
   revalidatePath("/parametros/financiamento");
   revalidatePath("/vitrine");
   return { ok: true };
+}
+
+export type BcbActionResult = { ok: boolean; message: string; instituicoes?: string[] };
+
+/**
+ * Busca AGORA as taxas médias no Banco Central e atualiza o cache das
+ * financeiras que têm o nome oficial preenchido. Devolve um diagnóstico
+ * legível — inclusive quando dá errado, para dar para consertar sem abrir log.
+ */
+export async function syncBcbRatesAction(): Promise<BcbActionResult> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, message: "Acesso negado." };
+  }
+
+  const r = await syncBcbRates();
+  revalidatePath("/parametros/financiamento");
+  revalidatePath("/vitrine");
+
+  if (r.error) return { ok: false, message: `Não deu para consultar o Banco Central: ${r.error}` };
+  if (r.atualizadas === 0 && r.semCorrespondencia.length === 0) {
+    return {
+      ok: false,
+      message:
+        "Nenhuma financeira tem o campo \"Nome no Banco Central\" preenchido — sem ele não há o que buscar.",
+    };
+  }
+
+  const partes = [`${r.atualizadas} financeira(s) atualizada(s) com a taxa do Banco Central`];
+  if (r.semCorrespondencia.length > 0) {
+    partes.push(
+      `sem correspondência: ${r.semCorrespondencia.join(", ")} (confira o nome exato na lista abaixo)`,
+    );
+  }
+  return { ok: r.atualizadas > 0, message: `${partes.join(" · ")}.` };
+}
+
+/** Lista os nomes das instituições no Banco Central (para copiar o nome exato). */
+export async function listBcbInstitutionsAction(): Promise<BcbActionResult> {
+  try {
+    await requireAdmin();
+  } catch {
+    return { ok: false, message: "Acesso negado." };
+  }
+  const nomes = await listBcbInstitutions();
+  if (nomes.length === 0) {
+    return { ok: false, message: "O Banco Central não respondeu agora. Tente de novo em alguns minutos." };
+  }
+  return { ok: true, message: `${nomes.length} instituições publicando taxa de veículos hoje.`, instituicoes: nomes };
 }
