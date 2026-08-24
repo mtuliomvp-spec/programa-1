@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { describeAcquisition } from "@/lib/acquisition";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { chaveNfeValida, detranOperando, formatChaveNfe, RENAVE_NORMA } from "@/lib/renave";
+import { chaveNfeValida, detranStatusOf, formatChaveNfe, RENAVE_NORMA } from "@/lib/renave";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
 
@@ -58,8 +58,14 @@ export default async function ContratoCompraPage({
    * disso, ela promete um registro que a loja não consegue fazer. Por padrão
    * sai a que corresponde à situação do estado; `?modelo=` força a outra, para
    * mostrar a quem quiser conhecer, sempre com a tarja de que não está valendo.
+   *
+   * Aqui, ao contrário da conferência de pendências, o padrão é o conservador:
+   * só assina cláusula de Renave quem tem adesão do DETRAN confirmada. Estado
+   * não conferido é contrato pelo modelo clássico — o que se assina hoje não
+   * pode depender de um registro que talvez não exista.
    */
-  const renaveVigente = detranOperando(company.detranRenaveStatus);
+  const detranStatus = detranStatusOf(company.detranRenaveStatus);
+  const renaveVigente = detranStatus === "ADERIDO";
   const forcado = modelo === "renave" ? true : modelo === "classico" ? false : null;
   const usaRenave = forcado ?? renaveVigente;
   const previa = usaRenave !== renaveVigente;
@@ -88,14 +94,20 @@ export default async function ContratoCompraPage({
       {previa ? (
         <div className="mb-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 px-4 py-3 text-center">
           <p className="text-sm font-bold uppercase tracking-wide text-amber-900">
-            Modelo de demonstração — ainda não está valendo
+            {usaRenave
+              ? "Modelo de demonstração — ainda não está valendo"
+              : "Modelo de demonstração — redação anterior, já não vale"}
           </p>
           <p className="mt-0.5 text-xs text-amber-800">
             {usaRenave ? (
               <>
                 Esta versão traz as cláusulas do Renave ({RENAVE_NORMA}), que passam a valer quando o DETRAN
-                {company.uf ? ` do ${company.uf}` : " do estado"} aderir ao Renave de veículos usados. Serve
-                para conhecer o que vem por aí — <strong>não use para assinatura</strong> enquanto isso.
+                {company.uf ? ` do ${company.uf}` : " do estado"} operar o Renave de veículos usados
+                {detranStatus === null
+                  ? " — situação ainda não conferida em Parâmetros → Renave"
+                  : ""}
+                . Serve para conhecer o que vem por aí — <strong>não use para assinatura</strong> enquanto
+                isso.
               </>
             ) : (
               <>
