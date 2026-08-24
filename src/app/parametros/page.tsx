@@ -4,7 +4,7 @@ import { getCompany } from "@/lib/company";
 import { getParecerConfig } from "@/lib/parecer-ia";
 import { getPlateToken } from "@/lib/api-keys";
 import { isAdminRole } from "@/lib/permissions";
-import { Card, CardHeader, PageHeader } from "@/components/ui";
+import { Card, CardHeader, PageHeader, LinkButton } from "@/components/ui";
 import CompanyForm from "./CompanyForm";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +35,11 @@ export default async function ParametrosPage() {
       <PageHeader
         title="Parâmetros da empresa"
         description="Dados da MVP Veículos usados nos documentos impressos (ordem de compra, contrato e venda)"
+        action={
+          <LinkButton href="/parametros/financiamento" variant="secondary">
+            💳 Financiamento na vitrine
+          </LinkButton>
+        }
       />
       <Card>
         <CardHeader title="Dados da empresa" />

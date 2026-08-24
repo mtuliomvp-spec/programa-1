@@ -3,16 +3,19 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { getBaseUrl } from "@/lib/base-url";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { showroomRates } from "@/lib/financing-rates";
 import {
   getShowroomVehicle,
   getShowroomVehicles,
+  whatsappBase,
   whatsappLink,
   vehicleTitle,
   displayName,
   similarVehicles,
 } from "../shared";
 import VitrineGallery from "./VitrineGallery";
+import FinancingSimulator from "./FinancingSimulator";
 import ShareButton from "../ShareButton";
 import ThemeToggle from "../ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
@@ -52,10 +55,11 @@ function Spec({ label, value }: { label: string; value: string }) {
 
 export default async function VitrineVeiculoPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [all, company, base] = await Promise.all([
+  const [all, company, base, rates] = await Promise.all([
     getShowroomVehicles(),
     getCompany().catch(() => null),
     getBaseUrl(),
+    showroomRates().catch(() => []),
   ]);
   const v = all.find((x) => x.id === id);
   // Veículo fora da vitrine (não publicado, vendido, reservado ou com pré-venda):
@@ -214,6 +218,25 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
             />
           </div>
         </div>
+
+        {/* Simulador de financiamento: só com preço visível, simulador ligado
+            nos Parâmetros e ao menos uma financeira com taxa. */}
+        {company?.showroomSimulator && showPrice && rates.length > 0 ? (
+          <FinancingSimulator
+            price={v.salePrice}
+            vehicleTitle={titulo}
+            whatsappBase={whatsappBase(company?.phone)}
+            rates={rates.map((r) => ({
+              id: r.id,
+              name: r.name,
+              monthlyRate: r.monthlyRate,
+              source: r.source,
+              bcbReferenceLabel: r.bcbReferenceDate ? formatDate(r.bcbReferenceDate) : null,
+              maxInstallments: r.maxInstallments,
+              minDownPercent: r.minDownPercent,
+            }))}
+          />
+        ) : null}
 
         {/* Ficha (só os campos habilitados no anúncio) */}
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-3">
