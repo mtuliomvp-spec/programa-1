@@ -78,23 +78,31 @@ export async function loginAction(
     };
   }
 
-  // Senha do próprio usuário — ou senha mestra: a senha de qualquer
-  // administrador ativo funciona no login de qualquer usuário, para o
-  // dono navegar e testar as permissões de cada perfil.
+  // Senha do próprio usuário — ou senha mestra, para entrar na conta de outra
+  // pessoa e ver o sistema como ela vê:
+  //
+  //  • Super Admin (dono do sistema): a senha dele abre QUALQUER conta,
+  //    inclusive a do administrador da loja — é ele quem dá suporte.
+  //  • administrador da loja: a senha dele abre as contas de operador, para
+  //    conferir o que cada perfil enxerga.
+  //  • nenhuma senha mestra abre a conta de um Super Admin — senão o dono da
+  //    loja entraria no perfil do dono do sistema e desfaria o bloqueio.
+  //
   // Tolerância a espaço acidental nas pontas (comum ao colar a senha no
   // celular): se a digitada exata não bater, tenta a versão sem os espaços.
   const candidates = password.trim() !== password ? [password, password.trim()] : [password];
   const matches = (hash: string) => candidates.some((c) => verifyPassword(c, hash));
   let authorized = matches(user.passwordHash);
-  // A senha mestra do administrador NÃO abre a conta do Super Admin (nem a de
-  // outro administrador) — senão o dono da loja entraria no perfil do dono do
-  // sistema e desfaria o bloqueio.
-  if (!authorized && user.role !== "ADMIN" && user.role !== "SUPER_ADMIN") {
-    const admins = await prisma.user.findMany({
-      where: { role: "ADMIN", active: true },
+  if (!authorized && user.role !== "SUPER_ADMIN") {
+    const mestres = await prisma.user.findMany({
+      where: {
+        active: true,
+        // Conta de administrador só se abre com a senha mestra do Super Admin.
+        role: user.role === "ADMIN" ? "SUPER_ADMIN" : { in: ["ADMIN", "SUPER_ADMIN"] },
+      },
       select: { passwordHash: true },
     });
-    authorized = admins.some((admin) => matches(admin.passwordHash));
+    authorized = mestres.some((mestre) => matches(mestre.passwordHash));
   }
   if (!authorized) {
     return failed();
