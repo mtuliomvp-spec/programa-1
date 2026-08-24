@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useMemo, useState } from "react";
+import { useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Badge, Button, Field, Input, Select } from "@/components/ui";
 import {
   TITULOS_ENTRADA,
@@ -17,7 +17,9 @@ import {
   tituloLabel,
   type Pendencia,
 } from "@/lib/renave";
-import { saveVehicleRenaveAction, type RenaveFormState } from "../actions";
+import { readVehicleNfeAction, saveVehicleRenaveAction, type RenaveFormState } from "../actions";
+
+export type DocumentoDoVeiculo = { id: string; description: string; filename: string };
 
 export type RenaveDados = {
   vehicleId: string;
@@ -52,8 +54,17 @@ export type RenaveDados = {
 };
 
 /** Campo de chave da NF-e: mostra série/número tirados da própria chave. */
-function ChaveNfe({ name, label, defaultValue }: { name: string; label: string; defaultValue: string | null }) {
-  const [valor, setValor] = useState(defaultValue ? formatChaveNfe(defaultValue) : "");
+function ChaveNfe({
+  name,
+  label,
+  valor,
+  onChange,
+}: {
+  name: string;
+  label: string;
+  valor: string;
+  onChange: (v: string) => void;
+}) {
   const d = digitos(valor);
   const dados = useMemo(() => dadosDaChaveNfe(d), [d]);
 
@@ -62,7 +73,7 @@ function ChaveNfe({ name, label, defaultValue }: { name: string; label: string; 
       <Input
         name={name}
         value={valor}
-        onChange={(e) => setValor(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         inputMode="numeric"
         placeholder="44 dígitos da chave de acesso"
       />
@@ -81,6 +92,121 @@ function ChaveNfe({ name, label, defaultValue }: { name: string; label: string; 
   );
 }
 
+
+/**
+ * Leitura do DANFE por IA: a nota do carro quase sempre já está anexada em
+ * "Documentos do veículo", então dá para apontar o anexo em vez de mandar o
+ * arquivo de novo. Preenche a chave e a data — quem confere e salva é o
+ * usuário, porque chave errada = nota e registro divergentes (art. 5º, VI).
+ */
+function NfeReader({
+  vehicleId,
+  documentos,
+  onLido,
+}: {
+  vehicleId: string;
+  documentos: DocumentoDoVeiculo[];
+  onLido: (dados: { chave: string; emitidaEm: string | null }) => void;
+}) {
+  const [pending, start] = useTransition();
+  const [escolha, setEscolha] = useState(documentos[0]?.id ?? "");
+  const [msg, setMsg] = useState<{ tone: "ok" | "err" | "warn"; texto: string } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  function ler(input: { attachmentId?: string; base64?: string; mimeType?: string }) {
+    setMsg({ tone: "ok", texto: "Lendo a nota… isso leva alguns segundos." });
+    start(async () => {
+      const r = await readVehicleNfeAction({ vehicleId, ...input });
+      if (!r.ok) {
+        setMsg({ tone: "err", texto: r.error });
+        return;
+      }
+      onLido({ chave: r.chave as string, emitidaEm: r.emitidaEm });
+      const partes = [
+        `Nota ${r.numero}, série ${r.serie}`,
+        r.emitente ? `de ${r.emitente}` : "",
+        r.valorTotal != null ? `— R$ ${r.valorTotal.toFixed(2).replace(".", ",")}` : "",
+      ].filter(Boolean);
+      setMsg(
+        r.alerta
+          ? { tone: "warn", texto: `${partes.join(" ")}. ${r.alerta}` }
+          : { tone: "ok", texto: `${partes.join(" ")}. Confira e salve.` },
+      );
+    });
+  }
+
+  function lerArquivo() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) {
+      setMsg({ tone: "err", texto: "Escolha o arquivo do DANFE (PDF ou foto)." });
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () =>
+      ler({ base64: String(reader.result).split(",")[1] ?? "", mimeType: file.type || "application/pdf" });
+    reader.onerror = () => setMsg({ tone: "err", texto: "Não foi possível abrir o arquivo." });
+    reader.readAsDataURL(file);
+  }
+
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+      <p className="text-xs font-medium text-slate-700">
+        📄 Preencher a chave lendo o DANFE
+      </p>
+      {documentos.length > 0 ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <Select value={escolha} onChange={(e) => setEscolha(e.target.value)} className="h-9 max-w-xs text-xs">
+            {documentos.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.description} — {d.filename}
+              </option>
+            ))}
+          </Select>
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={pending || !escolha}
+            onClick={() => ler({ attachmentId: escolha })}
+            className="h-9 px-3 text-xs"
+          >
+            {pending ? "Lendo…" : "Ler este documento"}
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-1 text-xs text-slate-500">
+          Nenhum documento anexado neste veículo ainda — envie o arquivo abaixo.
+        </p>
+      )}
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,.pdf"
+          className="text-xs text-slate-600 file:mr-2 file:rounded-md file:border file:border-slate-300 file:bg-white file:px-2 file:py-1 file:text-xs"
+        />
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={pending}
+          onClick={lerArquivo}
+          className="h-9 px-3 text-xs"
+        >
+          {pending ? "Lendo…" : "Ler arquivo enviado"}
+        </Button>
+      </div>
+      {msg ? (
+        <p
+          className={`mt-2 text-xs ${
+            msg.tone === "err" ? "text-rose-600" : msg.tone === "warn" ? "text-amber-700" : "text-emerald-700"
+          }`}
+        >
+          {msg.texto}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Bloco do Renave na ficha do veículo: o que a escrituração eletrônica exige,
  * o que já foi registrado e o que falta. Em modo de implantação nada é
@@ -89,12 +215,15 @@ function ChaveNfe({ name, label, defaultValue }: { name: string; label: string; 
  */
 export default function VehicleRenave({
   dados,
+  documentos,
   pendencias,
   prazo,
   diasAtpv,
   canEdit,
 }: {
   dados: RenaveDados;
+  /** Documentos já anexados ao veículo (a nota costuma estar entre eles). */
+  documentos: DocumentoDoVeiculo[];
   pendencias: Pendencia[];
   prazo: string;
   diasAtpv: number | null;
@@ -111,6 +240,14 @@ export default function VehicleRenave({
   );
 
   const doDia = (v: string | null) => (v ? v.slice(0, 10) : "");
+  // Chaves e datas das notas ficam controladas: é o leitor do DANFE que as
+  // preenche, e o usuário ainda pode corrigir na mão antes de salvar.
+  const [entryKey, setEntryKey] = useState(
+    dados.entryNfeKey ? formatChaveNfe(dados.entryNfeKey) : "",
+  );
+  const [entryIssuedAt, setEntryIssuedAt] = useState(doDia(dados.entryNfeIssuedAt));
+  const [exitKey, setExitKey] = useState(dados.exitNfeKey ? formatChaveNfe(dados.exitNfeKey) : "");
+  const [exitIssuedAt, setExitIssuedAt] = useState(doDia(dados.exitNfeIssuedAt));
   const entrada = pendencias.filter((p) => p.momento === "entrada");
   const saida = pendencias.filter((p) => p.momento === "saida");
 
@@ -265,10 +402,28 @@ export default function VehicleRenave({
                 />
               </Field>
               <Field label="Emissão da NF-e de entrada">
-                <Input type="date" name="entryNfeIssuedAt" defaultValue={doDia(dados.entryNfeIssuedAt)} />
+                <Input
+                  type="date"
+                  name="entryNfeIssuedAt"
+                  value={entryIssuedAt}
+                  onChange={(e) => setEntryIssuedAt(e.target.value)}
+                />
               </Field>
-              <div className="sm:col-span-2">
-                <ChaveNfe name="entryNfeKey" label="Chave da NF-e de entrada" defaultValue={dados.entryNfeKey} />
+              <div className="sm:col-span-2 space-y-2">
+                <ChaveNfe
+                  name="entryNfeKey"
+                  label="Chave da NF-e de entrada"
+                  valor={entryKey}
+                  onChange={setEntryKey}
+                />
+                <NfeReader
+                  vehicleId={dados.vehicleId}
+                  documentos={documentos}
+                  onLido={({ chave, emitidaEm }) => {
+                    setEntryKey(formatChaveNfe(chave));
+                    if (emitidaEm) setEntryIssuedAt(emitidaEm.slice(0, 10));
+                  }}
+                />
               </div>
               <Field label="Identificação prévia de entrada">
                 <Select name="renavePreviaTipo" defaultValue={dados.renavePreviaTipo || ""}>
@@ -340,10 +495,28 @@ export default function VehicleRenave({
                 <Input name="renaveSaidaProtocolo" defaultValue={dados.renaveSaidaProtocolo || ""} />
               </Field>
               <Field label="Emissão da NF-e de saída">
-                <Input type="date" name="exitNfeIssuedAt" defaultValue={doDia(dados.exitNfeIssuedAt)} />
+                <Input
+                  type="date"
+                  name="exitNfeIssuedAt"
+                  value={exitIssuedAt}
+                  onChange={(e) => setExitIssuedAt(e.target.value)}
+                />
               </Field>
-              <div className="sm:col-span-2">
-                <ChaveNfe name="exitNfeKey" label="Chave da NF-e de saída" defaultValue={dados.exitNfeKey} />
+              <div className="sm:col-span-2 space-y-2">
+                <ChaveNfe
+                  name="exitNfeKey"
+                  label="Chave da NF-e de saída"
+                  valor={exitKey}
+                  onChange={setExitKey}
+                />
+                <NfeReader
+                  vehicleId={dados.vehicleId}
+                  documentos={documentos}
+                  onLido={({ chave, emitidaEm }) => {
+                    setExitKey(formatChaveNfe(chave));
+                    if (emitidaEm) setExitIssuedAt(emitidaEm.slice(0, 10));
+                  }}
+                />
               </div>
             </div>
           </fieldset>

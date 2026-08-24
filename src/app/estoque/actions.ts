@@ -1878,3 +1878,96 @@ export async function saveVehicleRenaveAction(
   revalidatePath("/estoque/renave");
   return { success: "Dados do Renave salvos." };
 }
+
+export type NfeLidaResult =
+  | {
+      ok: true;
+      chave: string | null;
+      numero: string | null;
+      serie: string | null;
+      emitidaEm: string | null;
+      valorTotal: number | null;
+      emitente: string | null;
+      /** Aviso quando a nota não parece ser deste veículo. */
+      alerta: string | null;
+    }
+  | { ok: false; error: string };
+
+/**
+ * Lê a NF-e (DANFE) para preencher a chave de acesso do registro no Renave.
+ *
+ * A nota do veículo quase sempre já está anexada em "Documentos do veículo" —
+ * então dá para apontar o anexo em vez de mandar o arquivo de novo. Só devolve
+ * os dados: quem confere e salva é a tela, porque uma chave errada no Renave
+ * significa nota e registro divergentes (art. 5º, VI).
+ */
+export async function readVehicleNfeAction(input: {
+  vehicleId: string;
+  attachmentId?: string;
+  base64?: string;
+  mimeType?: string;
+}): Promise<NfeLidaResult> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: input.vehicleId },
+    select: { id: true, plate: true, chassi: true, purchasePrice: true },
+  });
+  if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
+
+  let base64 = input.base64 || "";
+  let mimeType = input.mimeType || "application/pdf";
+  if (input.attachmentId) {
+    const anexo = await prisma.vehicleAttachment.findFirst({
+      where: { id: input.attachmentId, vehicleId: vehicle.id },
+      select: { data: true, mimeType: true },
+    });
+    if (!anexo) return { ok: false, error: "Documento não encontrado neste veículo." };
+    base64 = Buffer.from(anexo.data).toString("base64");
+    mimeType = anexo.mimeType;
+  }
+  if (!base64) return { ok: false, error: "Escolha o documento da nota ou envie o arquivo." };
+
+  try {
+    const { extractNfe } = await import("@/lib/nfe-ai");
+    const nf = await extractNfe(base64, mimeType);
+    const { digitos, chaveNfeValida, dadosDaChaveNfe } = await import("@/lib/renave");
+
+    const chave = digitos(nf.chaveAcesso);
+    if (!chaveNfeValida(chave)) {
+      return {
+        ok: false,
+        error:
+          "Não encontrei a chave de acesso (44 dígitos) neste arquivo. " +
+          "Confira se é mesmo o DANFE da nota — o contrato de compra não traz a chave.",
+      };
+    }
+    const daChave = dadosDaChaveNfe(chave);
+
+    // Confere se a nota parece ser deste carro: o valor da nota costuma bater
+    // com o preço de compra. Divergência não impede — só avisa.
+    const valor = nf.valorTotal ?? null;
+    const alerta =
+      valor != null && vehicle.purchasePrice > 0 && Math.abs(valor - vehicle.purchasePrice) > 0.01
+        ? `A nota é de R$ ${valor.toFixed(2).replace(".", ",")} e a compra deste veículo está lançada como ` +
+          `R$ ${vehicle.purchasePrice.toFixed(2).replace(".", ",")}. Confira se é a nota certa.`
+        : null;
+
+    return {
+      ok: true,
+      chave,
+      numero: daChave?.numero ?? nf.numero,
+      serie: daChave?.serie ?? nf.serie,
+      emitidaEm: nf.emitidaEm,
+      valorTotal: valor,
+      emitente: nf.emitenteNome,
+      alerta,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a nota." };
+  }
+}
