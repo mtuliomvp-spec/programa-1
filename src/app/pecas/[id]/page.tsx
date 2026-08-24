@@ -25,7 +25,10 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
       where: { id },
       include: {
         supplier: true,
-        payables: { orderBy: { createdAt: "desc" } },
+        payables: {
+          orderBy: [{ dueDate: "desc" }, { createdAt: "desc" }],
+          include: { supplier: { select: { name: true } } },
+        },
         partSales: { orderBy: { saleDate: "desc" }, include: { customer: true } },
         vehicleCosts: {
           orderBy: { date: "desc" },
@@ -50,6 +53,21 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
     cashbox.open && cashbox.session ? toDateInputValue(cashbox.session.workDate) : null;
 
   if (!part) notFound();
+
+  // Histórico de preços de compra: cada título de compra da peça guarda a
+  // quantidade, então o unitário é o valor dividido pela quantidade. Títulos
+  // antigos sem quantidade ficam de fora (não dá para inventar o unitário).
+  const compras = part.payables
+    .filter((p) => (p.partQuantity ?? 0) > 0)
+    .map((p) => ({
+      id: p.id,
+      dueDate: p.dueDate,
+      amount: p.amount,
+      quantidade: p.partQuantity as number,
+      unitario: p.amount / (p.partQuantity as number),
+      fornecedor: p.supplier?.name || "—",
+    }));
+
 
   const [canEditar, canRepor, canVender, canExcluir, canCustoVeiculo] = await Promise.all([
     userCan("pecas", "editar"),
@@ -81,7 +99,7 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
               <Info label="Quantidade em estoque" value={`${part.quantity} un.`} />
               <Info label="Estoque mínimo" value={`${part.minQuantity} un.`} />
-              <Info label="Preço de custo" value={formatCurrency(part.costPrice)} />
+              <Info label="Custo médio (unitário)" value={formatCurrency(part.costPrice)} />
               <Info label="Preço de venda" value={formatCurrency(part.salePrice)} />
               <Info label="Fornecedor" value={part.supplier?.name || "-"} />
               {part.description ? <Info label="Descrição" value={part.description} className="col-span-full" /> : null}
@@ -154,6 +172,52 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
                   ))}
                 </tbody>
               </Table>
+            )}
+          </Card>
+
+          <Card>
+            <CardHeader
+              title="Histórico de compras"
+              description="Quanto foi pago por unidade em cada entrada — o custo atual é a média delas"
+            />
+            {compras.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-500">Nenhuma compra registrada.</p>
+            ) : (
+              <>
+                <Table>
+                  <Thead>
+                    <Tr>
+                      <Th>Data</Th>
+                      <Th>Qtd.</Th>
+                      <Th>Valor unitário</Th>
+                      <Th>Total</Th>
+                      <Th>Fornecedor</Th>
+                    </Tr>
+                  </Thead>
+                  <tbody>
+                    {compras.map((c) => (
+                      <Tr key={c.id}>
+                        <Td>{formatDate(c.dueDate)}</Td>
+                        <Td>{c.quantidade} un.</Td>
+                        <Td className="font-medium text-slate-900">{formatCurrency(c.unitario)}</Td>
+                        <Td>{formatCurrency(c.amount)}</Td>
+                        <Td className="text-xs text-slate-500">{c.fornecedor}</Td>
+                      </Tr>
+                    ))}
+                  </tbody>
+                </Table>
+                <p className="px-5 py-3 text-xs text-slate-500">
+                  Última compra: <strong>{formatCurrency(compras[0].unitario)}</strong> por unidade ·
+                  custo médio atual do estoque: <strong>{formatCurrency(part.costPrice)}</strong>
+                  {compras.length > 1 ? (
+                    <>
+                      {" "}
+                      · menor {formatCurrency(Math.min(...compras.map((c) => c.unitario)))} · maior{" "}
+                      {formatCurrency(Math.max(...compras.map((c) => c.unitario)))}
+                    </>
+                  ) : null}
+                </p>
+              </>
             )}
           </Card>
 
