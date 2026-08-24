@@ -90,9 +90,11 @@ export default async function RenavePassoAPassoPage() {
 
   const certOk = company.eCnpjValidUntil ? company.eCnpjValidUntil.getTime() > agora.getTime() : false;
   const etapa1: Situacao = certOk && company.renaveCnae ? "feito" : "pendente";
-  const etapa2: Situacao = company.renaveIntegradora ? "feito" : "pendente";
+  const etapa2: Situacao =
+    company.renaveIntegradora && company.renaveIntegradoraStatus === "CONTRATADA" ? "feito" : "pendente";
   const etapa3: Situacao = company.renaveAderido ? "feito" : "pendente";
-  const etapa5: Situacao = company.renaveAderido && company.renaveIntegradora && certOk ? "feito" : "pendente";
+  const etapa5: Situacao =
+    company.renaveAderido && company.renaveIntegradora && certOk ? "feito" : "pendente";
   const etapa6: Situacao = vehicles.length > 0 && comPendencia === 0 ? "feito" : "pendente";
 
   const feitas = [etapa1, etapa2, etapa3, etapa5, etapa6].filter((e) => e === "feito").length;
@@ -137,6 +139,16 @@ export default async function RenavePassoAPassoPage() {
           </div>
         </div>
       </Card>
+
+      {company.renaveObservacoes ? (
+        <Card className="mt-4">
+          <CardHeader
+            title="Anotações da loja"
+            description="O que já foi apurado com a integradora e com o DETRAN"
+          />
+          <p className="whitespace-pre-line p-5 text-sm text-slate-700">{company.renaveObservacoes}</p>
+        </Card>
+      ) : null}
 
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         <p className="font-semibold">Nada está bloqueado no sistema</p>
@@ -204,7 +216,12 @@ export default async function RenavePassoAPassoPage() {
           <li>como ela trata a <strong>consignação</strong> (contrato eletrônico com assinatura digital das duas partes).</li>
         </ul>
         {company.renaveIntegradora ? (
-          <p className="text-emerald-700">Integradora informada no sistema: {company.renaveIntegradora}.</p>
+          <p className={company.renaveIntegradoraStatus === "CONTRATADA" ? "text-emerald-700" : "text-amber-700"}>
+            Integradora no sistema: <strong>{company.renaveIntegradora}</strong>
+            {company.renaveIntegradoraStatus === "CONTRATADA"
+              ? " — contratada."
+              : " — em avaliação, ainda sem contrato assinado."}
+          </p>
         ) : null}
       </Etapa>
 

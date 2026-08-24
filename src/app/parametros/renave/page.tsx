@@ -50,7 +50,9 @@ export default async function ParametrosRenavePage() {
     renaveAderido: company.renaveAderido,
     renaveAderidoEm: company.renaveAderidoEm?.toISOString() ?? null,
     renaveIntegradora: company.renaveIntegradora,
+    renaveIntegradoraStatus: company.renaveIntegradoraStatus,
     renaveCnae: company.renaveCnae,
+    renaveObservacoes: company.renaveObservacoes,
     eCnpjValidUntil: company.eCnpjValidUntil?.toISOString() ?? null,
     renaveImplantacao: company.renaveImplantacao,
     renaveObrigatorioEm: company.renaveObrigatorioEm?.toISOString() ?? null,
@@ -95,8 +97,17 @@ export default async function ParametrosRenavePage() {
             {diasParaPrazo >= 0 ? ` — faltam ${diasParaPrazo} dia(s).` : ` — prazo vencido há ${Math.abs(diasParaPrazo)} dia(s).`}
           </p>
           <p>
-            Integradora contratada:{" "}
+            Integradora:{" "}
             <strong className="text-slate-900">{company.renaveIntegradora || "nenhuma informada"}</strong>
+            {company.renaveIntegradora ? (
+              <span className="ml-1.5 align-middle">
+                {company.renaveIntegradoraStatus === "CONTRATADA" ? (
+                  <Badge tone="success">Contratada</Badge>
+                ) : (
+                  <Badge tone="warning">Em avaliação</Badge>
+                )}
+              </span>
+            ) : null}
           </p>
           <p>
             Certificado e-CNPJ:{" "}
@@ -115,6 +126,16 @@ export default async function ParametrosRenavePage() {
           </p>
         </div>
       </Card>
+
+      {company.renaveObservacoes ? (
+        <Card className="mt-4">
+          <CardHeader
+            title="Anotações da implantação"
+            description="O que a loja já apurou — fica também no passo a passo"
+          />
+          <p className="whitespace-pre-line p-5 text-sm text-slate-700">{company.renaveObservacoes}</p>
+        </Card>
+      ) : null}
 
       <Card className="mt-4">
         <CardHeader title="Configuração" />

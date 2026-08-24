@@ -1673,7 +1673,14 @@ model CompanySettings {
   renaveAderido     Boolean  @default(false)
   renaveAderidoEm   DateTime?
   renaveIntegradora String?
+  // "AVALIACAO" (em negociação, ainda sem contrato) ou "CONTRATADA". Enquanto
+  // for só avaliação, a etapa da integradora continua pendente no roteiro.
+  renaveIntegradoraStatus String?
   renaveCnae        String?
+  // Anotações da implantação: o que a integradora respondeu, o que o DETRAN do
+  // estado ainda não liberou, o que ficou de vir por escrito. Fica no sistema
+  // para a equipe consultar — não em conversa de WhatsApp.
+  renaveObservacoes String?
   eCnpjValidUntil   DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt

@@ -11,7 +11,9 @@ const schema = z.object({
   renaveAderido: z.string().optional(),
   renaveAderidoEm: z.string().optional(),
   renaveIntegradora: z.string().optional(),
+  renaveIntegradoraStatus: z.string().optional(),
   renaveCnae: z.string().optional(),
+  renaveObservacoes: z.string().optional(),
   eCnpjValidUntil: z.string().optional(),
   renaveImplantacao: z.string().optional(),
   renaveObrigatorioEm: z.string().optional(),
@@ -45,7 +47,12 @@ export async function saveRenaveConfigAction(
       renaveAderido: d.renaveAderido === "true",
       renaveAderidoEm: data(d.renaveAderidoEm),
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
+      renaveIntegradoraStatus:
+        d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
+          ? d.renaveIntegradoraStatus
+          : null,
       renaveCnae: d.renaveCnae?.trim() || null,
+      renaveObservacoes: d.renaveObservacoes?.trim().slice(0, 4000) || null,
       eCnpjValidUntil: data(d.eCnpjValidUntil),
       renaveImplantacao: d.renaveImplantacao === "true",
       renaveObrigatorioEm: data(d.renaveObrigatorioEm),
@@ -55,7 +62,12 @@ export async function saveRenaveConfigAction(
       renaveAderido: d.renaveAderido === "true",
       renaveAderidoEm: data(d.renaveAderidoEm),
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
+      renaveIntegradoraStatus:
+        d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
+          ? d.renaveIntegradoraStatus
+          : null,
       renaveCnae: d.renaveCnae?.trim() || null,
+      renaveObservacoes: d.renaveObservacoes?.trim().slice(0, 4000) || null,
       eCnpjValidUntil: data(d.eCnpjValidUntil),
       renaveImplantacao: d.renaveImplantacao === "true",
       renaveObrigatorioEm: data(d.renaveObrigatorioEm),
