@@ -3,10 +3,20 @@ import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { describeAcquisition } from "@/lib/acquisition";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { chaveNfeValida, formatChaveNfe } from "@/lib/renave";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
 
 export const dynamic = "force-dynamic";
+
+/** Linha para preencher à mão, quando o dado não está no cadastro. */
+function Blank({ w = "8rem" }: { w?: string }) {
+  return (
+    <span className="inline-block border-b border-slate-400 align-baseline" style={{ minWidth: w }}>
+      &nbsp;
+    </span>
+  );
+}
 
 /**
  * Contrato particular de compra e venda de veículo usado (loja como
@@ -38,12 +48,6 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
   const companyCity = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}`
     : null;
-
-  const Blank = ({ w = "8rem" }: { w?: string }) => (
-    <span className="inline-block border-b border-slate-400 align-baseline" style={{ minWidth: w }}>
-      &nbsp;
-    </span>
-  );
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -127,10 +131,10 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
               </strong>
               {vehicle.version ? `, versão ${vehicle.version}` : ""}, ano de fabricação{" "}
               {vehicle.manufactureYear}, ano modelo {vehicle.modelYear}, placa{" "}
-              <strong>{vehicle.plate}</strong>, chassi {vehicle.chassi || <Blank w="12rem" />}, cor{" "}
-              {vehicle.color || <Blank />}, combustível {vehicle.fuel || <Blank />}, com{" "}
-              {vehicle.km.toLocaleString("pt-BR")} km, no estado de uso e conservação vistoriado
-              pelas partes.
+              <strong>{vehicle.plate}</strong>, chassi {vehicle.chassi || <Blank w="12rem" />},
+              RENAVAM {vehicle.renavam || <Blank w="8rem" />}, cor {vehicle.color || <Blank />},
+              combustível {vehicle.fuel || <Blank />}, com {vehicle.km.toLocaleString("pt-BR")} km,
+              no estado de uso e conservação vistoriado pelas partes.
             </p>
           </div>
 
@@ -216,6 +220,13 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
                 .
               </p>
             ) : null}
+            {chaveNfeValida(vehicle.entryNfeKey) ? (
+              <p className="mt-1">
+                A operação está documentada pela Nota Fiscal Eletrônica nº {vehicle.entryNfeNumber},
+                série {vehicle.entryNfeSerie}, chave de acesso{" "}
+                <span className="tabular-nums">{formatChaveNfe(vehicle.entryNfeKey)}</span>.
+              </p>
+            ) : null}
             {!allPaid && vehicle.payables.length > 0 ? (
               <table className="mt-2 w-full text-sm">
                 <thead>
@@ -241,12 +252,23 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           </div>
 
           <div>
-            <p className="font-bold">Cláusula 3ª — Da entrega (tradição)</p>
-            <p>
-              O veículo é entregue à COMPRADORA nesta data, com todos os seus pertences e
-              acessórios, juntamente com o Certificado de Registro do Veículo (CRV/ATPV-e)
-              devidamente assinado pelo(a) VENDEDOR(A), livre de pessoas e coisas.
+            <p className="font-bold">
+              Cláusula 3ª — Da entrega {isConsigned ? "(posse)" : "(tradição)"}
             </p>
+            {isConsigned ? (
+              <p>
+                O veículo é entregue à COMPRADORA nesta data, com todos os seus pertences e
+                acessórios, livre de pessoas e coisas, <strong>a título de consignação</strong>, para
+                exposição e venda, <strong>sem transferência da propriedade</strong>, que permanece
+                com o(a) VENDEDOR(A) (consignante) até a venda a terceiro.
+              </p>
+            ) : (
+              <p>
+                O veículo é entregue à COMPRADORA nesta data, com todos os seus pertences e
+                acessórios, juntamente com o Certificado de Registro do Veículo (CRV/ATPV-e)
+                devidamente assinado pelo(a) VENDEDOR(A), livre de pessoas e coisas.
+              </p>
+            )}
           </div>
 
           <div>
@@ -288,14 +310,62 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
           </div>
 
           <div>
-            <p className="font-bold">Cláusula 6ª — Da transferência e comunicação de venda</p>
-            <p>
-              O(A) VENDEDOR(A) entrega nesta data a autorização para transferência de propriedade
-              (CRV/ATPV-e) assinada. A COMPRADORA, revendedora de veículos usados, fica dispensada
-              da averbação imediata na forma da regulamentação do CONTRAN aplicável a estoque de
-              revenda, obrigando-se as partes, no que couber, ao cumprimento dos arts. 123 e 134 do
-              Código de Trânsito Brasileiro.
+            <p className="font-bold">
+              Cláusula 6ª — Da transferência, do registro no Renave e da comunicação de venda
             </p>
+            {isConsigned ? (
+              <>
+                <p>
+                  A consignação será formalizada por <strong>contrato eletrônico</strong> registrado
+                  no <strong>Registro Nacional de Veículos em Estoque — Renave</strong>, assinado
+                  digitalmente pelas partes, na forma do art. 20 da Resolução Contran nº 1.026, de 26
+                  de junho de 2026, servindo o presente instrumento como o ajuste particular entre as
+                  partes.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo primeiro.</strong> Realizada a venda a terceiro, o(a) VENDEDOR(A)
+                  obriga-se a assinar a Autorização para Transferência de Propriedade do Veículo em
+                  Meio Digital (ATPV-e) <strong>no prazo de 30 (trinta) dias</strong> contados do
+                  contrato eletrônico de consignação, sob pena de cancelamento da venda e restituição
+                  do veículo, nos termos do § 7º do referido art. 20.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo segundo.</strong> A propriedade do veículo permanece com o(a)
+                  VENDEDOR(A) até a transferência ao comprador final, respondendo a COMPRADORA pelas
+                  infrações de trânsito cometidas no período em que detiver a posse.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  O(A) VENDEDOR(A) entrega nesta data a autorização para transferência de propriedade
+                  (CRV/ATPV-e) assinada, com firma reconhecida ou mediante assinatura eletrônica
+                  avançada ou qualificada, nos termos do art. 123, § 4º, do Código de Trânsito
+                  Brasileiro e da Lei nº 14.063, de 23 de setembro de 2020.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo primeiro.</strong> A COMPRADORA, estabelecimento que exerce a
+                  atividade de compra e venda de veículos, procederá ao <strong>registro eletrônico
+                  de entrada</strong> do veículo em seu estoque no{" "}
+                  <strong>Registro Nacional de Veículos em Estoque — Renave</strong>, na forma da
+                  Resolução Contran nº 1.026, de 26 de junho de 2026, do que decorre a anotação de
+                  &quot;veículo em estoque&quot; no cadastro do veículo, dispensada a expedição de
+                  novo Certificado de Registro de Veículo em nome da COMPRADORA enquanto o veículo
+                  permanecer em estoque para revenda.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo segundo.</strong> O(A) VENDEDOR(A) obriga-se a fornecer os
+                  documentos e as informações necessários ao registro e declara estar ciente de que
+                  ele somente se realiza sobre veículo <strong>sem restrições impeditivas e sem
+                  débitos não liquidados</strong> (art. 11, § 2º, da referida Resolução),
+                  respondendo, na forma da Cláusula 4ª, pelo que for anterior à tradição.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo terceiro.</strong> As partes obrigam-se, no que couber, ao
+                  cumprimento dos arts. 123 e 134 do Código de Trânsito Brasileiro.
+                </p>
+              </>
+            )}
           </div>
 
           <div>
