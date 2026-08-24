@@ -96,11 +96,15 @@ export function EditContractForm({
           [colchetes] para preencher à mão.
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Razão social">
+          <Field label="Razão social ou nome">
             <Input name="providerName" defaultValue={contrato.providerName} />
           </Field>
-          <Field label="CNPJ">
-            <Input name="providerDocument" defaultValue={contrato.providerDocument} />
+          <Field label="CNPJ ou CPF">
+            <Input
+              name="providerDocument"
+              defaultValue={contrato.providerDocument}
+              placeholder="a fornecedora pode ser pessoa física"
+            />
           </Field>
           <Field label="Endereço">
             <Input name="providerAddress" defaultValue={contrato.providerAddress} />

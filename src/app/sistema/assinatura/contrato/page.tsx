@@ -12,6 +12,23 @@ export const dynamic = "force-dynamic";
 /** Campo ausente vira [PLACEHOLDER] para ser preenchido à mão na via impressa. */
 const ou = (valor: string | null | undefined, marcador: string) => valor?.trim() || `[${marcador}]`;
 
+/**
+ * Qualificação da parte conforme o documento informado. A fornecedora (e às
+ * vezes a própria loja) pode ser pessoa física — 11 dígitos viram CPF e
+ * "inscrito(a)"; 14, CNPJ e "inscrita". Sem documento, mantém o texto de
+ * empresa, que é o caso comum.
+ */
+function qualificacao(documento: string | null | undefined) {
+  const digitos = (documento || "").replace(/\D/g, "");
+  const pessoaFisica = digitos.length === 11;
+  return {
+    pessoaFisica,
+    flexao: pessoaFisica ? "inscrito(a)" : "inscrita",
+    documentoLabel: pessoaFisica ? "CPF" : "CNPJ",
+    nomeLabel: pessoaFisica ? "NOME" : "RAZÃO SOCIAL",
+  };
+}
+
 function Clausula({ n, titulo, children }: { n: number; titulo: string; children: React.ReactNode }) {
   return (
     <section className="mt-5">
@@ -29,6 +46,8 @@ export default async function ContratoAssinaturaPage() {
   const superAdmin = user.role === "SUPER_ADMIN";
 
   const [sub, company] = await Promise.all([getSubscription(), getCompany()]);
+  const contratada = qualificacao(sub.providerDocument);
+  const contratante = qualificacao(company.cnpj);
 
   const contratanteCidade = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}`
@@ -55,12 +74,15 @@ export default async function ContratoAssinaturaPage() {
 
         <p className="mt-5 text-justify text-[12.5px] leading-relaxed">
           Pelo presente instrumento particular, de um lado{" "}
-          <strong>{ou(sub.providerName, "RAZÃO SOCIAL DA FORNECEDORA")}</strong>, inscrita no CNPJ sob o nº{" "}
-          <strong>{ou(sub.providerDocument, "CNPJ DA FORNECEDORA")}</strong>, com endereço em{" "}
+          <strong>{ou(sub.providerName, `${contratada.nomeLabel} DA FORNECEDORA`)}</strong>,{" "}
+          {contratada.flexao} no {contratada.documentoLabel} sob o nº{" "}
+          <strong>{ou(sub.providerDocument, `${contratada.documentoLabel} DA FORNECEDORA`)}</strong>, com endereço em{" "}
           {ou(sub.providerAddress, "ENDEREÇO DA FORNECEDORA")}, doravante denominada{" "}
           <strong>CONTRATADA</strong>; e de outro lado{" "}
-          <strong>{ou(company.razaoSocial, "RAZÃO SOCIAL DA CONTRATANTE")}</strong>, inscrita no CNPJ sob o nº{" "}
-          {ou(company.cnpj, "CNPJ DA CONTRATANTE")}, com endereço em {ou(company.address, "ENDEREÇO")},{" "}
+          <strong>{ou(company.razaoSocial, `${contratante.nomeLabel} DA CONTRATANTE`)}</strong>,{" "}
+          {contratante.flexao} no {contratante.documentoLabel} sob o nº{" "}
+          {ou(company.cnpj, `${contratante.documentoLabel} DA CONTRATANTE`)}, com endereço em{" "}
+          {ou(company.address, "ENDEREÇO")},{" "}
           {contratanteCidade}, doravante denominada <strong>CONTRATANTE</strong>, têm entre si justo e contratado
           o presente contrato, que se regerá pelas cláusulas seguintes e pela legislação brasileira aplicável —
           Código Civil, Código de Defesa do Consumidor (quando aplicável), Marco Civil da Internet (Lei
@@ -212,13 +234,13 @@ export default async function ContratoAssinaturaPage() {
         <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2">
           <div className="text-center">
             <div className="border-t border-slate-900 pt-2 text-[12px]">
-              <p className="font-semibold">{ou(sub.providerName, "RAZÃO SOCIAL DA FORNECEDORA")}</p>
+              <p className="font-semibold">{ou(sub.providerName, `${contratada.nomeLabel} DA FORNECEDORA`)}</p>
               <p className="text-slate-600">CONTRATADA</p>
             </div>
           </div>
           <div className="text-center">
             <div className="border-t border-slate-900 pt-2 text-[12px]">
-              <p className="font-semibold">{ou(company.razaoSocial, "RAZÃO SOCIAL DA CONTRATANTE")}</p>
+              <p className="font-semibold">{ou(company.razaoSocial, `${contratante.nomeLabel} DA CONTRATANTE`)}</p>
               <p className="text-slate-600">CONTRATANTE</p>
             </div>
           </div>
