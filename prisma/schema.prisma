@@ -963,6 +963,9 @@ model Payable {
   vehicle      Vehicle?        @relation(fields: [vehicleId], references: [id])
   partId       String?
   part         Part?           @relation(fields: [partId], references: [id])
+  // Quantidade de peças desta compra: com o valor do título, dá o custo
+  // unitário pago — é o histórico de preços que a ficha da peça mostra.
+  partQuantity Int?
   vehicleCost  VehicleCost?
   // Venda de origem (ex.: comissão do vendedor gerada por uma venda).
   saleId       String?

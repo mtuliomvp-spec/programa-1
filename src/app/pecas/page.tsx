@@ -72,7 +72,7 @@ export default async function PecasPage({
                 <Th>Código</Th>
                 <Th>Peça</Th>
                 <Th>Qtd.</Th>
-                <Th>Custo</Th>
+                <Th>Custo médio</Th>
                 <Th>Venda</Th>
                 <Th>Fornecedor</Th>
                 <Th />
