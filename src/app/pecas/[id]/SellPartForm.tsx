@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { sellPartAction, type FormState } from "../actions";
-import { toDateInputValue } from "@/lib/format";
+import { formatDate, toDateInputValue } from "@/lib/format";
 
 type Customer = { id: string; name: string };
 type Account = { id: string; name: string };
@@ -14,12 +14,15 @@ export default function SellPartForm({
   availableQuantity,
   customers,
   accounts,
+  cashboxDate,
 }: {
   partId: string;
   currentSalePrice: number;
   availableQuantity: number;
   customers: Customer[];
   accounts: Account[];
+  /** Data do caixa aberto: a venda é do dia do caixa, não de outro dia. */
+  cashboxDate?: string | null;
 }) {
   const [state, formAction, pending] = useActionState(sellPartAction, {} as FormState);
   const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO">("A_VISTA");
@@ -53,9 +56,19 @@ export default function SellPartForm({
           ))}
         </Select>
       </Field>
-      <Field label="Data da venda" required>
-        <Input type="date" name="saleDate" defaultValue={toDateInputValue(new Date())} required />
-      </Field>
+      {cashboxDate ? (
+        <Field label="Data da venda">
+          <input type="hidden" name="saleDate" value={cashboxDate} />
+          <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+            {formatDate(cashboxDate)}
+            <span className="ml-2 text-xs text-slate-400">(caixa aberto)</span>
+          </div>
+        </Field>
+      ) : (
+        <Field label="Data da venda" required>
+          <Input type="date" name="saleDate" defaultValue={toDateInputValue(new Date())} required />
+        </Field>
+      )}
       <Field label="Forma de pagamento" required>
         <Select name="paymentMethod" value={paymentMethod} onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}>
           <option value="A_VISTA">À vista</option>

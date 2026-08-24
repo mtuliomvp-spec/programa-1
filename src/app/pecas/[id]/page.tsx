@@ -6,6 +6,8 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, 
 import DeleteRowButton from "@/components/DeleteRowButton";
 import { userCan } from "@/lib/guards";
 import { getSelectableAccounts } from "@/lib/accounts";
+import { getCashboxState } from "@/lib/cashbox";
+import { toDateInputValue } from "@/lib/format";
 import { deletePartAction } from "../actions";
 import AddStockForm from "./AddStockForm";
 import SellPartForm from "./SellPartForm";
@@ -18,7 +20,7 @@ const payableStatusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atra
 
 export default async function PecaDetalhePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [part, suppliers, customers, accounts, stockVehicles] = await Promise.all([
+  const [part, suppliers, customers, accounts, stockVehicles, cashbox] = await Promise.all([
     prisma.part.findUnique({
       where: { id },
       include: {
@@ -41,7 +43,11 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
       orderBy: [{ createdAt: "desc" }],
       select: { id: true, brand: true, model: true, plate: true },
     }),
+    getCashboxState(),
   ]);
+  // Caixa aberto manda na data: o movimento pertence ao dia do caixa.
+  const cashboxDate =
+    cashbox.open && cashbox.session ? toDateInputValue(cashbox.session.workDate) : null;
 
   if (!part) notFound();
 
@@ -212,6 +218,7 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
                     id: v.id,
                     label: `${v.brand} ${v.model} · ${v.plate}`,
                   }))}
+                  cashboxDate={cashboxDate}
                 />
               </div>
             </Card>
@@ -227,6 +234,7 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
                   availableQuantity={part.quantity}
                   customers={customers}
                   accounts={accounts}
+                  cashboxDate={cashboxDate}
                 />
               </div>
             </Card>
