@@ -52,9 +52,15 @@ export async function saveCompanyAction(
     return { error: "Arquivo de logo inválido — envie uma imagem (PNG ou JPG)." };
   }
 
+  // Domínio público e chaves de API são do DONO DO SISTEMA: o administrador da
+  // loja não altera (o domínio depende do apontamento do servidor, e as chaves
+  // são contratadas e pagas pelo fornecedor). A regra vale no servidor — não
+  // basta a tela esconder os campos.
+  const podeChaves = user.role === "SUPER_ADMIN";
+
   // Domínio do site: valida e normaliza (aceita só o domínio; adiciona https://).
   const publicUrl = normalizePublicUrl(d.publicUrl);
-  if (d.publicUrl && d.publicUrl.trim() && !publicUrl) {
+  if (podeChaves && d.publicUrl && d.publicUrl.trim() && !publicUrl) {
     return { error: "Domínio do site inválido. Ex.: mvpveiculos.com.br" };
   }
 
@@ -68,23 +74,27 @@ export async function saveCompanyAction(
     address: d.address || null,
     city: d.city || null,
     uf: d.uf ? d.uf.toUpperCase() : null,
-    publicUrl,
+    ...(podeChaves ? { publicUrl } : {}),
     instagram: d.instagram?.trim() || null,
-    // Parecer IA: provedor/modelo sempre atualizam; a chave só muda quando uma
-    // nova é digitada (em branco = mantém) ou quando pedem para remover.
-    aiProvider: d.aiProvider === "OPENAI" ? "OPENAI" : "ANTHROPIC",
-    aiModel: d.aiModel?.trim() || null,
-    ...(d.aiApiKeyClear === "true"
-      ? { aiApiKey: null }
-      : d.aiApiKey && d.aiApiKey.trim()
-        ? { aiApiKey: d.aiApiKey.trim() }
-        : {}),
-    // Consulta por placa: mesma regra da chave da IA (em branco = mantém).
-    ...(d.plateApiTokenClear === "true"
-      ? { plateApiToken: null }
-      : d.plateApiToken && d.plateApiToken.trim()
-        ? { plateApiToken: d.plateApiToken.trim() }
-        : {}),
+    // Parecer IA e consulta por placa: só o Super Admin mexe. Provedor/modelo
+    // acompanham a chave (são a configuração do mesmo serviço). A chave só muda
+    // quando uma nova é digitada (em branco = mantém) ou quando pedem remoção.
+    ...(podeChaves
+      ? {
+          aiProvider: d.aiProvider === "OPENAI" ? "OPENAI" : "ANTHROPIC",
+          aiModel: d.aiModel?.trim() || null,
+          ...(d.aiApiKeyClear === "true"
+            ? { aiApiKey: null }
+            : d.aiApiKey && d.aiApiKey.trim()
+              ? { aiApiKey: d.aiApiKey.trim() }
+              : {}),
+          ...(d.plateApiTokenClear === "true"
+            ? { plateApiToken: null }
+            : d.plateApiToken && d.plateApiToken.trim()
+              ? { plateApiToken: d.plateApiToken.trim() }
+              : {}),
+        }
+      : {}),
     // string vazia = manter a logo atual; "remover" = apagar
     ...(d.logoDataUrl === "remover"
       ? { logoDataUrl: null }

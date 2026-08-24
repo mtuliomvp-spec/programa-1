@@ -44,7 +44,7 @@ export default async function ParametrosPage() {
       <Card>
         <CardHeader title="Dados da empresa" />
         <div className="p-5">
-          <CompanyForm company={companyForClient} />
+          <CompanyForm company={companyForClient} podeChaves={user.role === "SUPER_ADMIN"} />
         </div>
       </Card>
     </div>
