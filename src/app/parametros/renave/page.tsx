@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
@@ -65,7 +66,8 @@ export default async function ParametrosRenavePage() {
         title="Renave"
         description={`Escrituração eletrônica de entrada e saída de veículos (${RENAVE_NORMA})`}
         action={
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/parametros/renave/passo-a-passo">🧭 Passo a passo</LinkButton>
             <LinkButton href="/estoque/renave" variant="secondary">
               📒 Livro de entradas e saídas
             </LinkButton>
@@ -145,6 +147,14 @@ export default async function ParametrosRenavePage() {
           <li>
             <strong className="text-slate-900">5. Manter o livro conferível</strong> — a recusa de exibição, o
             atraso ou a falta de escrituração é infração gravíssima (art. 25).
+          </li>
+          <li className="pt-1">
+            <Link
+              href="/parametros/renave/passo-a-passo"
+              className="font-medium text-blue-700 hover:underline"
+            >
+              Ver o passo a passo completo (com prazos, o que perguntar à integradora e a rotina nova) →
+            </Link>
           </li>
         </ul>
       </Card>
