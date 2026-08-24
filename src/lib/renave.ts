@@ -23,6 +23,62 @@ export const RENAVE_PRAZO_PADRAO = new Date("2026-09-28T12:00:00.000Z");
 
 export const RENAVE_NORMA = "Resolução Contran nº 1.026/2026";
 
+// ---------------------------------------------------------------------------
+// DETRAN do estado
+// ---------------------------------------------------------------------------
+
+/**
+ * O Renave de usados só funciona onde o DETRAN do estado aderiu. O prazo da
+ * resolução vale para a loja, mas a operação depende do estado: enquanto ele
+ * não opera, não há registro a fazer, não faz sentido comprar crédito de
+ * integradora, e a escrituração continua pelo livro de modelo aprovado pelo
+ * próprio DETRAN (art. 4º, V).
+ */
+export type DetranStatus = "NAO_ADERIDO" | "HOMOLOGACAO" | "ADERIDO";
+
+export const DETRAN_STATUS_VALUES: DetranStatus[] = ["NAO_ADERIDO", "HOMOLOGACAO", "ADERIDO"];
+
+export const detranStatusLabel: Record<DetranStatus, string> = {
+  NAO_ADERIDO: "Não aderido — não opera o Renave de usados",
+  HOMOLOGACAO: "Em homologação — ainda não liberado",
+  ADERIDO: "Aderido — operando o Renave de usados",
+};
+
+export const detranStatusTone: Record<DetranStatus, "default" | "info" | "success" | "warning" | "danger"> = {
+  NAO_ADERIDO: "danger",
+  HOMOLOGACAO: "warning",
+  ADERIDO: "success",
+};
+
+/** Normaliza o que veio do banco (texto livre) para um status conhecido. */
+export function detranStatusOf(valor: string | null | undefined): DetranStatus | null {
+  return valor && (DETRAN_STATUS_VALUES as string[]).includes(valor) ? (valor as DetranStatus) : null;
+}
+
+/** O estado opera hoje? Sem informação, assume que sim (não inventa bloqueio). */
+export function detranOperando(valor: string | null | undefined): boolean {
+  const s = detranStatusOf(valor);
+  return s === null || s === "ADERIDO";
+}
+
+/**
+ * Aviso do estado que ainda não opera. Diz o que fazer no lugar — é a diferença
+ * entre "está tudo parado" e "a loja está protegida enquanto espera".
+ */
+export function avisoDetranParado(uf: string | null | undefined, status: DetranStatus): string {
+  const onde = uf ? `do ${uf}` : "do seu estado";
+  const situacao =
+    status === "HOMOLOGACAO"
+      ? "está em homologação e ainda não liberou"
+      : "ainda não aderiu ao Renave para veículos usados";
+  return (
+    `O DETRAN ${onde} ${situacao}. Enquanto isso não há registro eletrônico a fazer: ` +
+    `a escrituração continua pelo livro de movimento de entrada e saída, com modelo aprovado pelo ` +
+    `próprio DETRAN (art. 4º, V). Não compre crédito de integradora para operar aqui antes da adesão — ` +
+    `e protocole no DETRAN uma consulta sobre a previsão e sobre como escriturar até lá, guardando o protocolo.`
+  );
+}
+
 export const situacaoLabel: Record<RenaveSituacao, string> = {
   SEM_REGISTRO: "Sem registro no Renave",
   ENTRADA_REGISTRADA: "Entrada registrada (veículo em estoque)",

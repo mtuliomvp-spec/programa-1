@@ -21,6 +21,8 @@ import {
   RENAVE_NORMA,
   RENAVE_PRAZO_PADRAO,
   chaveNfeValida,
+  detranStatusLabel,
+  detranStatusOf,
   diasParaAtpvConsignacao,
   pendenciasRenave,
   prazoTexto,
@@ -53,6 +55,7 @@ export default async function RenavePage({
 
   const company = await getCompany();
   const prazo = company.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO;
+  const detran = detranStatusOf(company.detranRenaveStatus);
 
   const vehicles = await prisma.vehicle.findMany({
     where: {
@@ -90,6 +93,23 @@ export default async function RenavePage({
           </div>
         }
       />
+
+      {detran && detran !== "ADERIDO" ? (
+        <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            🛑 O DETRAN {company.uf ? `do ${company.uf}` : "do seu estado"} ainda não opera o Renave de usados
+            — {detranStatusLabel[detran].toLowerCase()}
+          </p>
+          <p className="text-xs text-rose-800">
+            Não há registro eletrônico a fazer por enquanto. Este livro continua valendo como a escrituração
+            de conferência da loja, e os dados preenchidos aqui adiantam o dia em que o estado aderir.{" "}
+            <Link href="/parametros/renave/passo-a-passo" className="font-medium underline">
+              Ver o que fazer enquanto isso
+            </Link>
+            .
+          </p>
+        </div>
+      ) : null}
 
       <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 print:hidden">
         <p className="text-sm font-semibold text-blue-900">Implantação em andamento — nada está bloqueado</p>

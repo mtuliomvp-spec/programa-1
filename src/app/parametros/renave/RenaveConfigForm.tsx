@@ -2,6 +2,7 @@
 
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { DETRAN_STATUS_VALUES, detranStatusLabel } from "@/lib/renave";
 import { saveRenaveConfigAction, type RenaveConfigState } from "./actions";
 
 export type RenaveConfig = {
@@ -11,6 +12,9 @@ export type RenaveConfig = {
   renaveIntegradoraStatus: string | null;
   renaveCnae: string | null;
   renaveObservacoes: string | null;
+  detranRenaveStatus: string | null;
+  detranRenaveCheckedAt: string | null;
+  detranProtocolo: string | null;
   eCnpjValidUntil: string | null;
   renaveImplantacao: boolean;
   renaveObrigatorioEm: string | null;
@@ -22,6 +26,7 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
   const [state, formAction, pending] = useActionState(saveRenaveConfigAction, {} as RenaveConfigState);
   const [aderido, setAderido] = useState(config.renaveAderido);
   const [integradoraStatus, setIntegradoraStatus] = useState(config.renaveIntegradoraStatus || "");
+  const [detranStatus, setDetranStatus] = useState(config.detranRenaveStatus || "");
   const [implantacao, setImplantacao] = useState(config.renaveImplantacao);
 
   return (
@@ -79,6 +84,45 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
             <Input type="date" name="eCnpjValidUntil" defaultValue={dia(config.eCnpjValidUntil)} />
             <span className="mt-1 block text-xs text-slate-500">
               Certificado vencido bloqueia o acesso ao Renave (art. 30).
+            </span>
+          </Field>
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-4">
+        <legend className="text-sm font-semibold text-slate-900">DETRAN do seu estado</legend>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Situação no Renave de usados">
+            <Select
+              name="detranRenaveStatus"
+              value={detranStatus}
+              onChange={(e) => setDetranStatus(e.target.value)}
+            >
+              <option value="">— não conferida —</option>
+              {DETRAN_STATUS_VALUES.map((v) => (
+                <option key={v} value={v}>
+                  {detranStatusLabel[v]}
+                </option>
+              ))}
+            </Select>
+            <span className="mt-1 block text-xs text-slate-500">
+              Confira no portal do Renave (gov.br), no mapa dos estados que já operam usados.
+            </span>
+          </Field>
+          <Field label="Conferido em">
+            <Input type="date" name="detranRenaveCheckedAt" defaultValue={dia(config.detranRenaveCheckedAt)} />
+            <span className="mt-1 block text-xs text-slate-500">
+              O mapa muda com frequência — vale reconferir a cada duas ou três semanas.
+            </span>
+          </Field>
+          <Field label="Protocolo da consulta ao DETRAN">
+            <Input
+              name="detranProtocolo"
+              defaultValue={config.detranProtocolo || ""}
+              placeholder="Nº do protocolo / processo"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              A prova de que a loja perguntou sobre a previsão e sobre como escriturar até lá.
             </span>
           </Field>
         </div>
