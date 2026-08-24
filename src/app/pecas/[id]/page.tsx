@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -8,6 +9,7 @@ import { getSelectableAccounts } from "@/lib/accounts";
 import { deletePartAction } from "../actions";
 import AddStockForm from "./AddStockForm";
 import SellPartForm from "./SellPartForm";
+import ApplyToVehicleForm from "./ApplyToVehicleForm";
 
 export const dynamic = "force-dynamic";
 
@@ -16,28 +18,43 @@ const payableStatusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atra
 
 export default async function PecaDetalhePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [part, suppliers, customers, accounts] = await Promise.all([
+  const [part, suppliers, customers, accounts, stockVehicles] = await Promise.all([
     prisma.part.findUnique({
       where: { id },
       include: {
         supplier: true,
         payables: { orderBy: { createdAt: "desc" } },
         partSales: { orderBy: { saleDate: "desc" }, include: { customer: true } },
+        vehicleCosts: {
+          orderBy: { date: "desc" },
+          include: { vehicle: { select: { id: true, brand: true, model: true, plate: true, status: true } } },
+        },
       },
     }),
     prisma.supplier.findMany({ orderBy: { name: "asc" } }),
     prisma.customer.findMany({ orderBy: { name: "asc" } }),
     getSelectableAccounts(),
+    // Só carro que ainda está no estoque: peça aplicada em carro vendido seria
+    // custo pós-venda sem pagamento, e a conta do farol não fecharia.
+    prisma.vehicle.findMany({
+      where: { status: { not: "VENDIDO" } },
+      orderBy: [{ createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true },
+    }),
   ]);
 
   if (!part) notFound();
 
-  const [canEditar, canRepor, canVender, canExcluir] = await Promise.all([
+  const [canEditar, canRepor, canVender, canExcluir, canCustoVeiculo] = await Promise.all([
     userCan("pecas", "editar"),
     userCan("pecas", "repor"),
     userCan("pecas", "vender"),
     userCan("pecas", "excluir"),
+    userCan("estoque", "custos"),
   ]);
+  // Aplicar peça no carro mexe no almoxarifado e no custo do veículo: quem pode
+  // um dos dois consegue fazer.
+  const canAplicar = canVender || canCustoVeiculo;
 
   return (
     <div className="mx-auto max-w-5xl">
@@ -94,6 +111,47 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
           </Card>
 
           <Card>
+            <CardHeader
+              title="Aplicações em veículos"
+              description="Peças que saíram do almoxarifado e viraram custo de um carro"
+            />
+            {part.vehicleCosts.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-500">Nenhuma aplicação registrada.</p>
+            ) : (
+              <Table>
+                <Thead>
+                  <Tr>
+                    <Th>Data</Th>
+                    <Th>Veículo</Th>
+                    <Th>Qtd.</Th>
+                    <Th>Custo lançado</Th>
+                  </Tr>
+                </Thead>
+                <tbody>
+                  {part.vehicleCosts.map((c) => (
+                    <Tr key={c.id}>
+                      <Td>{formatDate(c.date)}</Td>
+                      <Td>
+                        <Link
+                          href={`/estoque/${c.vehicle.id}`}
+                          className="font-medium text-blue-700 hover:underline"
+                        >
+                          {c.vehicle.brand} {c.vehicle.model} · {c.vehicle.plate}
+                        </Link>
+                        {c.vehicle.status === "VENDIDO" ? (
+                          <span className="ml-1 text-xs text-slate-400">(vendido)</span>
+                        ) : null}
+                      </Td>
+                      <Td>{c.partQuantity ?? "-"} un.</Td>
+                      <Td>{formatCurrency(c.amount)}</Td>
+                    </Tr>
+                  ))}
+                </tbody>
+              </Table>
+            )}
+          </Card>
+
+          <Card>
             <CardHeader title="Contas a pagar vinculadas" />
             {part.payables.length === 0 ? (
               <p className="px-5 py-4 text-sm text-slate-500">Nenhuma conta a pagar vinculada.</p>
@@ -134,6 +192,26 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
                   currentCostPrice={part.costPrice}
                   supplierId={part.supplierId}
                   suppliers={suppliers}
+                />
+              </div>
+            </Card>
+          ) : null}
+
+          {canAplicar ? (
+            <Card>
+              <CardHeader
+                title="Aplicar em um veículo"
+                description="Sai do almoxarifado e vira custo do carro (sem conta a pagar)"
+              />
+              <div className="p-5">
+                <ApplyToVehicleForm
+                  partId={part.id}
+                  availableQuantity={part.quantity}
+                  costPrice={part.costPrice}
+                  vehicles={stockVehicles.map((v) => ({
+                    id: v.id,
+                    label: `${v.brand} ${v.model} · ${v.plate}`,
+                  }))}
                 />
               </div>
             </Card>
