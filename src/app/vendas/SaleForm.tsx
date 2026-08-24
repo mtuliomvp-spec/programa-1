@@ -42,6 +42,8 @@ type Vehicle = {
   supplier?: { name: string } | null;
   // Marca opcional exibida no seletor quando o veículo já tem pré-venda aberta.
   preSaleTag?: string;
+  /** Renave: o que falta para escriturar a saída deste veículo (só aviso). */
+  renavePendencias?: string[];
 };
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
@@ -147,6 +149,7 @@ export default function SaleForm({
   currentUserId,
   initial,
   preSaleId,
+  renavePrazo,
 }: {
   vehicles: Vehicle[];
   customers: Customer[];
@@ -159,6 +162,8 @@ export default function SaleForm({
   currentUserId?: string;
   initial?: SaleFormInitial;
   preSaleId?: string;
+  /** Data em que a obrigatoriedade do Renave entra em vigor (texto do aviso). */
+  renavePrazo?: string;
 }) {
   const [state, formAction, pending] = useActionState(createPreSaleAction, initialState);
   const formRef = useRef<HTMLFormElement>(null);
@@ -429,6 +434,27 @@ export default function SaleForm({
             ))}
           </Select>
         </Field>
+        {/* Renave: aviso, nunca trava. A venda continua sendo registrada como
+            hoje — o que muda a partir do prazo é que a saída do estoque também
+            precisa do registro eletrônico. */}
+        {selectedVehicle?.renavePendencias?.length ? (
+          <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:col-span-2">
+            <p className="text-sm font-medium text-amber-900">
+              ⚠️ Renave: faltam dados da escrituração deste veículo
+            </p>
+            <ul className="mt-1 space-y-0.5 text-xs text-amber-800">
+              {selectedVehicle.renavePendencias.map((p) => (
+                <li key={p}>• {p}</li>
+              ))}
+            </ul>
+            <p className="mt-1.5 text-xs text-amber-800">
+              A venda pode ser registrada normalmente. Quando a obrigatoriedade do Renave entrar em vigor
+              {renavePrazo ? `, em ${renavePrazo},` : ""} esta rotina não poderá ser concluída desta forma —
+              a saída do estoque também terá de ser registrada eletronicamente. Os dados ficam na{" "}
+              <strong>ficha do veículo → Renave</strong>.
+            </p>
+          </div>
+        ) : null}
         {missingDocs.length ? (
           <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 sm:col-span-2">
             <p className="text-sm font-medium text-amber-900">

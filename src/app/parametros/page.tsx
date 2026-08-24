@@ -36,9 +36,14 @@ export default async function ParametrosPage() {
         title="Parâmetros da empresa"
         description="Dados da MVP Veículos usados nos documentos impressos (ordem de compra, contrato e venda)"
         action={
-          <LinkButton href="/parametros/financiamento" variant="secondary">
-            💳 Financiamento na vitrine
-          </LinkButton>
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/parametros/renave" variant="secondary">
+              🚗 Renave
+            </LinkButton>
+            <LinkButton href="/parametros/financiamento" variant="secondary">
+              💳 Financiamento na vitrine
+            </LinkButton>
+          </div>
         }
       />
       <Card>

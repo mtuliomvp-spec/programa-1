@@ -4,6 +4,8 @@ import { toDateInputValue } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import IntermediationForm, { type IntermediationInitial } from "../IntermediationForm";
+import { getCompany } from "@/lib/company";
+import { RENAVE_PRAZO_PADRAO, avisoIntermediacao, avisoApontamentoLoja } from "@/lib/renave";
 
 export const dynamic = "force-dynamic";
 
@@ -78,12 +80,29 @@ export default async function NovoFinanciamentoTerceirosPage({
     prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
 
+  const company = await getCompany();
+  const renavePrazo = company.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO;
+
   return (
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title={editingId ? "Editar pré-venda (financiamento de terceiros)" : "Financiamento de terceiros"}
         description="A loja apenas intermedeia o financiamento de um veículo de terceiro. O carro não entra no estoque."
       />
+
+      {/* Renave: é a rotina mais afetada pela resolução — o carro de terceiro
+          fica fora do estoque, e é justamente isso que passa a exigir registro
+          eletrônico prévio. Aviso, sem travar nada. */}
+      <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+        <p className="text-sm font-semibold text-amber-900">⚠️ Renave — atenção nesta rotina</p>
+        <p className="mt-0.5 text-xs text-amber-800">{avisoIntermediacao(renavePrazo)}</p>
+        <p className="mt-1 text-xs text-amber-800">{avisoApontamentoLoja(renavePrazo)}</p>
+        <p className="mt-1 text-xs text-amber-800">
+          Caminhos possíveis a partir daí: registrar o veículo como <strong>consignado</strong> (contrato
+          eletrônico no Renave) ou fazer a <strong>entrada em estoque</strong> antes da operação. Vale
+          confirmar com o contador e com a financeira antes do prazo.
+        </p>
+      </div>
       <Card>
         <CardHeader title="Dados da operação" />
         <div className="p-5">

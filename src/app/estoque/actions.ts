@@ -1718,3 +1718,163 @@ export async function updateAdSettingsAction(
   revalidatePath("/vitrine");
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// Renave (Resolução Contran nº 1.026/2026)
+// ---------------------------------------------------------------------------
+
+const renaveSchema = z.object({
+  vehicleId: z.string().min(1),
+  // Entrada
+  renaveEntradaTitulo: z.string().optional(),
+  renaveEntradaProtocolo: z.string().optional(),
+  renaveEntradaEm: z.string().optional(),
+  entryNfeKey: z.string().optional(),
+  entryNfeNumber: z.string().optional(),
+  entryNfeSerie: z.string().optional(),
+  entryNfeIssuedAt: z.string().optional(),
+  renavePreviaTipo: z.string().optional(),
+  renavePreviaNumero: z.string().optional(),
+  renavePreviaEm: z.string().optional(),
+  renaveAssinaturaTipo: z.string().optional(),
+  renaveAssinaturaEm: z.string().optional(),
+  // Consignação
+  consignContractId: z.string().optional(),
+  consignContractAt: z.string().optional(),
+  // Saída
+  renaveSaidaTitulo: z.string().optional(),
+  renaveSaidaProtocolo: z.string().optional(),
+  renaveSaidaEm: z.string().optional(),
+  exitNfeKey: z.string().optional(),
+  exitNfeNumber: z.string().optional(),
+  exitNfeSerie: z.string().optional(),
+  exitNfeIssuedAt: z.string().optional(),
+  // Documento e observações
+  crvNumber: z.string().optional(),
+  crvSecurityCode: z.string().optional(),
+  renaveVinculoMotivo: z.string().optional(),
+  renaveNotes: z.string().optional(),
+});
+
+export type RenaveFormState = { error?: string; success?: string };
+
+/**
+ * Grava os dados do Renave na ficha do veículo. Nada aqui fala com o Renave —
+ * o registro é feito pela integradora contratada; o que fica no sistema é o
+ * conjunto de dados que o registro exige e o protocolo do que já foi feito,
+ * para a ficha bater com o livro eletrônico numa fiscalização (art. 5º, V).
+ *
+ * A SITUAÇÃO é derivada do que foi preenchido, para não depender de o operador
+ * lembrar de mudá-la: saída registrada > vínculo > consignação em transferência
+ * > entrada registrada > sem registro.
+ */
+export async function saveVehicleRenaveAction(
+  _prev: RenaveFormState,
+  formData: FormData,
+): Promise<RenaveFormState> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const parsed = renaveSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: d.vehicleId },
+    select: { id: true, consigned: true },
+  });
+  if (!vehicle) return { error: "Veículo não encontrado." };
+
+  const { chaveNfeValida, dadosDaChaveNfe, digitos } = await import("@/lib/renave");
+  const texto = (v?: string) => (v || "").trim() || null;
+  // Campo de data em branco = apagar a data (não é "hoje").
+  const data = (v?: string) => (v && v.trim() ? parseDateInput(v.trim()) : null);
+  const opcao = <T extends string>(v: string | undefined, validos: readonly T[]): T | null =>
+    v && (validos as readonly string[]).includes(v) ? (v as T) : null;
+
+  // A chave é o dado que amarra nota e registro: aceita só completa (44
+  // dígitos) e dela mesma saem série e número, para não divergirem da nota.
+  const entryKey = digitos(d.entryNfeKey);
+  if (entryKey && !chaveNfeValida(entryKey)) {
+    return { error: "A chave da NF-e de entrada precisa ter 44 dígitos." };
+  }
+  const exitKey = digitos(d.exitNfeKey);
+  if (exitKey && !chaveNfeValida(exitKey)) {
+    return { error: "A chave da NF-e de saída precisa ter 44 dígitos." };
+  }
+  const entryFromKey = dadosDaChaveNfe(entryKey);
+  const exitFromKey = dadosDaChaveNfe(exitKey);
+
+  const titulosEntrada = [
+    "COMPRA",
+    "CONSIGNACAO",
+    "TRANSFERENCIA_ENTRE_ESTABELECIMENTOS",
+    "ENTRADA_VEICULO_PROPRIO",
+    "ENTRADA_VEICULO_RETOMADO",
+    "EXECUCAO_GARANTIA",
+  ] as const;
+  const titulosSaida = [
+    "VENDA",
+    "TRANSFERENCIA_ENTRE_ESTABELECIMENTOS",
+    "CONSIGNACAO",
+    "EXECUCAO_GARANTIA",
+  ] as const;
+
+  const entradaProtocolo = texto(d.renaveEntradaProtocolo);
+  const saidaProtocolo = texto(d.renaveSaidaProtocolo);
+  const vinculoMotivo = texto(d.renaveVinculoMotivo);
+  const contratoConsignacao = texto(d.consignContractId);
+
+  const situacao = saidaProtocolo
+    ? "SAIDA_REGISTRADA"
+    : vinculoMotivo
+      ? "ESTOQUE_VINCULADO"
+      : vehicle.consigned && contratoConsignacao
+        ? "CONSIGNADO_EM_TRANSFERENCIA"
+        : entradaProtocolo
+          ? "ENTRADA_REGISTRADA"
+          : "SEM_REGISTRO";
+
+  await prisma.vehicle.update({
+    where: { id: vehicle.id },
+    data: {
+      renaveSituacao: situacao,
+      renaveEntradaTitulo: opcao(d.renaveEntradaTitulo, titulosEntrada),
+      renaveEntradaProtocolo: entradaProtocolo,
+      renaveEntradaEm: data(d.renaveEntradaEm),
+      entryNfeKey: entryKey || null,
+      entryNfeNumber: entryFromKey?.numero ?? texto(d.entryNfeNumber),
+      entryNfeSerie: entryFromKey?.serie ?? texto(d.entryNfeSerie),
+      entryNfeIssuedAt: data(d.entryNfeIssuedAt),
+      renavePreviaTipo: opcao(d.renavePreviaTipo, ["IDENTIFICACAO_PREVIA", "VISTORIA"] as const),
+      renavePreviaNumero: texto(d.renavePreviaNumero),
+      renavePreviaEm: data(d.renavePreviaEm),
+      renaveAssinaturaTipo: opcao(d.renaveAssinaturaTipo, [
+        "RECONHECIMENTO_FIRMA",
+        "ELETRONICA_AVANCADA",
+        "ELETRONICA_QUALIFICADA",
+      ] as const),
+      renaveAssinaturaEm: data(d.renaveAssinaturaEm),
+      consignContractId: contratoConsignacao,
+      consignContractAt: data(d.consignContractAt),
+      renaveSaidaTitulo: opcao(d.renaveSaidaTitulo, titulosSaida),
+      renaveSaidaProtocolo: saidaProtocolo,
+      renaveSaidaEm: data(d.renaveSaidaEm),
+      exitNfeKey: exitKey || null,
+      exitNfeNumber: exitFromKey?.numero ?? texto(d.exitNfeNumber),
+      exitNfeSerie: exitFromKey?.serie ?? texto(d.exitNfeSerie),
+      exitNfeIssuedAt: data(d.exitNfeIssuedAt),
+      crvNumber: texto(d.crvNumber),
+      crvSecurityCode: texto(d.crvSecurityCode),
+      renaveVinculoMotivo: vinculoMotivo,
+      renaveNotes: texto(d.renaveNotes),
+    },
+  });
+
+  revalidatePath(`/estoque/${vehicle.id}`);
+  revalidatePath("/estoque");
+  revalidatePath("/estoque/renave");
+  return { success: "Dados do Renave salvos." };
+}

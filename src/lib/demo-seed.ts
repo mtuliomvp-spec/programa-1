@@ -377,6 +377,57 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
   console.log("Reservando um veículo...");
   await prisma.vehicle.update({ where: { id: vCorolla.id }, data: { status: "RESERVADO" } });
 
+  // Renave: quase todo o estoque já escriturado (é assim que a loja adequada
+  // fica), e um carro de propósito sem os dados, para a tela de pendências e os
+  // avisos de implantação aparecerem na demonstração.
+  console.log("Escriturando os veículos no Renave (demonstração)...");
+  // 44 dígitos no layout da NF-e: cUF(2) AAMM(4) CNPJ(14) modelo(2) série(3)
+  // número(9) tpEmis(1) código(8) DV(1) — é dele que a tela lê série e número.
+  const chaveNfeDemo = (numero: number) =>
+    `3126061234567800019955001${String(numero).padStart(9, "0")}1${String(numero).padStart(8, "0")}0`;
+  const escriturados = [vGol, vOnix, vHb20, vCorolla, vRenegade];
+  for (const [i, v] of escriturados.entries()) {
+    // Vendido no período: a saída também está escriturada (é o par natural da
+    // entrada — o livro só fecha com as duas pontas).
+    const atual = await prisma.vehicle.findUnique({
+      where: { id: v.id },
+      select: { status: true, sale: { select: { saleDate: true } } },
+    });
+    const vendido = atual?.status === "VENDIDO";
+    const saida = atual?.sale?.saleDate ?? null;
+    await prisma.vehicle.update({
+      where: { id: v.id },
+      data: {
+        ...(vendido
+          ? {
+              renaveSituacao: "SAIDA_REGISTRADA" as const,
+              renaveSaidaTitulo: "VENDA" as const,
+              renaveSaidaProtocolo: `RNV-SAI-${String(3001 + i)}`,
+              renaveSaidaEm: saida,
+              exitNfeKey: chaveNfeDemo(3001 + i),
+              exitNfeNumber: String(3001 + i),
+              exitNfeSerie: "1",
+              exitNfeIssuedAt: saida,
+            }
+          : { renaveSituacao: "ENTRADA_REGISTRADA" as const }),
+        renaveEntradaTitulo: "COMPRA",
+        renaveEntradaProtocolo: `RNV-ENT-${String(1001 + i)}`,
+        renaveEntradaEm: v.entryDate,
+        entryNfeKey: chaveNfeDemo(1001 + i),
+        entryNfeNumber: String(1001 + i),
+        entryNfeSerie: "1",
+        entryNfeIssuedAt: v.entryDate,
+        renavePreviaTipo: "IDENTIFICACAO_PREVIA",
+        renavePreviaNumero: `IP-${String(2001 + i)}`,
+        renavePreviaEm: v.entryDate,
+        renaveAssinaturaTipo: "ELETRONICA_QUALIFICADA",
+        renaveAssinaturaEm: v.entryDate,
+        crvNumber: `CRV${String(900100 + i)}`,
+        crvSecurityCode: String(778899 + i),
+      },
+    });
+  }
+
   console.log("Publicando os veículos em estoque na vitrine...");
   await prisma.vehicle.updateMany({
     where: { id: { in: [vStrada.id, vRenegade.id] } },
