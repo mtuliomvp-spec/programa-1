@@ -15,6 +15,7 @@ import {
   DemoteButton,
   GateForm,
   MaintenanceButton,
+  MyAccountForm,
   NewSuperAdminForm,
   PaymentBlockForm,
   PromoteUserForm,
@@ -108,6 +109,7 @@ export default async function SuperPage() {
     listSuperAdmins(),
     listPromotableUsers(),
   ]);
+  const euNaLista = supers.find((s) => s.id === logado?.id);
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -161,6 +163,27 @@ export default async function SuperPage() {
           <MaintenanceButton locked={lock.locked} />
         </div>
       </Card>
+
+      {logado ? (
+        <Card className="mt-4">
+          <CardHeader
+            title="Minha conta"
+            description="Seus dados de acesso — a conta do dono do sistema não aparece na tela de Usuários."
+            action={<Badge tone="info">Super Admin</Badge>}
+          />
+          <div className="space-y-4 p-5">
+            <p className="text-xs text-slate-500">
+              Entrando agora como <strong>{logado.name}</strong> ({logado.email})
+              {euNaLista?.createdAt ? ` · Super Admin desde ${formatDate(euNaLista.createdAt)}` : ""}
+            </p>
+            <MyAccountForm conta={{ name: logado.name, email: logado.email }} />
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              Este perfil tem <strong>acesso total</strong> ao sistema: não usa lista de permissões nem
+              perfil de acesso, e a senha mestra do administrador da loja não abre a sua conta.
+            </p>
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="mt-4">
         <CardHeader title="Super Admins" description="Contas que enxergam esta área." />
