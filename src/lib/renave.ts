@@ -163,6 +163,27 @@ export function dadosDaChaveNfe(chave: string | null | undefined): { serie: stri
   };
 }
 
+/**
+ * Dígito verificador da chave da NF-e: módulo 11 sobre os 43 primeiros dígitos,
+ * com pesos 2..9 da direita para a esquerda.
+ */
+export function dvChaveNfe(primeiros43: string): number {
+  let peso = 2;
+  let soma = 0;
+  for (let i = primeiros43.length - 1; i >= 0; i--) {
+    soma += Number(primeiros43[i]) * peso;
+    peso = peso === 9 ? 2 : peso + 1;
+  }
+  const resto = soma % 11;
+  return resto === 0 || resto === 1 ? 0 : 11 - resto;
+}
+
+/** A chave confere com o próprio dígito verificador? */
+export function chaveNfeDvOk(chave: string): boolean {
+  const d = chave.replace(/\D/g, "");
+  return d.length === 44 && String(dvChaveNfe(d.slice(0, 43))) === d[43];
+}
+
 /** Formata a chave em blocos de 4, como sai no DANFE. */
 export function formatChaveNfe(chave: string | null | undefined): string {
   const d = digitos(chave);
