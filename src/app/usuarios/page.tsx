@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { hasAnySuperAdmin } from "@/lib/super-admin";
 import { getSessionUser } from "@/lib/auth";
+import { ensureWaitingProfile } from "@/lib/waiting-profile";
 import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewUserForm from "./NewUserForm";
@@ -40,6 +41,33 @@ function ProfileTag({
   );
 }
 
+/**
+ * Perfil do usuário na lista. Operador sem nenhuma permissão está "em espera":
+ * entra no sistema mas não vê tela nenhuma, então o selo precisa gritar isso —
+ * é o gestor quem tira a pessoa dali, atribuindo o perfil de acesso.
+ */
+function PerfilBadges({
+  role,
+  profile,
+  permissions,
+}: {
+  role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN";
+  profile: { name: string; permissions: string[] } | null;
+  permissions: string[];
+}) {
+  if (role !== "ADMIN" && permissions.length === 0) {
+    return <Badge tone="warning">⏳ {profile?.name ?? "Operador"} — sem permissões</Badge>;
+  }
+  return (
+    <>
+      <Badge tone={role === "ADMIN" ? "info" : "default"}>
+        {role === "ADMIN" ? "Administrador" : profile?.name ?? "Operador"}
+      </Badge>
+      <ProfileTag role={role} profile={profile} permissions={permissions} />
+    </>
+  );
+}
+
 function bankOf(u: UserBank): UserBank {
   return {
     document: u.document,
@@ -60,6 +88,10 @@ export default async function UsuariosPage() {
   // O e-mail é o login da pessoa: trocá-lo é do dono do sistema, não do
   // administrador da loja.
   const podeTrocarEmail = sessionUser.role === "SUPER_ADMIN";
+
+  // Garante o perfil de espera antes de montar o seletor "Perfil": assim o
+  // gestor também consegue devolver alguém para a espera quando quiser.
+  await ensureWaitingProfile();
 
   const [users, profiles, beneficiaries, accessCodes] = await Promise.all([
     prisma.user.findMany({
@@ -90,6 +122,11 @@ export default async function UsuariosPage() {
     .map((c) => ({ id: c.id, code: c.code, createdBy: c.createdBy, createdAt: fmtDateTime(c.createdAt), usedByEmail: c.usedByEmail, usedAt: c.usedAt ? fmtDateTime(c.usedAt) : null }));
   const pendingUsers = users.filter((u) => u.pending);
   const regularUsers = users.filter((u) => !u.pending);
+  // Aprovado, porém ainda sem nenhuma permissão (perfil "Em espera"): entra no
+  // sistema, mas não enxerga tela nenhuma até o gestor definir o perfil.
+  const emEspera = regularUsers.filter(
+    (u) => u.active && u.role === "OPERADOR" && u.permissions.length === 0,
+  );
 
   // Instalação recém-montada: enquanto não existe o perfil do dono do sistema,
   // o atalho para cadastrá-lo aparece aqui. Criado o Super Admin, some para
@@ -119,6 +156,18 @@ export default async function UsuariosPage() {
         </div>
       ) : null}
 
+      {emEspera.length > 0 ? (
+        <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3">
+          <p className="text-sm font-semibold text-amber-900">
+            ⏳ {emEspera.length} usuário(s) em espera, sem permissão nenhuma
+          </p>
+          <p className="text-xs text-amber-800">
+            {emEspera.map((u) => u.name).join(", ")} — já entram no sistema, mas não veem nenhuma tela.
+            Use o botão <strong>Perfil</strong> na linha de cada um para atribuir o acesso.
+          </p>
+        </div>
+      ) : null}
+
       <Card className="mb-4">
         <CardHeader
           title="🔑 Códigos de primeiro acesso"
@@ -131,7 +180,7 @@ export default async function UsuariosPage() {
         <Card className="mb-4 ring-2 ring-amber-300">
           <CardHeader
             title={`⏳ Aguardando liberação (${pendingUsers.length})`}
-            description="Pessoas que se cadastraram sozinhas e só entram depois que você aprovar"
+            description="Pessoas que se cadastraram sozinhas e só entram depois que você aprovar — ao aprovar, elas ficam em espera, sem permissão nenhuma, até você definir o perfil de acesso"
           />
           <div className="divide-y divide-slate-100">
             {pendingUsers.map((u) => (
@@ -186,10 +235,7 @@ export default async function UsuariosPage() {
                     <p className="truncate text-xs text-slate-500">{u.email}</p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                      {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
-                    </Badge>
-                    <ProfileTag role={u.role} profile={u.profile} permissions={u.permissions} />
+                    <PerfilBadges role={u.role} profile={u.profile} permissions={u.permissions} />
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-1.5">
@@ -246,10 +292,7 @@ export default async function UsuariosPage() {
                     <Td>{u.email}</Td>
                     <Td>
                       <div className="flex flex-wrap items-center gap-1.5">
-                        <Badge tone={u.role === "ADMIN" ? "info" : "default"}>
-                          {u.role === "ADMIN" ? "Administrador" : u.profile?.name ?? "Operador"}
-                        </Badge>
-                        <ProfileTag role={u.role} profile={u.profile} permissions={u.permissions} />
+                        <PerfilBadges role={u.role} profile={u.profile} permissions={u.permissions} />
                       </div>
                     </Td>
                     <Td>{formatDate(u.createdAt)}</Td>

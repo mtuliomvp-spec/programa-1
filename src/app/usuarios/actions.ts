@@ -4,7 +4,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser, hashPassword } from "@/lib/auth";
-import { DEFAULT_OPERATOR_PERMISSIONS } from "@/lib/permissions";
+import { ensureWaitingProfile } from "@/lib/waiting-profile";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
 import { syncUserSupplier } from "@/lib/user-supplier-link";
@@ -286,29 +286,38 @@ export async function updatePermissionsAction(
 export async function approveUserAction(id: string) {
   await requireAdmin();
   await assertAlvoVisivel(id);
-  // Cadastro novo nasce sem permissão nenhuma; aprovar sem liberar nada
-  // deixaria o usuário preso numa tela de aviso. Concede o padrão de operador
-  // (só visualizar) — o administrador ajusta depois na tela de permissões.
-  const current = await prisma.user.findUnique({ where: { id }, select: { permissions: true } });
+  // Aprovar diz só que a pessoa é da casa — não diz o que ela pode fazer.
+  // Antes, a aprovação já entregava "visualizar" em todos os módulos; agora o
+  // aprovado cai no perfil "Em espera" (sem nenhuma permissão) e fica sinalizado
+  // na lista até o gestor atribuir o perfil de verdade.
+  const current = await prisma.user.findUnique({
+    where: { id },
+    select: { role: true, profileId: true },
+  });
+  const paraEspera = current?.role === "OPERADOR" && !current.profileId;
+  const espera = paraEspera ? await ensureWaitingProfile() : null;
   const user = await prisma.user.update({
     where: { id },
     data: {
       pending: false,
       active: true,
-      ...(current && current.permissions.length === 0
-        ? { permissions: DEFAULT_OPERATOR_PERMISSIONS }
-        : {}),
+      ...(espera ? { profileId: espera.id, permissions: espera.permissions } : {}),
     },
   });
   await syncUserSupplier(user.id);
   if (isEmailConfigured()) {
     // aviso de liberação — falha de envio não impede a aprovação
+    // Quem cai em espera ainda não vê tela nenhuma: o aviso precisa dizer isso,
+    // senão a pessoa entra, encontra o cadeado e acha que o sistema quebrou.
+    const semPermissao = user.permissions.length === 0;
     await sendEmail({
       to: user.email,
       subject: "Seu acesso foi liberado - MVP Veículos",
       html: emailLayout(
         "Acesso liberado! 🎉",
-        `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado. Você já pode entrar no sistema com seu e-mail e a senha que criou.</p>`,
+        semPermissao
+          ? `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado e você já consegue entrar com seu e-mail e a senha que criou. As telas do sistema aparecem assim que o gestor definir o seu perfil de acesso — até lá você verá um aviso ao entrar.</p>`
+          : `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado. Você já pode entrar no sistema com seu e-mail e a senha que criou.</p>`,
       ),
     });
   }
