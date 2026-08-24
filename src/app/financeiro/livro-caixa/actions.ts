@@ -2,13 +2,21 @@
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
-import { createCashEntry, deleteCashEntry, resolveSupplierByName } from "@/lib/finance";
+import {
+  addPartStockWithPayable,
+  createCashEntry,
+  deleteCashEntry,
+  registerPartSale,
+  resolveSupplierByName,
+} from "@/lib/finance";
+import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
+import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 const schema = z.object({
   kind: z.enum(["entrada", "saida"]),
@@ -18,9 +26,12 @@ const schema = z.object({
   accountId: z.string().min(1, "Escolha a conta"),
   categoryLabel: z.string().optional(),
   documentNumber: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   supplierName: z.string().optional(),
   vehicleId: z.string().optional(),
+  // Fluxo Peças: peça do almoxarifado que entra/sai com este lançamento.
+  partId: z.string().optional(),
+  partQuantity: z.coerce.number().int().min(0).default(0),
   customerId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
@@ -51,12 +62,15 @@ export async function createCashEntryAction(
 
   const label = d.kind === "saida" ? (d.categoryLabel || "").trim() : "";
   const isCapital = d.structuralKey === "CAPITAL";
+  // Compra/venda de peça do almoxarifado: a categoria é do próprio movimento
+  // (Compra de peças), então o formulário não pede categoria neste caso.
+  const isPeca = d.structuralKey === "PECAS" && !!(d.partId || "").trim();
   const supplierName = (d.supplierName || "").trim();
 
   // Toda saída precisa de categoria; e de fornecedor — exceto no Capital, onde
   // o fornecedor é opcional (o valor pode ter sido pago ao próprio beneficiário).
   if (d.kind === "saida") {
-    if (!label) return { error: "Informe a categoria do lançamento." };
+    if (!label && !isPeca) return { error: "Informe a categoria do lançamento." };
     if (isCapital && !d.capitalBeneficiaryId) {
       return { error: "Escolha o beneficiário do capital." };
     }
@@ -66,6 +80,67 @@ export async function createCashEntryAction(
   } else if (isCapital && !d.capitalBeneficiaryId) {
     // Entrada no Capital = aporte: precisa do beneficiário.
     return { error: "Escolha o beneficiário do capital (aporte)." };
+  }
+
+  // -------------------------------------------------------------------------
+  // Fluxo PEÇAS com peça indicada: o lançamento mexe no almoxarifado.
+  //   saída  = compra paga na hora  -> entra no estoque (custo médio)
+  //   entrada = venda de balcão     -> sai do estoque (margem no L/P)
+  // Sem peça indicada, segue como lançamento comum do fluxo Peças (frete,
+  // ferramenta, etc.) — nada de estoque.
+  // -------------------------------------------------------------------------
+  if (isPeca) {
+    const partId = (d.partId || "").trim();
+    const quantidade = d.partQuantity;
+    if (quantidade < 1) return { error: "Informe a quantidade de peças." };
+    const peca = await prisma.part.findUnique({
+      where: { id: partId },
+      select: { id: true, name: true, quantity: true },
+    });
+    if (!peca) return { error: "Peça não encontrada." };
+    const unitario = d.amount / quantidade;
+
+    try {
+      if (d.kind === "saida") {
+        await addPartStockWithPayable({
+          partId,
+          quantity: quantidade,
+          costPrice: unitario,
+          supplierId: supplierName ? await resolveSupplierByName(supplierName) : null,
+          alreadyPaid: true,
+          accountId: d.accountId,
+          date: parseDateInput(d.date),
+          description: d.description,
+          documentNumber: d.documentNumber?.trim() || null,
+          notes: d.notes || null,
+        });
+      } else {
+        if (peca.quantity < quantidade) {
+          return { error: `Estoque insuficiente de "${peca.name}". Disponível: ${peca.quantity}.` };
+        }
+        await registerPartSale({
+          partId,
+          customerId: d.customerId || null,
+          quantity: quantidade,
+          unitPrice: unitario,
+          saleDate: parseDateInput(d.date),
+          paymentMethod: "A_VISTA",
+          accountId: d.accountId,
+          notes: d.notes || d.description || null,
+        });
+      }
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Não foi possível lançar a peça." };
+    }
+
+    revalidatePath("/pecas");
+    revalidatePath(`/pecas/${partId}`);
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/a-receber");
+    revalidatePath("/");
+    return { ok: true };
   }
 
   // Resolve a categoria da saída (rótulo canônico + enum); cria custom se nova.

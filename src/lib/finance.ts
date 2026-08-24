@@ -767,6 +767,11 @@ export async function addPartStockWithPayable(input: {
   /** Conta de onde saiu o dinheiro — obrigatória quando já foi paga. */
   accountId?: string | null;
   dueDate?: Date | null;
+  /** Data do movimento (lançamento pelo caixa); padrão hoje. */
+  date?: Date | null;
+  description?: string | null;
+  documentNumber?: string | null;
+  notes?: string | null;
 }) {
   const contaPagamento = input.alreadyPaid
     ? input.accountId || (await getDefaultAccountId())
@@ -788,21 +793,29 @@ export async function addPartStockWithPayable(input: {
       where: { id: input.partId },
       data: {
         quantity: { increment: input.quantity },
-        costPrice: Math.round(custoMedio * 100) / 100,
+        // Guardado SEM arredondar: o almoxarifado vale quantidade × custo, e
+        // arredondar o unitário multiplicaria o erro pela quantidade (26 un. a
+        // 18,00 + 20 a 30,00 dariam 1.068,12 em vez de 1.068,00 — e o farol
+        // acusaria os 12 centavos). As telas continuam exibindo 2 casas.
+        costPrice: custoMedio,
         supplierId: input.supplierId || undefined,
       },
     });
 
     const totalCost = input.costPrice * input.quantity;
-    const today = new Date();
+    const movimento = input.date || new Date();
     if (totalCost > 0) {
       await tx.payable.create({
         data: {
-          description: `Reposição de estoque: ${part.name} (${input.quantity} un.)`,
+          description:
+            input.description?.trim() ||
+            `Reposição de estoque: ${part.name} (${input.quantity} un.)`,
+          documentNumber: input.documentNumber || null,
+          notes: input.notes || null,
           category: "COMPRA_PECA" as CategoriaPagar,
           amount: totalCost,
-          dueDate: input.alreadyPaid ? today : input.dueDate || today,
-          paymentDate: input.alreadyPaid ? today : null,
+          dueDate: input.alreadyPaid ? movimento : input.dueDate || movimento,
+          paymentDate: input.alreadyPaid ? movimento : null,
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           partId: part.id,

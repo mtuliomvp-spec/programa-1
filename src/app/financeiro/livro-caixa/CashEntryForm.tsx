@@ -14,6 +14,7 @@ import { createCashEntryAction, type CashEntryState } from "./actions";
 
 type Account = { id: string; name: string };
 type Vehicle = { id: string; label: string; capitalName?: string | null };
+type Part = { id: string; label: string; quantity: number; costPrice: number };
 type Beneficiary = { id: string; name: string; applied?: number; free?: number };
 type Customer = { id: string; name: string };
 
@@ -23,6 +24,7 @@ export default function CashEntryForm({
   accounts,
   supplierNames,
   vehicles,
+  parts,
   beneficiaries,
   customers,
   categories,
@@ -33,6 +35,7 @@ export default function CashEntryForm({
   accounts: Account[];
   supplierNames: string[];
   vehicles: Vehicle[];
+  parts: Part[];
   beneficiaries: Beneficiary[];
   customers: Customer[];
   categories: string[];
@@ -46,6 +49,8 @@ export default function CashEntryForm({
   const [supplierName, setSupplierName] = useState("");
   const [newSupplier, setNewSupplier] = useState(false);
   const [vehicleId, setVehicleId] = useState("");
+  const [partId, setPartId] = useState("");
+  const [partQuantity, setPartQuantity] = useState(1);
   const [amount, setAmount] = useState(0);
   // Muda a cada lançamento bem-sucedido para remontar o MoneyInput (o estado
   // interno dele não é limpo por form.reset()).
@@ -57,6 +62,10 @@ export default function CashEntryForm({
   const [newCustomer, setNewCustomer] = useState(false);
   const lastAutoDesc = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
+
+  // Peça do almoxarifado movimentada por este lançamento (fluxo Peças).
+  const peca = flow === "PECAS" ? parts.find((p) => p.id === partId) : undefined;
+  const unitarioPeca = peca && partQuantity > 0 ? amount / partQuantity : 0;
 
   // É sinal de veículo? Entrada, fluxo Veículos e veículo selecionado.
   const isSinal = kind === "entrada" && flow === "VEICULOS" && !!vehicleId;
@@ -83,6 +92,8 @@ export default function CashEntryForm({
         setSupplierName("");
         setNewSupplier(false);
         setVehicleId("");
+        setPartId("");
+        setPartQuantity(1);
         setAmount(0);
         setAmountKey((k) => k + 1);
         setCapitalBeneficiaryId("");
@@ -268,6 +279,64 @@ export default function CashEntryForm({
           </Field>
         ) : null}
 
+        {flow === "PECAS" ? (
+          <Field label={kind === "saida" ? "Peça comprada (opcional)" : "Peça vendida (opcional)"}>
+            <Select name="partId" value={partId} onChange={(e) => setPartId(e.target.value)}>
+              <option value="">Nenhuma — lançamento sem mexer no estoque</option>
+              {parts.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label} — {p.quantity} un. em estoque
+                </option>
+              ))}
+            </Select>
+            {parts.length === 0 ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Nenhuma peça cadastrada. Cadastre em Peças para movimentar o estoque por aqui.
+              </p>
+            ) : !peca ? (
+              <p className="mt-1 text-xs text-slate-400">
+                Escolhendo a peça, este lançamento{" "}
+                {kind === "saida" ? "entra no" : "sai do"} estoque dela.
+              </p>
+            ) : null}
+
+            {peca ? (
+              <div className="mt-3 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+                <Field label="Quantidade" required>
+                  <Input
+                    type="number"
+                    min={1}
+                    max={kind === "entrada" ? peca.quantity : undefined}
+                    name="partQuantity"
+                    value={partQuantity}
+                    onChange={(e) => setPartQuantity(Math.max(1, Number(e.target.value) || 1))}
+                    required
+                  />
+                </Field>
+                <p className="text-xs text-slate-600">
+                  {kind === "saida" ? "Custo" : "Preço"} unitário:{" "}
+                  <strong>{formatCurrency(unitarioPeca)}</strong> (valor ÷ quantidade)
+                </p>
+                <p className="text-xs text-slate-500">
+                  {kind === "saida" ? (
+                    <>
+                      Entram <strong>{partQuantity} un.</strong> no estoque ({peca.quantity} →{" "}
+                      {peca.quantity + partQuantity}). O custo da peça passa a ser a média entre o
+                      estoque atual ({formatCurrency(peca.costPrice)}) e esta compra.
+                    </>
+                  ) : (
+                    <>
+                      Saem <strong>{partQuantity} un.</strong> do estoque ({peca.quantity} →{" "}
+                      {Math.max(0, peca.quantity - partQuantity)}), com a margem indo para o
+                      Lucro/Prejuízo (custo atual {formatCurrency(peca.costPrice)} por unidade).
+                    </>
+                  )}
+                </p>
+              </div>
+            ) : null}
+          </Field>
+        ) : null}
+
         {kind === "entrada" ? (
           <Field label={isSinal ? "Cliente que está dando o sinal" : "Cliente (opcional)"}>
             <Select name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
@@ -348,9 +417,16 @@ export default function CashEntryForm({
 
         {kind === "saida" ? (
           <>
-            <Field label="Categoria" required>
-              <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
-            </Field>
+            {peca ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                Categoria: <strong>Compra de peças</strong> — definida pelo próprio movimento de
+                estoque.
+              </p>
+            ) : (
+              <Field label="Categoria" required>
+                <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
+              </Field>
+            )}
             <Field label={flow === "CAPITAL" ? "Fornecedor (opcional)" : "Fornecedor"} required={flow !== "CAPITAL"}>
               <SupplierInput
                 name="supplierName"

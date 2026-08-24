@@ -58,7 +58,7 @@ export default async function LivroCaixaPage({
   const canCriar = await userCan("financeiro", "criar");
   const canFixDate = await userCan("financeiro", "corrigirdata");
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, categoryOptions, beneficiaries, customers, health] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, parts, categoryOptions, beneficiaries, customers, health] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -102,6 +102,10 @@ export default async function LivroCaixaPage({
         orderBy: [{ status: "asc" }, { createdAt: "desc" }],
         select: { id: true, brand: true, model: true, plate: true, status: true, postSaleCapitalBeneficiaryId: true },
       }),
+      prisma.part.findMany({
+        orderBy: { name: "asc" },
+        select: { id: true, code: true, name: true, quantity: true, costPrice: true },
+      }),
       listCategoryNames("DESPESA"),
       prisma.capitalBeneficiary.findMany({
         where: { active: true },
@@ -136,6 +140,13 @@ export default async function LivroCaixaPage({
       v.status === "VENDIDO" && v.postSaleCapitalBeneficiaryId
         ? beneficiaryNameById.get(v.postSaleCapitalBeneficiaryId) ?? "um sócio"
         : null,
+  }));
+
+  const partOptions = parts.map((p) => ({
+    id: p.id,
+    label: `${p.code} · ${p.name}`,
+    quantity: p.quantity,
+    costPrice: p.costPrice,
   }));
 
   // saldo inicial considera o saldo de abertura das contas e as
@@ -351,6 +362,7 @@ export default async function LivroCaixaPage({
               accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
               supplierNames={suppliers.map((s) => s.name)}
               vehicles={vehicleOptions}
+              parts={partOptions}
               beneficiaries={beneficiariesWithStatus}
               customers={customers}
               categories={categoryOptions}

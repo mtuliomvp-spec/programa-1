@@ -10,6 +10,7 @@ import { resolveSupplierByName } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
+import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 const recurringSchema = z.object({
   kind: z.enum(["PAGAR", "RECEBER"]),
@@ -18,7 +19,7 @@ const recurringSchema = z.object({
   // nas demais o valor precisa ser positivo (validado após o parse).
   amount: z.coerce.number().min(0, "Informe um valor válido"),
   cardInvoice: z.coerce.boolean().optional(),
-  structuralKey: z.enum(["VEICULOS", "ADMINISTRATIVO", "CAPITAL"]).default("ADMINISTRATIVO"),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).default("ADMINISTRATIVO"),
   periodicidade: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
   intervalDays: z.coerce.number().int().min(1).max(365).optional(),
