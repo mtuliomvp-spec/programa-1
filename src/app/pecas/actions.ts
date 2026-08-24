@@ -11,7 +11,7 @@ import {
   applyPartToVehicle,
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen } from "@/lib/cashbox";
+import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
@@ -180,6 +180,9 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
     return { error: "Escolha a conta em que o dinheiro da venda entrou." };
   }
   try {
+    // A venda pertence ao dia do caixa aberto (o formulário já trava a data;
+    // aqui a regra é confirmada no servidor).
+    await assertCashDateIsWorkDate(parseDateInput(d.saleDate));
     await assertMonthOpen(parseDateInput(d.saleDate));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };
@@ -239,6 +242,7 @@ export async function applyPartAction(_prev: FormState, formData: FormData): Pro
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
   try {
+    await assertCashDateIsWorkDate(parseDateInput(d.date));
     await assertMonthOpen(parseDateInput(d.date));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };

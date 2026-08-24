@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { applyPartAction, type FormState } from "../actions";
-import { formatCurrency, toDateInputValue } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 
 type Vehicle = { id: string; label: string };
 
@@ -25,11 +25,14 @@ export default function ApplyToVehicleForm({
   availableQuantity,
   costPrice,
   vehicles,
+  cashboxDate,
 }: {
   partId: string;
   availableQuantity: number;
   costPrice: number;
   vehicles: Vehicle[];
+  /** Data do caixa aberto: o movimento é do dia do caixa, não de outro dia. */
+  cashboxDate?: string | null;
 }) {
   const [state, formAction, pending] = useActionState(applyPartAction, {} as FormState);
   const [quantity, setQuantity] = useState(1);
@@ -79,9 +82,20 @@ export default function ApplyToVehicleForm({
             required
           />
         </Field>
-        <Field label="Data" required>
-          <Input type="date" name="date" defaultValue={toDateInputValue(new Date())} required />
-        </Field>
+        {cashboxDate ? (
+          <Field label="Data">
+            {/* Travada na data do caixa aberto, como no lançamento do caixa. */}
+            <input type="hidden" name="date" value={cashboxDate} />
+            <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
+              {formatDate(cashboxDate)}
+              <span className="ml-2 text-xs text-slate-400">(caixa aberto)</span>
+            </div>
+          </Field>
+        ) : (
+          <Field label="Data" required>
+            <Input type="date" name="date" defaultValue={toDateInputValue(new Date())} required />
+          </Field>
+        )}
       </div>
 
       <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
