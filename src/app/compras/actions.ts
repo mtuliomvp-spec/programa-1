@@ -21,6 +21,7 @@ import { assertMonthOpen } from "@/lib/monthly-closing";
 import { formatRequestNumber, parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { nextRequestSeq } from "@/lib/purchase-requests";
+import { STRUCTURAL_KEY_VALUES, type StructuralKey } from "@/lib/structural-flows";
 
 // `token` muda a cada sucesso: o formulário usa como `key` para remontar (limpar)
 // os campos só quando o envio deu certo — sem limpar quando volta erro.
@@ -47,7 +48,7 @@ const createSchema = z.object({
   installmentPeriod: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
   installmentDays: z.coerce.number().int().min(1).default(30),
   supplierName: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
 });
@@ -168,7 +169,7 @@ type RequestForEspelho = {
 async function generateEspelho(request: RequestForEspelho): Promise<string | null> {
   const amount = request.estimatedAmount;
   if (!amount || amount <= 0) throw new Error("Defina o valor da solicitação antes de aprovar.");
-  const flowKey = (request.structuralKey || "ADMINISTRATIVO") as "CAPITAL" | "VEICULOS" | "ADMINISTRATIVO";
+  const flowKey = (request.structuralKey || "ADMINISTRATIVO") as StructuralKey;
   if (flowKey === "CAPITAL" && !request.capitalBeneficiaryId) {
     throw new Error("Escolha o beneficiário do capital antes de aprovar.");
   }

@@ -134,7 +134,6 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
                   currentCostPrice={part.costPrice}
                   supplierId={part.supplierId}
                   suppliers={suppliers}
-                  accounts={accounts}
                 />
               </div>
             </Card>

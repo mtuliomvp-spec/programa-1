@@ -14,6 +14,18 @@ export type StructuralKey = (typeof STRUCTURAL_FLOWS)[number]["key"];
 
 export const STRUCTURAL_KEYS = STRUCTURAL_FLOWS.map((f) => f.key) as StructuralKey[];
 
+/**
+ * As mesmas chaves em forma de tupla literal, para `z.enum(...)`. Existe porque
+ * cada formulário repetia a lista à mão nos schemas — quando o fluxo Peças
+ * nasceu, escolhê-lo derrubava o envio com "Dados inválidos". Use sempre esta.
+ */
+export const STRUCTURAL_KEY_VALUES = [
+  "VEICULOS",
+  "PECAS",
+  "ADMINISTRATIVO",
+  "CAPITAL",
+] as const satisfies readonly StructuralKey[];
+
 export function isStructuralKey(value: unknown): value is StructuralKey {
   return typeof value === "string" && (STRUCTURAL_KEYS as string[]).includes(value);
 }

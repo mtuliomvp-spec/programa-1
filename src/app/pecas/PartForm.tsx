@@ -1,23 +1,15 @@
 "use client";
 
-import { useActionState, useState } from "react";
-import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import { useActionState } from "react";
+import { Button, Field, Input, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
 import { createPartAction, type FormState } from "./actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
-type Account = { id: string; name: string };
 
-export default function PartForm({
-  suppliers,
-  accounts,
-}: {
-  suppliers: Supplier[];
-  accounts: Account[];
-}) {
+export default function PartForm({ suppliers }: { suppliers: Supplier[] }) {
   const [state, formAction, pending] = useActionState(createPartAction, {} as FormState);
-  const [alreadyPaid, setAlreadyPaid] = useState(false);
 
   return (
     <form action={formAction} className="space-y-6">
@@ -51,38 +43,15 @@ export default function PartForm({
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <p className="mb-3 text-sm font-medium text-slate-700">Financeiro da compra inicial</p>
-        <label className="flex items-center gap-2 text-sm text-slate-600">
-          <input
-            type="checkbox"
-            name="alreadyPaid"
-            value="true"
-            checked={alreadyPaid}
-            onChange={(e) => setAlreadyPaid(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300"
-          />
-          Compra já foi paga ao fornecedor
-        </label>
-        {alreadyPaid ? (
-          <div className="mt-3 max-w-xs">
-            <Field label="Conta de onde saiu o pagamento" required>
-              <Select name="accountId" defaultValue={accounts[0]?.id ?? ""} required>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </Select>
-            </Field>
-          </div>
-        ) : (
-          <div className="mt-3 max-w-xs">
-            <Field label="Vencimento do pagamento">
-              <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
-            </Field>
-          </div>
-        )}
+        <div className="max-w-xs">
+          <Field label="Vencimento do pagamento">
+            <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
+          </Field>
+        </div>
         <p className="mt-2 text-xs text-slate-500">
-          Se houver quantidade inicial com custo, uma conta a pagar é gerada automaticamente.
+          Havendo quantidade inicial com custo, a <strong>conta a pagar é gerada aqui</strong> e o
+          pagamento é feito pelo financeiro (Contas a pagar ou Livro caixa), indicando a conta de
+          onde o dinheiro saiu — é assim que o valor entra no fluxo Peças.
         </p>
       </div>
 

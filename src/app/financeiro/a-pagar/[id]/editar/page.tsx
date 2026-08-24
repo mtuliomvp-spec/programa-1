@@ -9,6 +9,7 @@ import SplitSameTotalForm from "./SplitSameTotalForm";
 import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 import PayableDocSlots from "./PayableDocSlots";
+import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 export const dynamic = "force-dynamic";
 // A importação de fatura em PDF chama a IA e pode levar minutos.
@@ -84,7 +85,7 @@ export default async function EditarPayablePage({
   }));
 
   // Fluxo atual: veículo → Veículos; beneficiário → Capital; senão o centro estrutural.
-  const structuralKeys = ["CAPITAL", "VEICULOS", "ADMINISTRATIVO"] as const;
+  const structuralKeys = STRUCTURAL_KEY_VALUES;
   const centerKey = structuralKeys.find((k) => k === payable.costCenter?.key);
   const flow = payable.vehicleId
     ? "VEICULOS"

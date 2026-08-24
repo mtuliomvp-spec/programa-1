@@ -11,6 +11,7 @@ import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { resolveReceitaCategory } from "@/lib/categories";
+import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 export async function markReceivedAction(id: string, accountId?: string) {
   await assertCan("financeiro", "receber");
@@ -219,7 +220,7 @@ const manualSchema = z.object({
   dueDate: z.string().min(1),
   customerId: z.string().optional(),
   costCenterId: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   notes: z.string().optional(),
   alreadyReceived: z.coerce.boolean().optional(),
 });
@@ -277,7 +278,7 @@ const updateSchema = z.object({
   dueDate: z.string().min(1),
   customerId: z.string().optional(),
   costCenterId: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
 });

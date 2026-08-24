@@ -12,7 +12,7 @@ import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
-import { isStructuralKey } from "@/lib/structural-flows";
+import { STRUCTURAL_KEY_VALUES, isStructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
@@ -636,7 +636,7 @@ const manualSchema = z.object({
   installmentDays: z.coerce.number().int().min(1).default(30),
   supplierName: z.string().optional(),
   costCenterId: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
@@ -785,7 +785,7 @@ const updatePayableSchema = z.object({
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
   notes: z.string().optional(),
-  structuralKey: z.enum(["CAPITAL", "VEICULOS", "ADMINISTRATIVO"]).optional(),
+  structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
 });

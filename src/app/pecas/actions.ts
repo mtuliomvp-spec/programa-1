@@ -33,8 +33,6 @@ const partSchema = z.object({
   costPrice: z.coerce.number().min(0),
   salePrice: z.coerce.number().min(0),
   supplierId: z.string().optional(),
-  alreadyPaid: z.coerce.boolean().optional(),
-  accountId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -47,11 +45,6 @@ export async function createPartAction(_prev: FormState, formData: FormData): Pr
 
   const existing = await prisma.part.findUnique({ where: { code: d.code } });
   if (existing) return { error: "Já existe uma peça cadastrada com esse código." };
-  // Dinheiro que sai precisa sair de algum lugar: sem a conta o pagamento
-  // ficaria sem origem e o farol acusaria baixa sem conta.
-  if (d.alreadyPaid && d.quantity * d.costPrice > 0 && !d.accountId) {
-    return { error: "Escolha a conta de onde saiu o pagamento ao fornecedor." };
-  }
 
   let partId: string;
   try {
@@ -64,8 +57,9 @@ export async function createPartAction(_prev: FormState, formData: FormData): Pr
       costPrice: d.costPrice,
       salePrice: d.salePrice,
       supplierId: d.supplierId || null,
-      alreadyPaid: Boolean(d.alreadyPaid),
-      accountId: d.accountId || null,
+      // A compra sempre nasce como conta a pagar: o pagamento é feito pelo
+      // financeiro, indicando a conta de onde o dinheiro saiu.
+      alreadyPaid: false,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
     });
     partId = part.id;
@@ -126,8 +120,6 @@ const addStockSchema = z.object({
   quantity: z.coerce.number().int().min(1, "Informe uma quantidade válida"),
   costPrice: z.coerce.number().min(0),
   supplierId: z.string().optional(),
-  alreadyPaid: z.coerce.boolean().optional(),
-  accountId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -137,9 +129,6 @@ export async function addStockAction(_prev: FormState, formData: FormData): Prom
   const parsed = addStockSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
-  if (d.alreadyPaid && d.quantity * d.costPrice > 0 && !d.accountId) {
-    return { error: "Escolha a conta de onde saiu o pagamento ao fornecedor." };
-  }
 
   try {
     await addPartStockWithPayable({
@@ -147,8 +136,7 @@ export async function addStockAction(_prev: FormState, formData: FormData): Prom
       quantity: d.quantity,
       costPrice: d.costPrice,
       supplierId: d.supplierId || null,
-      alreadyPaid: Boolean(d.alreadyPaid),
-      accountId: d.accountId || null,
+      alreadyPaid: false,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
     });
   } catch {
