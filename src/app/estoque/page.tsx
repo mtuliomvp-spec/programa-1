@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { timed } from "@/lib/perf";
+import { pendenciasRenave } from "@/lib/renave";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
@@ -228,6 +229,9 @@ export default async function EstoquePage({
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
+    // Renave: quantos dados ainda faltam para escriturar este veículo. Só selo
+    // — a lista e as ações continuam iguais durante a implantação.
+    renavePendentes: pendenciasRenave(v).length,
     // Orçamento da transferência (despachante) anexado — só selo positivo.
     hasTransferQuote: v.attachments.some(
       (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
@@ -319,6 +323,8 @@ export default async function EstoquePage({
         return badge.label.startsWith("⚠");
       case "ATPV":
         return v.hasAtpv;
+      case "RENAVE_PENDENTE":
+        return v.renavePendentes > 0;
       default:
         return true;
     }
@@ -429,6 +435,9 @@ export default async function EstoquePage({
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
+            {v.renavePendentes > 0 ? (
+              <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
+            ) : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             {(() => {
               const b = vitrineBadge(v.published, v.status, v.preSaleNumber != null);
@@ -440,6 +449,9 @@ export default async function EstoquePage({
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
             <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
+            {v.renavePendentes > 0 ? (
+              <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
+            ) : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
@@ -526,6 +538,11 @@ export default async function EstoquePage({
         {v.hasAtpv ? (
           <span className="mt-1 block">
             <Badge tone="success">✓ ATPV-e</Badge>
+          </span>
+        ) : null}
+        {v.renavePendentes > 0 ? (
+          <span className="mt-1 block" title="Faltam dados para escriturar no Renave (só aviso)">
+            <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
           </span>
         ) : null}
         {v.hasTransferQuote ? (
@@ -630,6 +647,7 @@ export default async function EstoquePage({
                 <option value="TRANSFERIDO">Transferido (CRLV no nome da loja)</option>
                 <option value="CRLV_PENDENTE">CRLV pendente</option>
                 <option value="ATPV">Com ATPV-e</option>
+                <option value="RENAVE_PENDENTE">Renave: dados faltando</option>
               </Select>
             </label>
           </div>

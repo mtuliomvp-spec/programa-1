@@ -5,6 +5,8 @@ import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import SaleForm, { type SaleFormInitial } from "../SaleForm";
 import { parseDebtItems } from "@/lib/vehicle-debts";
+import { getCompany } from "@/lib/company";
+import { pendenciasRenave, RENAVE_PRAZO_PADRAO } from "@/lib/renave";
 
 export const dynamic = "force-dynamic";
 
@@ -94,6 +96,23 @@ export default async function NovaVendaPage({
         payoffAmount: true,
         debtsAmount: true,
         supplier: { select: { name: true } },
+        // Renave: o formulário avisa (sem travar) o que falta para escriturar.
+        status: true,
+        intermediation: true,
+        renaveSituacao: true,
+        renaveEntradaTitulo: true,
+        renaveEntradaProtocolo: true,
+        renaveEntradaEm: true,
+        entryNfeKey: true,
+        renavePreviaTipo: true,
+        renaveAssinaturaTipo: true,
+        crvNumber: true,
+        crvSecurityCode: true,
+        consignContractId: true,
+        consignContractAt: true,
+        renaveSaidaTitulo: true,
+        renaveSaidaProtocolo: true,
+        exitNfeKey: true,
       },
     }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
@@ -136,9 +155,17 @@ export default async function NovaVendaPage({
   });
   const preSaleByVehicle = new Map<string, number>();
   for (const ps of openPreSales) if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
+  const company = await getCompany();
+  const renavePrazo = (company.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO).toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+  });
   const vehiclesWithTag = vehicles.map((v) => {
     const n = preSaleByVehicle.get(v.id);
-    return { ...v, preSaleTag: n ? `pré-vendido nº ${String(n).padStart(4, "0")}` : undefined };
+    return {
+      ...v,
+      preSaleTag: n ? `pré-vendido nº ${String(n).padStart(4, "0")}` : undefined,
+      renavePendencias: pendenciasRenave(v).map((p) => `${p.texto} (${p.base})`),
+    };
   });
 
   return (
@@ -166,6 +193,7 @@ export default async function NovaVendaPage({
             currentUserId={user?.id}
             initial={initial}
             preSaleId={initial ? preSaleId : undefined}
+            renavePrazo={renavePrazo}
           />
         </div>
       </Card>

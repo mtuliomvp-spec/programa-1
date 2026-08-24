@@ -11,6 +11,8 @@ import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
+import VehicleRenave, { type RenaveDados } from "./VehicleRenave";
+import { pendenciasRenave, diasParaAtpvConsignacao, RENAVE_PRAZO_PADRAO } from "@/lib/renave";
 import VehicleBoletos from "./VehicleBoletos";
 import TransferInProgressSetting from "./TransferInProgressSetting";
 import VehicleTransferQuote from "./VehicleTransferQuote";
@@ -92,6 +94,43 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "lucro"),
       userCan("estoque", "sinal"),
     ]);
+
+  // Renave: o que a escrituração exige, o que falta e o prazo citado nos avisos.
+  const renaveCompany = await getCompany();
+  const renavePrazo = renaveCompany.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO;
+  const renavePendencias = pendenciasRenave(vehicle);
+  const renaveDiasAtpv = diasParaAtpvConsignacao(vehicle);
+  const renaveDados: RenaveDados = {
+    vehicleId: vehicle.id,
+    consigned: vehicle.consigned,
+    vendido: vehicle.status === "VENDIDO",
+    situacao: vehicle.renaveSituacao,
+    renaveEntradaTitulo: vehicle.renaveEntradaTitulo,
+    renaveEntradaProtocolo: vehicle.renaveEntradaProtocolo,
+    renaveEntradaEm: vehicle.renaveEntradaEm?.toISOString() ?? null,
+    entryNfeKey: vehicle.entryNfeKey,
+    entryNfeNumber: vehicle.entryNfeNumber,
+    entryNfeSerie: vehicle.entryNfeSerie,
+    entryNfeIssuedAt: vehicle.entryNfeIssuedAt?.toISOString() ?? null,
+    renavePreviaTipo: vehicle.renavePreviaTipo,
+    renavePreviaNumero: vehicle.renavePreviaNumero,
+    renavePreviaEm: vehicle.renavePreviaEm?.toISOString() ?? null,
+    renaveAssinaturaTipo: vehicle.renaveAssinaturaTipo,
+    renaveAssinaturaEm: vehicle.renaveAssinaturaEm?.toISOString() ?? null,
+    consignContractId: vehicle.consignContractId,
+    consignContractAt: vehicle.consignContractAt?.toISOString() ?? null,
+    renaveSaidaTitulo: vehicle.renaveSaidaTitulo,
+    renaveSaidaProtocolo: vehicle.renaveSaidaProtocolo,
+    renaveSaidaEm: vehicle.renaveSaidaEm?.toISOString() ?? null,
+    exitNfeKey: vehicle.exitNfeKey,
+    exitNfeNumber: vehicle.exitNfeNumber,
+    exitNfeSerie: vehicle.exitNfeSerie,
+    exitNfeIssuedAt: vehicle.exitNfeIssuedAt?.toISOString() ?? null,
+    crvNumber: vehicle.crvNumber,
+    crvSecurityCode: vehicle.crvSecurityCode,
+    renaveVinculoMotivo: vehicle.renaveVinculoMotivo,
+    renaveNotes: vehicle.renaveNotes,
+  };
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
   // custo manual + título gerado por solicitação de compra para o mesmo gasto).
@@ -687,6 +726,25 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               crlvs={vehicle.attachments.filter((a) => a.kind === "CRLV")}
             />
           </Card>
+
+          {/* Escrituração eletrônica (Resolução Contran nº 1.026/2026). Veículo
+              de terceiro em financiamento não é estoque da loja — ali o aviso é
+              outro, na própria tela da operação. */}
+          {!vehicle.intermediation ? (
+            <Card>
+              <CardHeader
+                title="Renave — escrituração eletrônica"
+                description="Dados que o registro de entrada e saída exige. Em implantação: o sistema avisa, mas não bloqueia nada"
+              />
+              <VehicleRenave
+                dados={renaveDados}
+                pendencias={renavePendencias}
+                prazo={renavePrazo.toISOString()}
+                diasAtpv={renaveDiasAtpv}
+                canEdit={canEditar}
+              />
+            </Card>
+          ) : null}
 
           {/* Veículo vendido mostra a marca "em processo" dentro do card da venda
               (junto do "Marcar como transferido"); aqui é só para os em estoque. */}

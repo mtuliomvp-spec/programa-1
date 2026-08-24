@@ -55,9 +55,12 @@ const initialState: VehicleFormState = {};
 export default function VehicleForm({
   suppliers,
   vehicle,
+  renavePrazo,
 }: {
   suppliers: Supplier[];
   vehicle?: VehicleData;
+  /** Data em que a obrigatoriedade do Renave entra em vigor (texto do aviso). */
+  renavePrazo?: string;
 }) {
   const isEdit = Boolean(vehicle);
   const action = isEdit ? updateVehicleAction : createVehicleAction;
@@ -503,6 +506,14 @@ export default function VehicleForm({
                 <strong>proprietário</strong> abaixo como fornecedor. Ao vender, a loja paga a
                 quitação (ao banco) e os débitos (aos órgãos) e o <strong>líquido</strong> vira
                 conta a pagar ao dono (ou aporte de capital).
+              </p>
+              <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                ⚠️ <strong>Renave:</strong> a consignação passa a exigir contrato eletrônico registrado no
+                Renave, assinado digitalmente pela loja e pelo consignante. Quando a obrigatoriedade entrar
+                em vigor{renavePrazo ? `, em ${renavePrazo},` : ""} esta rotina não poderá ser concluída
+                desta forma — vender ou intermediar sem esse registro prévio fica vedado (art. 20, §§ 1º a
+                3º). Por enquanto nada é bloqueado: o contrato impresso do sistema segue valendo como
+                registro interno, e o número do contrato eletrônico é anotado na ficha do veículo.
               </p>
             </div>
           </div>
