@@ -7,6 +7,7 @@ import {
   TITULOS_SAIDA,
   assinaturaLabel,
   avisoConsignacaoSemContrato,
+  chaveNfeDvOk,
   chaveNfeValida,
   dadosDaChaveNfe,
   digitos,
@@ -80,9 +81,16 @@ function ChaveNfe({
       <span className="mt-1 block text-xs text-slate-500">
         {d.length === 0 ? (
           "Copie a chave do DANFE — o número e a série saem dela."
-        ) : dados ? (
+        ) : dados && chaveNfeDvOk(d) ? (
           <span className="text-emerald-700">
             ✓ Nota {dados.numero}, série {dados.serie}
+          </span>
+        ) : dados ? (
+          // 44 dígitos, mas o dígito verificador não fecha: quase sempre é um
+          // número trocado na digitação.
+          <span className="text-rose-600">
+            Nota {dados.numero}, série {dados.serie} — mas a chave não passa no dígito verificador.
+            Confira os 44 dígitos.
           </span>
         ) : (
           <span className="text-amber-700">{d.length} de 44 dígitos</span>

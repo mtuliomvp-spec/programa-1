@@ -1933,28 +1933,93 @@ export async function readVehicleNfeAction(input: {
   if (!base64) return { ok: false, error: "Escolha o documento da nota ou envie o arquivo." };
 
   try {
-    const { extractNfe } = await import("@/lib/nfe-ai");
-    const nf = await extractNfe(base64, mimeType);
+    const { extractNfeChave, extractNfe } = await import("@/lib/nfe-ai");
     const { digitos, chaveNfeValida, dadosDaChaveNfe } = await import("@/lib/renave");
+    const { textoDoPdf, chavesNfeNoTexto, primeiraDataDoTexto } = await import("@/lib/pdf-text");
 
-    const chave = digitos(nf.chaveAcesso);
+    // 1) O próprio PDF, quando o DANFE traz o texto: é exato, instantâneo e de
+    // graça. O dígito verificador da chave confirma que é ela mesma.
+    if (mimeType === "application/pdf") {
+      const texto = textoDoPdf(Buffer.from(base64, "base64"));
+      const chaves = chavesNfeNoTexto(texto);
+      if (chaves.length === 1) {
+        const chave = chaves[0];
+        const daChave = dadosDaChaveNfe(chave);
+        return {
+          ok: true,
+          chave,
+          numero: daChave?.numero ?? null,
+          serie: daChave?.serie ?? null,
+          emitidaEm: primeiraDataDoTexto(texto),
+          valorTotal: null,
+          emitente: null,
+          alerta: null,
+        };
+      }
+      // Texto legível e nenhum sinal de nota fiscal: é outro documento (o
+      // contrato de compra, por exemplo). Recusa aqui e poupa a chamada à IA.
+      if (texto.length > 500 && !/DANFE|NOTA FISCAL|CHAVE DE ACESSO/i.test(texto)) {
+        return {
+          ok: false,
+          error:
+            "Este arquivo não parece ser um DANFE — não tem nota fiscal nem chave de acesso. " +
+            "Escolha a nota da compra (o contrato não traz a chave).",
+        };
+      }
+    }
+
+    // 2) Leitura FOCADA na chave (é o dado que amarra nota e registro); só se
+    // ela não trouxer a chave é que vale a transcrição completa, mais cara e
+    // mais sujeita a perder a tarja do código de barras.
+    const focada = await extractNfeChave(base64, mimeType);
+    let nf: {
+      chaveAcesso: string | null;
+      numero: string | null;
+      serie: string | null;
+      emitidaEm: string | null;
+      emitenteNome: string | null;
+      valorTotal: number | null;
+    } = focada;
+    let chave = digitos(focada.chaveAcesso);
     if (!chaveNfeValida(chave)) {
+      const completa = await extractNfe(base64, mimeType);
+      const chaveCompleta = digitos(completa.chaveAcesso);
+      if (chaveNfeValida(chaveCompleta)) {
+        nf = completa;
+        chave = chaveCompleta;
+      }
+    }
+
+    if (!chaveNfeValida(chave)) {
+      // Diz o que foi lido: sem isso, "não encontrei" vira adivinhação — pode
+      // ser o arquivo errado, um DANFE sem a tarja ou uma chave truncada.
+      const lido = digitos(focada.chaveAcesso);
+      const pista = lido
+        ? `Li "${lido}" (${lido.length} dígitos) — a chave precisa de 44.`
+        : focada.numero || focada.emitenteNome
+          ? `Consegui ler a nota${focada.numero ? ` nº ${focada.numero}` : ""}` +
+            `${focada.emitenteNome ? ` de ${focada.emitenteNome}` : ""}, mas não a chave de acesso.`
+          : "Não parece ser um DANFE — o contrato de compra, por exemplo, não traz chave de acesso.";
       return {
         ok: false,
         error:
-          "Não encontrei a chave de acesso (44 dígitos) neste arquivo. " +
-          "Confira se é mesmo o DANFE da nota — o contrato de compra não traz a chave.",
+          `${pista} A chave fica na tarja do topo do DANFE, em 11 blocos de 4 dígitos. ` +
+          "Você pode copiá-la de lá e colar no campo acima.",
       };
     }
     const daChave = dadosDaChaveNfe(chave);
 
     // Confere se a nota parece ser deste carro: o valor da nota costuma bater
     // com o preço de compra. Divergência não impede — só avisa.
+    const { chaveNfeDvOk } = await import("@/lib/renave");
     const valor = nf.valorTotal ?? null;
-    const alerta =
-      valor != null && vehicle.purchasePrice > 0 && Math.abs(valor - vehicle.purchasePrice) > 0.01
-        ? `A nota é de R$ ${valor.toFixed(2).replace(".", ",")} e a compra deste veículo está lançada como ` +
-          `R$ ${vehicle.purchasePrice.toFixed(2).replace(".", ",")}. Confira se é a nota certa.`
+    const divergeValor =
+      valor != null && vehicle.purchasePrice > 0 && Math.abs(valor - vehicle.purchasePrice) > 0.01;
+    const alerta = !chaveNfeDvOk(chave)
+      ? "A chave lida não passa no dígito verificador — confira os 44 dígitos com o DANFE antes de salvar."
+      : divergeValor
+        ? `A nota é de R$ ${(valor as number).toFixed(2).replace(".", ",")} e a compra deste veículo está ` +
+          `lançada como R$ ${vehicle.purchasePrice.toFixed(2).replace(".", ",")}. Confira se é a nota certa.`
         : null;
 
     return {

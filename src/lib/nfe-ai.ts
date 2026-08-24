@@ -383,3 +383,137 @@ export async function extractNfeLote(base64: string): Promise<NfeLoteNota[]> {
   }
   return result.data.notas;
 }
+
+// ---------------------------------------------------------------------------
+// Leitura FOCADA na chave de acesso (Renave)
+// ---------------------------------------------------------------------------
+
+/**
+ * O registro no Renave precisa da chave de acesso da NF-e (arts. 15/18, VII), e
+ * ela é o único dado que amarra a nota ao registro. A transcrição completa
+ * (extractNfe) às vezes volta sem a chave: ela é impressa na tarja do código de
+ * barras, em blocos de 4 dígitos, longe do corpo da nota — e o pedido genérico
+ * dilui a atenção do modelo entre itens, duplicatas e categoria.
+ *
+ * Esta leitura pede SÓ o que interessa e diz onde procurar. Devolve o que leu
+ * mesmo quando a chave sai torta, para a tela poder explicar o que aconteceu em
+ * vez de dizer só "não encontrei".
+ */
+const chaveSchema = z.object({
+  chaveAcesso: z.string().nullable(),
+  numero: z.string().nullable(),
+  serie: z.string().nullable(),
+  emitidaEm: z.string().nullable(),
+  emitenteNome: z.string().nullable(),
+  emitenteCnpj: z.string().nullable(),
+  valorTotal: z.number().nullable(),
+});
+
+export type NfeChaveExtraida = z.infer<typeof chaveSchema>;
+
+const CHAVE_JSON_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["chaveAcesso", "numero", "serie", "emitidaEm", "emitenteNome", "emitenteCnpj", "valorTotal"],
+  properties: {
+    chaveAcesso: {
+      type: ["string", "null"],
+      description: "os 44 dígitos da chave de acesso, sem espaços nem pontos",
+    },
+    numero: { type: ["string", "null"], description: "número da nota (ex.: 13786)" },
+    serie: { type: ["string", "null"], description: "série da nota (ex.: 4)" },
+    emitidaEm: { type: ["string", "null"], description: "data de emissão no formato aaaa-mm-dd" },
+    emitenteNome: { type: ["string", "null"], description: "razão social de quem emitiu a nota" },
+    emitenteCnpj: { type: ["string", "null"], description: "CNPJ do emitente, só dígitos" },
+    valorTotal: { type: ["number", "null"], description: "valor total da nota" },
+  },
+} as const;
+
+const CHAVE_PROMPT =
+  "Você lê a CHAVE DE ACESSO de uma nota fiscal eletrônica brasileira (DANFE). Onde procurar, nesta " +
+  "ordem: 1) na tarja do topo do DANFE, no campo 'CHAVE DE ACESSO', logo abaixo ou acima do código de " +
+  "barras — costuma vir em 11 blocos de 4 dígitos separados por espaço (ex.: 3126 0816 6700 8500 0155 " +
+  "5500 4000 0137 8618 9346 0739); 2) perto da frase 'Consulta de autenticidade no portal nacional da " +
+  "NF-e'; 3) no protocolo de autorização de uso. A chave tem EXATAMENTE 44 dígitos: devolva só os " +
+  "dígitos, sem espaços. Confira o total antes de responder — se você contar diferente de 44, leia de " +
+  "novo. Se o documento não for um DANFE (ex.: contrato, recibo), devolva chaveAcesso null. Devolva " +
+  "também número, série, data de emissão (aaaa-mm-dd), razão social e CNPJ do emitente e o valor total " +
+  "da nota. Não invente nada: o que não conseguir ler com segurança vai null. Responda só com o JSON.";
+
+export async function extractNfeChave(base64: string, mimeType: string): Promise<NfeChaveExtraida> {
+  const config = await getParecerConfig();
+  if (!config.configured || !config.apiKey) {
+    throw new Error("A IA ainda não está configurada. Cadastre a chave em Parâmetros › Parecer IA.");
+  }
+  if (config.provider !== "ANTHROPIC") {
+    throw new Error("A leitura da nota fiscal requer o provedor Anthropic (Parâmetros › Parecer IA).");
+  }
+
+  const isPdf = mimeType === "application/pdf";
+  if (!isPdf && !isImageType(mimeType)) {
+    throw new Error(
+      "Não consegui ler este arquivo (o iPhone salva em HEIC, que a leitura não aceita). " +
+        "Envie o PDF do DANFE ou uma foto em JPEG.",
+    );
+  }
+  const fileBlock: Anthropic.Beta.BetaContentBlockParam = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
+    : { type: "image", source: { type: "base64", media_type: mimeType as ImageMediaType, data: base64 } };
+
+  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 2 });
+  let response: Anthropic.Beta.BetaMessage;
+  try {
+    response = await client.beta.messages.create({
+      model: "claude-opus-5",
+      max_tokens: 1500,
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "low", format: { type: "json_schema", schema: CHAVE_JSON_SCHEMA } },
+      system: CHAVE_PROMPT,
+      messages: [
+        {
+          role: "user",
+          content: [fileBlock, { type: "text", text: "Qual é a chave de acesso desta nota?" }],
+        },
+      ],
+    });
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) {
+      throw new Error("Chave de IA inválida. Confira nos Parâmetros.");
+    }
+    if (e instanceof Anthropic.RateLimitError) {
+      throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos e tente de novo.");
+    }
+    if (e instanceof Anthropic.APIError) {
+      const detalhe = (e.message || "").replace(/\s+/g, " ").trim().slice(0, 300);
+      throw new Error(`A IA recusou o pedido (${e.status})${detalhe ? `: ${detalhe}` : "."}`);
+    }
+    throw e;
+  }
+
+  await recordAiUsage({
+    feature: "nfe",
+    provider: config.provider,
+    model: "claude-opus-5",
+    usage: response.usage,
+  });
+
+  if (response.stop_reason === "refusal") {
+    throw new Error("A IA não pôde ler este arquivo.");
+  }
+  const text = response.content
+    .filter((b): b is Anthropic.Beta.BetaTextBlock => b.type === "text")
+    .map((b) => b.text)
+    .join("");
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("A IA não devolveu os dados no formato esperado. Tente novamente.");
+  }
+  const result = chaveSchema.safeParse(parsed);
+  if (!result.success) {
+    throw new Error("A IA não devolveu os dados no formato esperado. Tente novamente.");
+  }
+  return result.data;
+}
