@@ -916,6 +916,10 @@ model PartSale {
   customer      Customer?      @relation(fields: [customerId], references: [id])
   quantity      Int
   unitPrice     Float
+  // Custo unitário da peça NO MOMENTO da venda (custo médio do almoxarifado).
+  // Gravado aqui porque o custo da peça muda a cada entrada: usar o custo atual
+  // reescreveria a margem de vendas passadas e desalinharia o farol.
+  unitCost      Float          @default(0)
   totalAmount   Float
   saleDate      DateTime       @default(now())
   paymentMethod FormaPagamento

@@ -6,17 +6,20 @@ import { sellPartAction, type FormState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Customer = { id: string; name: string };
+type Account = { id: string; name: string };
 
 export default function SellPartForm({
   partId,
   currentSalePrice,
   availableQuantity,
   customers,
+  accounts,
 }: {
   partId: string;
   currentSalePrice: number;
   availableQuantity: number;
   customers: Customer[];
+  accounts: Account[];
 }) {
   const [state, formAction, pending] = useActionState(sellPartAction, {} as FormState);
   const [paymentMethod, setPaymentMethod] = useState<"A_VISTA" | "PARCELADO">("A_VISTA");
@@ -60,10 +63,25 @@ export default function SellPartForm({
         </Select>
       </Field>
       {paymentMethod === "PARCELADO" ? (
-        <Field label="Número de parcelas" required>
-          <Input type="number" min={2} name="installmentsCount" defaultValue={2} required />
+        <>
+          <Field label="Número de parcelas" required>
+            <Input type="number" min={2} name="installmentsCount" defaultValue={2} required />
+          </Field>
+          <p className="text-xs text-slate-500">
+            A conta de destino é escolhida na baixa de cada parcela, quando o dinheiro entra.
+          </p>
+        </>
+      ) : (
+        <Field label="Conta em que o dinheiro entrou" required>
+          <Select name="accountId" defaultValue={accounts[0]?.id ?? ""} required>
+            {accounts.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </Select>
         </Field>
-      ) : null}
+      )}
       <Button type="submit" disabled={pending} className="w-full">
         {pending ? "Registrando..." : "Registrar venda"}
       </Button>

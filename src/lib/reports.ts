@@ -93,7 +93,6 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     }),
     prisma.partSale.findMany({
       where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
-      include: { part: { select: { costPrice: true } } },
     }),
     // Despesas: regime de CAIXA — só as PAGAS, na data do pagamento. A comissão
     // de venda (saleId) fica de fora: entra por competência, na data da venda.
@@ -202,7 +201,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
       0,
     );
     const custoPecas = monthPartSales.reduce(
-      (sum, p) => sum + p.quantity * p.part.costPrice,
+      (sum, p) => sum + p.quantity * p.unitCost,
       0,
     );
     // Comissão de venda + indicações de venda por competência (na data da
@@ -354,7 +353,7 @@ async function profitLossStatement(
     }),
     prisma.partSale.findMany({
       where: { saleDate: { gte: rangeStart, lt: rangeEnd } },
-      include: { part: { select: { name: true, costPrice: true } } },
+      include: { part: { select: { name: true } } },
     }),
     // Despesas: regime de CAIXA — só contam quando PAGAS, na data do pagamento.
     // A comissão de venda (saleId != null) fica de fora: ela é reconhecida por
@@ -569,7 +568,7 @@ async function profitLossStatement(
   }
 
   for (const p of partSales) {
-    const custo = p.quantity * p.part.costPrice;
+    const custo = p.quantity * p.unitCost;
     const margem = p.totalAmount - custo;
     receitaPecas += p.totalAmount;
     custoPecas += custo;

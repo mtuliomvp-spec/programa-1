@@ -37,8 +37,12 @@ export default function EditPartForm({ part, suppliers }: { part: Part; supplier
           <Input type="number" min={0} name="minQuantity" defaultValue={part.minQuantity} />
         </Field>
         <SupplierSelect suppliers={suppliers} defaultValue={part.supplierId || ""} />
-        <Field label="Preço de custo" required>
-          <Input type="number" step="0.01" min={0} name="costPrice" defaultValue={part.costPrice} required />
+        <Field label="Custo médio (unitário)">
+          <Input type="number" value={part.costPrice.toFixed(2)} readOnly disabled className="bg-slate-50" />
+          <span className="mt-1 block text-xs text-slate-500">
+            Vem das entradas de estoque (média ponderada). É por ele que o almoxarifado é avaliado —
+            mudá-lo à mão revalorizaria o estoque sem dinheiro nenhum ter se movido.
+          </span>
         </Field>
         <Field label="Preço de venda" required>
           <Input type="number" step="0.01" min={0} name="salePrice" defaultValue={part.salePrice} required />

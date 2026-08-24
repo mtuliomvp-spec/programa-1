@@ -8,7 +8,8 @@ import { STRUCTURAL_FLOWS, type StructuralKey } from "@/lib/structural-flows";
  * um centro criado pelo usuário, como uma obra ou imóvel):
  *
  * - CAPITAL:        aportes, retiradas e pró-labore dos sócios/empresa
- * - VEICULOS:       compra, custos e venda de veículos e peças
+ * - VEICULOS:       compra, custos e venda de veículos
+ * - PECAS:          compra e venda de peças do almoxarifado
  * - ADMINISTRATIVO: demais despesas e receitas (folha, combustível, etc.)
  *
  * A lista canônica dos fluxos fica em `structural-flows.ts` (arquivo puro,
@@ -55,14 +56,34 @@ async function structuralCostCenters(): Promise<Record<StructuralKey, string>> {
     });
   }
 
-  // 2) Vinculados a veículos/peças → Veículos
+  // 2) Vinculados a veículos → Veículos
   await prisma.payable.updateMany({
-    where: { costCenterId: null, OR: [{ vehicleId: { not: null } }, { partId: { not: null } }] },
+    where: { costCenterId: null, vehicleId: { not: null } },
     data: { costCenterId: ids.VEICULOS },
   });
   await prisma.receivable.updateMany({
-    where: { costCenterId: null, OR: [{ saleId: { not: null } }, { partSaleId: { not: null } }] },
+    where: { costCenterId: null, saleId: { not: null } },
     data: { costCenterId: ids.VEICULOS },
+  });
+
+  // 2a) Almoxarifado → Peças. Compra de peça (sem veículo) e venda de peça
+  // passaram a ter fluxo próprio; antes ficavam no Veículos. Reclassifica tanto
+  // as sem centro quanto as antigas que ficaram no Veículos — peça comprada PARA
+  // UM CARRO (vehicleId) continua no fluxo do veículo, que é onde vira custo.
+  await prisma.payable.updateMany({
+    where: {
+      partId: { not: null },
+      vehicleId: null,
+      OR: [{ costCenterId: null }, { costCenterId: ids.VEICULOS }],
+    },
+    data: { costCenterId: ids.PECAS },
+  });
+  await prisma.receivable.updateMany({
+    where: {
+      partSaleId: { not: null },
+      OR: [{ costCenterId: null }, { costCenterId: ids.VEICULOS }],
+    },
+    data: { costCenterId: ids.PECAS },
   });
 
   // 2b) Combustível ligado a um veículo: garante o VehicleCost e a classificação
@@ -212,6 +233,10 @@ export async function structuralCenterId(key: StructuralKey): Promise<string> {
  */
 export async function getStructuralSummary() {
   await ensureStructuralCostCenters();
+  // Peças em estoque: como o carro parado, é capital imobilizado (ativo), não
+  // despesa — o fluxo Peças mostra esse valor no lugar do resultado.
+  const parts = await prisma.part.findMany({ select: { quantity: true, costPrice: true } });
+  const almoxarifado = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
   const centers = await prisma.costCenter.findMany({
     where: { structural: true },
     include: {
@@ -247,7 +272,7 @@ export async function getStructuralSummary() {
       name: def.name,
       despesas,
       receitas,
-      imobilizado,
+      imobilizado: def.key === "PECAS" ? almoxarifado : imobilizado,
       negociadoPendente,
       resultado: receitas - despesas,
     };

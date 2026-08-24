@@ -26,6 +26,7 @@ export type PatrimonialStats = {
   veiculosNegociadoPendente: number;
   veiculosRecebido: number;
   veiculosAReceber: number;
+  pecasAReceber: number;
   sinaisRecebidos: number;
   devolucoesClientes: number;
   devolucoesProprietario: number;
@@ -75,7 +76,14 @@ async function patrimonialStats(
       },
     }),
     prisma.receivable.findMany({
-      select: { amount: true, status: true, saleId: true, vehicleId: true, vehicle: { select: { status: true } } },
+      select: {
+        amount: true,
+        status: true,
+        saleId: true,
+        partSaleId: true,
+        vehicleId: true,
+        vehicle: { select: { status: true } },
+      },
     }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
     prisma.capitalTransaction.findMany({ select: { kind: true, amount: true } }),
@@ -205,6 +213,7 @@ async function patrimonialStats(
 
   let veiculosRecebido = 0;
   let veiculosAReceber = 0;
+  let pecasAReceber = 0;
   let sinaisRecebidos = 0;
   let contasAReceber = 0;
   for (const r of receivables) {
@@ -226,6 +235,11 @@ async function patrimonialStats(
       // Pendente de vendas de veículos: é um ativo (o carro já saiu). Entra na
       // equação para o resultado bater com a página de Lucro/Prejuízo.
       if (r.saleId) veiculosAReceber += r.amount;
+      // Peça vendida a prazo/parcelada: mesma lógica. A peça já saiu do
+      // almoxarifado e o Lucro/Prejuízo já reconheceu a margem na data da venda,
+      // então o que o cliente deve é ativo — sem isto, vender peça fiado
+      // derrubava o farol pelo valor da venda.
+      else if (r.partSaleId) pecasAReceber += r.amount;
     }
   }
 
@@ -248,6 +262,7 @@ async function patrimonialStats(
   //   carro é vendido ele sai do estoque e o dinheiro já está no caixa, então
   //   não se subtrai o recebido de novo (evita contagem dupla); o negociado
   //   ainda não pago fica neutro (não é ativo nem prejuízo até ser quitado)
+  // - Peças a receber: peça já entregue e ainda não paga pelo cliente (ativo)
   // - Almoxarifado: valor líquido em estoque (entradas − saídas de peças)
   // - Consórcios: valor aplicado nas cotas
   // - Capital: aportes − retiradas dos sócios (não é lucro; entra subtraindo)
@@ -255,6 +270,7 @@ async function patrimonialStats(
     saldoCaixa +
     estoqueVeiculosPago +
     veiculosAReceber +
+    pecasAReceber +
     almoxarifado +
     consorcios -
     sinaisRecebidos -
@@ -271,6 +287,7 @@ async function patrimonialStats(
     veiculosNegociadoPendente,
     veiculosRecebido,
     veiculosAReceber,
+    pecasAReceber,
     sinaisRecebidos,
     devolucoesClientes,
     devolucoesProprietario,

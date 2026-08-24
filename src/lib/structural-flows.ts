@@ -4,7 +4,8 @@
  * ser usado tanto em componentes de cliente quanto no servidor.
  */
 export const STRUCTURAL_FLOWS = [
-  { key: "VEICULOS", name: "Veículos", notes: "Compra, custos e venda de veículos e peças" },
+  { key: "VEICULOS", name: "Veículos", notes: "Compra, custos e venda de veículos" },
+  { key: "PECAS", name: "Peças", notes: "Compra e venda de peças do almoxarifado" },
   { key: "ADMINISTRATIVO", name: "Administrativo", notes: "Despesas e receitas administrativas" },
   { key: "CAPITAL", name: "Capital", notes: "Aportes, retiradas e pró-labore" },
 ] as const;

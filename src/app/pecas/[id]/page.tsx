@@ -4,6 +4,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import DeleteRowButton from "@/components/DeleteRowButton";
 import { userCan } from "@/lib/guards";
+import { getSelectableAccounts } from "@/lib/accounts";
 import { deletePartAction } from "../actions";
 import AddStockForm from "./AddStockForm";
 import SellPartForm from "./SellPartForm";
@@ -15,7 +16,7 @@ const payableStatusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atra
 
 export default async function PecaDetalhePage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [part, suppliers, customers] = await Promise.all([
+  const [part, suppliers, customers, accounts] = await Promise.all([
     prisma.part.findUnique({
       where: { id },
       include: {
@@ -26,6 +27,7 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
     }),
     prisma.supplier.findMany({ orderBy: { name: "asc" } }),
     prisma.customer.findMany({ orderBy: { name: "asc" } }),
+    getSelectableAccounts(),
   ]);
 
   if (!part) notFound();
@@ -127,7 +129,13 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
             <Card>
               <CardHeader title="Repor estoque" description="Gera conta a pagar automaticamente" />
               <div className="p-5">
-                <AddStockForm partId={part.id} currentCostPrice={part.costPrice} supplierId={part.supplierId} suppliers={suppliers} />
+                <AddStockForm
+                  partId={part.id}
+                  currentCostPrice={part.costPrice}
+                  supplierId={part.supplierId}
+                  suppliers={suppliers}
+                  accounts={accounts}
+                />
               </div>
             </Card>
           ) : null}
@@ -136,7 +144,13 @@ export default async function PecaDetalhePage({ params }: { params: Promise<{ id
             <Card>
               <CardHeader title="Vender peça" description="Gera conta a receber automaticamente" />
               <div className="p-5">
-                <SellPartForm partId={part.id} currentSalePrice={part.salePrice} availableQuantity={part.quantity} customers={customers} />
+                <SellPartForm
+                  partId={part.id}
+                  currentSalePrice={part.salePrice}
+                  availableQuantity={part.quantity}
+                  customers={customers}
+                  accounts={accounts}
+                />
               </div>
             </Card>
           ) : null}
