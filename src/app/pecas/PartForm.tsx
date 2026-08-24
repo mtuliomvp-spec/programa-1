@@ -1,14 +1,21 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import SupplierSelect from "@/components/SupplierSelect";
 import { createPartAction, type FormState } from "./actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Supplier = { id: string; name: string };
+type Account = { id: string; name: string };
 
-export default function PartForm({ suppliers }: { suppliers: Supplier[] }) {
+export default function PartForm({
+  suppliers,
+  accounts,
+}: {
+  suppliers: Supplier[];
+  accounts: Account[];
+}) {
   const [state, formAction, pending] = useActionState(createPartAction, {} as FormState);
   const [alreadyPaid, setAlreadyPaid] = useState(false);
 
@@ -55,13 +62,25 @@ export default function PartForm({ suppliers }: { suppliers: Supplier[] }) {
           />
           Compra já foi paga ao fornecedor
         </label>
-        {!alreadyPaid ? (
+        {alreadyPaid ? (
+          <div className="mt-3 max-w-xs">
+            <Field label="Conta de onde saiu o pagamento" required>
+              <Select name="accountId" defaultValue={accounts[0]?.id ?? ""} required>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        ) : (
           <div className="mt-3 max-w-xs">
             <Field label="Vencimento do pagamento">
               <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} />
             </Field>
           </div>
-        ) : null}
+        )}
         <p className="mt-2 text-xs text-slate-500">
           Se houver quantidade inicial com custo, uma conta a pagar é gerada automaticamente.
         </p>

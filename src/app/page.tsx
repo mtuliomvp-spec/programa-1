@@ -25,6 +25,7 @@ export const dynamic = "force-dynamic";
 const structuralIcon: Record<string, string> = {
   CAPITAL: "💼",
   VEICULOS: "🚗",
+  PECAS: "🔧",
   ADMINISTRATIVO: "🏢",
 };
 
@@ -223,14 +224,14 @@ export default async function DashboardPage() {
         <Card>
           <CardHeader
             title="Fluxos estruturais"
-            description="Resultado de cada centro: Capital, Veículos e Administrativo"
+            description="Resultado de cada centro: Veículos, Peças, Administrativo e Capital"
             action={
               <Link href="/centros-custo" className="text-sm font-medium text-slate-900 hover:underline">
                 Ver centros →
               </Link>
             }
           />
-          <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-3 sm:divide-x sm:divide-y-0">
+          <div className="grid grid-cols-1 divide-y divide-slate-100 sm:grid-cols-2 sm:divide-x sm:divide-y-0 lg:grid-cols-4">
             {structural.map((s) => (
               <Link
                 key={s.key}
@@ -241,13 +242,13 @@ export default async function DashboardPage() {
                   <span aria-hidden>{structuralIcon[s.key]}</span>
                   {s.name}
                 </p>
-                {s.key === "VEICULOS" ? (
+                {s.key === "VEICULOS" || s.key === "PECAS" ? (
                   <>
                     <p className="mt-1 text-xl font-bold text-emerald-600">
                       {formatCurrency(s.imobilizado)}
                     </p>
                     <p className="mt-0.5 text-xs text-slate-400">
-                      Em estoque (pago) {formatCurrency(s.imobilizado)}
+                      Em estoque{s.key === "VEICULOS" ? " (pago)" : ""} {formatCurrency(s.imobilizado)}
                       {s.negociadoPendente > 0 ? ` · a pagar ${formatCurrency(s.negociadoPendente)}` : ""}
                       {" · "}Receitas {formatCurrency(s.receitas)} · Despesas {formatCurrency(s.despesas)}
                     </p>

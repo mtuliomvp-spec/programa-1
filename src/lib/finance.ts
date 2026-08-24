@@ -704,10 +704,14 @@ export async function createPartWithPayable(input: {
   salePrice: number;
   supplierId?: string | null;
   alreadyPaid: boolean;
+  /** Conta de onde saiu o dinheiro — obrigatória quando já foi paga. */
+  accountId?: string | null;
   dueDate?: Date | null;
 }) {
-  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
-  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const contaPagamento = input.alreadyPaid
+    ? input.accountId || (await getDefaultAccountId())
+    : null;
+  const pecasCenterId = await structuralCenterId("PECAS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.create({
       data: {
@@ -735,8 +739,8 @@ export async function createPartWithPayable(input: {
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           partId: part.id,
-          accountId: input.alreadyPaid ? defaultAccountId : null,
-          costCenterId: veiculosCenterId,
+          accountId: contaPagamento,
+          costCenterId: pecasCenterId,
         },
       });
     }
@@ -745,22 +749,46 @@ export async function createPartWithPayable(input: {
   });
 }
 
+/**
+ * Entrada de estoque de uma peça que já existe.
+ *
+ * O custo da peça passa a ser o CUSTO MÉDIO PONDERADO entre o que já havia em
+ * estoque e o que está entrando. Antes o custo era simplesmente substituído
+ * pelo da última compra: como o almoxarifado é avaliado por
+ * `quantidade × custo`, trocar o custo revalorizava todo o estoque sem que
+ * dinheiro nenhum tivesse se movido — e o farol acusava a diferença.
+ */
 export async function addPartStockWithPayable(input: {
   partId: string;
   quantity: number;
   costPrice: number;
   supplierId?: string | null;
   alreadyPaid: boolean;
+  /** Conta de onde saiu o dinheiro — obrigatória quando já foi paga. */
+  accountId?: string | null;
   dueDate?: Date | null;
 }) {
-  const defaultAccountId = input.alreadyPaid ? await getDefaultAccountId() : null;
-  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const contaPagamento = input.alreadyPaid
+    ? input.accountId || (await getDefaultAccountId())
+    : null;
+  const pecasCenterId = await structuralCenterId("PECAS");
   return prisma.$transaction(async (tx) => {
+    const atual = await tx.part.findUniqueOrThrow({
+      where: { id: input.partId },
+      select: { quantity: true, costPrice: true },
+    });
+    // Custo médio ponderado: (estoque atual + entrada) / quantidade total.
+    const quantidadeTotal = atual.quantity + input.quantity;
+    const custoMedio =
+      quantidadeTotal > 0
+        ? (atual.quantity * atual.costPrice + input.quantity * input.costPrice) / quantidadeTotal
+        : input.costPrice;
+
     const part = await tx.part.update({
       where: { id: input.partId },
       data: {
         quantity: { increment: input.quantity },
-        costPrice: input.costPrice,
+        costPrice: Math.round(custoMedio * 100) / 100,
         supplierId: input.supplierId || undefined,
       },
     });
@@ -778,8 +806,8 @@ export async function addPartStockWithPayable(input: {
           status: input.alreadyPaid ? "PAGO" : "PENDENTE",
           supplierId: input.supplierId || null,
           partId: part.id,
-          accountId: input.alreadyPaid ? defaultAccountId : null,
-          costCenterId: veiculosCenterId,
+          accountId: contaPagamento,
+          costCenterId: pecasCenterId,
         },
       });
     }
@@ -1788,10 +1816,13 @@ export async function registerPartSale(input: {
   saleDate: Date;
   paymentMethod: FormaPagamento;
   installmentsCount?: number;
+  /** Conta em que o dinheiro entra — obrigatória na venda à vista. */
+  accountId?: string | null;
   notes?: string | null;
 }) {
-  const defaultAccountId = await getDefaultAccountId();
-  const veiculosCenterId = await structuralCenterId("VEICULOS");
+  const contaRecebimento =
+    input.paymentMethod === "A_VISTA" ? input.accountId || (await getDefaultAccountId()) : null;
+  const pecasCenterId = await structuralCenterId("PECAS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.findUniqueOrThrow({ where: { id: input.partId } });
     if (part.quantity < input.quantity) {
@@ -1808,6 +1839,10 @@ export async function registerPartSale(input: {
         customerId: input.customerId || null,
         quantity: input.quantity,
         unitPrice: input.unitPrice,
+        // Congela o custo do almoxarifado no momento da venda: é ele que vai
+        // formar a margem no Lucro/Prejuízo, mesmo que a peça seja reposta
+        // depois por um preço diferente.
+        unitCost: part.costPrice,
         totalAmount,
         saleDate: input.saleDate,
         paymentMethod: input.paymentMethod,
@@ -1849,7 +1884,7 @@ export async function registerPartSale(input: {
         status: "RECEBIDO",
         customerId: input.customerId || null,
         partSaleId: partSale.id,
-        accountId: defaultAccountId,
+        accountId: contaRecebimento,
       });
     } else {
       receivablesData.push({
@@ -1864,7 +1899,7 @@ export async function registerPartSale(input: {
     }
 
     await tx.receivable.createMany({
-      data: receivablesData.map((r) => ({ ...r, costCenterId: veiculosCenterId })),
+      data: receivablesData.map((r) => ({ ...r, costCenterId: pecasCenterId })),
     });
 
     return partSale;

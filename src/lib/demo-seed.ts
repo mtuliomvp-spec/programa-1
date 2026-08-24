@@ -407,7 +407,7 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
     dueDate: daysFromNow(10),
   });
 
-  await createPartWithPayable({
+  const bateria = await createPartWithPayable({
     code: "BAT-200",
     name: "Bateria 60Ah",
     quantity: 3,
@@ -435,6 +435,20 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
     saleDate: daysAgo(1),
     paymentMethod: "A_VISTA",
     notes: "Venda de balcão",
+  });
+
+  // Peça vendida PARCELADA: a peça sai do almoxarifado agora e o cliente paga
+  // depois. Fica no seed de propósito — é o caso que mais exige do farol
+  // (margem reconhecida na venda, dinheiro só nas parcelas).
+  await registerPartSale({
+    partId: bateria.id,
+    customerId: clienteDaniel.id,
+    quantity: 1,
+    unitPrice: 549.9,
+    saleDate: daysAgo(2),
+    paymentMethod: "PARCELADO",
+    installmentsCount: 2,
+    notes: "Bateria parcelada em 2x",
   });
 
   console.log("Criando lançamentos recorrentes...");

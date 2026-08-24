@@ -34,6 +34,7 @@ const partSchema = z.object({
   salePrice: z.coerce.number().min(0),
   supplierId: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
+  accountId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -46,6 +47,11 @@ export async function createPartAction(_prev: FormState, formData: FormData): Pr
 
   const existing = await prisma.part.findUnique({ where: { code: d.code } });
   if (existing) return { error: "Já existe uma peça cadastrada com esse código." };
+  // Dinheiro que sai precisa sair de algum lugar: sem a conta o pagamento
+  // ficaria sem origem e o farol acusaria baixa sem conta.
+  if (d.alreadyPaid && d.quantity * d.costPrice > 0 && !d.accountId) {
+    return { error: "Escolha a conta de onde saiu o pagamento ao fornecedor." };
+  }
 
   let partId: string;
   try {
@@ -59,6 +65,7 @@ export async function createPartAction(_prev: FormState, formData: FormData): Pr
       salePrice: d.salePrice,
       supplierId: d.supplierId || null,
       alreadyPaid: Boolean(d.alreadyPaid),
+      accountId: d.accountId || null,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
     });
     partId = part.id;
@@ -78,7 +85,9 @@ const updateSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   minQuantity: z.coerce.number().int().min(0).default(0),
-  costPrice: z.coerce.number().min(0),
+  // costPrice NÃO entra aqui de propósito: o custo é o médio ponderado das
+  // entradas de estoque. Alterá-lo à mão revalorizaria o almoxarifado sem
+  // movimento de dinheiro e derrubaria o farol.
   salePrice: z.coerce.number().min(0),
   supplierId: z.string().optional(),
 });
@@ -103,7 +112,6 @@ export async function updatePartAction(_prev: FormState, formData: FormData): Pr
       name: d.name,
       description: d.description || null,
       minQuantity: d.minQuantity,
-      costPrice: d.costPrice,
       salePrice: d.salePrice,
       supplierId: d.supplierId || null,
     },
@@ -119,6 +127,7 @@ const addStockSchema = z.object({
   costPrice: z.coerce.number().min(0),
   supplierId: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
+  accountId: z.string().optional(),
   dueDate: z.string().optional(),
 });
 
@@ -128,6 +137,9 @@ export async function addStockAction(_prev: FormState, formData: FormData): Prom
   const parsed = addStockSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  if (d.alreadyPaid && d.quantity * d.costPrice > 0 && !d.accountId) {
+    return { error: "Escolha a conta de onde saiu o pagamento ao fornecedor." };
+  }
 
   try {
     await addPartStockWithPayable({
@@ -136,6 +148,7 @@ export async function addStockAction(_prev: FormState, formData: FormData): Prom
       costPrice: d.costPrice,
       supplierId: d.supplierId || null,
       alreadyPaid: Boolean(d.alreadyPaid),
+      accountId: d.accountId || null,
       dueDate: d.dueDate ? parseDateInput(d.dueDate) : null,
     });
   } catch {
@@ -157,6 +170,7 @@ const sellSchema = z.object({
   saleDate: z.string().min(1),
   paymentMethod: z.enum(["A_VISTA", "PARCELADO"]),
   installmentsCount: z.coerce.number().int().min(0).default(0),
+  accountId: z.string().optional(),
   notes: z.string().optional(),
 });
 
@@ -166,6 +180,12 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
   const parsed = sellSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  // Venda à vista entra no caixa na hora: a conta de destino é obrigatória.
+  // Parcelada/a prazo não pede conta agora — ela é escolhida na baixa de cada
+  // parcela, quando o dinheiro realmente entra.
+  if (d.paymentMethod === "A_VISTA" && !d.accountId) {
+    return { error: "Escolha a conta em que o dinheiro da venda entrou." };
+  }
   try {
     await assertMonthOpen(parseDateInput(d.saleDate));
   } catch (e) {
@@ -182,6 +202,7 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
       saleDate: parseDateInput(d.saleDate),
       paymentMethod: d.paymentMethod,
       installmentsCount: d.installmentsCount,
+      accountId: d.accountId || null,
       notes: d.notes || null,
     });
     partId = partSale.partId;
