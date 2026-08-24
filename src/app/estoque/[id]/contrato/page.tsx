@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { describeAcquisition } from "@/lib/acquisition";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { chaveNfeValida, formatChaveNfe } from "@/lib/renave";
+import { chaveNfeValida, detranOperando, formatChaveNfe, RENAVE_NORMA } from "@/lib/renave";
 import PrintButton from "@/components/PrintButton";
 import { LinkButton } from "@/components/ui";
 
@@ -24,8 +24,15 @@ function Blank({ w = "8rem" }: { w?: string }) {
  * anteriores à tradição e força de título executivo extrajudicial
  * (art. 784, III, do CPC — assinatura do devedor + 2 testemunhas).
  */
-export default async function ContratoCompraPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ContratoCompraPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ modelo?: string }>;
+}) {
   const { id } = await params;
+  const { modelo } = await searchParams;
   const vehicle = await prisma.vehicle.findUnique({
     where: { id },
     include: {
@@ -45,18 +52,60 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
   const isConsigned = vehicle.consigned;
   const preco = isConsigned ? vehicle.ownerRefundAmount : vehicle.purchasePrice;
   const today = new Date();
+  /**
+   * Duas redações da cláusula da transferência. A do Renave só descreve a
+   * realidade onde o DETRAN do estado já opera o Renave de usados — antes
+   * disso, ela promete um registro que a loja não consegue fazer. Por padrão
+   * sai a que corresponde à situação do estado; `?modelo=` força a outra, para
+   * mostrar a quem quiser conhecer, sempre com a tarja de que não está valendo.
+   */
+  const renaveVigente = detranOperando(company.detranRenaveStatus);
+  const forcado = modelo === "renave" ? true : modelo === "classico" ? false : null;
+  const usaRenave = forcado ?? renaveVigente;
+  const previa = usaRenave !== renaveVigente;
+
   const companyCity = company.city
     ? `${company.city}${company.uf ? `/${company.uf}` : ""}`
     : null;
 
   return (
     <div className="mx-auto max-w-3xl">
-      <div className="mb-4 flex justify-end gap-2 print:hidden">
+      <div className="mb-4 flex flex-wrap justify-end gap-2 print:hidden">
         <LinkButton variant="secondary" href={`/estoque/${vehicle.id}`}>
           ← Voltar
         </LinkButton>
+        <LinkButton
+          variant="secondary"
+          href={`/estoque/${vehicle.id}/contrato?modelo=${usaRenave ? "classico" : "renave"}`}
+        >
+          {usaRenave ? "📄 Ver o modelo atual" : "👁️ Ver o modelo do Renave"}
+        </LinkButton>
         <PrintButton />
       </div>
+
+      {/* Tarja SEM print:hidden de propósito: se este modelo for impresso ou
+          virar PDF, tem de sair marcado — é um contrato que ainda não vale. */}
+      {previa ? (
+        <div className="mb-4 rounded-xl border-2 border-dashed border-amber-500 bg-amber-50 px-4 py-3 text-center">
+          <p className="text-sm font-bold uppercase tracking-wide text-amber-900">
+            Modelo de demonstração — ainda não está valendo
+          </p>
+          <p className="mt-0.5 text-xs text-amber-800">
+            {usaRenave ? (
+              <>
+                Esta versão traz as cláusulas do Renave ({RENAVE_NORMA}), que passam a valer quando o DETRAN
+                {company.uf ? ` do ${company.uf}` : " do estado"} aderir ao Renave de veículos usados. Serve
+                para conhecer o que vem por aí — <strong>não use para assinatura</strong> enquanto isso.
+              </>
+            ) : (
+              <>
+                Esta é a redação anterior ao Renave, mantida apenas para consulta. O contrato válido para a
+                loja hoje é o do modelo do Renave — <strong>não use este para assinatura</strong>.
+              </>
+            )}
+          </p>
+        </div>
+      ) : null}
 
       <div className="rounded-xl border border-slate-300 bg-white p-8 text-slate-900 shadow-sm print:border-0 print:shadow-none">
         <header className="mb-6 border-b-2 border-slate-900 pb-4 text-center">
@@ -311,9 +360,12 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
 
           <div>
             <p className="font-bold">
-              Cláusula 6ª — Da transferência, do registro no Renave e da comunicação de venda
+              Cláusula 6ª —{" "}
+              {usaRenave
+                ? "Da transferência, do registro no Renave e da comunicação de venda"
+                : "Da transferência e comunicação de venda"}
             </p>
-            {isConsigned ? (
+            {isConsigned && usaRenave ? (
               <>
                 <p>
                   A consignação será formalizada por <strong>contrato eletrônico</strong> registrado
@@ -335,7 +387,21 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
                   infrações de trânsito cometidas no período em que detiver a posse.
                 </p>
               </>
-            ) : (
+            ) : isConsigned ? (
+              <>
+                <p>
+                  A consignação é ajustada entre as partes por este instrumento. A propriedade do
+                  veículo <strong>permanece com o(a) VENDEDOR(A)</strong> até a venda a terceiro,
+                  ocasião em que assinará a autorização para transferência de propriedade
+                  (CRV/ATPV-e) em favor do comprador final.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo único.</strong> A COMPRADORA responde pelas infrações de trânsito
+                  cometidas no período em que detiver a posse do veículo, obrigando-se as partes, no
+                  que couber, ao cumprimento dos arts. 123 e 134 do Código de Trânsito Brasileiro.
+                </p>
+              </>
+            ) : usaRenave ? (
               <>
                 <p>
                   O(A) VENDEDOR(A) entrega nesta data a autorização para transferência de propriedade
@@ -363,6 +429,20 @@ export default async function ContratoCompraPage({ params }: { params: Promise<{
                 <p className="mt-1">
                   <strong>Parágrafo terceiro.</strong> As partes obrigam-se, no que couber, ao
                   cumprimento dos arts. 123 e 134 do Código de Trânsito Brasileiro.
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  O(A) VENDEDOR(A) entrega nesta data a autorização para transferência de propriedade
+                  (CRV/ATPV-e) assinada, com firma reconhecida ou mediante assinatura eletrônica
+                  avançada ou qualificada, nos termos do art. 123, § 4º, do Código de Trânsito
+                  Brasileiro e da Lei nº 14.063, de 23 de setembro de 2020.
+                </p>
+                <p className="mt-1">
+                  <strong>Parágrafo único.</strong> Cabe à COMPRADORA providenciar a regularização do
+                  registro do veículo na forma da legislação aplicável, obrigando-se as partes, no que
+                  couber, ao cumprimento dos arts. 123 e 134 do Código de Trânsito Brasileiro.
                 </p>
               </>
             )}
