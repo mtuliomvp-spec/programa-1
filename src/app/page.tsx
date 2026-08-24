@@ -153,6 +153,14 @@ export default async function DashboardPage() {
           tone="blue"
           icon="📦"
           sub="Valor das peças em estoque (quantidade × custo)"
+          subItems={pat.pecasAReceber > 0 ? [{ label: "Vendido a receber", value: pat.pecasAReceber }] : []}
+          redItems={[
+            {
+              label: "Comprado a pagar",
+              value: pat.pecasAPagar,
+              href: "/financeiro/a-pagar",
+            },
+          ]}
           href="/pecas"
         />
         <PatrimonialCard
@@ -176,7 +184,7 @@ export default async function DashboardPage() {
           value={pat.lucro}
           tone={pat.lucro >= 0 ? "green" : "red"}
           icon={pat.lucro >= 0 ? "📈" : "📉"}
-          formula="Caixa + Estoque de veículos (pago) + Pendente a receber de vendas + Almoxarifado + Consórcios − Sinais recebidos − Devoluções ao cliente − Devoluções ao proprietário − A pagar de veículos vendidos − Comissões e custos das vendas − Capital"
+          formula="Caixa + Estoque de veículos (pago) + Pendente a receber de vendas + A receber de peças + Almoxarifado + Consórcios − Sinais recebidos − Devoluções ao cliente − Devoluções ao proprietário − A pagar de veículos vendidos − Peças compradas a pagar − Comissões e custos das vendas − Capital"
         />
       </div>
 
