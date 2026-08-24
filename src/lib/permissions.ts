@@ -165,6 +165,18 @@ export const ALL_PERMISSIONS: string[] = MODULES.flatMap((m) =>
 /** Permissões padrão de um novo operador: só visualizar cada módulo. */
 export const DEFAULT_OPERATOR_PERMISSIONS: string[] = MODULES.map((m) => `${m.key}.visualizar`);
 
+/**
+ * Papel com poderes de administração: o administrador da loja e o Super Admin
+ * (dono do sistema), que enxerga tudo o que o administrador enxerga.
+ *
+ * Existe para não repetir `role === "ADMIN" || role === "SUPER_ADMIN"` por toda
+ * parte — foi assim que telas como Parâmetros da empresa acabaram recusando o
+ * Super Admin e mandando ele de volta ao painel inicial.
+ */
+export function isAdminRole(role: string | null | undefined): boolean {
+  return role === "ADMIN" || role === "SUPER_ADMIN";
+}
+
 /** Acesso ao módulo (ver o item no menu / entrar): precisa de "visualizar". */
 export function hasModuleAccess(
   user: { role: "ADMIN" | "OPERADOR" | "SUPER_ADMIN"; permissions: string[] },

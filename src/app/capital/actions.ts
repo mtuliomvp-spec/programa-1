@@ -13,6 +13,7 @@ import { markPayablePending, markReceivablePending } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
 import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
+import { isAdminRole } from "@/lib/permissions";
 
 const beneficiarySchema = z.object({
   name: z.string().min(1, "Informe o nome"),
@@ -168,7 +169,7 @@ export async function linkBeneficiaryUserAction(
   userId: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   const actor = await getSessionUser();
-  if (!actor || actor.role !== "ADMIN") {
+  if (!actor || !isAdminRole(actor.role)) {
     return { ok: false, error: "Apenas administradores podem vincular usuários." };
   }
   const beneficiary = await prisma.capitalBeneficiary.findUnique({

@@ -3,6 +3,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { getParecerConfig } from "@/lib/parecer-ia";
 import { getPlateToken } from "@/lib/api-keys";
+import { isAdminRole } from "@/lib/permissions";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import CompanyForm from "./CompanyForm";
 
@@ -10,7 +11,7 @@ export const dynamic = "force-dynamic";
 
 export default async function ParametrosPage() {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") redirect("/");
+  if (!user || !isAdminRole(user.role)) redirect("/");
 
   const company = await getCompany();
   // Nenhuma chave NUNCA vai ao cliente — só o indicador de que existe.

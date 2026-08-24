@@ -10,6 +10,7 @@ import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { freeCapitalOf } from "@/lib/investments";
 import { structuralCenterId } from "@/lib/structural";
+import { isAdminRole } from "@/lib/permissions";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -105,7 +106,7 @@ export async function requestComboAction(comboId: string): Promise<Result> {
 export async function deleteComboAction(comboId: string): Promise<Result> {
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada." };
-  if (user.role !== "ADMIN") return { ok: false, error: "Apenas administrador pode excluir combos." };
+  if (!isAdminRole(user.role)) return { ok: false, error: "Apenas administrador pode excluir combos." };
   const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
   if (!combo) return { ok: false, error: "Combo não encontrado." };
   if (combo.status !== "CANCELADO") return { ok: false, error: "Só é possível excluir combos cancelados." };
