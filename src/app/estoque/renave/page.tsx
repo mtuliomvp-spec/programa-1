@@ -97,7 +97,11 @@ export default async function RenavePage({
           O registro no Renave é feito no sistema da integradora contratada. O que fica aqui são os dados que
           o registro exige e o protocolo do que já foi registrado, para a ficha bater com o livro eletrônico.
           A partir de <strong>{prazoTexto(prazo)}</strong>, movimentar um veículo sem esses dados deixa de ser
-          possível.
+          possível.{" "}
+          <Link href="/parametros/renave/passo-a-passo" className="font-medium underline">
+            Ver o passo a passo da adequação
+          </Link>
+          .
         </p>
       </div>
 
