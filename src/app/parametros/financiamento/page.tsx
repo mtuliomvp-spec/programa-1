@@ -6,7 +6,8 @@ import { listFinancingRates } from "@/lib/financing-rates";
 import { formatDate } from "@/lib/format";
 import { SIMULATOR_DISCLAIMER } from "@/lib/financing";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
-import { RateForm, RateRowActions, SimulatorToggle, type RateRow } from "./RateForms";
+import { syncBcbRatesThrottled } from "@/lib/bcb-rates";
+import { BcbSyncCard, RateForm, RateRowActions, SimulatorToggle, type RateRow } from "./RateForms";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +15,14 @@ export default async function FinanciamentoVitrinePage() {
   const user = await getSessionUser();
   if (!user || !isAdminRole(user.role)) redirect("/");
 
+  // Mantém a referência do BC fresca sem cron: uma busca por dia, no máximo,
+  // quando alguém abre esta tela. Nunca lança.
+  await syncBcbRatesThrottled();
   const [rates, company] = await Promise.all([listFinancingRates(), getCompany()]);
+  const ultimaBusca = rates
+    .map((r) => r.bcbFetchedAt)
+    .filter((d): d is Date => !!d)
+    .sort((a, b) => b.getTime() - a.getTime())[0];
   const ligado = company.showroomSimulator;
   const semTaxa = rates.filter((r) => r.active && !r.monthlyRate && !r.bcbMonthlyRate);
 
@@ -111,6 +119,16 @@ export default async function FinanciamentoVitrinePage() {
             ))}
           </div>
         )}
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Taxa de referência do Banco Central"
+          description="Usada só onde você não cadastrou a sua própria taxa"
+        />
+        <div className="p-5">
+          <BcbSyncCard ultimaBusca={ultimaBusca ? formatDate(ultimaBusca) : null} />
+        </div>
       </Card>
 
       <Card className="mt-4">

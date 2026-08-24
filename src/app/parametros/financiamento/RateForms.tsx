@@ -7,8 +7,11 @@ import { formatCurrency } from "@/lib/format";
 import { simulate } from "@/lib/financing";
 import {
   deleteFinancingRateAction,
+  listBcbInstitutionsAction,
   saveFinancingRateAction,
+  syncBcbRatesAction,
   toggleSimulatorAction,
+  type BcbActionResult,
   type RateFormState,
 } from "./actions";
 
@@ -50,6 +53,101 @@ export function SimulatorToggle({ on }: { on: boolean }) {
     >
       {pending ? "Aguarde…" : on ? "Desligar simulador da vitrine" : "Ligar simulador na vitrine"}
     </Button>
+  );
+}
+
+/**
+ * Busca das taxas médias no Banco Central. O resultado (inclusive o erro) é
+ * mostrado na tela: é assim que se descobre, sem abrir log, se a instituição
+ * está com o nome errado ou se o BC está fora do ar.
+ */
+export function BcbSyncCard({ ultimaBusca }: { ultimaBusca: string | null }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [resultado, setResultado] = useState<BcbActionResult | null>(null);
+  const [lista, setLista] = useState<string[] | null>(null);
+  const [filtro, setFiltro] = useState("");
+
+  const nomes = lista?.filter((n) => n.toLowerCase().includes(filtro.toLowerCase())) ?? [];
+
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-slate-600">
+        O Banco Central publica a <strong>taxa média de cada instituição</strong> para financiamento de
+        veículos. Ela entra automaticamente nas financeiras que estiverem com o nome oficial preenchido —
+        e só é usada onde você não cadastrou a sua própria taxa.
+      </p>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              setResultado(await syncBcbRatesAction());
+              router.refresh();
+            })
+          }
+        >
+          {pending ? "Consultando…" : "🔄 Buscar taxas do Banco Central agora"}
+        </Button>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const r = await listBcbInstitutionsAction();
+              setResultado(r);
+              setLista(r.instituicoes ?? null);
+            })
+          }
+        >
+          Ver nomes das instituições
+        </Button>
+      </div>
+
+      {ultimaBusca ? (
+        <p className="text-xs text-slate-500">Última consulta: {ultimaBusca}</p>
+      ) : (
+        <p className="text-xs text-slate-500">Nenhuma consulta feita ainda.</p>
+      )}
+
+      {resultado ? (
+        <p
+          className={`rounded-lg border px-3 py-2 text-sm ${
+            resultado.ok
+              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+              : "border-amber-300 bg-amber-50 text-amber-900"
+          }`}
+        >
+          {resultado.message}
+        </p>
+      ) : null}
+
+      {lista ? (
+        <div className="rounded-lg border border-slate-200 p-3">
+          <Input
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            placeholder="Filtrar (ex.: santander)"
+            className="mb-2"
+          />
+          <ul className="max-h-56 space-y-1 overflow-auto text-xs text-slate-600">
+            {nomes.slice(0, 60).map((n) => (
+              <li key={n} className="font-mono">
+                {n}
+              </li>
+            ))}
+            {nomes.length === 0 ? <li className="italic text-slate-400">Nada encontrado.</li> : null}
+          </ul>
+          <p className="mt-2 text-[11px] text-slate-400">
+            Copie o nome exato para o campo &quot;Nome no Banco Central&quot; da financeira.
+          </p>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
