@@ -11,7 +11,7 @@ import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
-import VehicleRenave, { type RenaveDados } from "./VehicleRenave";
+import VehicleRenave, { type DocumentoDoVeiculo, type RenaveDados } from "./VehicleRenave";
 import { pendenciasRenave, diasParaAtpvConsignacao, RENAVE_PRAZO_PADRAO } from "@/lib/renave";
 import VehicleBoletos from "./VehicleBoletos";
 import TransferInProgressSetting from "./TransferInProgressSetting";
@@ -100,6 +100,11 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   const renavePrazo = renaveCompany.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO;
   const renavePendencias = pendenciasRenave(vehicle);
   const renaveDiasAtpv = diasParaAtpvConsignacao(vehicle);
+  // Documentos já anexados: é entre eles que costuma estar o DANFE da compra.
+  const renaveDocumentos: DocumentoDoVeiculo[] = vehicle.attachments
+    .filter((a) => a.kind === "DOCUMENTO")
+    .map((a) => ({ id: a.id, description: a.description, filename: a.filename }));
+
   const renaveDados: RenaveDados = {
     vehicleId: vehicle.id,
     consigned: vehicle.consigned,
@@ -738,6 +743,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               />
               <VehicleRenave
                 dados={renaveDados}
+                documentos={renaveDocumentos}
                 pendencias={renavePendencias}
                 prazo={renavePrazo.toISOString()}
                 diasAtpv={renaveDiasAtpv}
