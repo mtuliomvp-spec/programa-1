@@ -9,6 +9,13 @@ export type NavItem = {
   adminOnly?: boolean;
   /** Só o Super Admin (dono do sistema) enxerga — invisível até para o ADMIN. */
   superOnly?: boolean;
+  /**
+   * Tela de autoatendimento (dados da própria pessoa), liberada a todos. Não
+   * serve de destino pós-login: quem está em espera, sem nenhuma permissão,
+   * precisa cair no aviso do painel ("nenhuma tela liberada") e não numa tela
+   * pessoal vazia, que faria parecer que o sistema é só aquilo.
+   */
+  personal?: boolean;
 };
 
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -93,7 +100,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     // a todos). Fica por último para não mudar o destino pós-login de quem tem
     // telas operacionais.
     title: "Pessoal",
-    items: [{ href: "/minhas-comissoes", label: "Minhas comissões", icon: "💰" }],
+    items: [{ href: "/minhas-comissoes", label: "Minhas comissões", icon: "💰", personal: true }],
   },
 ];
 
@@ -127,7 +134,7 @@ export function navGroupsFor(user: NavUser) {
 export function firstAccessibleHref(user: NavUser): string | null {
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
-      if (item.href !== "/" && canSeeItem(user, item)) return item.href;
+      if (item.href !== "/" && !item.personal && canSeeItem(user, item)) return item.href;
     }
   }
   return null;

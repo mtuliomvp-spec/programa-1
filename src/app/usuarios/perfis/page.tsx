@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
+import { ensureWaitingProfile, WAITING_PROFILE_NAME } from "@/lib/waiting-profile";
 import { Card, CardHeader, EmptyState, LinkButton, PageHeader } from "@/components/ui";
 import ProfileForm from "./ProfileForm";
 import DeleteProfileButton from "./DeleteProfileButton";
@@ -12,6 +13,10 @@ export const dynamic = "force-dynamic";
 export default async function PerfisPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "SUPER_ADMIN")) redirect("/");
+
+  // O perfil de espera é do sistema: se faltar, cria — é para onde vai quem
+  // acabou de ser aprovado, antes de o gestor decidir o acesso.
+  await ensureWaitingProfile();
 
   const profiles = await prisma.profile.findMany({
     orderBy: { name: "asc" },
@@ -39,10 +44,24 @@ export default async function PerfisPage() {
             profiles.map((p) => (
               <Card key={p.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
                 <div className="min-w-0">
-                  <p className="font-semibold text-slate-900">{p.name}</p>
+                  <p className="font-semibold text-slate-900">
+                    {p.name}
+                    {p.name === WAITING_PROFILE_NAME ? (
+                      <span className="ml-2 align-middle text-xs font-normal text-amber-700">
+                        perfil do sistema
+                      </span>
+                    ) : null}
+                  </p>
                   <p className="text-xs text-slate-500">
                     {p.permissions.length} permissão(ões) · {p._count.users} usuário(s)
                   </p>
+                  {p.name === WAITING_PROFILE_NAME ? (
+                    <p className="mt-1 text-xs text-amber-700">
+                      Todo cadastro aprovado cai aqui, sem nenhuma permissão, até você atribuir o perfil
+                      de acesso. Deixe-o vazio para que a espera continue significando &quot;ainda não
+                      liberado&quot;.
+                    </p>
+                  ) : null}
                 </div>
                 <div className="flex items-center gap-4">
                   <Link href={`/usuarios/perfis/${p.id}`} className="text-sm font-medium text-blue-700 hover:underline">

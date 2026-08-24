@@ -44,11 +44,12 @@ export default async function DashboardPage() {
         <Card className="p-8 text-center">
           <p className="text-4xl">🔒</p>
           <h1 className="mt-3 text-lg font-semibold text-slate-900">
-            Seu acesso foi aprovado, mas nenhuma tela está liberada ainda
+            Seu acesso foi aprovado e está <span className="whitespace-nowrap">em espera</span>
           </h1>
           <p className="mt-2 text-sm text-slate-600">
-            Peça ao administrador para abrir <strong>Usuários</strong> e marcar as permissões do seu
-            perfil (ex.: Vendas, Estoque). Assim que liberar, é só recarregar esta página.
+            Falta o gestor definir o seu <strong>perfil de acesso</strong> — é ele que diz quais telas
+            você usa (ex.: Vendas, Estoque). Ele faz isso em <strong>Usuários</strong>; assim que
+            liberar, é só recarregar esta página.
           </p>
         </Card>
       </div>
