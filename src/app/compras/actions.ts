@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
-import { hasModuleAccess } from "@/lib/permissions";
+import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
 import { assertCan } from "@/lib/guards";
 import {
   createManualPayable, createInstallmentPayables,
@@ -286,7 +286,7 @@ export async function updateRequestAction(
   const newRequestedBy = (d.requestedBy || "").trim();
   let requestedByUpdate: { requestedBy: string } | undefined;
   if (newRequestedBy && newRequestedBy !== existing.requestedBy) {
-    if (editor.role !== "ADMIN") {
+    if (!isAdminRole(editor.role)) {
       return { error: "Só o administrador pode mudar o solicitante." };
     }
     const target = await prisma.user.findFirst({

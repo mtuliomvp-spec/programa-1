@@ -15,6 +15,7 @@ import BeneficiaryUserLink from "./BeneficiaryUserLink";
 import BeneficiaryParentSelect from "./BeneficiaryParentSelect";
 import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
+import { isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
 
   const canManage = await userCan("administrativo", "capital");
   const sessionUser = await getSessionUser();
-  const isAdmin = sessionUser?.role === "ADMIN";
+  const isAdmin = isAdminRole(sessionUser?.role);
   // Lista de usuários para o vínculo (só admin vê o controle).
   const linkableUsers = isAdmin && !beneficiary.isCompany
     ? await prisma.user.findMany({

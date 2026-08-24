@@ -6,6 +6,7 @@ import DeleteComboButton from "./DeleteComboButton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewComboForm from "./NewComboForm";
+import { isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ const statusInfo = {
 export default async function CombosPage() {
   await requireAction("combos", "visualizar");
   const canManage = await userCan("combos", "criar");
-  const isAdmin = (await getSessionUser())?.role === "ADMIN";
+  const isAdmin = isAdminRole((await getSessionUser())?.role);
   const combos = await prisma.paymentCombo.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     include: { user: { select: { name: true } }, payables: { select: { amount: true } } },

@@ -6,6 +6,7 @@ import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { formatRequestNumber } from "@/lib/format";
 import { listCategoryNames, CATEGORIA_PAGAR_LABEL } from "@/lib/categories";
 import EditRequestForm from "./EditRequestForm";
+import { isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -30,7 +31,7 @@ export default async function EditarSolicitacaoPage({
 
   // Troca de solicitante: só o ADMIN vê o campo (a action valida de novo).
   const sessionUser = await getSessionUser();
-  const isAdmin = sessionUser?.role === "ADMIN";
+  const isAdmin = isAdminRole(sessionUser?.role);
   const requesters = isAdmin
     ? (
         await prisma.user.findMany({

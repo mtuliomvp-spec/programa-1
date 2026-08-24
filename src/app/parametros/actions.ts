@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { normalizePublicUrl } from "@/lib/base-url";
+import { isAdminRole } from "@/lib/permissions";
 
 const schema = z.object({
   razaoSocial: z.string().min(1, "Informe a razão social"),
@@ -34,7 +35,7 @@ export async function saveCompanyAction(
   formData: FormData,
 ): Promise<CompanyFormState> {
   const user = await getSessionUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || !isAdminRole(user.role)) {
     return { error: "Apenas administradores podem alterar os parâmetros." };
   }
 
