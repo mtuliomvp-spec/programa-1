@@ -235,8 +235,15 @@ export async function getStructuralSummary() {
   await ensureStructuralCostCenters();
   // Peças em estoque: como o carro parado, é capital imobilizado (ativo), não
   // despesa — o fluxo Peças mostra esse valor no lugar do resultado.
-  const parts = await prisma.part.findMany({ select: { quantity: true, costPrice: true } });
+  const [parts, partSales] = await Promise.all([
+    prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
+    prisma.partSale.findMany({ select: { quantity: true, unitCost: true } }),
+  ]);
   const almoxarifado = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
+  // Despesa do fluxo Peças é o CUSTO DAS PEÇAS VENDIDAS — como no Veículos, onde
+  // o carro comprado só vira despesa quando é vendido. A compra que ainda está
+  // no estoque é ativo (aparece em "Em estoque"), não despesa.
+  const custoPecasVendidas = partSales.reduce((s, v) => s + v.quantity * v.unitCost, 0);
   const centers = await prisma.costCenter.findMany({
     where: { structural: true },
     include: {
@@ -251,10 +258,15 @@ export async function getStructuralSummary() {
     let despesas = 0;
     let imobilizado = 0; // veículos em estoque JÁ PAGOS (ativo)
     let negociadoPendente = 0; // veículos em estoque ainda NÃO pagos
+    const isPecas = def.key === "PECAS";
     for (const p of c?.payables ?? []) {
       const paid = p.status === "PAGO";
       const veiculoEmEstoque = isVeiculos && p.vehicle && p.vehicle.status !== "VENDIDO";
-      if (veiculoEmEstoque) {
+      if (isPecas) {
+        // Peça é como o carro parado: comprada, vira estoque (ativo), não
+        // despesa. O que ainda não foi pago aparece à parte, como no Veículos.
+        if (!paid) negociadoPendente += p.amount;
+      } else if (veiculoEmEstoque) {
         // Veículo em estoque é capital imobilizado (um ativo), não despesa. E,
         // seguindo a regra da loja, só conta o que já foi efetivamente pago; o
         // negociado ainda a pagar fica à parte.
@@ -270,7 +282,7 @@ export async function getStructuralSummary() {
     return {
       key: def.key,
       name: def.name,
-      despesas,
+      despesas: def.key === "PECAS" ? custoPecasVendidas : despesas,
       receitas,
       imobilizado: def.key === "PECAS" ? almoxarifado : imobilizado,
       negociadoPendente,
