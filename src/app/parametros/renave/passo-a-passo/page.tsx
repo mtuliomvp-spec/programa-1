@@ -7,7 +7,16 @@ import { isAdminRole } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
-import { RENAVE_NORMA, RENAVE_PRAZO_PADRAO, pendenciasRenave, prazoTexto } from "@/lib/renave";
+import {
+  RENAVE_NORMA,
+  RENAVE_PRAZO_PADRAO,
+  avisoDetranParado,
+  detranOperando,
+  detranStatusLabel,
+  detranStatusOf,
+  pendenciasRenave,
+  prazoTexto,
+} from "@/lib/renave";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +29,12 @@ export const dynamic = "force-dynamic";
  * fica marcado como conferência manual, sem fingir que o sistema sabe.
  */
 
-type Situacao = "feito" | "pendente" | "manual";
+type Situacao = "feito" | "pendente" | "manual" | "aguardando";
 
 function StatusBadge({ status }: { status: Situacao }) {
   if (status === "feito") return <Badge tone="success">✓ Feito</Badge>;
   if (status === "pendente") return <Badge tone="warning">Pendente</Badge>;
+  if (status === "aguardando") return <Badge tone="info">Aguardando o DETRAN</Badge>;
   return <Badge tone="default">Conferir fora do sistema</Badge>;
 }
 
@@ -89,10 +99,18 @@ export default async function RenavePassoAPassoPage() {
   const comPendencia = vehicles.filter((v) => pendenciasRenave(v).length > 0).length;
 
   const certOk = company.eCnpjValidUntil ? company.eCnpjValidUntil.getTime() > agora.getTime() : false;
+  // Estado que ainda não opera: as etapas que dependem dele saem da cobrança —
+  // contratar/pagar integradora e aderir não estão ao alcance da loja agora.
+  const detran = detranStatusOf(company.detranRenaveStatus);
+  const operando = detranOperando(company.detranRenaveStatus);
+  const dependeDoEstado = (concluida: boolean): Situacao =>
+    concluida ? "feito" : operando ? "pendente" : "aguardando";
+
   const etapa1: Situacao = certOk && company.renaveCnae ? "feito" : "pendente";
-  const etapa2: Situacao =
-    company.renaveIntegradora && company.renaveIntegradoraStatus === "CONTRATADA" ? "feito" : "pendente";
-  const etapa3: Situacao = company.renaveAderido ? "feito" : "pendente";
+  const etapa2: Situacao = dependeDoEstado(
+    Boolean(company.renaveIntegradora) && company.renaveIntegradoraStatus === "CONTRATADA",
+  );
+  const etapa3: Situacao = dependeDoEstado(company.renaveAderido);
   const etapa5: Situacao =
     company.renaveAderido && company.renaveIntegradora && certOk ? "feito" : "pendente";
   const etapa6: Situacao = vehicles.length > 0 && comPendencia === 0 ? "feito" : "pendente";
@@ -148,6 +166,40 @@ export default async function RenavePassoAPassoPage() {
           />
           <p className="whitespace-pre-line p-5 text-sm text-slate-700">{company.renaveObservacoes}</p>
         </Card>
+      ) : null}
+
+      {detran && detran !== "ADERIDO" ? (
+        <div className="mt-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            🛑 O Renave de usados ainda não opera {company.uf ? `no ${company.uf}` : "no seu estado"} —{" "}
+            {detranStatusLabel[detran].toLowerCase()}
+          </p>
+          <p className="mt-0.5 text-xs text-rose-800">{avisoDetranParado(company.uf, detran)}</p>
+          <p className="mt-1.5 text-xs font-medium text-rose-900">O que fazer enquanto isso:</p>
+          <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-xs text-rose-800">
+            <li>
+              <strong>Não comprar crédito</strong> de integradora para operar aqui — o serviço não existe no
+              estado ainda.
+            </li>
+            <li>
+              <strong>Protocolar consulta no DETRAN</strong>: previsão de adesão e como escriturar até lá
+              (livro de modelo aprovado, art. 4º, V).
+              {company.detranProtocolo ? (
+                <> Protocolo registrado: <strong>{company.detranProtocolo}</strong>.</>
+              ) : (
+                <> Nenhum protocolo registrado ainda em Parâmetros → Renave.</>
+              )}
+            </li>
+            <li>
+              <strong>Guardar as provas</strong>: print do mapa oficial, protocolo do DETRAN e as conversas com
+              a integradora. É a defesa da loja se houver fiscalização.
+            </li>
+            <li>
+              <strong>Seguir com as etapas 1, 4 e 6</strong> — certificado, CNAE, NF-e e os dados dos veículos
+              não dependem do estado e adiantam todo o resto.
+            </li>
+          </ul>
+        </div>
       ) : null}
 
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">

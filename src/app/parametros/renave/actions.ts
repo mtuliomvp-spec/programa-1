@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { isAdminRole } from "@/lib/permissions";
 import { parseDateInput } from "@/lib/format";
+import { DETRAN_STATUS_VALUES } from "@/lib/renave";
 
 const schema = z.object({
   renaveAderido: z.string().optional(),
@@ -14,6 +15,9 @@ const schema = z.object({
   renaveIntegradoraStatus: z.string().optional(),
   renaveCnae: z.string().optional(),
   renaveObservacoes: z.string().optional(),
+  detranRenaveStatus: z.string().optional(),
+  detranRenaveCheckedAt: z.string().optional(),
+  detranProtocolo: z.string().optional(),
   eCnpjValidUntil: z.string().optional(),
   renaveImplantacao: z.string().optional(),
   renaveObrigatorioEm: z.string().optional(),
@@ -53,6 +57,11 @@ export async function saveRenaveConfigAction(
           : null,
       renaveCnae: d.renaveCnae?.trim() || null,
       renaveObservacoes: d.renaveObservacoes?.trim().slice(0, 4000) || null,
+      detranRenaveStatus: DETRAN_STATUS_VALUES.includes(d.detranRenaveStatus as never)
+        ? (d.detranRenaveStatus as string)
+        : null,
+      detranRenaveCheckedAt: data(d.detranRenaveCheckedAt),
+      detranProtocolo: d.detranProtocolo?.trim() || null,
       eCnpjValidUntil: data(d.eCnpjValidUntil),
       renaveImplantacao: d.renaveImplantacao === "true",
       renaveObrigatorioEm: data(d.renaveObrigatorioEm),
@@ -68,6 +77,11 @@ export async function saveRenaveConfigAction(
           : null,
       renaveCnae: d.renaveCnae?.trim() || null,
       renaveObservacoes: d.renaveObservacoes?.trim().slice(0, 4000) || null,
+      detranRenaveStatus: DETRAN_STATUS_VALUES.includes(d.detranRenaveStatus as never)
+        ? (d.detranRenaveStatus as string)
+        : null,
+      detranRenaveCheckedAt: data(d.detranRenaveCheckedAt),
+      detranProtocolo: d.detranProtocolo?.trim() || null,
       eCnpjValidUntil: data(d.eCnpjValidUntil),
       renaveImplantacao: d.renaveImplantacao === "true",
       renaveObrigatorioEm: data(d.renaveObrigatorioEm),

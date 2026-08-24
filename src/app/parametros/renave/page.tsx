@@ -6,7 +6,16 @@ import { getCompany } from "@/lib/company";
 import { isAdminRole } from "@/lib/permissions";
 import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
-import { RENAVE_NORMA, RENAVE_PRAZO_PADRAO, pendenciasRenave, prazoTexto } from "@/lib/renave";
+import {
+  RENAVE_NORMA,
+  RENAVE_PRAZO_PADRAO,
+  avisoDetranParado,
+  detranStatusLabel,
+  detranStatusOf,
+  detranStatusTone,
+  pendenciasRenave,
+  prazoTexto,
+} from "@/lib/renave";
 import RenaveConfigForm, { type RenaveConfig } from "./RenaveConfigForm";
 
 export const dynamic = "force-dynamic";
@@ -53,10 +62,15 @@ export default async function ParametrosRenavePage() {
     renaveIntegradoraStatus: company.renaveIntegradoraStatus,
     renaveCnae: company.renaveCnae,
     renaveObservacoes: company.renaveObservacoes,
+    detranRenaveStatus: company.detranRenaveStatus,
+    detranRenaveCheckedAt: company.detranRenaveCheckedAt?.toISOString() ?? null,
+    detranProtocolo: company.detranProtocolo,
     eCnpjValidUntil: company.eCnpjValidUntil?.toISOString() ?? null,
     renaveImplantacao: company.renaveImplantacao,
     renaveObrigatorioEm: company.renaveObrigatorioEm?.toISOString() ?? null,
   };
+
+  const detran = detranStatusOf(company.detranRenaveStatus);
 
   const certVencido = company.eCnpjValidUntil
     ? company.eCnpjValidUntil.getTime() < agora.getTime()
@@ -79,6 +93,24 @@ export default async function ParametrosRenavePage() {
           </div>
         }
       />
+
+      {detran && detran !== "ADERIDO" ? (
+        <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-semibold text-rose-900">
+            🛑 O Renave de usados ainda não opera {company.uf ? `no ${company.uf}` : "no seu estado"}
+          </p>
+          <p className="mt-0.5 text-xs text-rose-800">{avisoDetranParado(company.uf, detran)}</p>
+          {company.detranProtocolo ? (
+            <p className="mt-1 text-xs text-rose-800">
+              Consulta protocolada no DETRAN: <strong>{company.detranProtocolo}</strong>.
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-rose-800">
+              Ainda sem protocolo de consulta ao DETRAN registrado aqui.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <Card className={diasParaPrazo <= 30 ? "border-amber-300" : ""}>
         <CardHeader
@@ -108,6 +140,21 @@ export default async function ParametrosRenavePage() {
                 )}
               </span>
             ) : null}
+          </p>
+          <p>
+            DETRAN {company.uf ? `do ${company.uf}` : "do estado"}:{" "}
+            {detran ? (
+              <>
+                <Badge tone={detranStatusTone[detran]}>{detranStatusLabel[detran]}</Badge>
+                {company.detranRenaveCheckedAt ? (
+                  <span className="ml-1.5 text-xs text-slate-400">
+                    conferido em {formatDate(company.detranRenaveCheckedAt)}
+                  </span>
+                ) : null}
+              </>
+            ) : (
+              <strong className="text-slate-900">situação não conferida</strong>
+            )}
           </p>
           <p>
             Certificado e-CNPJ:{" "}
