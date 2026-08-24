@@ -451,6 +451,25 @@ export async function seedDemoData(): Promise<DemoSeedResult> {
     notes: "Bateria parcelada em 2x",
   });
 
+  console.log("Cadastrando financeiras do simulador da vitrine...");
+  // Taxas fictícias, na ordem de grandeza do mercado (a loja ajusta as suas em
+  // Parâmetros › Financiamento na vitrine).
+  await prisma.financingRate.deleteMany();
+  await prisma.financingRate.createMany({
+    data: [
+      { name: "C6 Bank", bcbInstitution: "BANCO C6 S.A.", monthlyRate: 1.79, maxInstallments: 60, minDownPercent: 20, sortOrder: 1 },
+      { name: "Santander", bcbInstitution: "BANCO SANTANDER (BRASIL) S.A.", monthlyRate: 1.89, maxInstallments: 60, minDownPercent: 20, sortOrder: 2 },
+      { name: "Bradesco", bcbInstitution: "BANCO BRADESCO S.A.", monthlyRate: 1.75, maxInstallments: 48, minDownPercent: 25, sortOrder: 3 },
+      { name: "BV Financeira", bcbInstitution: "BANCO VOTORANTIM S.A.", monthlyRate: 1.95, maxInstallments: 60, minDownPercent: 20, sortOrder: 4 },
+      { name: "Banco PAN", bcbInstitution: "BANCO PAN S.A.", monthlyRate: 2.09, maxInstallments: 60, minDownPercent: 15, sortOrder: 5 },
+    ],
+  });
+  await prisma.companySettings.upsert({
+    where: { id: "company" },
+    update: { showroomSimulator: true },
+    create: { id: "company", showroomSimulator: true },
+  });
+
   console.log("Criando lançamentos recorrentes...");
   await prisma.recurringEntry.create({
     data: {

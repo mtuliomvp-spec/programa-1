@@ -1544,6 +1544,8 @@ model LoginThrottle {
 // impressos (ordem de compra, contrato, venda) e na marca do sistema.
 model CompanySettings {
   id                String   @id @default("company")
+  // Simulador de financiamento na vitrine pública (desligado por padrão).
+  showroomSimulator Boolean  @default(false)
   razaoSocial       String   @default("MVP Veículos")
   nomeFantasia      String   @default("MVP Veículos")
   cnpj              String?
@@ -1606,4 +1608,33 @@ model CardInvoiceItem {
 
   @@index([payableId])
   @@map("card_invoice_items")
+}
+
+/**
+ * Financeira do SIMULADOR da vitrine. Não é conta financeira nem gera
+ * lançamento: guarda só as condições que a loja anuncia (taxa negociada,
+ * prazo máximo, entrada mínima) e, quando disponível, a taxa média que o
+ * Banco Central publica para aquela instituição — usada como referência
+ * automática quando a loja não tiver taxa própria cadastrada.
+ */
+model FinancingRate {
+  id              String    @id @default(cuid())
+  name            String    @unique
+  // Nome EXATO da instituição no Banco Central, para buscar a taxa oficial.
+  bcbInstitution  String?
+  // Taxa negociada pela loja (% ao mês). Tem prioridade sobre a do BC.
+  monthlyRate     Float?
+  maxInstallments Int       @default(48)
+  minDownPercent  Float     @default(20)
+  active          Boolean   @default(true)
+  sortOrder       Int       @default(0)
+  // Cache da taxa do Banco Central (atualizado no máximo 1x por dia).
+  bcbMonthlyRate  Float?
+  bcbYearlyRate   Float?
+  bcbReferenceDate DateTime?
+  bcbFetchedAt    DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@map("financing_rates")
 }

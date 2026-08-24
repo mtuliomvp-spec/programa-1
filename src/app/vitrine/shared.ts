@@ -68,6 +68,13 @@ export async function getShowroomVehicle(id: string): Promise<ShowroomVehicle | 
 }
 
 /** Link do WhatsApp da loja (wa.me) com mensagem pré-preenchida; null sem telefone. */
+/** Link do WhatsApp SEM texto — para quem monta a mensagem no cliente. */
+export function whatsappBase(phone: string | null | undefined): string | null {
+  const digits = (phone || "").replace(/\D/g, "");
+  if (digits.length < 10) return null;
+  return `https://wa.me/${digits.startsWith("55") ? digits : `55${digits}`}`;
+}
+
 export function whatsappLink(phone: string | null | undefined, text: string): string | null {
   const digits = (phone || "").replace(/\D/g, "");
   if (digits.length < 10) return null;
