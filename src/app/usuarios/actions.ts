@@ -24,8 +24,12 @@ async function requireAdmin() {
  * que a conta existe.
  */
 async function assertAlvoVisivel(userId: string) {
-  const alvo = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  const alvo = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { role: true, email: true },
+  });
   if (!alvo || alvo.role === "SUPER_ADMIN") throw new Error("Usuário não encontrado");
+  return alvo;
 }
 
 const bankSchema = {
@@ -42,32 +46,57 @@ const bankSchema = {
 const identitySchema = z.object({
   userId: z.string().min(1),
   name: z.string().min(1, "Informe o nome"),
+  email: z.string().optional(),
   beneficiaryId: z.string().optional(),
 });
 
 /**
- * Edita o nome do usuário e o vínculo com um beneficiário do capital.
- * Nomes sincronizados: renomear reflete no beneficiário vinculado; ao vincular,
- * o beneficiário adota o nome do usuário.
+ * Edita o nome do usuário, o e-mail (só o Super Admin) e o vínculo com um
+ * beneficiário do capital. Nomes sincronizados: renomear reflete no
+ * beneficiário vinculado; ao vincular, o beneficiário adota o nome do usuário.
+ *
+ * O e-mail é o login da pessoa, então trocá-lo muda por onde ela entra — fica
+ * com o dono do sistema, não com o administrador da loja. A sessão é presa ao
+ * id do usuário, então quem troca o próprio e-mail continua logado.
  */
 export async function updateUserIdentityAction(
   _prev: UserFormState,
   formData: FormData,
 ): Promise<UserFormState> {
+  let ator;
   try {
-    await requireAdmin();
+    ator = await requireAdmin();
   } catch {
     return { error: "Apenas administradores podem gerenciar usuários." };
   }
   const parsed = identitySchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const { userId, name } = parsed.data;
+  let alvo;
   try {
-    await assertAlvoVisivel(userId);
+    alvo = await assertAlvoVisivel(userId);
   } catch {
     return { error: "Usuário não encontrado." };
   }
   const beneficiaryId = (parsed.data.beneficiaryId || "").trim();
+
+  // E-mail: campo exclusivo do Super Admin (o formulário nem mostra para o
+  // administrador da loja; aqui a regra é confirmada no servidor).
+  let novoEmail = "";
+  if (ator.role === "SUPER_ADMIN") {
+    const informado = (parsed.data.email || "").toLowerCase().trim();
+    if (informado && informado !== alvo.email) {
+      if (!z.string().email().safeParse(informado).success) {
+        return { error: "Informe um e-mail válido." };
+      }
+      const emUso = await prisma.user.findFirst({
+        where: { email: informado, id: { not: userId } },
+        select: { id: true },
+      });
+      if (emUso) return { error: "Já existe um usuário com esse e-mail." };
+      novoEmail = informado;
+    }
+  }
 
   // Beneficiário escolhido não pode ser o da empresa.
   if (beneficiaryId) {
@@ -92,13 +121,19 @@ export async function updateUserIdentityAction(
     } else if (current) {
       await unlinkBeneficiary(current.id);
     }
+    // 3) e-mail (login), quando o Super Admin mandou um novo.
+    if (novoEmail) await prisma.user.update({ where: { id: userId }, data: { email: novoEmail } });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível salvar." };
   }
   await syncUserSupplier(userId);
   revalidatePath("/usuarios");
   revalidatePath("/capital");
-  return { success: "Nome e vínculo salvos." };
+  return {
+    success: novoEmail
+      ? `Salvo. O login desta pessoa passa a ser ${novoEmail}.`
+      : "Nome e vínculo salvos.",
+  };
 }
 
 /** Campos bancários normalizados (string vazia → null). */

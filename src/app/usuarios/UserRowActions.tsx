@@ -22,6 +22,8 @@ type BeneficiaryOption = { id: string; name: string };
 export default function UserRowActions({
   id,
   name,
+  email,
+  canEditEmail,
   active,
   pending: isPending,
   isSelf,
@@ -35,6 +37,9 @@ export default function UserRowActions({
 }: {
   id: string;
   name: string;
+  email: string;
+  /** Trocar o e-mail é o login da pessoa: só o dono do sistema (Super Admin). */
+  canEditEmail: boolean;
   active: boolean;
   pending: boolean;
   isSelf: boolean;
@@ -122,7 +127,7 @@ export default function UserRowActions({
           onClick={() => setShowIdentity((v) => !v)}
           className="text-blue-700 hover:underline"
         >
-          Nome e vínculo
+          {canEditEmail ? "Nome, e-mail e vínculo" : "Nome e vínculo"}
         </button>
         {role === "OPERADOR" ? (
           <button
@@ -177,6 +182,22 @@ export default function UserRowActions({
             Nome
             <Input name="name" defaultValue={name} required className="mt-0.5 h-8 text-xs" />
           </label>
+          {canEditEmail ? (
+            <label className="block text-xs font-medium text-slate-600">
+              E-mail (login)
+              <Input
+                name="email"
+                type="email"
+                defaultValue={email}
+                required
+                autoComplete="off"
+                className="mt-0.5 h-8 text-xs"
+              />
+              <span className="mt-0.5 block text-[11px] font-normal text-slate-400">
+                É por aqui que a pessoa entra no sistema — ao trocar, ela passa a usar o e-mail novo.
+              </span>
+            </label>
+          ) : null}
           <label className="block text-xs font-medium text-slate-600">
             Beneficiário do capital (vínculo)
             <Select name="beneficiaryId" defaultValue={beneficiaryId ?? ""} className="mt-0.5 h-8 text-xs">
@@ -192,7 +213,7 @@ export default function UserRowActions({
             Ao vincular, o nome do beneficiário passa a ser o mesmo do usuário.
           </p>
           <Button type="submit" disabled={identityPending} className="h-8 w-full px-2.5 text-xs">
-            {identityPending ? "Salvando..." : "Salvar nome e vínculo"}
+            {identityPending ? "Salvando..." : canEditEmail ? "Salvar dados do usuário" : "Salvar nome e vínculo"}
           </Button>
           {identityState.error ? <p className="text-xs text-rose-600">{identityState.error}</p> : null}
           {identityState.success ? <p className="text-xs text-emerald-700">{identityState.success}</p> : null}

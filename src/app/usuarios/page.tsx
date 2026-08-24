@@ -57,6 +57,9 @@ function bankOf(u: UserBank): UserBank {
 export default async function UsuariosPage() {
   const sessionUser = await getSessionUser();
   if (!sessionUser || (sessionUser.role !== "ADMIN" && sessionUser.role !== "SUPER_ADMIN")) redirect("/");
+  // O e-mail é o login da pessoa: trocá-lo é do dono do sistema, não do
+  // administrador da loja.
+  const podeTrocarEmail = sessionUser.role === "SUPER_ADMIN";
 
   const [users, profiles, beneficiaries, accessCodes] = await Promise.all([
     prisma.user.findMany({
@@ -145,6 +148,8 @@ export default async function UsuariosPage() {
                 <UserRowActions
                   id={u.id}
                   name={u.name}
+                  email={u.email}
+                  canEditEmail={podeTrocarEmail}
                   beneficiaries={beneficiaries}
                   beneficiaryId={u.beneficiary?.id ?? null}
                   active={u.active}
@@ -198,6 +203,8 @@ export default async function UsuariosPage() {
                   <UserRowActions
                     id={u.id}
                     name={u.name}
+                    email={u.email}
+                    canEditEmail={podeTrocarEmail}
                     beneficiaries={beneficiaries}
                     beneficiaryId={u.beneficiary?.id ?? null}
                     active={u.active}
@@ -258,6 +265,8 @@ export default async function UsuariosPage() {
                       <UserRowActions
                         id={u.id}
                         name={u.name}
+                        email={u.email}
+                        canEditEmail={podeTrocarEmail}
                         beneficiaries={beneficiaries}
                         beneficiaryId={u.beneficiary?.id ?? null}
                         active={u.active}
