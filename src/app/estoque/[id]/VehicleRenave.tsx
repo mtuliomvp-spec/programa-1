@@ -13,9 +13,11 @@ import {
   digitos,
   formatChaveNfe,
   previaLabel,
+  separarPendencias,
   situacaoLabel,
   situacaoTone,
   tituloLabel,
+  tituloSugerido,
   type Pendencia,
 } from "@/lib/renave";
 import { readVehicleNfeAction, saveVehicleRenaveAction, type RenaveFormState } from "../actions";
@@ -227,6 +229,8 @@ export default function VehicleRenave({
   pendencias,
   prazo,
   diasAtpv,
+  renaveOperando,
+  uf,
   canEdit,
 }: {
   dados: RenaveDados;
@@ -235,6 +239,9 @@ export default function VehicleRenave({
   pendencias: Pendencia[];
   prazo: string;
   diasAtpv: number | null;
+  /** O DETRAN do estado já opera o Renave de usados? */
+  renaveOperando: boolean;
+  uf: string | null;
   canEdit: boolean;
 }) {
   const [aberto, setAberto] = useState(false);
@@ -256,8 +263,9 @@ export default function VehicleRenave({
   const [entryIssuedAt, setEntryIssuedAt] = useState(doDia(dados.entryNfeIssuedAt));
   const [exitKey, setExitKey] = useState(dados.exitNfeKey ? formatChaveNfe(dados.exitNfeKey) : "");
   const [exitIssuedAt, setExitIssuedAt] = useState(doDia(dados.exitNfeIssuedAt));
-  const entrada = pendencias.filter((p) => p.momento === "entrada");
-  const saida = pendencias.filter((p) => p.momento === "saida");
+  const { loja: pendLoja, renave: pendRenave } = separarPendencias(pendencias);
+  const entrada = pendLoja.filter((p) => p.momento === "entrada");
+  const saida = pendLoja.filter((p) => p.momento === "saida");
 
   return (
     <div className="space-y-4 p-5">
@@ -299,14 +307,15 @@ export default function VehicleRenave({
         </p>
       ) : null}
 
-      {pendencias.length === 0 ? (
+      {pendLoja.length === 0 ? (
         <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          ✓ A ficha tem todos os dados que o registro no Renave exige.
+          ✓ A ficha tem todos os dados que dependem da loja.
+          {pendRenave.length > 0 ? " O que falta só existe dentro do Renave (abaixo)." : ""}
         </p>
       ) : (
         <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
           <p className="text-sm font-semibold text-amber-900">
-            Faltam {pendencias.length} dado(s) para escriturar este veículo no Renave
+            Faltam {pendLoja.length} dado(s) que dependem da loja
           </p>
           <ul className="mt-1.5 space-y-1 text-sm text-amber-900">
             {entrada.map((p) => (
@@ -327,6 +336,37 @@ export default function VehicleRenave({
           </p>
         </div>
       )}
+
+      {/* O que só existe dentro do Renave: protocolo e identificação prévia não
+          são digitáveis — saem do registro. Sem o estado operando, não há o que
+          fazer, e cobrar isso da equipe seria cobrar o impossível. */}
+      {pendRenave.length > 0 ? (
+        <div
+          className={`rounded-lg border px-4 py-3 ${
+            renaveOperando ? "border-amber-300 bg-amber-50" : "border-slate-200 bg-slate-50"
+          }`}
+        >
+          <p className={`text-sm font-semibold ${renaveOperando ? "text-amber-900" : "text-slate-700"}`}>
+            {renaveOperando
+              ? `Faltam ${pendRenave.length} dado(s) que saem do registro no Renave`
+              : `${pendRenave.length} dado(s) só depois que o Renave abrir${uf ? ` no ${uf}` : ""}`}
+          </p>
+          <ul className={`mt-1.5 space-y-1 text-sm ${renaveOperando ? "text-amber-900" : "text-slate-600"}`}>
+            {pendRenave.map((p) => (
+              <li key={p.key}>
+                • {p.texto} <span className="text-xs opacity-80">({p.base})</span>
+              </li>
+            ))}
+          </ul>
+          {!renaveOperando ? (
+            <p className="mt-2 text-xs text-slate-500">
+              Estes dados nascem do próprio registro eletrônico — protocolo e identificação prévia não são
+              digitados, saem do Renave. Enquanto o DETRAN{uf ? ` do ${uf}` : ""} não aderir, não há o que
+              fazer aqui: adiante o resto, que no dia da adesão é só lançar os protocolos.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {!aberto ? (
         <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
@@ -390,7 +430,10 @@ export default function VehicleRenave({
             <legend className="text-sm font-semibold text-slate-900">Entrada no estoque</legend>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Título do negócio jurídico">
-                <Select name="renaveEntradaTitulo" defaultValue={dados.renaveEntradaTitulo || ""}>
+                <Select
+                  name="renaveEntradaTitulo"
+                  defaultValue={dados.renaveEntradaTitulo || tituloSugerido(dados)}
+                >
                   <option value="">— escolha —</option>
                   {TITULOS_ENTRADA.map((t) => (
                     <option key={t} value={t}>

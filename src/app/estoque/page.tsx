@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { timed } from "@/lib/perf";
-import { pendenciasRenave } from "@/lib/renave";
+import { pendenciasCobraveis, detranOperando } from "@/lib/renave";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
@@ -178,11 +178,14 @@ export default async function EstoquePage({
       // em verde (nosso) ou vermelho (terceiro).
       prisma.companySettings.findUnique({
         where: { id: "company" },
-        select: { razaoSocial: true, nomeFantasia: true },
+        select: { razaoSocial: true, nomeFantasia: true, detranRenaveStatus: true },
       }),
       prisma.capitalBeneficiary.findMany({ select: { name: true } }),
     ]),
   );
+
+  // Sem o Renave no ar no estado, o selo cobra só o que está ao alcance da loja.
+  const renaveOperando = detranOperando(company?.detranRenaveStatus);
 
   const houseKeys = [
     company?.razaoSocial,
@@ -231,7 +234,7 @@ export default async function EstoquePage({
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
     // Renave: quantos dados ainda faltam para escriturar este veículo. Só selo
     // — a lista e as ações continuam iguais durante a implantação.
-    renavePendentes: pendenciasRenave(v).length,
+    renavePendentes: pendenciasCobraveis(v, renaveOperando).length,
     // Orçamento da transferência (despachante) anexado — só selo positivo.
     hasTransferQuote: v.attachments.some(
       (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
