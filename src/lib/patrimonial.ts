@@ -27,6 +27,7 @@ export type PatrimonialStats = {
   veiculosRecebido: number;
   veiculosAReceber: number;
   pecasAReceber: number;
+  pecasAplicadasEmEstoque: number;
   sinaisRecebidos: number;
   devolucoesClientes: number;
   devolucoesProprietario: number;
@@ -60,7 +61,7 @@ async function patrimonialStats(
   preloadedAccounts?: AccountsInput,
 ): Promise<PatrimonialStats> {
   const now = new Date();
-  const [accounts, payables, receivables, parts, capitalTx, custosVendidosPendentes] = await Promise.all([
+  const [accounts, payables, receivables, parts, pecasEmVeiculos, capitalTx, custosVendidosPendentes] = await Promise.all([
     preloadedAccounts ?? getAccountsWithBalances(),
     prisma.payable.findMany({
       select: {
@@ -86,6 +87,18 @@ async function patrimonialStats(
       },
     }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
+    // Peças do almoxarifado aplicadas em carros que ainda estão no estoque: o
+    // valor saiu do almoxarifado e virou custo do carro, sem passar por caixa
+    // nem gerar título. Continua sendo ATIVO (mudou de prateleira) até o carro
+    // ser vendido — aí o custo entra na margem e sai daqui junto.
+    prisma.vehicleCost.findMany({
+      where: {
+        partId: { not: null },
+        payableId: null,
+        vehicle: { status: { not: "VENDIDO" } },
+      },
+      select: { amount: true },
+    }),
     prisma.capitalTransaction.findMany({ select: { kind: true, amount: true } }),
     // Custos de veículo JÁ VENDIDO ainda não pagos (peça/serviço a prazo,
     // combustível, item de fatura de cartão...): o custo já saiu no resultado
@@ -244,6 +257,7 @@ async function patrimonialStats(
   }
 
   const almoxarifado = parts.reduce((s, p) => s + p.quantity * p.costPrice, 0);
+  const pecasAplicadasEmEstoque = pecasEmVeiculos.reduce((s, c) => s + c.amount, 0);
 
   let aportes = 0;
   let retiradas = 0;
@@ -264,6 +278,8 @@ async function patrimonialStats(
   //   ainda não pago fica neutro (não é ativo nem prejuízo até ser quitado)
   // - Peças a receber: peça já entregue e ainda não paga pelo cliente (ativo)
   // - Almoxarifado: valor líquido em estoque (entradas − saídas de peças)
+  // - Peças aplicadas em carros do estoque: o valor mudou de prateleira (saiu do
+  //   almoxarifado, entrou no custo do carro) e segue sendo ativo até a venda
   // - Consórcios: valor aplicado nas cotas
   // - Capital: aportes − retiradas dos sócios (não é lucro; entra subtraindo)
   const lucro =
@@ -272,6 +288,7 @@ async function patrimonialStats(
     veiculosAReceber +
     pecasAReceber +
     almoxarifado +
+    pecasAplicadasEmEstoque +
     consorcios -
     sinaisRecebidos -
     devolucoesClientes -
@@ -288,6 +305,7 @@ async function patrimonialStats(
     veiculosRecebido,
     veiculosAReceber,
     pecasAReceber,
+    pecasAplicadasEmEstoque,
     sinaisRecebidos,
     devolucoesClientes,
     devolucoesProprietario,

@@ -4,10 +4,15 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { createPartWithPayable, addPartStockWithPayable, registerPartSale } from "@/lib/finance";
+import {
+  createPartWithPayable,
+  addPartStockWithPayable,
+  registerPartSale,
+  applyPartToVehicle,
+} from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
-import { assertCan } from "@/lib/guards";
+import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
@@ -203,6 +208,61 @@ export async function sellPartAction(_prev: FormState, formData: FormData): Prom
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/");
   redirect(`/pecas/${partId}`);
+}
+
+const applySchema = z.object({
+  partId: z.string().min(1),
+  vehicleId: z.string().min(1, "Escolha o veículo"),
+  quantity: z.coerce.number().int().min(1, "Informe uma quantidade válida"),
+  date: z.string().min(1),
+  category: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+/**
+ * Aplica a peça do almoxarifado num veículo do estoque: sai do estoque de peças
+ * e entra no custo do carro, pelo custo médio — sem gerar conta a pagar, porque
+ * a compra já foi lançada quando a peça entrou.
+ */
+export async function applyPartAction(_prev: FormState, formData: FormData): Promise<FormState> {
+  try {
+    // Quem mexe no almoxarifado ou nos custos do carro pode fazer isto.
+    await assertCanAny([
+      ["pecas", "vender"],
+      ["estoque", "custos"],
+    ]);
+    await assertBooksBalanced();
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
+  const parsed = applySchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const d = parsed.data;
+  try {
+    await assertMonthOpen(parseDateInput(d.date));
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  try {
+    await applyPartToVehicle({
+      partId: d.partId,
+      vehicleId: d.vehicleId,
+      quantity: d.quantity,
+      date: parseDateInput(d.date),
+      category: (d.category as never) || undefined,
+      notes: d.notes || null,
+    });
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível aplicar a peça." };
+  }
+
+  revalidatePath("/pecas");
+  revalidatePath(`/pecas/${d.partId}`);
+  revalidatePath("/estoque");
+  revalidatePath(`/estoque/${d.vehicleId}`);
+  revalidatePath("/");
+  redirect(`/pecas/${d.partId}`);
 }
 
 export async function deletePartAction(id: string) {

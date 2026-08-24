@@ -661,9 +661,16 @@ model VehicleCost {
   cardItem    CardInvoiceItem?      @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
   // Lote da rotina de remuneração de capital sobre estoque (para estorno).
   stockInterestRunId String?
+  // Peça do almoxarifado aplicada neste veículo: o valor SAI do estoque de peças
+  // e entra no custo do carro — sem gerar conta a pagar (a compra já foi feita
+  // quando a peça entrou no almoxarifado). Excluir o custo devolve as unidades.
+  partId      String?
+  part        Part?                 @relation(fields: [partId], references: [id])
+  partQuantity Int?
   createdAt   DateTime              @default(now())
 
   @@index([stockInterestRunId])
+  @@index([partId])
   @@map("vehicle_costs")
 }
 
@@ -901,6 +908,8 @@ model Part {
   supplier    Supplier?  @relation(fields: [supplierId], references: [id])
   payables    Payable[]
   partSales   PartSale[]
+  // Aplicações desta peça em veículos do estoque.
+  vehicleCosts VehicleCost[]
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 

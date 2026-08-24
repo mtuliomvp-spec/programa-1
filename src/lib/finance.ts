@@ -654,6 +654,13 @@ export async function deleteVehicleCost(costId: string) {
       );
     }
     await tx.vehicleCost.delete({ where: { id: costId } });
+    // Peça do almoxarifado: as unidades voltam para o estoque.
+    if (cost.partId && cost.partQuantity) {
+      await tx.part.update({
+        where: { id: cost.partId },
+        data: { quantity: { increment: cost.partQuantity } },
+      });
+    }
     if (cost.payableId) {
       // Custo custeado pelo capital do sócio: o título é uma retirada; a
       // movimentação de capital vinculada sai junto (senão o capital não volta).
@@ -681,6 +688,12 @@ export async function detachVehicleCost(costId: string) {
       );
     }
     await tx.vehicleCost.delete({ where: { id: costId } });
+    if (cost.partId && cost.partQuantity) {
+      await tx.part.update({
+        where: { id: cost.partId },
+        data: { quantity: { increment: cost.partQuantity } },
+      });
+    }
     if (cost.payableId) {
       await tx.payable.update({
         where: { id: cost.payableId },
@@ -826,6 +839,63 @@ export async function addPartStockWithPayable(input: {
     }
 
     return part;
+  });
+}
+
+/**
+ * Aplica uma peça do ALMOXARIFADO em um veículo do estoque.
+ *
+ * Não gera conta a pagar: a compra da peça já foi lançada quando ela entrou no
+ * almoxarifado. O que acontece aqui é uma TROCA DE ATIVO — o valor sai do
+ * estoque de peças e entra no custo do carro, pelo custo médio da peça. Quando
+ * o carro for vendido, esse custo entra na margem da venda, como qualquer outro.
+ *
+ * Só vale para carro que ainda está no estoque: num carro já vendido o custo
+ * pós-venda só é reconhecido quando pago, e aqui não há pagamento nenhum — a
+ * peça sairia do almoxarifado sem contrapartida e o farol acusaria.
+ */
+export async function applyPartToVehicle(input: {
+  partId: string;
+  vehicleId: string;
+  quantity: number;
+  date: Date;
+  category?: CategoriaCustoVeiculo;
+  notes?: string | null;
+}) {
+  return prisma.$transaction(async (tx) => {
+    const part = await tx.part.findUniqueOrThrow({ where: { id: input.partId } });
+    const vehicle = await tx.vehicle.findUniqueOrThrow({
+      where: { id: input.vehicleId },
+      select: { id: true, status: true, brand: true, model: true, plate: true },
+    });
+    if (vehicle.status === "VENDIDO") {
+      throw new Error(
+        "Este veículo já foi vendido. Peça do almoxarifado só pode ser aplicada em carro que ainda está no estoque.",
+      );
+    }
+    if (input.quantity < 1) throw new Error("Informe a quantidade de peças.");
+    if (part.quantity < input.quantity) {
+      throw new Error(`Estoque insuficiente de "${part.name}". Disponível: ${part.quantity}.`);
+    }
+
+    await tx.part.update({
+      where: { id: part.id },
+      data: { quantity: { decrement: input.quantity } },
+    });
+
+    return tx.vehicleCost.create({
+      data: {
+        vehicleId: vehicle.id,
+        description: `Peça do almoxarifado: ${part.name} (${input.quantity} un.)`,
+        category: input.category || "MECANICA",
+        amount: input.quantity * part.costPrice,
+        date: input.date,
+        postSale: false,
+        notes: input.notes || null,
+        partId: part.id,
+        partQuantity: input.quantity,
+      },
+    });
   });
 }
 

@@ -143,6 +143,7 @@ async function booksHealth(preloadedAccounts?: AccountsInput): Promise<BooksHeal
     { label: "A receber de vendas", value: pat.veiculosAReceber },
     { label: "A receber de peças", value: pat.pecasAReceber },
     { label: "Almoxarifado (peças)", value: pat.almoxarifado },
+    { label: "Peças aplicadas em carros do estoque", value: pat.pecasAplicadasEmEstoque },
     { label: "Consórcios", value: pat.consorcios },
     { label: "Sinais recebidos (adiantamentos)", value: -pat.sinaisRecebidos },
     { label: "Devolução ao cliente (a pagar)", value: -pat.devolucoesClientes },
