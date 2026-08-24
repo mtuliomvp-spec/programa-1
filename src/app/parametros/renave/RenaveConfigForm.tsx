@@ -1,14 +1,16 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Button, Field, Input, Select } from "@/components/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { saveRenaveConfigAction, type RenaveConfigState } from "./actions";
 
 export type RenaveConfig = {
   renaveAderido: boolean;
   renaveAderidoEm: string | null;
   renaveIntegradora: string | null;
+  renaveIntegradoraStatus: string | null;
   renaveCnae: string | null;
+  renaveObservacoes: string | null;
   eCnpjValidUntil: string | null;
   renaveImplantacao: boolean;
   renaveObrigatorioEm: string | null;
@@ -19,6 +21,7 @@ const dia = (v: string | null) => (v ? v.slice(0, 10) : "");
 export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
   const [state, formAction, pending] = useActionState(saveRenaveConfigAction, {} as RenaveConfigState);
   const [aderido, setAderido] = useState(config.renaveAderido);
+  const [integradoraStatus, setIntegradoraStatus] = useState(config.renaveIntegradoraStatus || "");
   const [implantacao, setImplantacao] = useState(config.renaveImplantacao);
 
   return (
@@ -42,7 +45,7 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
           <Field label="Data da adesão">
             <Input type="date" name="renaveAderidoEm" defaultValue={dia(config.renaveAderidoEm)} />
           </Field>
-          <Field label="Integradora contratada">
+          <Field label="Integradora">
             <Input
               name="renaveIntegradora"
               defaultValue={config.renaveIntegradora || ""}
@@ -50,6 +53,20 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
             />
             <span className="mt-1 block text-xs text-slate-500">
               É por ela que os registros entram no Renave (art. 5º, III).
+            </span>
+          </Field>
+          <Field label="Situação da integradora">
+            <Select
+              name="renaveIntegradoraStatus"
+              value={integradoraStatus}
+              onChange={(e) => setIntegradoraStatus(e.target.value)}
+            >
+              <option value="">— não definida —</option>
+              <option value="AVALIACAO">Em avaliação (ainda sem contrato)</option>
+              <option value="CONTRATADA">Contratada</option>
+            </Select>
+            <span className="mt-1 block text-xs text-slate-500">
+              Enquanto for avaliação, o passo a passo mantém esta etapa como pendente.
             </span>
           </Field>
           <Field label="CNAE principal">
@@ -65,6 +82,27 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
             </span>
           </Field>
         </div>
+      </fieldset>
+
+      <fieldset className="space-y-4">
+        <legend className="text-sm font-semibold text-slate-900">Anotações da implantação</legend>
+        <Field label="O que já foi apurado (fica visível no passo a passo)">
+          <Textarea
+            name="renaveObservacoes"
+            rows={6}
+            defaultValue={config.renaveObservacoes || ""}
+            placeholder={
+              "Ex.: Integradora X — R$ 34,90 por entrada de usado; taxa do DETRAN por fora.\n" +
+              "Pendente: comprovante da regularização junto ao órgão federal.\n" +
+              "DETRAN do estado ainda não publicou valores nem a jornada — sem previsão oficial.\n" +
+              "Consignação: modelo do contrato eletrônico ainda não divulgado."
+            }
+          />
+          <span className="mt-1 block text-xs text-slate-500">
+            Serve de memória da loja: o que a integradora respondeu, o que falta vir por escrito e o que
+            depende do DETRAN. Em caso de fiscalização, é a linha do tempo do que a loja fez.
+          </span>
+        </Field>
       </fieldset>
 
       <fieldset className="space-y-4">
