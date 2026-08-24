@@ -14,7 +14,7 @@ import {
   detranOperando,
   detranStatusLabel,
   detranStatusOf,
-  pendenciasRenave,
+  pendenciasCobraveis,
   prazoTexto,
 } from "@/lib/renave";
 
@@ -96,7 +96,9 @@ export default async function RenavePassoAPassoPage() {
       exitNfeKey: true,
     },
   });
-  const comPendencia = vehicles.filter((v) => pendenciasRenave(v).length > 0).length;
+  const comPendencia = vehicles.filter(
+    (v) => pendenciasCobraveis(v, detranOperando(company.detranRenaveStatus)).length > 0,
+  ).length;
 
   const certOk = company.eCnpjValidUntil ? company.eCnpjValidUntil.getTime() > agora.getTime() : false;
   // Estado que ainda não opera: as etapas que dependem dele saem da cobrança —

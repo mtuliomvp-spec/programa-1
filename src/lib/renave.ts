@@ -225,7 +225,23 @@ export type Pendencia = {
   base: string;
   /** `saida` = só atrapalha na hora de vender; `entrada` = já atrapalha agora. */
   momento: "entrada" | "saida";
+  /**
+   * De quem depende o dado: da LOJA (basta preencher/pedir ao vendedor) ou do
+   * RENAVE em si — protocolo e identificação prévia só existem dentro do
+   * sistema, então não há o que fazer enquanto o DETRAN do estado não opera.
+   */
+  depende: "loja" | "renave";
 };
+
+/**
+ * Título do negócio jurídico que o cadastro do veículo já indica. Não substitui
+ * a escolha de quem registra (é ele quem responde pelo dado), mas evita pedir
+ * do zero o que a ficha já diz: carro consignado entra por consignação; carro
+ * comprado, por compra.
+ */
+export function tituloSugerido(v: { consigned: boolean }): TituloNegocio {
+  return v.consigned ? "CONSIGNACAO" : "COMPRA";
+}
 
 /**
  * O que falta para este veículo ser escriturável no Renave. Lista vazia = a
@@ -240,17 +256,32 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
   const vendido = v.status === "VENDIDO";
 
   if (!v.chassi) {
-    p.push({ key: "chassi", texto: "Chassi não informado", base: "art. 15, II", momento: "entrada" });
+    p.push({
+      key: "chassi",
+      texto: "Chassi não informado",
+      base: "art. 15, II",
+      momento: "entrada",
+      depende: "loja",
+    });
   }
   if (!v.renavam) {
-    p.push({ key: "renavam", texto: "RENAVAM não informado", base: "art. 11", momento: "entrada" });
+    p.push({
+      key: "renavam",
+      texto: "RENAVAM não informado",
+      base: "art. 11",
+      momento: "entrada",
+      depende: "loja",
+    });
   }
   if (!v.renaveEntradaTitulo) {
     p.push({
       key: "entradaTitulo",
-      texto: "Título do negócio jurídico da entrada não informado",
+      texto:
+        `Título do negócio jurídico da entrada não informado — pelo cadastro é ` +
+        `${tituloLabel[tituloSugerido(v)]}; confirme no formulário e salve`,
       base: "art. 2º, VI",
       momento: "entrada",
+      depende: "loja",
     });
   }
   if (!v.renavePreviaTipo) {
@@ -259,6 +290,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
       texto: "Sem identificação prévia de entrada (ou vistoria que a substitua)",
       base: "art. 15, II e parágrafo único",
       momento: "entrada",
+      depende: "renave",
     });
   }
   if (!chaveNfeValida(v.entryNfeKey)) {
@@ -267,6 +299,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
       texto: "NF-e de entrada sem chave de acesso (44 dígitos)",
       base: "art. 14, I e art. 15, VII",
       momento: "entrada",
+      depende: "loja",
     });
   }
   if (v.consigned) {
@@ -276,6 +309,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
         texto: "Consignação sem contrato eletrônico registrado no Renave",
         base: "art. 20, §§ 1º a 3º",
         momento: "entrada",
+      depende: "loja",
       });
     }
   } else if (!v.renaveAssinaturaTipo) {
@@ -284,6 +318,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
       texto: "Assinatura do vendedor na compra sem data/tipo registrados",
       base: "art. 15, VIII",
       momento: "entrada",
+      depende: "loja",
     });
   }
   if (!v.renaveEntradaProtocolo) {
@@ -292,6 +327,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
       texto: "Entrada ainda não registrada no Renave",
       base: "art. 5º, III",
       momento: "entrada",
+      depende: "renave",
     });
   }
 
@@ -302,6 +338,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
       texto: "CRV sem número ou código de segurança",
       base: "art. 18, II",
       momento: "saida",
+      depende: "loja",
     });
   }
   if (vendido) {
@@ -311,6 +348,7 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
         texto: "NF-e de saída sem chave de acesso (44 dígitos)",
         base: "art. 18, VII",
         momento: "saida",
+      depende: "loja",
       });
     }
     if (!v.renaveSaidaProtocolo) {
@@ -319,10 +357,31 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
         texto: "Saída ainda não registrada no Renave",
         base: "art. 18",
         momento: "saida",
+      depende: "renave",
       });
     }
   }
   return p;
+}
+
+/**
+ * Separa o que a loja resolve do que depende do Renave estar no ar. Enquanto o
+ * DETRAN do estado não opera, cobrar protocolo é cobrar o impossível.
+ */
+export function separarPendencias(lista: Pendencia[]): { loja: Pendencia[]; renave: Pendencia[] } {
+  return {
+    loja: lista.filter((p) => p.depende === "loja"),
+    renave: lista.filter((p) => p.depende === "renave"),
+  };
+}
+
+/**
+ * As pendências que fazem sentido cobrar hoje: com o Renave no ar, todas; sem
+ * ele, só as que estão ao alcance da loja.
+ */
+export function pendenciasCobraveis(v: RenaveVeiculo, renaveOperando: boolean): Pendencia[] {
+  const lista = pendenciasRenave(v);
+  return renaveOperando ? lista : lista.filter((p) => p.depende === "loja");
 }
 
 /** Só o que já pesa hoje (some as pendências que são da hora da venda). */

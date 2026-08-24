@@ -12,7 +12,12 @@ import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
 import VehicleRenave, { type DocumentoDoVeiculo, type RenaveDados } from "./VehicleRenave";
-import { pendenciasRenave, diasParaAtpvConsignacao, RENAVE_PRAZO_PADRAO } from "@/lib/renave";
+import {
+  pendenciasRenave,
+  diasParaAtpvConsignacao,
+  detranOperando,
+  RENAVE_PRAZO_PADRAO,
+} from "@/lib/renave";
 import VehicleBoletos from "./VehicleBoletos";
 import TransferInProgressSetting from "./TransferInProgressSetting";
 import VehicleTransferQuote from "./VehicleTransferQuote";
@@ -747,6 +752,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 pendencias={renavePendencias}
                 prazo={renavePrazo.toISOString()}
                 diasAtpv={renaveDiasAtpv}
+                renaveOperando={detranOperando(renaveCompany.detranRenaveStatus)}
+                uf={renaveCompany.uf}
                 canEdit={canEditar}
               />
             </Card>

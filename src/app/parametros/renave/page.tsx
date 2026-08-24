@@ -12,8 +12,9 @@ import {
   avisoDetranParado,
   detranStatusLabel,
   detranStatusOf,
+  detranOperando,
   detranStatusTone,
-  pendenciasRenave,
+  pendenciasCobraveis,
   prazoTexto,
 } from "@/lib/renave";
 import RenaveConfigForm, { type RenaveConfig } from "./RenaveConfigForm";
@@ -53,7 +54,9 @@ export default async function ParametrosRenavePage() {
       exitNfeKey: true,
     },
   });
-  const comPendencia = vehicles.filter((v) => pendenciasRenave(v).length > 0).length;
+  const comPendencia = vehicles.filter(
+    (v) => pendenciasCobraveis(v, detranOperando(company.detranRenaveStatus)).length > 0,
+  ).length;
 
   const config: RenaveConfig = {
     renaveAderido: company.renaveAderido,

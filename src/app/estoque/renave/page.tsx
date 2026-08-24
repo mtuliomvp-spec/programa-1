@@ -24,6 +24,8 @@ import {
   detranStatusLabel,
   detranStatusOf,
   diasParaAtpvConsignacao,
+  detranOperando,
+  pendenciasCobraveis,
   pendenciasRenave,
   prazoTexto,
   situacaoLabel,
@@ -69,9 +71,11 @@ export default async function RenavePage({
     },
   });
 
+  const operando = detranOperando(company.detranRenaveStatus);
   const linhas = vehicles.map((v) => ({
     v,
-    pendencias: pendenciasRenave(v),
+    pendencias: pendenciasCobraveis(v, operando),
+    todas: pendenciasRenave(v),
     diasAtpv: diasParaAtpvConsignacao(v),
   }));
   const mostradas = filtro === "pendentes" ? linhas.filter((l) => l.pendencias.length > 0) : linhas;
