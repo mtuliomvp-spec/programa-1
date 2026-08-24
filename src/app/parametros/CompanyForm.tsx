@@ -31,7 +31,14 @@ type Company = {
   hasAiKey: boolean;
 };
 
-export default function CompanyForm({ company }: { company: Company }) {
+export default function CompanyForm({
+  company,
+  podeChaves,
+}: {
+  company: Company;
+  /** Domínio público e chaves de API são do dono do sistema (Super Admin). */
+  podeChaves: boolean;
+}) {
   const [state, formAction, pending] = useActionState<CompanyFormState, FormData>(
     saveCompanyAction,
     {},
@@ -156,19 +163,36 @@ export default function CompanyForm({ company }: { company: Company }) {
       </div>
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-        <Field label="Domínio do site (endereço público)">
-          <Input
-            name="publicUrl"
-            defaultValue={company.publicUrl || ""}
-            placeholder="mvpveiculos.com.br"
-          />
-        </Field>
-        <p className="mt-2 text-xs text-slate-500">
-          Usado para montar os links públicos: os QR Codes da Ficha de Negócio e da Ordem de
-          Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
-          (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
-          automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
-        </p>
+        {podeChaves ? (
+          <>
+            <Field label="Domínio do site (endereço público)">
+              <Input
+                name="publicUrl"
+                defaultValue={company.publicUrl || ""}
+                placeholder="mvpveiculos.com.br"
+              />
+            </Field>
+            <p className="mt-2 text-xs text-slate-500">
+              Usado para montar os links públicos: os QR Codes da Ficha de Negócio e da Ordem de
+              Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
+              (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
+              automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
+            </p>
+          </>
+        ) : (
+          <div>
+            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
+              Domínio do site (endereço público)
+            </p>
+            <p className="mt-1 text-sm text-slate-700">
+              {company.publicUrl || "usa o endereço pelo qual o sistema for aberto"}
+            </p>
+            <p className="mt-2 text-xs text-slate-500">
+              🔒 O endereço público é configurado pelo fornecedor do sistema — ele depende do domínio
+              contratado e do apontamento do servidor.
+            </p>
+          </div>
+        )}
         <div className="mt-3">
           <Field label="Instagram da loja">
             <Input name="instagram" defaultValue={company.instagram || ""} placeholder="@mvpveiculos" />
@@ -179,6 +203,8 @@ export default function CompanyForm({ company }: { company: Company }) {
         </p>
       </div>
 
+      {podeChaves ? (
+        <>
       <div className="rounded-lg border border-sky-200 bg-sky-50/50 p-4">
         <p className="mb-1 text-sm font-semibold text-slate-800">🔍 Consulta por placa (e valor FIPE)</p>
         <p className="mb-3 text-xs text-slate-500">
@@ -266,6 +292,31 @@ export default function CompanyForm({ company }: { company: Company }) {
           console.anthropic.com · OpenAI: platform.openai.com.
         </p>
       </div>
+
+        </>
+      ) : (
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+          <p className="mb-1 text-sm font-semibold text-slate-800">🔑 Chaves de API</p>
+          <p className="text-xs text-slate-500">
+            Consulta por placa/FIPE:{" "}
+            {company.hasPlateToken || company.plateTokenFromEnv ? (
+              <span className="font-medium text-emerald-700">ativa ✓</span>
+            ) : (
+              <span className="font-medium text-amber-700">não configurada</span>
+            )}{" "}
+            · Parecer IA:{" "}
+            {company.hasAiKey || company.aiKeyFromEnv ? (
+              <span className="font-medium text-emerald-700">ativa ✓</span>
+            ) : (
+              <span className="font-medium text-amber-700">não configurada</span>
+            )}
+          </p>
+          <p className="mt-2 text-xs text-slate-500">
+            🔒 As chaves são contratadas e mantidas pelo fornecedor do sistema — o custo por consulta
+            e por parecer é dele. Precisa ativar ou trocar? Fale com o fornecedor.
+          </p>
+        </div>
+      )}
 
       <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
         <p className="mb-2 text-sm font-medium text-slate-700">Logo da empresa (até 300KB)</p>
