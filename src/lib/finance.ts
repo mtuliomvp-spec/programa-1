@@ -817,12 +817,19 @@ export async function addPartStockWithPayable(input: {
 
     const totalCost = input.costPrice * input.quantity;
     const movimento = input.date || new Date();
+    // A quantidade entra na DESCRIÇÃO do título: é ela que aparece no Livro
+    // caixa, no extrato da conta e no Contas a pagar. Sem isso, um lançamento
+    // "Pastilha de freio · R$ 950,00" não diz se foram 2 ou 12 peças.
+    const textoUsuario = input.description?.trim() || "";
+    const descricao = textoUsuario
+      ? textoUsuario.toLowerCase().includes(part.name.toLowerCase())
+        ? `${textoUsuario} (${input.quantity} un.)`
+        : `${textoUsuario} — ${part.name} (${input.quantity} un.)`
+      : `Reposição de estoque: ${part.name} (${input.quantity} un.)`;
     if (totalCost > 0) {
       await tx.payable.create({
         data: {
-          description:
-            input.description?.trim() ||
-            `Reposição de estoque: ${part.name} (${input.quantity} un.)`,
+          description: descricao,
           documentNumber: input.documentNumber || null,
           notes: input.notes || null,
           category: "COMPRA_PECA" as CategoriaPagar,
