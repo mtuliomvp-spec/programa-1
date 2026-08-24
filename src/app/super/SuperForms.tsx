@@ -7,6 +7,7 @@ import {
   createSuperAdminAction,
   demoteSuperAdminAction,
   promoteUserAction,
+  updateMyAccountAction,
   setMaintenanceAction,
   setPaymentBlockAction,
   type SuperFormState,
@@ -104,6 +105,47 @@ export function MaintenanceButton({ locked }: { locked: boolean }) {
       </Button>
       {erro ? <p className="mt-2 text-xs text-rose-600">{erro}</p> : null}
     </div>
+  );
+}
+
+/**
+ * A própria conta do Super Admin. Como ela não aparece na tela de Usuários
+ * (invisível para a loja), é aqui que ele vê e ajusta os próprios dados.
+ */
+export function MyAccountForm({
+  conta,
+}: {
+  conta: { name: string; email: string };
+}) {
+  const [state, formAction, pending] = useActionState(updateMyAccountAction, vazio);
+
+  return (
+    <form action={formAction} className="space-y-4">
+      <Aviso state={state} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <Field label="Nome" required>
+          <Input name="name" defaultValue={conta.name} required />
+        </Field>
+        <Field label="E-mail (login)" required>
+          <Input name="email" type="email" defaultValue={conta.email} autoComplete="off" required />
+        </Field>
+        <Field label="Nova senha (opcional)">
+          <Input
+            name="password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="deixe em branco para manter"
+          />
+        </Field>
+      </div>
+      <p className="text-xs text-slate-500">
+        É por este e-mail que você entra no sistema. Trocando aqui, você <strong>continua logado</strong> —
+        o novo endereço vale a partir do próximo login.
+      </p>
+      <Button type="submit" disabled={pending}>
+        {pending ? "Salvando…" : "Salvar meus dados"}
+      </Button>
+    </form>
   );
 }
 

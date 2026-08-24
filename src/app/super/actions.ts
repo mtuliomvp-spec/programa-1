@@ -10,6 +10,7 @@ import {
   assertSuperGate,
   bootstrapAllowed,
   clearSuperGateCookie,
+  currentSuperAdmin,
   setSuperGateCookie,
   superGateOpen,
   superPassword,
@@ -160,6 +161,66 @@ export async function promoteUserAction(
   revalidatePath("/usuarios");
   return {
     success: `${alvo.name} (${alvo.email}) agora é Super Admin${novaSenha ? " — senha redefinida" : " — a senha continua a mesma"}.`,
+  };
+}
+
+const minhaContaSchema = z.object({
+  name: z.string().min(1, "Informe o nome"),
+  email: z.string().email("Informe um e-mail válido"),
+  password: z.string().optional(),
+});
+
+/**
+ * Edição da PRÓPRIA conta do Super Admin.
+ *
+ * A conta dele não aparece na tela de Usuários (é invisível para a loja, de
+ * propósito), então este é o lugar onde ele vê e ajusta os próprios dados:
+ * nome, e-mail de login e senha. Só mexe em quem está logado — nunca em outro
+ * Super Admin —, e a senha só muda se ele digitar uma nova.
+ */
+export async function updateMyAccountAction(
+  _prev: SuperFormState,
+  formData: FormData,
+): Promise<SuperFormState> {
+  const eu = await currentSuperAdmin();
+  if (!eu) {
+    return { error: "Entre com a sua conta de Super Admin para editar os seus dados." };
+  }
+  const parsed = minhaContaSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+
+  const novaSenha = parsed.data.password?.trim() || "";
+  if (novaSenha && novaSenha.length < 8) {
+    return { error: "A nova senha precisa ter pelo menos 8 caracteres (ou deixe em branco)." };
+  }
+
+  const email = parsed.data.email.toLowerCase().trim();
+  if (email !== eu.email) {
+    const emUso = await prisma.user.findFirst({
+      where: { email, id: { not: eu.id } },
+      select: { id: true },
+    });
+    if (emUso) return { error: "Já existe um usuário com esse e-mail." };
+  }
+
+  await prisma.user.update({
+    where: { id: eu.id },
+    data: {
+      name: parsed.data.name.trim(),
+      email,
+      ...(novaSenha ? { passwordHash: hashPassword(novaSenha) } : {}),
+    },
+  });
+
+  // O nome aparece no rodapé do menu; o layout precisa ser revalidado.
+  revalidatePath("/", "layout");
+  revalidatePath("/super");
+  const mudancas = [
+    email !== eu.email ? `o login passa a ser ${email}` : "",
+    novaSenha ? "senha trocada" : "",
+  ].filter(Boolean);
+  return {
+    success: mudancas.length > 0 ? `Dados salvos — ${mudancas.join(" e ")}.` : "Dados salvos.",
   };
 }
 
