@@ -31,9 +31,14 @@ export default async function ComunicacaoVendaPage() {
         title="Comunicação de venda"
         description="Quanto a prestadora cobra por serviço e quando ela fatura"
         action={
-          <LinkButton href="/parametros" variant="secondary">
-            ← Parâmetros
-          </LinkButton>
+          <div className="flex flex-wrap gap-2">
+            <LinkButton href="/financeiro/comunicacao-venda" variant="secondary">
+              📄 Conferir a fatura do mês
+            </LinkButton>
+            <LinkButton href="/parametros" variant="secondary">
+              ← Parâmetros
+            </LinkButton>
+          </div>
         }
       />
 
