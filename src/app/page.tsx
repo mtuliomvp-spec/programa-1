@@ -136,7 +136,11 @@ export default async function DashboardPage() {
               : []),
           ]}
           redItems={[
-            { label: "Pendente receber", value: pat.veiculosAReceber },
+            {
+              label: "Pendente receber",
+              value: pat.veiculosAReceber,
+              href: "/financeiro/a-receber?vendas=1",
+            },
             { label: "Devolução ao cliente (a pagar)", value: pat.devolucoesClientes },
             { label: "Devolução ao proprietário (a pagar)", value: pat.devolucoesProprietario },
             {

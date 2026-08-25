@@ -44,10 +44,12 @@ export default function PatrimonialCard({
   href?: string;
 }) {
   const reds = [...(redItem ? [redItem] : []), ...(redItems ?? [])].filter((r) => r.value > 0);
-  // Linha vermelha com link próprio: o card não pode ser um único <a> (link
-  // dentro de link é inválido) — o cabeçalho vira o link do card e cada linha
-  // com href vira o seu.
-  const hasRowLinks = reds.some((r) => r.href);
+  // Havendo linhas vermelhas, o link do card fica só no CABEÇALHO — o card não
+  // pode ser um único <a> (link dentro de link é inválido) e, pior, envolver as
+  // linhas fazia clicar em "Pendente receber" abrir o destino do card (o
+  // estoque) em vez do que a linha promete. Linha com href vira o seu link;
+  // linha sem href não é clicável.
+  const hasRows = reds.length > 0;
 
   const header = (
     <>
@@ -96,7 +98,7 @@ export default function PatrimonialCard({
     </>
   );
 
-  if (hasRowLinks) {
+  if (hasRows) {
     return (
       <div
         className={`h-full rounded-xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm ${border[tone]}`}

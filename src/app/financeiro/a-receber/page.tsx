@@ -20,9 +20,9 @@ const statusLabelMap = { PENDENTE: "Pendente", RECEBIDO: "Recebido", ATRASADO: "
 export default async function ContasAReceberPage({
   searchParams,
 }: {
-  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; p?: string }>;
+  searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; vendas?: string; p?: string }>;
 }) {
-  const { status: statusFilter, q: qParam, de, ate, min, max, p: pParam } = await searchParams;
+  const { status: statusFilter, q: qParam, de, ate, min, max, vendas, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
   const [canReceber, canManage, canEditOnly, canDiscount, canFixDate] = await Promise.all([
     userCan("financeiro", "receber"),
@@ -78,6 +78,9 @@ export default async function ContasAReceberPage({
   // Busca livre + intervalo de vencimento + faixa de valor.
   const filtered = byStatus.filter(
     (r) =>
+      // Linha "Pendente receber" do painel: títulos em aberto de VENDAS de
+      // veículos. Espelha o cálculo do lucro patrimonial (`veiculosAReceber`).
+      (!vendas || (r.effective !== "RECEBIDO" && Boolean(r.saleId))) &&
       matchesSearch(
         q,
         r.description,
@@ -133,7 +136,7 @@ export default async function ContasAReceberPage({
   const pageRows = tableRows.slice(pageStart, pageStart + PER_PAGE);
   const pageHref = (n: number) => {
     const sp = new URLSearchParams();
-    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max })) {
+    for (const [k, v] of Object.entries({ status: statusFilter, q, de, ate, min, max, vendas })) {
       if (v) sp.set(k, String(v));
     }
     if (n > 1) sp.set("p", String(n));
@@ -164,7 +167,7 @@ export default async function ContasAReceberPage({
         ate={ate}
         min={min}
         max={max}
-        filtersKey={`${statusFilter ?? ""}`}
+        filtersKey={`${statusFilter ?? ""}|${vendas ?? ""}`}
         extra={
           <label className="flex flex-col gap-0.5 text-xs text-slate-500">
             Status
@@ -178,9 +181,33 @@ export default async function ContasAReceberPage({
         }
       />
 
+      {vendas ? (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm text-rose-800">
+            🚗 Mostrando o que os clientes ainda devem por <strong>vendas de veículos</strong>{" "}
+            — a linha vermelha &quot;Pendente receber&quot; do painel. Total:{" "}
+            <strong className="tabular-nums">
+              {formatCurrency(filtered.reduce((s, r) => s + r.amount, 0))}
+            </strong>
+            .
+          </p>
+          <LinkButton href="/financeiro/a-receber" variant="secondary">
+            Limpar filtro
+          </LinkButton>
+        </div>
+      ) : null}
+
       <Card>
         {tableRows.length === 0 ? (
-          <EmptyState title={q ? "Nada encontrado para a busca" : "Nenhuma conta a receber encontrada"} />
+          <EmptyState
+            title={
+              vendas
+                ? "Nenhuma venda de veículo com valor a receber"
+                : q
+                  ? "Nada encontrado para a busca"
+                  : "Nenhuma conta a receber encontrada"
+            }
+          />
         ) : (
           <>
             {canReceber ? (
