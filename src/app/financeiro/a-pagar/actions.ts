@@ -17,6 +17,7 @@ import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
 import { appliedOf, freeCapitalOf } from "@/lib/investments";
+import type { CategoriaPagar } from "@prisma/client";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -1876,4 +1877,242 @@ export async function deletePayableAttachmentAction(id: string, payableId: strin
   revalidatePath("/financeiro/a-pagar");
   revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
   revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
+}
+
+// ---------------------------------------------------------------------------
+// Leitura do boleto do título com IA
+// ---------------------------------------------------------------------------
+
+/** Um boleto lido do arquivo, já pronto para a tela. */
+export type BoletoLido = {
+  /** Valor a pagar até o vencimento (já resolvido o caso do desconto). */
+  amount: number | null;
+  /** yyyy-mm-dd, quando a IA conseguiu ler. */
+  dueDate: string | null;
+  descricao: string | null;
+  cedente: string | null;
+};
+
+export type ReadBoletoResult = {
+  ok: boolean;
+  error?: string;
+  /** O arquivo foi anexado como BOLETO mesmo que a leitura falhe. */
+  attached: boolean;
+  boletos: BoletoLido[];
+  /** Vazio = o valor pode ser aplicado; com texto = por que não pode. */
+  amountLocked?: string;
+  /** Idem para o vencimento (título de recorrência manda na data). */
+  dueDateLocked?: string;
+};
+
+/**
+ * Por que o valor/vencimento deste título não pode vir do boleto. O motor de
+ * edição (`updatePayableAction`) já trava esses casos; aqui a trava é a mesma,
+ * só que explicada antes de o usuário clicar.
+ */
+function boletoLocks(p: {
+  cardInvoice: boolean;
+  category: CategoriaPagar;
+  description: string;
+  saleId: string | null;
+  recurringId: string | null;
+}): { amountLocked?: string; dueDateLocked?: string } {
+  const repasseDebito =
+    isVehiclePurchase(p.category) &&
+    !p.saleId &&
+    (p.description.startsWith("Débitos do veículo") ||
+      p.description.startsWith("Quitação do financiamento"));
+  const amountLocked = p.cardInvoice
+    ? "O valor da fatura é a soma dos lançamentos — importe a fatura em PDF no bloco do cartão."
+    : isVehiclePurchase(p.category) && !repasseDebito
+      ? "O valor da compra do veículo vem da ficha dele — altere no Estoque."
+      : undefined;
+  const dueDateLocked = p.recurringId
+    ? "O vencimento vem da recorrência — mudar aqui faria nascer um título repetido."
+    : undefined;
+  return { amountLocked, dueDateLocked };
+}
+
+/**
+ * Anexa o boleto do título (substituindo o anterior, como o slot manual) e o lê
+ * com a IA, devolvendo valor e vencimento para o usuário conferir e aplicar.
+ * A leitura roda DEPOIS do anexo e nunca o derruba: falhou a IA, o boleto
+ * continua anexado e o preenchimento é manual.
+ */
+export async function readPayableBoletoAction(formData: FormData): Promise<ReadBoletoResult> {
+  const vazio = { attached: false, boletos: [] as BoletoLido[] };
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, ...vazio, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const payableId = String(formData.get("payableId") || "").trim();
+  const file = formData.get("file");
+  if (!payableId) return { ok: false, ...vazio, error: "Título inválido." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, ...vazio, error: "Selecione o arquivo do boleto." };
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { ok: false, ...vazio, error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const payable = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: {
+      id: true,
+      status: true,
+      cardInvoice: true,
+      category: true,
+      description: true,
+      saleId: true,
+      recurringId: true,
+    },
+  });
+  if (!payable) return { ok: false, ...vazio, error: "Título não encontrado." };
+  if (payable.status === "PAGO") {
+    return { ok: false, ...vazio, error: "Título já pago. Reverta antes de mexer nele." };
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+  await prisma.payableAttachment.deleteMany({ where: { payableId, kind: "BOLETO" } });
+  await prisma.payableAttachment.create({
+    data: {
+      payableId,
+      kind: "BOLETO",
+      description: KIND_DEFAULT_DESC.BOLETO,
+      filename: file.name || "boleto",
+      mimeType,
+      size: buffer.byteLength,
+      data: buffer,
+    },
+  });
+  revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
+  revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+
+  const locks = boletoLocks(payable);
+  try {
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    const lidos = await extractBoletos(buffer.toString("base64"), mimeType);
+    const boletos: BoletoLido[] = lidos.map((b) => {
+      const valor = b.valor && b.valor > 0 ? round2(b.valor) : null;
+      // Fora da multa de trânsito não existe desconto por pontualidade: se a
+      // leitura trouxer um valor "com desconto", vale o valor cheio.
+      const amount =
+        valor != null && b.tipo !== "MULTA" && b.valorSemDesconto && b.valorSemDesconto > valor
+          ? round2(b.valorSemDesconto)
+          : valor;
+      return {
+        amount,
+        dueDate: b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null,
+        descricao: b.descricao,
+        cedente: b.cedente,
+      };
+    });
+    if (!boletos.length) {
+      return {
+        ok: false,
+        attached: true,
+        boletos: [],
+        error: "Nenhum boleto foi reconhecido neste arquivo — ele ficou anexado assim mesmo.",
+        ...locks,
+      };
+    }
+    return { ok: true, attached: true, boletos, ...locks };
+  } catch (e) {
+    return {
+      ok: false,
+      attached: true,
+      boletos: [],
+      error: `${e instanceof Error ? e.message : "Não foi possível ler o boleto."} O arquivo ficou anexado — preencha à mão.`,
+      ...locks,
+    };
+  }
+}
+
+/**
+ * Aplica ao título o valor e/ou o vencimento lidos do boleto. Passa pelo mesmo
+ * `updateManualPayable` da edição manual (mantém o custo do veículo espelhado)
+ * e repete as travas de `boletoLocks` no servidor — a tela só esconde o botão.
+ */
+export async function applyBoletoToPayableAction(input: {
+  payableId: string;
+  amount?: number | null;
+  dueDate?: string | null;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const current = await prisma.payable.findUnique({
+    where: { id: input.payableId },
+    select: {
+      id: true,
+      status: true,
+      cardInvoice: true,
+      category: true,
+      categoryLabel: true,
+      description: true,
+      documentNumber: true,
+      amount: true,
+      dueDate: true,
+      supplierId: true,
+      notes: true,
+      saleId: true,
+      recurringId: true,
+      vehicleId: true,
+      capitalBeneficiaryId: true,
+      costCenter: { select: { key: true } },
+    },
+  });
+  if (!current) return { ok: false, error: "Título não encontrado." };
+  if (current.status === "PAGO") return { ok: false, error: "Título já pago. Reverta antes de editar." };
+
+  const locks = boletoLocks(current);
+  const amount =
+    input.amount != null && input.amount > 0 && !locks.amountLocked ? round2(input.amount) : null;
+  const dueDate =
+    input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) && !locks.dueDateLocked
+      ? parseDateInput(input.dueDate)
+      : null;
+  if (amount == null && dueDate == null) {
+    return { ok: false, error: locks.amountLocked || locks.dueDateLocked || "Nada a aplicar." };
+  }
+
+  const flow = current.vehicleId
+    ? "VEICULOS"
+    : current.capitalBeneficiaryId
+      ? "CAPITAL"
+      : isStructuralKey(current.costCenter?.key)
+        ? current.costCenter.key
+        : "ADMINISTRATIVO";
+
+  await updateManualPayable({
+    id: current.id,
+    description: current.description,
+    category: current.category,
+    categoryLabel: current.categoryLabel,
+    documentNumber: current.documentNumber,
+    amount: amount ?? current.amount,
+    dueDate: dueDate ?? current.dueDate,
+    supplierId: current.supplierId,
+    notes: current.notes,
+    structuralKey: flow,
+    vehicleId: current.vehicleId,
+    capitalBeneficiaryId: current.capitalBeneficiaryId,
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath(`/financeiro/a-pagar/${current.id}/editar`);
+  revalidatePath(`/financeiro/a-pagar/${current.id}/ordem`);
+  return { ok: true };
 }

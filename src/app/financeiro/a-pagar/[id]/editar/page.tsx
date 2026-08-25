@@ -9,6 +9,7 @@ import SplitSameTotalForm from "./SplitSameTotalForm";
 import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 import PayableDocSlots from "./PayableDocSlots";
+import ReadBoletoAi from "./ReadBoletoAi";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 export const dynamic = "force-dynamic";
@@ -218,6 +219,17 @@ export default async function EditarPayablePage({
           title="Boleto e comprovante"
           description="Anexe o boleto do título e, depois, o comprovante do pagamento (um de cada)."
         />
+        {/* A leitura por IA não faz sentido na fatura do cartão: lá o valor é a
+            soma dos lançamentos e existe o importador próprio do PDF. */}
+        {payable.cardInvoice ? null : (
+          <div className="px-5 pt-5">
+            <ReadBoletoAi
+              payableId={payable.id}
+              amountAtual={payable.amount}
+              dueDateAtual={payable.dueDate.toISOString()}
+            />
+          </div>
+        )}
         <PayableDocSlots
           payableId={payable.id}
           boleto={payable.attachments.find((a) => a.kind === "BOLETO") ?? null}
