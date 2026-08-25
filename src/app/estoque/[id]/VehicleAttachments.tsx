@@ -139,9 +139,18 @@ export default function VehicleAttachments({
           </p>
         ) : null}
         {state.ok ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            Documento anexado.
-          </p>
+          <div className="space-y-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            <p>Documento anexado.</p>
+            {/* Comprovante de comunicação de venda: a cobrança lançada aparece aqui. */}
+            {state.filled?.map((f, i) => (
+              <p key={i}>✓ {f}</p>
+            ))}
+            {state.warnings?.map((w, i) => (
+              <p key={i} className="text-amber-800">
+                ⚠️ {w}
+              </p>
+            ))}
+          </div>
         ) : null}
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <Field label="Documento">
