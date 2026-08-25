@@ -72,14 +72,8 @@ export default async function RecorrentesPage({
         action={
           canCriar ? (
             <div className="flex flex-wrap items-center gap-2 print:hidden">
-              <LinkButton href="/financeiro/recorrentes/importar-impostos" variant="secondary">
-                ⇪ Impostos (DAS · FGTS · INSS)
-              </LinkButton>
-              <LinkButton href="/financeiro/recorrentes/importar-cartao-santander" variant="secondary">
-                💳 Cartão Santander
-              </LinkButton>
-              <LinkButton href="/financeiro/recorrentes/importar-plano-casf" variant="secondary">
-                🏥 Plano CASF
+              <LinkButton href="/financeiro/recorrentes/importar" variant="secondary">
+                ⇪ Importar do documento
               </LinkButton>
               <GenerateNowButton />
               <LinkButton href="/financeiro/recorrentes/novo">+ Nova recorrência</LinkButton>
