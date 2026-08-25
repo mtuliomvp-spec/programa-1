@@ -141,14 +141,26 @@ export default async function DashboardPage() {
               value: pat.veiculosAReceber,
               href: "/financeiro/a-receber?vendas=1",
             },
-            { label: "Devolução ao cliente (a pagar)", value: pat.devolucoesClientes },
-            { label: "Devolução ao proprietário (a pagar)", value: pat.devolucoesProprietario },
+            {
+              label: "Devolução ao cliente (a pagar)",
+              value: pat.devolucoesClientes,
+              href: "/financeiro/a-pagar?painel=devolucao-cliente",
+            },
+            {
+              label: "Devolução ao proprietário (a pagar)",
+              value: pat.devolucoesProprietario,
+              href: "/financeiro/a-pagar?painel=devolucao-proprietario",
+            },
             {
               label: "A pagar de veículos vendidos",
               value: pat.veiculosAPagarPosVenda,
-              href: "/financeiro/a-pagar?vendidos=1",
+              href: "/financeiro/a-pagar?painel=vendidos",
             },
-            { label: "Comissões e custos das vendas (a pagar)", value: pat.comissoesAPagar },
+            {
+              label: "Comissões e custos das vendas (a pagar)",
+              value: pat.comissoesAPagar,
+              href: "/financeiro/a-pagar?painel=comissoes",
+            },
           ]}
           href="/estoque"
         />
@@ -163,7 +175,7 @@ export default async function DashboardPage() {
             {
               label: "Comprado a pagar",
               value: pat.pecasAPagar,
-              href: "/financeiro/a-pagar",
+              href: "/financeiro/a-pagar?painel=pecas",
             },
           ]}
           href="/pecas"
