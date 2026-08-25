@@ -32,9 +32,23 @@ export function textoDoPdf(buffer: Buffer): string {
       conteudo = cru.toString("latin1");
     }
     if (!/T[jJ]/.test(conteudo)) continue;
-    for (const t of conteudo.matchAll(/\((?:\\.|[^()\\])*\)/g)) {
-      partes.push(t[0].slice(1, -1).replace(/\\([()\\])/g, "$1"));
+    // Só os literais que são MOSTRADOS por Tj/TJ. Pegar todo "(...)" do stream
+    // parecia equivalente, mas os bytes crus de uma imagem JPEG contêm "Tj" e
+    // parênteses por acaso — num PDF com foto, o texto vinha afogado em lixo.
+    for (const op of conteudo.matchAll(/(\[(?:[^[\]\\]|\\.)*\]|\((?:[^()\\]|\\.)*\))\s*(?:TJ|Tj)/g)) {
+      for (const lit of op[1].matchAll(/\((?:[^()\\]|\\.)*\)/g)) {
+        partes.push(
+          lit[0]
+            .slice(1, -1)
+            .replace(/\\([()\\])/g, "$1")
+            // Acentos saem em octal (\347 = ç) nos geradores que não usam UTF.
+            .replace(/\\(\d{1,3})/g, (_, oct) => String.fromCharCode(parseInt(oct, 8))),
+        );
+      }
     }
+    // Quebra por stream: cada página vira uma linha, o que separa um item do
+    // seguinte quando o gerador não põe espaço nenhum.
+    partes.push("\n");
   }
   return partes.join("");
 }

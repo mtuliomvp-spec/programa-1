@@ -192,3 +192,98 @@ export const sicoveCnpjDoTexto = (s: string): string | null => {
   const m = s.match(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/);
   return m ? soDigitos(m[0]) : null;
 };
+
+// ---------------------------------------------------------------------------
+// Fatura mensal: ler o detalhamento e conferir contra o que foi lançado
+// ---------------------------------------------------------------------------
+
+export type ItemFatura = {
+  tipo: ServicoSicove;
+  numero: string;
+  placa: string;
+  enviadoEm: Date | null;
+  valor: number;
+};
+
+export type FaturaSicove = {
+  numero: string | null;
+  periodoInicio: Date | null;
+  periodoFim: Date | null;
+  vencimento: Date | null;
+  itens: ItemFatura[];
+  /** Soma dos itens lidos. */
+  total: number;
+};
+
+/** "1.234,56" → 1234.56 */
+const valorBr = (s: string) => Number(s.replace(/\./g, "").replace(",", "."));
+
+/**
+ * Lê o "Relatório de detalhamento de fatura" do SICOVE.
+ *
+ * O valor de cada item NÃO é lido dígito a dígito: no PDF o IP vem grudado no
+ * valor ("177.99.2.2524,90") e as duas leituras são gramaticalmente válidas
+ * ("25" + "24,90" ou "252" + "4,90"). O que não é ambíguo é o TOTAL da seção e
+ * a quantidade de itens dela — então o unitário sai da divisão, e o total da
+ * seção serve de conferência do próprio parse.
+ */
+export function lerFaturaSicove(buffer: Buffer): FaturaSicove | null {
+  let texto: string;
+  try {
+    texto = textoDoPdf(buffer);
+  } catch {
+    return null;
+  }
+  const limpo = texto.replace(/\s+/g, " ");
+  if (!/RELAT[ÓO]RIO DE DETALHAMENTO DE FATURA/i.test(limpo)) return null;
+
+  // Sem espaço antes do próximo rótulo ("...-52PERÍODO:"), então o número só
+  // pode conter dígitos e hífen.
+  const numero = limpo.match(/N[ºo°]?\s*DA FATURA:\s*([\d-]+)/i)?.[1] ?? null;
+  const periodo = limpo.match(/PER[ÍI]ODO:\s*([\d/]+)\s*[ÀA]\s*([\d/]+)/i);
+  const vencimento = dataBr(limpo.match(/VENCIMENTO\s*([\d/]{10})/i)?.[1]);
+
+  // Cada bloco começa em "<SERVIÇO>DESCRIÇÃO DO SERVIÇO:" e termina no
+  // "TOTAL:" dele. O mesmo serviço pode ter vários blocos (um por página).
+  const itens: ItemFatura[] = [];
+  const blocos = [...limpo.matchAll(/([A-ZÇÃÕÁÉÍÓÚ ]{4,})DESCRI[ÇC][ÃA]O DO SERVI[ÇC]O:/gi)];
+  for (let i = 0; i < blocos.length; i++) {
+    const bloco = blocos[i];
+    const inicio = bloco.index + bloco[0].length;
+    const fim = i + 1 < blocos.length ? blocos[i + 1].index : limpo.length;
+    const trecho = limpo.slice(inicio, fim);
+    const tipo: ServicoSicove = /CANCELAMENTO/i.test(bloco[1]) ? "CANCELAMENTO" : "COMUNICACAO";
+
+    const linhas = [
+      ...trecho.matchAll(
+        /(\d{2}\/\d{2}\/\d{4}) \d{2}:\d{2}:\d{2}[^]*?(\d{2}\.\d{8}\/\d{2})([A-Z]{3}\d[A-Z0-9]\d{2})/g,
+      ),
+    ];
+    if (!linhas.length) continue;
+    const totalBloco = trecho.match(/TOTAL:\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+    const unitario = totalBloco ? valorBr(totalBloco[1]) / linhas.length : 0;
+
+    for (const l of linhas) {
+      itens.push({
+        tipo,
+        numero: l[2],
+        placa: l[3].toUpperCase(),
+        enviadoEm: dataBr(l[1]),
+        valor: Math.round(unitario * 100) / 100,
+      });
+    }
+  }
+
+  // Um mesmo item pode aparecer duas vezes se o bloco for repetido no PDF.
+  const vistos = new Set<string>();
+  const unicos = itens.filter((i) => (vistos.has(i.numero) ? false : (vistos.add(i.numero), true)));
+
+  return {
+    numero,
+    periodoInicio: dataBr(periodo?.[1]),
+    periodoFim: dataBr(periodo?.[2]),
+    vencimento,
+    itens: unicos,
+    total: Math.round(unicos.reduce((s, i) => s + i.valor, 0) * 100) / 100,
+  };
+}
