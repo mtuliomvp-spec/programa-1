@@ -1011,10 +1011,29 @@ export async function uploadVehicleAttachmentAction(
     }
   }
 
+  // Comprovante de comunicação de venda (SICOVE): a prestadora cobra por
+  // serviço, então anexar o comprovante lança sozinho o título daquele custo no
+  // carro. Como no CRLV, nada aqui pode derrubar o anexo — o documento fica
+  // guardado mesmo que a cobrança não seja lançada.
+  if (kind === "DOCUMENTO") {
+    try {
+      const { lancarCobrancaSicove } = await import("@/lib/sicove");
+      const cobranca = await lancarCobrancaSicove({ vehicleId, buffer });
+      if (cobranca.mensagem) {
+        if (cobranca.ok) read.filled = [...read.filled, cobranca.mensagem];
+        else read.warnings = [...read.warnings, cobranca.mensagem];
+      }
+    } catch {
+      // Silencioso de propósito: anexar documento não pode falhar por causa
+      // de uma cobrança automática.
+    }
+  }
+
   revalidatePath(`/estoque/${vehicleId}`);
   // A lista mostra o selo do CRLV e os dados do carro — sem isto o card ficava
   // defasado até outra revalidação.
   revalidatePath("/estoque");
+  revalidatePath("/financeiro/a-pagar");
   return { ok: true, filled: read.filled, warnings: read.warnings };
 }
 

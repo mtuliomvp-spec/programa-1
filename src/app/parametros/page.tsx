@@ -40,6 +40,9 @@ export default async function ParametrosPage() {
             <LinkButton href="/parametros/renave" variant="secondary">
               🚗 Renave
             </LinkButton>
+            <LinkButton href="/parametros/comunicacao-venda" variant="secondary">
+              📨 Comunicação de venda
+            </LinkButton>
             <LinkButton href="/parametros/financiamento" variant="secondary">
               💳 Financiamento na vitrine
             </LinkButton>

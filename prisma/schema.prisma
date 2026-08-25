@@ -1723,6 +1723,15 @@ model CompanySettings {
   /** Protocolo da consulta feita ao DETRAN — prova de diligência da loja. */
   detranProtocolo   String?
   eCnpjValidUntil   DateTime?
+  // Comunicação de venda (SICOVE): a prestadora cobra por serviço prestado e
+  // fatura tudo num boleto mensal. Os valores mudam com reajuste, então ficam
+  // aqui — o lançamento automático ao anexar o comprovante lê daqui.
+  // Vazio = o lançamento fica desligado.
+  sicoveFornecedor  String?
+  sicoveComunicado  Float?
+  sicoveCancelamento Float?
+  /** Dia do vencimento do boleto mensal da prestadora (padrão 10). */
+  sicoveVencimentoDia Int?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
