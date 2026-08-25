@@ -5,7 +5,7 @@ import { prisma } from "@/lib/prisma";
  * Contador de uso de IA da instalação.
  *
  * Toda chamada aos leitores de documento (contrato, NF-e, comprovantes,
- * duplicatas, CRLV, boleto, fatura) e ao Parecer registra aqui quantos tokens
+ * duplicatas, CRLV, ATPV-e, boleto, fatura) e ao Parecer registra aqui quantos tokens
  * consumiu e o custo estimado. Como a chave normalmente é da operadora do
  * sistema (uma chave atendendo várias lojas), é este contador que mostra quanto
  * cada instalação está gastando.
@@ -20,6 +20,7 @@ export const AI_FEATURES = {
   comprovantes: "Comprovantes de pagamento",
   duplicatas: "Relatório de duplicatas",
   crlv: "CRLV",
+  atpv: "ATPV-e",
   boleto: "Boleto",
   fatura: "Fatura de cartão",
   parecer: "Parecer IA",
