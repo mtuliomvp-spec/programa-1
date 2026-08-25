@@ -394,10 +394,42 @@ model User {
   resetRequestedAt    DateTime?
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
+  // Última atividade vista pelo servidor: o cliente logado consulta
+  // /api/system-lock a cada 10 s e esse batimento marca a hora aqui (gravado no
+  // máximo 1×/min). É o que sustenta a lista de "quem está online" — a sessão
+  // é um cookie assinado, não existe sessão guardada no banco para consultar.
+  // Sair do sistema zera o campo, tirando a pessoa da lista na hora.
+  lastSeenAt       DateTime?
+  logins           LoginEvent[]
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
   @@map("users")
+}
+
+/**
+ * Um acesso concluído (login aceito). Serve de histórico para o dono do
+ * sistema: quem entrou, quando e de onde.
+ *
+ * Nome, e-mail e perfil são copiados no momento do acesso — o histórico
+ * precisa continuar legível depois de o usuário ser renomeado ou excluído
+ * (por isso o vínculo com `User` é opcional e sobrevive à exclusão).
+ */
+model LoginEvent {
+  id        String   @id @default(cuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name      String
+  email     String
+  role      UserRole
+  at        DateTime @default(now())
+  ip        String?
+  // Resumo legível do aparelho ("Celular · Chrome"), montado na gravação.
+  device    String?
+
+  @@index([at])
+  @@index([userId, at])
+  @@map("login_events")
 }
 
 // Perfil de acesso personalizado (ex.: "Vendedor", "Financeiro"): um conjunto

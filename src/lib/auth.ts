@@ -97,11 +97,48 @@ export async function setSessionCookie(user: { id: string; name: string; role: U
     maxAge: SESSION_DAYS * 24 * 60 * 60,
     path: "/",
   });
+  // Histórico de acessos do painel do Super Admin. Fica aqui, e não em cada
+  // tela de entrada, porque é aqui que a sessão nasce — login, primeiro acesso
+  // e troca de senha caem todos no registro sem depender de quem chamou.
+  await registrarAcesso(user);
+}
+
+/** Grava o acesso e o e-mail/aparelho de quem entrou (nunca derruba o login). */
+async function registrarAcesso(user: { id: string; name: string; role: UserRole }) {
+  try {
+    const [{ recordLogin, describeDevice, clientIp }, { headers }, dono] = await Promise.all([
+      import("@/lib/presence"),
+      import("next/headers"),
+      prisma.user.findUnique({ where: { id: user.id }, select: { email: true } }),
+    ]);
+    const h = await headers();
+    await recordLogin({
+      userId: user.id,
+      name: user.name,
+      email: dono?.email ?? "",
+      role: user.role,
+      ip: clientIp(h),
+      device: describeDevice(h.get("user-agent")),
+    });
+  } catch {
+    // Registro é acessório: entrar no sistema não pode falhar por causa dele.
+  }
 }
 
 export async function clearSessionCookie() {
   const store = await cookies();
+  // Lê ANTES de apagar: depois do delete não há mais de quem tirar a presença.
+  const payload = verifySessionToken(store.get(SESSION_COOKIE)?.value);
   store.delete(SESSION_COOKIE);
+  // Sair tira a pessoa da lista de "online" na hora, sem esperar a janela.
+  if (payload) {
+    try {
+      const { clearPresence } = await import("@/lib/presence");
+      await clearPresence(payload.sub);
+    } catch {
+      // Presença é acessório: sair do sistema nunca pode falhar por isso.
+    }
+  }
 }
 
 /**
