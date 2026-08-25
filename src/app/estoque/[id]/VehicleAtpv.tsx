@@ -7,6 +7,7 @@ import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehicleAttachmentAction,
   deleteVehicleAttachmentAction,
+  readAtpvAttachmentAction,
   type AttachmentState,
 } from "../actions";
 
@@ -46,6 +47,8 @@ export default function VehicleAtpv({
   const formRef = useRef<HTMLFormElement>(null);
   const [removing, startRemove] = useTransition();
   const [preparing, setPreparing] = useState(false);
+  const [lendo, startLeitura] = useTransition();
+  const [leitura, setLeitura] = useState<AttachmentState | null>(null);
 
   useEffect(() => {
     if (state.ok) formRef.current?.reset();
@@ -78,12 +81,29 @@ export default function VehicleAtpv({
           {atpvs.map((a) => (
             <li key={a.id} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
-                <p className="truncate text-sm font-medium text-emerald-700">✓ ATPV-e anexada</p>
+                {/* Depois da leitura a descrição carrega o número da ATPV-e. */}
+                <p className="truncate text-sm font-medium text-emerald-700">
+                  ✓ {/atpv-e n/i.test(a.description) ? a.description : "ATPV-e anexada"}
+                </p>
                 <p className="truncate text-xs text-slate-400">
                   {a.filename} · {humanSize(a.size)} · {formatDate(a.createdAt)}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-3 text-sm">
+                {canManage ? (
+                  <button
+                    type="button"
+                    disabled={lendo}
+                    onClick={() => {
+                      setLeitura(null);
+                      startLeitura(async () => setLeitura(await readAtpvAttachmentAction(a.id)));
+                    }}
+                    className="font-medium text-indigo-700 hover:underline disabled:opacity-50"
+                    title="A IA lê o documento e completa a ficha (número e código do CRV, chassi, RENAVAM)"
+                  >
+                    {lendo ? "Lendo…" : "🤖 Ler este documento"}
+                  </button>
+                ) : null}
                 <a
                   href={`/anexos/${a.id}`}
                   target="_blank"
@@ -117,6 +137,43 @@ export default function VehicleAtpv({
           ))}
         </ul>
       )}
+
+      {lendo ? (
+        <p className="mb-4 text-xs text-slate-500">
+          A IA está lendo a ATPV-e — costuma levar alguns segundos. Não feche a página.
+        </p>
+      ) : null}
+
+      {leitura?.error ? (
+        <p className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+          {leitura.error}
+        </p>
+      ) : null}
+
+      {leitura?.ok ? (
+        <div className="mb-4 space-y-2 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+          {leitura.filled && leitura.filled.length > 0 ? (
+            <div>
+              <p className="font-medium text-emerald-800">
+                ✓ {leitura.filled.length} dado(s) preenchido(s) na ficha:
+              </p>
+              <ul className="mt-1 space-y-0.5 text-emerald-700">
+                {leitura.filled.map((f, i) => (
+                  <li key={i}>· {f}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+          {leitura.warnings && leitura.warnings.length > 0 ? (
+            <ul className="space-y-0.5 text-amber-800">
+              {leitura.warnings.map((w, i) => (
+                <li key={i}>⚠️ {w}</li>
+              ))}
+            </ul>
+          ) : null}
+          <p className="text-xs text-emerald-700">Recarregue a página para ver a ficha atualizada.</p>
+        </div>
+      ) : null}
 
       <form
         ref={formRef}

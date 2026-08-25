@@ -1501,6 +1501,153 @@ export async function readCrlvAttachmentAction(attachmentId: string): Promise<At
   }
 }
 
+/**
+ * Lê a ATPV-e anexada e completa a ficha do veículo.
+ *
+ * Regra de ouro: NUNCA sobrescreve o que já está preenchido. O que está vazio é
+ * preenchido; o que já tem valor e diverge do documento vira aviso, para a
+ * pessoa decidir — chassi e RENAVAM costumam já estar na ficha, e o documento
+ * serve então de conferência.
+ *
+ * O ganho real está no NÚMERO e no CÓDIGO DE SEGURANÇA DO CRV: o Renave os
+ * exige na saída (art. 18, II) e a ATPV-e é a única fonte deles.
+ */
+export async function readAtpvAttachmentAction(attachmentId: string): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "comunicacao");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const att = await prisma.vehicleAttachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, vehicleId: true, mimeType: true, description: true, data: true },
+  });
+  if (!att) return { error: "Anexo não encontrado." };
+  if (!/ATPV/i.test(att.description)) return { error: "Este anexo não é uma ATPV-e." };
+
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: att.vehicleId },
+    select: {
+      id: true,
+      plate: true,
+      chassi: true,
+      renavam: true,
+      km: true,
+      purchasePrice: true,
+      consigned: true,
+      crvNumber: true,
+      crvSecurityCode: true,
+      renaveAssinaturaTipo: true,
+      renaveAssinaturaEm: true,
+    },
+  });
+  if (!vehicle) return { error: "Veículo não encontrado." };
+
+  let lido;
+  try {
+    const { extractAtpv } = await import("@/lib/atpv-ai");
+    lido = await extractAtpv(Buffer.from(att.data).toString("base64"), att.mimeType);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler a ATPV-e." };
+  }
+
+  const filled: string[] = [];
+  const warnings: string[] = [];
+  const digitos = (s: string | null) => (s || "").replace(/\D/g, "");
+  const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  // A placa é a checagem de que o documento é DESTE carro.
+  const placaDoc = (lido.placa || "").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  const placaFicha = vehicle.plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (placaDoc && placaFicha && placaDoc !== placaFicha) {
+    return {
+      error: `Esta ATPV-e é da placa ${placaDoc}, e a ficha é da ${placaFicha}. Confira se o anexo está no veículo certo.`,
+    };
+  }
+
+  const data: Record<string, unknown> = {};
+
+  /** Preenche quando vazio; diverge com valor → aviso, sem sobrescrever. */
+  const completar = (
+    campo: string,
+    rotulo: string,
+    atual: string | null,
+    doDocumento: string | null,
+  ) => {
+    const novo = (doDocumento || "").trim();
+    if (!novo) return;
+    if (!atual) {
+      data[campo] = novo;
+      filled.push(`${rotulo}: ${novo}`);
+    } else if (atual.trim().toUpperCase() !== novo.toUpperCase()) {
+      warnings.push(`${rotulo} da ficha (${atual}) não bate com o documento (${novo}) — não alterei.`);
+    }
+  };
+
+  completar("chassi", "Chassi", vehicle.chassi, lido.chassi);
+  completar("renavam", "RENAVAM", vehicle.renavam, digitos(lido.renavam) || null);
+  completar("crvNumber", "Número do CRV", vehicle.crvNumber, digitos(lido.numeroCrv) || null);
+  completar(
+    "crvSecurityCode",
+    "Código de segurança do CRV",
+    vehicle.crvSecurityCode,
+    digitos(lido.codigoSegurancaCrv) || null,
+  );
+  if (!lido.codigoSegurancaCrv) {
+    warnings.push(
+      "O código de segurança do CRV veio mascarado ou ilegível no documento — digite-o à mão no card do Renave.",
+    );
+  }
+
+  // A ATPV-e É a assinatura do vendedor (art. 15, VIII): documento eletrônico
+  // autenticado pelo SENATRAN. Só marca o tipo quando a ficha está vazia.
+  if (!vehicle.consigned && !vehicle.renaveAssinaturaTipo) {
+    data.renaveAssinaturaTipo = "ELETRONICA_QUALIFICADA";
+    filled.push("Assinatura do vendedor: eletrônica qualificada (a própria ATPV-e)");
+  }
+  if (!vehicle.renaveAssinaturaEm && lido.dataVenda && /^\d{4}-\d{2}-\d{2}$/.test(lido.dataVenda)) {
+    data.renaveAssinaturaEm = parseDateInput(lido.dataVenda);
+    filled.push(`Data da assinatura: ${lido.dataVenda.split("-").reverse().join("/")}`);
+  }
+
+  // Hodômetro e valor declarado não entram na ficha: o KM anda e o preço de
+  // compra é do cadastro. Servem de conferência contra o documento oficial.
+  if (lido.hodometro != null && vehicle.km > 0 && Math.abs(lido.hodometro - vehicle.km) > 1) {
+    warnings.push(
+      `Hodômetro na ATPV-e: ${lido.hodometro.toLocaleString("pt-BR")} km · na ficha: ${vehicle.km.toLocaleString("pt-BR")} km.`,
+    );
+  }
+  if (
+    lido.valorDeclarado != null &&
+    vehicle.purchasePrice > 0 &&
+    Math.abs(lido.valorDeclarado - vehicle.purchasePrice) > 0.5
+  ) {
+    warnings.push(
+      `Valor declarado na ATPV-e: ${brl(lido.valorDeclarado)} · preço de compra na ficha: ${brl(vehicle.purchasePrice)}.`,
+    );
+  }
+
+  if (Object.keys(data).length > 0) {
+    await prisma.vehicle.update({ where: { id: vehicle.id }, data });
+  }
+  if (filled.length === 0 && warnings.length === 0) {
+    warnings.push("A ficha já tinha todos os dados que a ATPV-e traz — nada mudou.");
+  }
+
+  // O nome do anexo passa a dizer o que foi lido (aparece na lista).
+  await prisma.vehicleAttachment.update({
+    where: { id: att.id },
+    data: {
+      description: `ATPV-e${lido.numeroAtpv ? ` nº ${digitos(lido.numeroAtpv)}` : ""}`.slice(0, 500),
+    },
+  });
+
+  revalidatePath(`/estoque/${vehicle.id}`);
+  revalidatePath("/estoque");
+  return { ok: true, filled, warnings };
+}
+
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
   // A permissão depende do tipo do anexo (a mesma ação serve fotos, documentos
   // e CRLV): CRLV → estoque.crlv; documentos → estoque.comunicacao; fotos →
