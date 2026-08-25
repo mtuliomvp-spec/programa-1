@@ -10,7 +10,9 @@ import {
   superGateOpen,
   superPassword,
 } from "@/lib/super-admin";
+import { listOnlineUsers, listRecentLogins, loginSummary } from "@/lib/presence";
 import { Badge, Card, CardHeader } from "@/components/ui";
+import OnlineUsers from "./OnlineUsers";
 import {
   DemoteButton,
   GateForm,
@@ -23,6 +25,10 @@ import {
 import { closeSuperGateAction, openSuperGateAction } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+/** Data e hora do acesso no fuso da loja. */
+const dataHora = (d: Date) =>
+  d.toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" });
 
 /**
  * Painel do dono do sistema (Super Admin) — tela OCULTA. É daqui que se
@@ -103,11 +109,14 @@ export default async function SuperPage() {
     );
   }
 
-  const [logado, lock, supers, promoveis] = await Promise.all([
+  const [logado, lock, supers, promoveis, online, acessos, resumo] = await Promise.all([
     currentSuperAdmin(),
     getSystemLock(),
     listSuperAdmins(),
     listPromotableUsers(),
+    listOnlineUsers(),
+    listRecentLogins(12),
+    loginSummary(),
   ]);
   const euNaLista = supers.find((s) => s.id === logado?.id);
 
@@ -184,6 +193,77 @@ export default async function SuperPage() {
           </div>
         </Card>
       ) : null}
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Quem está no sistema"
+          description="Atualiza sozinho. Quem fecha a aba sai da lista em até 2 minutos; quem clica em Sair, na hora."
+          action={
+            online.length > 0 ? (
+              <Badge tone="success">{online.length} online</Badge>
+            ) : (
+              <Badge tone="default">Ninguém online</Badge>
+            )
+          }
+        />
+        <div className="space-y-5 p-5">
+          <OnlineUsers
+            eu={logado?.id ?? null}
+            users={online.map((u) => ({
+              id: u.id,
+              name: u.name,
+              email: u.email,
+              role: u.role,
+              profileName: u.profileName,
+              lastSeenAt: u.lastSeenAt.toISOString(),
+            }))}
+          />
+
+          <div>
+            <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-800">Últimos acessos</p>
+              <Link href="/super/acessos" className="text-xs font-medium text-blue-700 hover:underline">
+                Ver o histórico completo →
+              </Link>
+            </div>
+            {acessos.length === 0 ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Nenhum acesso registrado ainda. O histórico começa a partir de agora — entradas
+                anteriores a esta atualização não foram gravadas.
+              </p>
+            ) : (
+              <>
+                <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                  {acessos.map((a) => (
+                    <li key={a.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800">
+                          {a.name}
+                          {a.online ? (
+                            <span className="ml-2 text-xs font-normal text-emerald-700">· online</span>
+                          ) : null}
+                        </p>
+                        <p className="truncate text-xs text-slate-500">
+                          {a.email}
+                          {a.device ? ` · ${a.device}` : ""}
+                          {a.ip ? ` · ${a.ip}` : ""}
+                        </p>
+                      </div>
+                      <span className="shrink-0 text-xs tabular-nums text-slate-500">
+                        {dataHora(a.at)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-xs text-slate-500">
+                  {resumo.semana} acesso(s) nos últimos 7 dias · {resumo.pessoasSemana} pessoa(s)
+                  distinta(s) · {resumo.total} no total
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      </Card>
 
       <Card className="mt-4">
         <CardHeader title="Super Admins" description="Contas que enxergam esta área." />
