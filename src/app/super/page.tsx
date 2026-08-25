@@ -314,6 +314,7 @@ export default async function SuperPage() {
         <CardHeader title="Telas do dono do sistema" />
         <div className="grid grid-cols-1 gap-2 p-5 sm:grid-cols-2">
           {[
+            { href: "/super/acessos", label: "🔑 Histórico de acessos" },
             { href: "/sistema/assinatura", label: "💳 Assinatura e contrato" },
             { href: "/sistema/uso", label: "📶 Uso da plataforma" },
             { href: "/sistema/uso-ia", label: "🤖 Uso de IA" },
@@ -331,8 +332,8 @@ export default async function SuperPage() {
           ))}
         </div>
         <p className="px-5 pb-5 text-xs text-slate-500">
-          Essas telas só abrem para quem estiver <strong>logado</strong> como Super Admin — a senha mestra
-          abre apenas este painel.
+          As telas de sistema só abrem para quem estiver <strong>logado</strong> como Super Admin — a senha
+          mestra abre apenas este painel e o histórico de acessos.
         </p>
       </Card>
     </div>
