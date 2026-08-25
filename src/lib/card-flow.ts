@@ -8,8 +8,8 @@ import { prisma } from "@/lib/prisma";
  *  - cartão adicional 9792 (Marci) → Marcelo Matos Viana Pereira Jr;
  *  - todo o resto (supermercados, parcelamentos, assinaturas, cartões
  *    adicionais Gabriel e Marco Túlio Filho) → Marco Túlio.
- * Usadas tanto no import fixo (importar-cartao-santander) quanto na
- * importação de fatura em PDF por IA.
+ * Usadas na importação da fatura em PDF por IA (Contas a pagar → editar o
+ * título do cartão).
  */
 
 export type BeneficiaryKey = "AGRASTY" | "MARCELO" | "MARCO";

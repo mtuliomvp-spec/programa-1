@@ -273,3 +273,196 @@ export async function generateNowAction(): Promise<{ ok: boolean; created?: numb
   revalidatePath("/financeiro/a-receber");
   return { ok: true, created };
 }
+
+// ---------------------------------------------------------------------------
+// Importar do documento: a IA lê o boleto/carnê e propõe a recorrência
+// ---------------------------------------------------------------------------
+
+/** Uma parcela lida do arquivo, como a tela mostra para conferência. */
+export type ParcelaLida = { amount: number | null; dueDate: string | null; descricao: string | null };
+
+export type PropostaRecorrencia = {
+  description: string;
+  amount: number;
+  supplierName: string;
+  periodicidade: "MENSAL" | "DIAS";
+  dayOfMonth: number;
+  intervalDays: number | null;
+  anticipateToBusinessDay: boolean;
+  startDate: string;
+  endDate: string | null;
+  notes: string;
+};
+
+export type LeituraRecorrencia = {
+  ok: boolean;
+  error?: string;
+  parcelas: ParcelaLida[];
+  proposta?: PropostaRecorrencia;
+  /** O que a leitura deduziu e o usuário precisa conferir. */
+  avisos: string[];
+};
+
+const MAX_DOC_BYTES = 15 * 1024 * 1024;
+
+/** yyyy-mm-dd → dia do mês. */
+const diaDe = (iso: string) => Number(iso.slice(8, 10));
+
+/** Guias de imposto vencem em dia útil: DAS, FGTS, INSS, DARF. */
+function pareceGuiaDeImposto(texto: string): boolean {
+  const t = texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase();
+  return /\b(DAS|DARF|FGTS|INSS|GPS|GARE|SIMPLES NACIONAL|RECEITA FEDERAL|PREVIDENC)/.test(t);
+}
+
+/**
+ * Lê o documento (boleto avulso ou carnê com várias parcelas) e devolve uma
+ * proposta de recorrência para o usuário conferir e salvar no formulário
+ * normal — nada é gravado aqui.
+ *
+ * A dedução vem das parcelas: duas ou mais em meses seguidos viram uma
+ * recorrência MENSAL no dia delas, com início na primeira e fim na última
+ * (carnê tem prazo); espaçamento regular fora do mês vira "a cada N dias".
+ */
+export async function readRecurringDocumentAction(formData: FormData): Promise<LeituraRecorrencia> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, parcelas: [], avisos: [], error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, parcelas: [], avisos: [], error: "Selecione o arquivo do boleto ou do carnê." };
+  }
+  if (file.size > MAX_DOC_BYTES) {
+    return { ok: false, parcelas: [], avisos: [], error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+
+  let lidos;
+  try {
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    lidos = await extractBoletos(buffer.toString("base64"), mimeType);
+  } catch (e) {
+    return {
+      ok: false,
+      parcelas: [],
+      avisos: [],
+      error: e instanceof Error ? e.message : "Não foi possível ler o documento.",
+    };
+  }
+
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const parcelas: ParcelaLida[] = lidos
+    .map((b) => ({
+      amount: b.valor && b.valor > 0 ? round2(b.valor) : null,
+      dueDate: b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null,
+      descricao: b.descricao,
+    }))
+    // Carnê fora de ordem: a dedução depende da sequência dos vencimentos.
+    .sort((a, b) => (a.dueDate || "").localeCompare(b.dueDate || ""));
+
+  if (!parcelas.length) {
+    return {
+      ok: false,
+      parcelas: [],
+      avisos: [],
+      error: "Nenhum boleto foi reconhecido neste arquivo. Cadastre a recorrência à mão.",
+    };
+  }
+
+  const avisos: string[] = [];
+  const comData = parcelas.filter((p) => p.dueDate) as (ParcelaLida & { dueDate: string })[];
+  const comValor = parcelas.filter((p) => p.amount != null);
+
+  // Valor: o mais frequente entre as parcelas (carnê com uma parcela diferente
+  // — a primeira, com entrada — não deve definir o valor do mês).
+  const contagem = new Map<number, number>();
+  for (const p of comValor) contagem.set(p.amount as number, (contagem.get(p.amount as number) ?? 0) + 1);
+  const amount = [...contagem.entries()].sort((a, b) => b[1] - a[1] || b[0] - a[0])[0]?.[0] ?? 0;
+  if (!amount) avisos.push("Não deu para ler o valor — informe abaixo antes de salvar.");
+  if (contagem.size > 1) {
+    avisos.push(
+      `As parcelas têm valores diferentes; foi proposto o mais comum (${amount.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}). Os meses fora do padrão você ajusta depois em Contas a pagar.`,
+    );
+  }
+
+  const primeira = comData[0]?.dueDate ?? null;
+  const ultima = comData.length > 1 ? comData[comData.length - 1].dueDate : null;
+  if (!primeira) avisos.push("Não deu para ler o vencimento — confira o dia e a data de início.");
+
+  // Periodicidade: mensal quando os vencimentos caem mês a mês; espaçamento
+  // regular fora disso vira "a cada N dias".
+  let periodicidade: "MENSAL" | "DIAS" = "MENSAL";
+  let intervalDays: number | null = null;
+  if (comData.length >= 2) {
+    const dias = comData
+      .slice(1)
+      .map((p, i) =>
+        Math.round(
+          (new Date(`${p.dueDate}T12:00:00Z`).getTime() -
+            new Date(`${comData[i].dueDate}T12:00:00Z`).getTime()) /
+            86_400_000,
+        ),
+      );
+    const mensal = dias.every((d) => d >= 27 && d <= 32);
+    if (!mensal) {
+      const iguais = dias.every((d) => d === dias[0]);
+      if (iguais && dias[0] > 0) {
+        periodicidade = "DIAS";
+        intervalDays = dias[0];
+      } else {
+        avisos.push(
+          "Os vencimentos não seguem um intervalo regular; foi proposta a repetição mensal — confira antes de salvar.",
+        );
+      }
+    }
+  }
+
+  const dayOfMonth = primeira ? diaDe(primeira) : 5;
+  // A descrição do carnê costuma vir com o número da parcela ("Aluguel —
+  // parcela 3/12"). Numa recorrência isso engana: o nome vale para todos os
+  // meses, então o sufixo sai.
+  const semParcela = (s: string) =>
+    s
+      .replace(/[-–—·|,;:\s]*\(?\s*parcela\s*\d+\s*(\/|de)\s*\d+\s*\)?\s*$/i, "")
+      .replace(/[-–—·|,;:\s]*\d+\s*\/\s*\d+\s*$/, "")
+      .trim();
+  const nome = semParcela((parcelas.find((p) => p.descricao)?.descricao || "").trim());
+  const cedente = (lidos.find((b) => b.cedente)?.cedente || "").trim();
+  const description = nome || cedente || "Conta recorrente";
+
+  if (comData.length > 1) {
+    avisos.push(
+      `${comData.length} parcelas encontradas, de ${primeira?.split("-").reverse().join("/")} a ${ultima?.split("-").reverse().join("/")} — a recorrência já vem com data de término.`,
+    );
+  }
+
+  const anticipateToBusinessDay = pareceGuiaDeImposto(`${description} ${cedente}`);
+  if (anticipateToBusinessDay) {
+    avisos.push("Parece guia de imposto: marquei para antecipar o vencimento quando cair em fim de semana ou feriado.");
+  }
+
+  return {
+    ok: true,
+    parcelas,
+    avisos,
+    proposta: {
+      description,
+      amount,
+      supplierName: cedente,
+      periodicidade,
+      dayOfMonth,
+      intervalDays,
+      anticipateToBusinessDay,
+      startDate: primeira ?? new Date().toISOString().slice(0, 10),
+      endDate: ultima,
+      notes: `Importado de ${file.name || "documento anexado"} em ${new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}.`,
+    },
+  };
+}
