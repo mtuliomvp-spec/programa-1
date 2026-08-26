@@ -639,41 +639,61 @@ export default function SaleForm({
             &quot;Tráfego pago&quot; do dashboard.
           </p>
         </Field>
-        {referralRows.map((row, i) => (
-          // Sem `name` nos inputs: as indicações vão juntas no hidden "referrals".
-          <div key={i} className="contents">
-            <Field label={i === 0 ? "Indicação de Venda" : `Indicação de venda - ${i + 1}`}>
-              <Input
-                value={row.name}
-                onChange={(e) => setReferralField(i, "name", e.target.value)}
-                placeholder="Nome de quem indicou — opcional"
-              />
-              {i < referrals.length ? (
-                <button
-                  type="button"
-                  onClick={() => removeReferral(i)}
-                  className="mt-1 text-xs text-rose-600 underline"
+        {/* Indicações ocupam a largura inteira, fora do fluxo de 2 colunas:
+            com `contents`, o nome caía numa linha e o valor dele na seguinte —
+            ninguém sabia qual valor era de qual pessoa. Aqui cada indicação é
+            uma linha só, com o valor ao lado do nome. */}
+        <div className="rounded-xl border border-slate-200 p-4 sm:col-span-2">
+          <p className="text-sm font-semibold text-slate-800">Indicações de venda</p>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Cada indicação com valor vira uma conta a pagar (Comissão) ao registrar a venda.
+          </p>
+          <div className="mt-3 space-y-3">
+            {referralRows.map((row, i) => {
+              const preenchida = i < referrals.length;
+              return (
+                // Sem `name` nos inputs: as indicações vão juntas no hidden "referrals".
+                <div
+                  key={i}
+                  className={`grid grid-cols-1 items-end gap-3 sm:grid-cols-[1fr_11rem_auto] ${
+                    preenchida ? "" : "border-t border-dashed border-slate-200 pt-3"
+                  }`}
                 >
-                  Remover indicação
-                </button>
-              ) : (
-                <p className="mt-1 text-xs text-slate-400">
-                  Cada indicação com valor vira uma conta a pagar (Comissão) ao registrar a venda.
-                </p>
-              )}
-            </Field>
-            <Field label={i === 0 ? "Valor da indicação (R$)" : `Valor da indicação - ${i + 1} (R$)`}>
-              <Input
-                type="number"
-                step="0.01"
-                min={0}
-                value={row.amount}
-                onChange={(e) => setReferralField(i, "amount", e.target.value)}
-                placeholder="0,00 — opcional"
-              />
-            </Field>
+                  <Field label={preenchida ? `Quem indicou — ${i + 1}` : "Adicionar outra indicação"}>
+                    <Input
+                      value={row.name}
+                      onChange={(e) => setReferralField(i, "name", e.target.value)}
+                      placeholder="Nome de quem indicou"
+                    />
+                  </Field>
+                  <Field label={preenchida ? `Vai receber (R$) — ${i + 1}` : "Vai receber (R$)"}>
+                    <Input
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      value={row.amount}
+                      onChange={(e) => setReferralField(i, "amount", e.target.value)}
+                      placeholder="0,00"
+                    />
+                  </Field>
+                  <div className="pb-2">
+                    {preenchida ? (
+                      <button
+                        type="button"
+                        onClick={() => removeReferral(i)}
+                        className="text-xs font-medium text-rose-600 hover:underline"
+                      >
+                        Remover
+                      </button>
+                    ) : (
+                      <span className="block text-xs text-slate-400 sm:w-20">opcional</span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
         <Field label="Forma de pagamento" required>
           {/* "Capital de sócio" é opção da tela: envia PARCELADO 1x sem entrada
               e o sócio pagador — o servidor abate do capital no fechamento. */}
