@@ -46,6 +46,8 @@ export default function ReceivableRowActions({
   const [value, setValue] = useState<string>(String(amount));
   // O que fazer com a diferença: deixar pendente (padrão) ou dar desconto.
   const [discount, setDiscount] = useState(false);
+  // Observação do recebimento (fica nas notas do título / da parcela recebida).
+  const [note, setNote] = useState("");
   // Receber abatendo do capital de um sócio (venda de veículo para sócio etc.).
   const [capitalChoosing, setCapitalChoosing] = useState(false);
   const [beneficiaryId, setBeneficiaryId] = useState(beneficiaries[0]?.id ?? "");
@@ -105,6 +107,14 @@ export default function ReceivableRowActions({
             ))}
           </select>
         ) : null}
+        <textarea
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          rows={2}
+          maxLength={500}
+          placeholder="Observação (opcional) — ex.: pix feito pelo irmão"
+          className="w-56 rounded-lg border border-slate-300 bg-white px-2 py-1 text-left text-xs text-slate-900"
+        />
         {pay > 0 && pay < amount ? (
           canDiscount && hasVehicle ? (
             <div className="w-56 rounded-lg border border-amber-200 bg-amber-50 p-2 text-left">
@@ -147,11 +157,11 @@ export default function ReceivableRowActions({
               const darDesconto = discount && pay < amount;
               startTransition(async () => {
                 if (darDesconto) {
-                  const res = await receiveWithDiscountAction(id, pay, accountId);
+                  const res = await receiveWithDiscountAction(id, pay, accountId, note);
                   if (!res.ok) setError(res.error || "Não foi possível dar o desconto.");
                   return;
                 }
-                await receiveAction(id, pay, accountId || undefined);
+                await receiveAction(id, pay, accountId || undefined, note || undefined);
               });
             }}
             className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
@@ -164,6 +174,7 @@ export default function ReceivableRowActions({
               setChoosing(false);
               setValue(String(amount));
               setDiscount(false);
+              setNote("");
               setError(null);
             }}
             className="text-xs text-slate-400 hover:underline"

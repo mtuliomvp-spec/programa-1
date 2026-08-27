@@ -88,11 +88,11 @@ export async function receiveFromCapitalAction(
  * Recebe um título total ou parcialmente na conta escolhida. No parcial, o
  * restante continua pendente em Contas a Receber.
  */
-export async function receiveAction(id: string, amount: number, accountId?: string) {
+export async function receiveAction(id: string, amount: number, accountId?: string, note?: string) {
   await assertCan("financeiro", "receber");
   await assertBooksBalanced();
   await assertCashboxOpen();
-  await receiveReceivable(id, amount, await getCashboxWorkDate(), accountId || null);
+  await receiveReceivable(id, amount, await getCashboxWorkDate(), accountId || null, note || null);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
@@ -109,6 +109,7 @@ export async function receiveWithDiscountAction(
   id: string,
   amount: number,
   accountId: string,
+  note?: string,
 ): Promise<{ ok: boolean; discount?: number; error?: string }> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   try {
@@ -122,7 +123,13 @@ export async function receiveWithDiscountAction(
   let discount = 0;
   try {
     await assertMonthOpen(date);
-    const res = await receiveWithDiscount({ receivableId: id, amount, date, accountId });
+    const res = await receiveWithDiscount({
+      receivableId: id,
+      amount,
+      date,
+      accountId,
+      notes: note?.trim() || null,
+    });
     discount = res.discount;
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível dar o desconto." };
