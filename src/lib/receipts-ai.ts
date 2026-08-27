@@ -70,7 +70,7 @@ export async function extractPaymentReceipts(base64: string): Promise<Comprovant
     throw new Error("A leitura de comprovantes requer o provedor Anthropic (Parâmetros › Parecer IA).");
   }
 
-  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 2 });
+  const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 4 });
 
   let response: Anthropic.Beta.BetaMessage;
   try {
@@ -100,6 +100,18 @@ export async function extractPaymentReceipts(base64: string): Promise<Comprovant
     }
     if (e instanceof Anthropic.RateLimitError) {
       throw new Error("Limite de uso da IA excedido. Aguarde alguns minutos e tente de novo.");
+    }
+    // Sobrecarga passageira do provedor (529 "overloaded" e afins): não é o
+    // arquivo nem a chave — repetir em instantes resolve. Sem este ramo, o
+    // usuário via "a IA recusou o pedido" com JSON cru e achava que era erro
+    // no documento dele.
+    if (
+      e instanceof Anthropic.APIError &&
+      (Number(e.status) >= 500 || /overloaded/i.test(e.message || ""))
+    ) {
+      throw new Error(
+        "Os servidores da IA estão sobrecarregados neste momento — não é nada com o seu arquivo. Aguarde um minuto e tente de novo.",
+      );
     }
     if (e instanceof Anthropic.APIError) {
       const detalhe = (e.message || "").replace(/\s+/g, " ").trim().slice(0, 300);
