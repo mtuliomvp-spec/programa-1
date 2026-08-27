@@ -8,6 +8,7 @@ import { userCan } from "@/lib/guards";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { listCategoryNames } from "@/lib/categories";
+import { accountPickerName } from "@/lib/accounts";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
@@ -88,7 +89,7 @@ export default async function LivroCaixaPage({
       }),
       prisma.financialAccount.findMany({
         orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-        select: { id: true, name: true, initialBalance: true, active: true, isInvestment: true },
+        select: { id: true, name: true, initialBalance: true, active: true, isInvestment: true, structural: true },
       }),
       prisma.accountTransfer.findMany({
         where: accountFilter
@@ -359,7 +360,11 @@ export default async function LivroCaixaPage({
               </div>
             ) : null}
             <CashEntryForm
-              accounts={accounts.filter((a) => a.active && !a.isInvestment).map((a) => ({ id: a.id, name: a.name }))}
+              accounts={accounts
+                .filter((a) => a.active && !a.isInvestment)
+                // Banco Neutro por último e marcado: é conta de compensação.
+                .sort((a, b) => Number(a.structural) - Number(b.structural))
+                .map((a) => ({ id: a.id, name: accountPickerName(a.name, a.structural) }))}
               supplierNames={suppliers.map((s) => s.name)}
               vehicles={vehicleOptions}
               parts={partOptions}

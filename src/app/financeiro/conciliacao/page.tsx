@@ -1,6 +1,6 @@
 import { PageHeader } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
-import { getActiveAccounts } from "@/lib/accounts";
+import { getSelectableAccounts } from "@/lib/accounts";
 import { requireAction } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import ReconcileClient from "./ReconcileClient";
@@ -11,7 +11,9 @@ export default async function ConciliacaoPage() {
   await requireAction("financeiro", "conciliar");
   const [accounts, suppliers, customers, allVehicles, beneficiaries, costCenters, despesas, receitas] =
     await Promise.all([
-      getActiveAccounts(),
+      // Conciliação bate com o extrato de um banco de verdade: o Banco Neutro
+      // (compensação, sem extrato) fica de fora.
+      getSelectableAccounts(),
       prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { name: true } }),
       prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
       prisma.vehicle.findMany({
