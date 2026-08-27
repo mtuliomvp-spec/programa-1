@@ -131,6 +131,8 @@ export default async function AccountStatementPage({
     // Beneficiário do capital do título (saque/aporte) — exibido junto ao "quem"
     // quando o título tem fornecedor/cliente E movimenta o capital de alguém.
     capitalName: string | null;
+    /** Observações do título (ex.: a nota escrita na hora do recebimento). */
+    notes: string | null;
     kind: "entrada" | "saida";
     amount: number;
   };
@@ -141,6 +143,7 @@ export default async function AccountStatementPage({
       description: r.description,
       who: r.customer?.name || r.capitalBeneficiary?.name || "-",
       capitalName: r.capitalBeneficiary?.name ?? null,
+      notes: r.notes,
       kind: "entrada" as const,
       amount: r.amount,
     })),
@@ -150,6 +153,7 @@ export default async function AccountStatementPage({
       description: p.description,
       who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
       capitalName: p.capitalBeneficiary?.name ?? null,
+      notes: p.notes,
       kind: "saida" as const,
       amount: p.amount,
     })),
@@ -161,6 +165,7 @@ export default async function AccountStatementPage({
         description: t.description || `Transferência ${t.from.name} → ${t.to.name}`,
         who: isIn ? t.from.name : t.to.name,
         capitalName: null,
+        notes: null,
         kind: (isIn ? "entrada" : "saida") as "entrada" | "saida",
         amount: t.amount,
       };
@@ -180,7 +185,7 @@ export default async function AccountStatementPage({
   const rows = filtering
     ? allRows.filter(
         (m) =>
-          matchesSearch(q, formatDate(m.date), m.description, m.who, m.capitalName, m.amount, formatCurrency(m.amount)) &&
+          matchesSearch(q, formatDate(m.date), m.description, m.who, m.capitalName, m.notes, m.amount, formatCurrency(m.amount)) &&
           inDateRange(m.date, de, ate) &&
           inValueRange(m.amount, min, max) &&
           (!tipoFilter || (tipoFilter === "ENTRADA" ? m.kind === "entrada" : m.kind === "saida")),
@@ -310,6 +315,9 @@ export default async function AccountStatementPage({
                   <Td className="font-medium text-slate-900">
                     {m.description}
                     {m.id.startsWith("t-") ? <Badge tone="default">Transferência</Badge> : null}
+                    {m.notes ? (
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">{m.notes}</span>
+                    ) : null}
                   </Td>
                   <Td>
                     {m.who}
