@@ -9,6 +9,7 @@ import CategoryInput from "@/components/CategoryInput";
 import SupplierInput from "@/components/SupplierInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import NewCustomerInline from "@/components/NewCustomerInline";
+import SearchSelect from "@/components/SearchSelect";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createCashEntryAction, type CashEntryState } from "./actions";
 
@@ -339,14 +340,14 @@ export default function CashEntryForm({
 
         {kind === "entrada" ? (
           <Field label={isSinal ? "Cliente que está dando o sinal" : "Cliente (opcional)"}>
-            <Select name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)}>
-              <option value="">Selecione o cliente (opcional)</option>
-              {customerList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              name="customerId"
+              value={customerId}
+              onChange={setCustomerId}
+              options={customerList.map((c) => ({ id: c.id, label: c.name }))}
+              placeholder="Digite para buscar o cliente..."
+              emptyLabel="Sem cliente"
+            />
             <div className="mt-1 flex justify-end">
               <button
                 type="button"
