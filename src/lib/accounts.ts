@@ -9,7 +9,9 @@ import { timed } from "@/lib/perf";
 
 export async function getDefaultAccountId(): Promise<string | null> {
   const account = await prisma.financialAccount.findFirst({
-    where: { active: true },
+    // Nunca o Banco Neutro: o fallback de quem não escolheu conta tem que ser
+    // uma conta de verdade (o Neutro só entra por escolha explícita).
+    where: { active: true, structural: false },
     orderBy: [{ isDefault: "desc" }, { createdAt: "asc" }],
     select: { id: true },
   });
@@ -24,10 +26,16 @@ export async function getDefaultAccountId(): Promise<string | null> {
  * lançamento fica "sem conta" e o saldo das contas bate com o livro caixa.
  *
  * É uma conta ESTRUTURAL: pertence ao sistema, não ao usuário. Nasce sozinha
- * (chave fixa `NEUTRO`), não aparece nos seletores de baixa/transferência e
- * não pode ser desativada, excluída nem virar conta padrão — as travas ficam
- * nas actions de Contas. Identificar pela CHAVE (e não pelo nome) é o que
- * garante que renomear a conta não quebre o farol nem o livro caixa.
+ * (chave fixa `NEUTRO`), não pode ser desativada, excluída, transferida nem
+ * virar conta padrão — as travas ficam nas actions de Contas. Identificar pela
+ * CHAVE (e não pelo nome) é o que garante que renomear a conta não quebre o
+ * farol nem o livro caixa.
+ *
+ * Ela APARECE nos seletores de baixa (pagar/receber), sempre por último e com o
+ * rótulo "(compensação)": é onde se dá baixa no título que não passou por caixa
+ * nenhum — a parcela que a financeira já descontou do repasse, o acerto que se
+ * anulou com outro. Antes ela ficava escondida e essas baixas ficavam sem conta,
+ * quebrando o Check 1 até alguém rodar a correção que joga tudo no Neutro.
  */
 export const NEUTRAL_ACCOUNT_NAME = "Banco Neutro";
 export const NEUTRAL_ACCOUNT_KEY = "NEUTRO";
@@ -76,15 +84,32 @@ export async function ensureNeutralAccount(): Promise<string> {
 
 export const getNeutralAccountId = ensureNeutralAccount;
 
-// Usada nos seletores de baixa (a-pagar/a-receber/estoque/conciliação): exclui
-// contas de Aplicação — o dinheiro delas só entra/sai pelo fluxo de aplicação —
-// e as estruturais (Banco Neutro), que só o sistema movimenta.
+/**
+ * Rótulo da conta nos seletores: o Banco Neutro sai marcado como conta de
+ * compensação para ninguém pagar a conta de luz nele achando que é banco.
+ */
+export function accountPickerName(name: string, structural: boolean) {
+  return structural ? `${name} (compensação)` : name;
+}
+
+/**
+ * Contas para os seletores de BAIXA (a-pagar, a-receber, compras, combos,
+ * estoque): exclui as de Aplicação — o dinheiro delas só entra/sai pelo fluxo
+ * de aplicação — e inclui o Banco Neutro, sempre no fim da lista e marcado como
+ * conta de compensação, para dar baixa no que não passou por caixa.
+ */
 export async function getActiveAccounts() {
-  return prisma.financialAccount.findMany({
-    where: { active: true, isInvestment: false, structural: false },
-    orderBy: [{ isDefault: "desc" }, { name: "asc" }],
-    select: { id: true, name: true, type: true, isDefault: true },
+  const accounts = await prisma.financialAccount.findMany({
+    where: { active: true, isInvestment: false },
+    // `structural` asc = as contas de verdade primeiro, o Neutro por último
+    // (nunca é a opção pré-selecionada, que é sempre a primeira do select).
+    orderBy: [{ structural: "asc" }, { isDefault: "desc" }, { name: "asc" }],
+    select: { id: true, name: true, type: true, isDefault: true, structural: true },
   });
+  return accounts.map(({ structural, ...a }) => ({
+    ...a,
+    name: accountPickerName(a.name, structural),
+  }));
 }
 
 /**
