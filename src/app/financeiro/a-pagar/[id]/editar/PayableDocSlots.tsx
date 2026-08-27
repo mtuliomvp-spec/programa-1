@@ -129,15 +129,52 @@ function Slot({
   );
 }
 
-/** Outros anexos do título (NF-e importada, nota fiscal da ordem…). */
+/**
+ * Outros documentos do título: além de listar (NF-e importada, nota fiscal da
+ * ordem…), permite ANEXAR — ex.: o comunicado de venda de um carro vendido
+ * antes da implantação do sistema, guardado junto do título da cobrança para
+ * servir de respaldo. Cada anexo tem descrição própria e não substitui nada.
+ */
 function OtherAttachments({ payableId, docs }: { payableId: string; docs: DocWithDescription[] }) {
   const router = useRouter();
   const [removing, startRemove] = useTransition();
-  if (docs.length === 0) return null;
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleSend() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const prepared = await resizeImageToJpeg(file);
+      const fd = new FormData();
+      fd.set("payableId", payableId);
+      fd.set("kind", "OUTRO");
+      fd.set("description", description.trim() || "Documento");
+      fd.set("file", prepared);
+      const res = await uploadPayableAttachmentAction({}, fd);
+      if (res.error) {
+        setError(res.error);
+        return;
+      }
+      if (fileRef.current) fileRef.current.value = "";
+      setDescription("");
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="rounded-lg border border-slate-200 p-3 sm:col-span-2">
-      <p className="text-sm font-semibold text-slate-700">Outros anexos (NF-e, nota fiscal…)</p>
-      <ul className="mt-2 divide-y divide-slate-100">
+      <p className="text-sm font-semibold text-slate-700">Outros documentos</p>
+      <p className="mt-0.5 text-xs text-slate-400">
+        Qualquer documento que respalde este título — comunicado de venda, contrato, NF…
+      </p>
+      <ul className={docs.length ? "mt-2 divide-y divide-slate-100" : "hidden"}>
         {docs.map((d) => (
           <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2">
             <div className="min-w-0">
@@ -181,6 +218,29 @@ function OtherAttachments({ payableId, docs }: { payableId: string; docs: DocWit
           </li>
         ))}
       </ul>
+
+      <div className="mt-3 flex flex-wrap items-end gap-2 border-t border-slate-100 pt-3">
+        <label className="flex min-w-40 flex-1 flex-col gap-0.5 text-xs text-slate-500">
+          Descrição do documento
+          <input
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            maxLength={200}
+            placeholder="Ex.: Comunicação de venda - placa ABC1D23"
+            className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
+          />
+        </label>
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*,.pdf,.doc,.docx"
+          className="max-w-56 text-sm text-slate-600 file:mr-2 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+        />
+        <Button type="button" variant="secondary" onClick={handleSend} disabled={busy}>
+          {busy ? "Enviando…" : "Anexar"}
+        </Button>
+      </div>
+      {error ? <p className="mt-2 text-sm font-medium text-rose-600">{error}</p> : null}
     </div>
   );
 }
@@ -197,7 +257,7 @@ export default function PayableDocSlots({
   payableId: string;
   boleto: Doc | null;
   comprovante: Doc | null;
-  /** Anexos de outros tipos (ex.: NF-e importada), só listados. */
+  /** Anexos de outros tipos (NF-e importada, comunicado de venda…). */
   others?: DocWithDescription[];
 }) {
   return (
