@@ -2116,3 +2116,186 @@ export async function applyBoletoToPayableAction(input: {
   revalidatePath(`/financeiro/a-pagar/${current.id}/ordem`);
   return { ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// NF de devolução: abater a mercadoria devolvida do título da compra
+// ---------------------------------------------------------------------------
+
+export type DevolucaoResult = {
+  ok: boolean;
+  error?: string;
+  /** O que foi lido e aplicado, pronto para a tela. */
+  nfNumero?: string;
+  valor?: number;
+  valorAntes?: number;
+  valorDepois?: number;
+};
+
+/**
+ * Lê a NF-e de DEVOLUÇÃO anexada (o fornecedor recebendo a mercadoria de
+ * volta) e abate o valor dela do título da compra: a ordem de pagamento passa
+ * a valer o que sobrou para pagar. Ex.: título de 293,80, devolução de 30,60,
+ * ordem vai a 263,20.
+ *
+ * Leitura determinística (sem IA): chave de acesso validada pelo dígito
+ * verificador, "VALOR TOTAL DA NOTA" e a natureza da operação vêm da camada de
+ * texto do próprio PDF. Conferências antes de mexer em dinheiro:
+ *  - precisa ser DEVOLUÇÃO (natureza da operação) — nota comum é recusada;
+ *  - o emitente da chave precisa ser o fornecedor do título (CNPJ);
+ *  - o valor precisa caber no título (não zera nem deixa negativo);
+ *  - a mesma NF não abate duas vezes (a chave fica registrada no anexo).
+ *
+ * O abatimento passa por updateManualPayable — o mesmo caminho da edição
+ * manual —, então o custo espelhado no veículo acompanha sozinho.
+ */
+export async function applyReturnNfeAction(formData: FormData): Promise<DevolucaoResult> {
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const payableId = String(formData.get("payableId") || "").trim();
+  const file = formData.get("file");
+  if (!payableId) return { ok: false, error: "Título inválido." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Selecione o PDF da NF de devolução." };
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  if ((file.type || "") !== "application/pdf" && !/\.pdf$/i.test(file.name || "")) {
+    return { ok: false, error: "Anexe o PDF da NF-e (DANFE) — outros formatos não têm a camada de texto." };
+  }
+
+  const payable = await prisma.payable.findUnique({
+    where: { id: payableId },
+    include: { supplier: { select: { name: true, document: true } }, costCenter: { select: { key: true } } },
+  });
+  if (!payable) return { ok: false, error: "Título não encontrado." };
+  if (payable.status === "PAGO") {
+    return { ok: false, error: "Título já pago. Reverta a baixa antes de abater a devolução." };
+  }
+  if (payable.paymentComboId) {
+    return { ok: false, error: "Este título está num combo de pagamento — remova-o do combo antes de abater." };
+  }
+  const locks = boletoLocks(payable);
+  if (locks.amountLocked) return { ok: false, error: locks.amountLocked };
+
+  // ---------- leitura do PDF ----------
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const { textoDoPdf, chavesNfeNoTexto } = await import("@/lib/pdf-text");
+  const { dadosDaChaveNfe } = await import("@/lib/renave");
+  let texto = "";
+  try {
+    texto = textoDoPdf(buffer);
+  } catch {
+    /* tratado abaixo */
+  }
+  const limpo = texto.replace(/\s+/g, " ");
+  if (!limpo) {
+    return { ok: false, error: "Não deu para ler o texto deste PDF. Confira se é o DANFE original (não uma foto)." };
+  }
+
+  const chaves = chavesNfeNoTexto(texto);
+  if (chaves.length === 0) {
+    return { ok: false, error: "Não encontrei a chave de acesso (44 dígitos) neste arquivo." };
+  }
+  const chave = chaves[0];
+
+  if (!/DEVOLU/i.test(limpo)) {
+    return {
+      ok: false,
+      error:
+        "Esta NF-e não parece ser de DEVOLUÇÃO (a natureza da operação não diz isso). O abatimento só vale para mercadoria devolvida.",
+    };
+  }
+
+  // Valor total da nota, no rótulo padrão do DANFE.
+  const mValor = limpo.match(/VALOR TOTAL DA NOTA\s*:?\s*(\d{1,3}(?:\.\d{3})*,\d{2})/i);
+  const valor = mValor ? Number(mValor[1].replace(/\./g, "").replace(",", ".")) : 0;
+  if (!valor || valor <= 0) {
+    return { ok: false, error: "Não deu para ler o VALOR TOTAL DA NOTA no DANFE." };
+  }
+
+  // O emitente da devolução tem de ser o fornecedor do título (o CNPJ mora na
+  // própria chave, posições 7–20).
+  const cnpjChave = chave.slice(6, 20);
+  const cnpjFornecedor = (payable.supplier?.document || "").replace(/\D/g, "");
+  if (cnpjFornecedor && cnpjFornecedor.length === 14 && cnpjFornecedor !== cnpjChave) {
+    return {
+      ok: false,
+      error: `A NF é do CNPJ ${cnpjChave}, mas o fornecedor do título (${payable.supplier?.name ?? "?"}) tem outro CNPJ — confira se anexou a nota certa.`,
+    };
+  }
+
+  // A mesma devolução não abate duas vezes: a chave fica gravada no anexo.
+  const jaAbatida = await prisma.payableAttachment.findFirst({
+    where: { payableId, description: { contains: chave } },
+    select: { id: true },
+  });
+  if (jaAbatida) return { ok: false, error: "Esta NF de devolução já foi abatida deste título." };
+
+  const restante = round2(payable.amount - valor);
+  if (restante <= 0.005) {
+    return {
+      ok: false,
+      error: `A devolução (${brl(valor)}) cobre o título inteiro (${brl(payable.amount)}). Nesse caso, exclua o título em vez de abater.`,
+    };
+  }
+
+  const numeroNf = dadosDaChaveNfe(chave)?.numero ?? "?";
+  const flow = payable.vehicleId
+    ? "VEICULOS"
+    : payable.capitalBeneficiaryId
+      ? "CAPITAL"
+      : isStructuralKey(payable.costCenter?.key)
+        ? payable.costCenter.key
+        : "ADMINISTRATIVO";
+
+  // Mesmo caminho da edição manual: o custo espelhado do veículo acompanha.
+  await updateManualPayable({
+    id: payable.id,
+    description: payable.description,
+    category: payable.category,
+    categoryLabel: payable.categoryLabel,
+    documentNumber: payable.documentNumber,
+    amount: restante,
+    dueDate: payable.dueDate,
+    supplierId: payable.supplierId,
+    notes: [
+      payable.notes,
+      `Devolução NF ${numeroNf}: ${brl(valor)} abatidos (era ${brl(payable.amount)}).`,
+    ]
+      .filter(Boolean)
+      .join(" · "),
+    structuralKey: flow,
+    vehicleId: payable.vehicleId,
+    capitalBeneficiaryId: payable.capitalBeneficiaryId,
+  });
+
+  await prisma.payableAttachment.create({
+    data: {
+      payableId,
+      kind: "OUTRO",
+      description: `NF de devolução nº ${numeroNf} — ${brl(valor)} abatidos (chave ${chave})`,
+      filename: file.name || "nf-devolucao.pdf",
+      mimeType: "application/pdf",
+      size: buffer.byteLength,
+      data: buffer,
+    },
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
+  revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+  revalidatePath("/estoque");
+  return {
+    ok: true,
+    nfNumero: numeroNf,
+    valor,
+    valorAntes: payable.amount,
+    valorDepois: restante,
+  };
+}

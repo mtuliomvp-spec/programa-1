@@ -10,6 +10,7 @@ import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 import PayableDocSlots from "./PayableDocSlots";
 import ReadBoletoAi from "./ReadBoletoAi";
+import ReturnNfe from "./ReturnNfe";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 export const dynamic = "force-dynamic";
@@ -222,12 +223,15 @@ export default async function EditarPayablePage({
         {/* A leitura por IA não faz sentido na fatura do cartão: lá o valor é a
             soma dos lançamentos e existe o importador próprio do PDF. */}
         {payable.cardInvoice ? null : (
-          <div className="px-5 pt-5">
+          <div className="space-y-3 px-5 pt-5">
             <ReadBoletoAi
               payableId={payable.id}
               amountAtual={payable.amount}
               dueDateAtual={payable.dueDate.toISOString()}
             />
+            {/* Devolução ao fornecedor: abate a NF devolvida da ordem. Só faz
+                sentido em compra com fornecedor (não em comissão/devolução). */}
+            {payable.supplierId ? <ReturnNfe payableId={payable.id} /> : null}
           </div>
         )}
         <PayableDocSlots
