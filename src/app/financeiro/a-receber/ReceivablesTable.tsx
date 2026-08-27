@@ -13,6 +13,7 @@ type Account = { id: string; name: string };
 export type ReceivableRow = {
   id: string;
   description: string;
+  notes: string | null;
   categoryLabel: string;
   customerName: string | null;
   dueDate: string; // ISO
@@ -172,7 +173,14 @@ export default function ReceivablesTable({
                     />
                   ) : null}
                 </Td>
-                <Td className="font-medium text-slate-900">{r.description}</Td>
+                <Td className="font-medium text-slate-900">
+                  {r.description}
+                  {r.notes ? (
+                    <span className="block max-w-xs truncate text-xs font-normal text-slate-500" title={r.notes}>
+                      📝 {r.notes}
+                    </span>
+                  ) : null}
+                </Td>
                 <Td>{r.categoryLabel}</Td>
                 <Td>{r.customerName || "-"}</Td>
                 <Td className="whitespace-nowrap">{formatDate(r.dueDate)}</Td>

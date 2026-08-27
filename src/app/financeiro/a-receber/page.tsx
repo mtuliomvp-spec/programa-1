@@ -44,6 +44,7 @@ export default async function ContasAReceberPage({
         select: {
           id: true,
           description: true,
+          notes: true,
           category: true,
           categoryLabel: true,
           amount: true,
@@ -106,6 +107,7 @@ export default async function ContasAReceberPage({
   const tableRows: ReceivableRow[] = filtered.map((r) => ({
     id: r.id,
     description: r.description,
+    notes: r.notes,
     categoryLabel: r.categoryLabel || categoryLabel[r.category],
     customerName: r.customer?.name ?? null,
     dueDate: r.dueDate.toISOString(),

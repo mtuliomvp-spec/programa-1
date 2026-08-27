@@ -2226,18 +2226,27 @@ export async function receiveReceivable(
   amount: number,
   receivedDate: Date,
   accountId?: string | null,
+  /** Observação de quem recebeu ("pix do irmão", "pagou em espécie"...). */
+  note?: string | null,
 ) {
   const account = accountId ?? (await getDefaultAccountId());
   const r = await prisma.receivable.findUniqueOrThrow({ where: { id } });
   if (r.status === "RECEBIDO") return r;
   const pay = Math.min(Math.max(0, Math.round(amount * 100) / 100), r.amount);
   if (pay <= 0) return r;
+  const obs = (note || "").trim() || null;
 
   // Pagamento integral (ou do valor cheio): baixa o próprio título.
   if (pay >= r.amount) {
     const updated = await prisma.receivable.update({
       where: { id },
-      data: { status: "RECEBIDO", receivedDate, accountId: account },
+      data: {
+        status: "RECEBIDO",
+        receivedDate,
+        accountId: account,
+        // A observação SOMA às notas que o título já tinha — não substitui.
+        ...(obs ? { notes: [r.notes, obs].filter(Boolean).join(" · ") } : {}),
+      },
     });
     await syncReceivableCapital(id);
     return updated;
@@ -2263,6 +2272,8 @@ export async function receiveReceivable(
         costCenterId: r.costCenterId,
         capitalBeneficiaryId: r.capitalBeneficiaryId,
         accountId: account,
+        // A observação é do PAGAMENTO, então fica na parcela recebida.
+        notes: obs,
       },
     });
     const orig = await tx.receivable.update({
