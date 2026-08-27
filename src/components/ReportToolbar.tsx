@@ -78,21 +78,24 @@ export default function ReportToolbar({
             </label>
           </div>
 
+          {/* No celular, cada grupo ocupa a linha inteira em duas colunas —
+              com largura fixa os campos estouravam o card, a borda sumia e o
+              ícone do calendário parecia solto entre um campo e outro. */}
           {date ? (
-            <div className="flex items-end gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-end">
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 De
-                <Input type="date" name="de" defaultValue={de} className="mt-0.5 h-11 w-44" />
+                <Input type="date" name="de" defaultValue={de} className="mt-0.5 h-11 w-full min-w-0 sm:w-44" />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Até
-                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 h-11 w-44" />
+                <Input type="date" name="ate" defaultValue={ate} className="mt-0.5 h-11 w-full min-w-0 sm:w-44" />
               </label>
             </div>
           ) : null}
 
           {value ? (
-            <div className="flex items-end gap-2">
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:items-end">
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Valor mín.
                 <Input
@@ -100,7 +103,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={min}
                   placeholder="0,00"
-                  className="mt-0.5 h-11 w-32"
+                  className="mt-0.5 h-11 w-full min-w-0 sm:w-32"
                 />
               </label>
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -110,7 +113,7 @@ export default function ReportToolbar({
                   inputMode="decimal"
                   defaultValue={max}
                   placeholder="—"
-                  className="mt-0.5 h-11 w-32"
+                  className="mt-0.5 h-11 w-full min-w-0 sm:w-32"
                 />
               </label>
             </div>

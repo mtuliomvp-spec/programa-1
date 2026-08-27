@@ -127,16 +127,19 @@ export function Field({ label, children, required }: { label: string; children: 
 const controlClass =
   "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-600 focus:outline-none focus:ring-1 focus:ring-blue-600 disabled:bg-slate-50 disabled:text-slate-500";
 
-export function Input(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input className={clsx(controlClass, props.className)} {...props} />;
+// O className precisa sair do spread: com `{...props}` DEPOIS de className, o
+// className do chamador sobrescrevia o merge — todo campo que passava uma
+// classe extra (largura, altura…) perdia a borda e o estilo base inteiro.
+export function Input({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
+  return <input className={clsx(controlClass, className)} {...props} />;
 }
 
-export function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea className={clsx(controlClass, props.className)} {...props} />;
+export function Textarea({ className, ...props }: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea className={clsx(controlClass, className)} {...props} />;
 }
 
-export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
-  return <select className={clsx(controlClass, "bg-white", props.className)} {...props} />;
+export function Select({ className, ...props }: SelectHTMLAttributes<HTMLSelectElement>) {
+  return <select className={clsx(controlClass, "bg-white", className)} {...props} />;
 }
 
 export function Badge({
