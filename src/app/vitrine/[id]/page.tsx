@@ -15,6 +15,7 @@ import {
   similarVehicles,
 } from "../shared";
 import VitrineGallery from "./VitrineGallery";
+import RegistraVisita from "./RegistraVisita";
 import FinancingSimulator from "./FinancingSimulator";
 import ShareButton from "../ShareButton";
 import ThemeToggle from "../ThemeToggle";
@@ -149,6 +150,8 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       <ThemeScript />
+      {/* Conta a visita a este anúncio (só visitante, não a equipe logada). */}
+      <RegistraVisita alvo={v.id} />
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/vitrine" className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-300">

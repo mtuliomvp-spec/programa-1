@@ -14,6 +14,41 @@ import {
 
 type Photo = { id: string; filename: string; createdAt: Date | string };
 
+/**
+ * Quantas pessoas abriram o anúncio deste carro na vitrine. Fica junto do
+ * botão de postar porque é a resposta da pergunta que vem logo depois de
+ * publicar: "está aparecendo para alguém?".
+ */
+function VisitasDoAnuncio({
+  visitas,
+  published,
+}: {
+  visitas: { total: number; ultimos7: number; pessoas: number };
+  published: boolean;
+}) {
+  if (visitas.total === 0) {
+    return published ? (
+      <p className="text-xs text-slate-500">
+        👁️ Nenhuma visita ao anúncio ainda — ele acabou de entrar no ar.
+      </p>
+    ) : null;
+  }
+  return (
+    <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-slate-200 bg-white px-4 py-3">
+      <span className="text-sm font-semibold text-slate-800">
+        👁️ {visitas.total} visita{visitas.total === 1 ? "" : "s"} no anúncio
+      </span>
+      <span className="text-xs text-slate-500">
+        {visitas.ultimos7} nos últimos 7 dias · {visitas.pessoas} pessoa
+        {visitas.pessoas === 1 ? "" : "s"} diferente{visitas.pessoas === 1 ? "" : "s"}
+      </span>
+      {!published ? (
+        <span className="text-xs text-amber-700">anúncio fora do ar agora</span>
+      ) : null}
+    </div>
+  );
+}
+
 /** Máximo de fotos por envio e tamanho do lote (mantém cada requisição pequena,
  *  abaixo do limite de corpo do Server Action, mesmo com fotos grandes). */
 const MAX_PHOTOS = 10;
@@ -25,6 +60,7 @@ export default function VehiclePhotos({
   photos,
   published,
   inStock,
+  visitas,
   canManage = true,
   canPublish = true,
 }: {
@@ -32,6 +68,8 @@ export default function VehiclePhotos({
   photos: Photo[];
   published: boolean;
   inStock: boolean;
+  /** Visitas ao anúncio na vitrine (não conta a equipe logada). */
+  visitas: { total: number; ultimos7: number; pessoas: number };
   canManage?: boolean;
   canPublish?: boolean;
 }) {
@@ -144,6 +182,8 @@ export default function VehiclePhotos({
           ) : null}
         </div>
       ) : null}
+
+      <VisitasDoAnuncio visitas={visitas} published={published} />
 
       {photos.length === 0 ? (
         <p className="text-sm text-slate-500">Nenhuma foto ainda — adicione abaixo.</p>

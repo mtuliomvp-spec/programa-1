@@ -32,7 +32,9 @@ enum RenaveSituacao {
   SAIDA_REGISTRADA
 }
 
-/** Título do negócio jurídico informado no registro (art. 2º, VI). */
+/**
+ * Título do negócio jurídico informado no registro (art. 2º, VI).
+ */
 enum TituloNegocio {
   COMPRA
   VENDA
@@ -43,13 +45,17 @@ enum TituloNegocio {
   ENTRADA_VEICULO_RETOMADO
 }
 
-/** Identificação prévia de entrada ou a vistoria que a substitui (art. 15). */
+/**
+ * Identificação prévia de entrada ou a vistoria que a substitui (art. 15).
+ */
 enum TipoIdentificacaoPrevia {
   IDENTIFICACAO_PREVIA
   VISTORIA
 }
 
-/** Como o vendedor assinou na compra de usado (art. 15, VIII). */
+/**
+ * Como o vendedor assinou na compra de usado (art. 15, VIII).
+ */
 enum TipoAssinaturaVendedor {
   RECONHECIMENTO_FIRMA
   ELETRONICA_AVANCADA
@@ -139,10 +145,10 @@ enum TipoCapital {
 
 // Movimento de capital APLICADO numa conta Aplicação (investimento dos sócios).
 enum TipoAplicacao {
-  APLICAR       // sócio passa a ter capital aplicado na conta
-  RESGATAR      // sócio tira capital aplicado (direto da própria Aplicação)
-  RENDIMENTO    // juros creditados na conta, viram capital aplicado do sócio
-  SUBSTITUICAO  // troca de dono da fatia aplicada (saque por outra conta)
+  APLICAR // sócio passa a ter capital aplicado na conta
+  RESGATAR // sócio tira capital aplicado (direto da própria Aplicação)
+  RENDIMENTO // juros creditados na conta, viram capital aplicado do sócio
+  SUBSTITUICAO // troca de dono da fatia aplicada (saque por outra conta)
 }
 
 enum UserRole {
@@ -191,46 +197,46 @@ enum StatusSolicitacao {
 // Conta financeira (caixa físico, banco...): todo pagamento e
 // recebimento baixado passa por uma conta, que acumula saldo próprio.
 model FinancialAccount {
-  id             String            @id @default(cuid())
-  name           String
+  id                  String                 @id @default(cuid())
+  name                String
   // Contas ESTRUTURAIS (hoje só o Banco Neutro): criadas pelo próprio sistema,
   // identificadas pela chave fixa e protegidas contra desativação, exclusão e
   // virar conta padrão. Mesmo padrão dos centros de custo estruturais.
-  key            String?           @unique
-  structural     Boolean           @default(false)
-  type           TipoConta         @default(CAIXA)
-  bankName       String?
-  agency         String?
-  accountNumber  String?
-  initialBalance Float             @default(0)
-  isDefault      Boolean           @default(false)
-  active         Boolean           @default(true)
+  key                 String?                @unique
+  structural          Boolean                @default(false)
+  type                TipoConta              @default(CAIXA)
+  bankName            String?
+  agency              String?
+  accountNumber       String?
+  initialBalance      Float                  @default(0)
+  isDefault           Boolean                @default(false)
+  active              Boolean                @default(true)
   // % de imposto que a financeira retém sobre o retorno (só p/ tipo FINANCEIRA)
-  returnTaxPercent Float           @default(0)
+  returnTaxPercent    Float                  @default(0)
   // % do retorno LÍQUIDO que vai para o vendedor como comissão (facultativo).
-  sellerReturnPercent Float        @default(0)
+  sellerReturnPercent Float                  @default(0)
   // Conta de Aplicação (investimento dos sócios): o saldo é sempre distribuído
   // entre os beneficiários do capital via InvestmentAllocation.
-  isInvestment   Boolean           @default(false)
+  isInvestment        Boolean                @default(false)
   // Até quando a aplicação rende. Sem isto o dinheiro pode vencer e ficar
   // parado sem ninguém perceber. Nulo = aplicação sem prazo (liquidez diária).
-  investmentMaturity DateTime?
+  investmentMaturity  DateTime?
   // Titular VERDADEIRO da conta: algumas contas cadastradas são de um sócio
   // (beneficiário do capital) e operam como se fossem da MVP. Nulo = conta da
   // própria empresa. Informativo — identifica o dono nas telas, sem alterar a
   // contabilidade/equação patrimonial.
-  ownerBeneficiaryId String?
-  ownerBeneficiary   CapitalBeneficiary? @relation("AccountOwner", fields: [ownerBeneficiaryId], references: [id])
-  notes          String?
-  payables       Payable[]
-  receivables    Receivable[]
-  transfersOut   AccountTransfer[] @relation("TransferFrom")
-  transfersIn    AccountTransfer[] @relation("TransferTo")
-  financedSales  Sale[]            @relation("SaleFinancer")
-  allocations    InvestmentAllocation[]
-  paymentCombos  PaymentCombo[]
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
+  ownerBeneficiaryId  String?
+  ownerBeneficiary    CapitalBeneficiary?    @relation("AccountOwner", fields: [ownerBeneficiaryId], references: [id])
+  notes               String?
+  payables            Payable[]
+  receivables         Receivable[]
+  transfersOut        AccountTransfer[]      @relation("TransferFrom")
+  transfersIn         AccountTransfer[]      @relation("TransferTo")
+  financedSales       Sale[]                 @relation("SaleFinancer")
+  allocations         InvestmentAllocation[]
+  paymentCombos       PaymentCombo[]
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   @@map("financial_accounts")
 }
@@ -293,48 +299,48 @@ model CostCenter {
 // Solicitação de compra: pedido -> aprovação do administrador ->
 // conclusão (gera a conta a pagar com o valor final).
 model PurchaseRequest {
-  id              String            @id @default(cuid())
-  number          Int               @unique @default(autoincrement())
+  id                   String                      @id @default(cuid())
+  number               Int                         @unique @default(autoincrement())
   // Numeração por ano (0001/2026, reinicia em 0001 a cada ano).
-  year            Int               @default(0)
-  seq             Int               @default(0)
-  description     String
-  details         String?
-  estimatedAmount Float?
+  year                 Int                         @default(0)
+  seq                  Int                         @default(0)
+  description          String
+  details              String?
+  estimatedAmount      Float?
   // Vencimento e número da NF/documento informados na solicitação; levados até
   // a conta a pagar quando a compra é aprovada/concluída.
-  dueDate         DateTime?
-  documentNumber  String?
+  dueDate              DateTime?
+  documentNumber       String?
   // Configuração de pagamento definida na criação (usada ao gerar o espelho em
   // Contas a pagar na aprovação): categoria e parcelamento.
-  category           CategoriaPagar @default(OUTROS)
+  category             CategoriaPagar              @default(OUTROS)
   // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
-  categoryLabel      String?
-  installmentsCount  Int            @default(1)
-  installmentPeriod  String?        // MENSAL | DIAS
-  installmentDays    Int            @default(30)
-  supplierId      String?
-  supplier        Supplier?         @relation(fields: [supplierId], references: [id])
-  requestedBy     String
+  categoryLabel        String?
+  installmentsCount    Int                         @default(1)
+  installmentPeriod    String? // MENSAL | DIAS
+  installmentDays      Int                         @default(30)
+  supplierId           String?
+  supplier             Supplier?                   @relation(fields: [supplierId], references: [id])
+  requestedBy          String
   // Fluxo estrutural indicado pelo solicitante (CAPITAL/VEICULOS/ADMINISTRATIVO)
-  structuralKey   String?
+  structuralKey        String?
   // Destino específico do lançamento conforme o fluxo: veículo (fluxo Veículos)
   // ou beneficiário do capital (fluxo Capital). Levados até a conta a pagar.
-  vehicleId       String?
-  vehicle         Vehicle?          @relation(fields: [vehicleId], references: [id])
+  vehicleId            String?
+  vehicle              Vehicle?                    @relation(fields: [vehicleId], references: [id])
   capitalBeneficiaryId String?
-  capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id])
-  status          StatusSolicitacao @default(PENDENTE)
-  decidedBy       String?
-  decidedAt       DateTime?
-  decisionNotes   String?
-  finalAmount     Float?
-  payableId       String?
+  capitalBeneficiary   CapitalBeneficiary?         @relation(fields: [capitalBeneficiaryId], references: [id])
+  status               StatusSolicitacao           @default(PENDENTE)
+  decidedBy            String?
+  decidedAt            DateTime?
+  decisionNotes        String?
+  finalAmount          Float?
+  payableId            String?
   // Espelho gerado em Contas a pagar (1 título ou N parcelas) ao aprovar.
-  payables        Payable[]         @relation("PayablePurchaseRequest")
-  attachments     PurchaseRequestAttachment[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  payables             Payable[]                   @relation("PayablePurchaseRequest")
+  attachments          PurchaseRequestAttachment[]
+  createdAt            DateTime                    @default(now())
+  updatedAt            DateTime                    @updatedAt
 
   @@unique([year, seq])
   @@index([supplierId])
@@ -361,36 +367,36 @@ model PurchaseRequestAttachment {
 // Usuário do sistema (login por e-mail e senha).
 // permissions: módulos liberados para operadores (admin sempre vê tudo).
 model User {
-  id           String   @id @default(cuid())
-  name         String
-  email        String   @unique
-  passwordHash String
-  role             UserRole  @default(OPERADOR)
-  permissions      String[]  @default([])
+  id                  String              @id @default(cuid())
+  name                String
+  email               String              @unique
+  passwordHash        String
+  role                UserRole            @default(OPERADOR)
+  permissions         String[]            @default([])
   // Dados do beneficiário para a Ordem de Pagamento (ex.: comissão de venda).
-  document         String?
-  phone            String?
-  bankName         String?
-  bankAgency       String?
-  bankAccount      String?
-  bankAccountType  String?
-  pixKey           String?
+  document            String?
+  phone               String?
+  bankName            String?
+  bankAgency          String?
+  bankAccount         String?
+  bankAccountType     String?
+  pixKey              String?
   // Tipo da chave PIX: cpf | cnpj | telefone | email | aleatoria.
-  pixKeyType       String?
-  commissionPayables Payable[] @relation("PayableBeneficiary")
-  sales            Sale[]    @relation("SaleSeller")
-  preSales         PreSale[] @relation("PreSaleSeller")
+  pixKeyType          String?
+  commissionPayables  Payable[]           @relation("PayableBeneficiary")
+  sales               Sale[]              @relation("SaleSeller")
+  preSales            PreSale[]           @relation("PreSaleSeller")
   // Vínculo 1:1 com um beneficiário do capital (usuário que também é sócio).
-  beneficiary      CapitalBeneficiary? @relation("BeneficiaryUser")
+  beneficiary         CapitalBeneficiary? @relation("BeneficiaryUser")
   // Combos de pagamento que este usuário montou (é o beneficiário do borderô).
-  paymentCombos    PaymentCombo[] @relation("UserPaymentCombos")
+  paymentCombos       PaymentCombo[]      @relation("UserPaymentCombos")
   // Fornecedor-espelho (todo usuário também pode ser escolhido como fornecedor).
-  supplier         Supplier? @relation("UserSupplier")
+  supplier            Supplier?           @relation("UserSupplier")
   // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
-  profileId        String?
-  profile          Profile?  @relation(fields: [profileId], references: [id], onDelete: SetNull)
-  active           Boolean   @default(true)
-  pending             Boolean   @default(false)
+  profileId           String?
+  profile             Profile?            @relation(fields: [profileId], references: [id], onDelete: SetNull)
+  active              Boolean             @default(true)
+  pending             Boolean             @default(false)
   resetRequestedAt    DateTime?
   resetTokenHash      String?
   resetTokenExpiresAt DateTime?
@@ -399,10 +405,10 @@ model User {
   // máximo 1×/min). É o que sustenta a lista de "quem está online" — a sessão
   // é um cookie assinado, não existe sessão guardada no banco para consultar.
   // Sair do sistema zera o campo, tirando a pessoa da lista na hora.
-  lastSeenAt       DateTime?
-  logins           LoginEvent[]
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  lastSeenAt          DateTime?
+  logins              LoginEvent[]
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
 
   @@map("users")
 }
@@ -410,22 +416,21 @@ model User {
 /**
  * Um acesso concluído (login aceito). Serve de histórico para o dono do
  * sistema: quem entrou, quando e de onde.
- *
  * Nome, e-mail e perfil são copiados no momento do acesso — o histórico
  * precisa continuar legível depois de o usuário ser renomeado ou excluído
  * (por isso o vínculo com `User` é opcional e sobrevive à exclusão).
  */
 model LoginEvent {
-  id        String   @id @default(cuid())
-  userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
-  name      String
-  email     String
-  role      UserRole
-  at        DateTime @default(now())
-  ip        String?
+  id     String   @id @default(cuid())
+  userId String?
+  user   User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  name   String
+  email  String
+  role   UserRole
+  at     DateTime @default(now())
+  ip     String?
   // Resumo legível do aparelho ("Celular · Chrome"), montado na gravação.
-  device    String?
+  device String?
 
   @@index([at])
   @@index([userId, at])
@@ -446,25 +451,25 @@ model Profile {
 }
 
 model Supplier {
-  id        String     @id @default(cuid())
-  name      String
-  document  String?
-  phone     String?
-  email     String?
-  address   String?
-  notes     String?
+  id               String            @id @default(cuid())
+  name             String
+  document         String?
+  phone            String?
+  email            String?
+  address          String?
+  notes            String?
   // Dados bancários para pagamento (usados na Ordem de Pagamento).
-  bankName        String?
-  bankAgency      String?
-  bankAccount     String?
-  bankAccountType String?
-  pixKey          String?
+  bankName         String?
+  bankAgency       String?
+  bankAccount      String?
+  bankAccountType  String?
+  pixKey           String?
   // Quando preenchido, este fornecedor é o espelho de um usuário do sistema
   // (nome e dados bancários sincronizados a partir do usuário).
-  userId    String?    @unique
-  user      User?      @relation("UserSupplier", fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  userId           String?           @unique
+  user             User?             @relation("UserSupplier", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   vehicles         Vehicle[]
   parts            Part[]
   payables         Payable[]
@@ -475,15 +480,15 @@ model Supplier {
 }
 
 model Customer {
-  id          String       @id @default(cuid())
+  id          String           @id @default(cuid())
   name        String
   document    String?
   phone       String?
   email       String?
   address     String?
   notes       String?
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
   sales       Sale[]
   partSales   PartSale[]
   receivables Receivable[]
@@ -493,137 +498,138 @@ model Customer {
 }
 
 model Vehicle {
-  id               String        @id @default(cuid())
-  orderNumber      Int           @unique @default(autoincrement())
-  brand            String
-  model            String
-  version          String?
-  manufactureYear  Int
-  modelYear        Int
+  id                           String        @id @default(cuid())
+  orderNumber                  Int           @unique @default(autoincrement())
+  brand                        String
+  model                        String
+  version                      String?
+  manufactureYear              Int
+  modelYear                    Int
   // A placa/chassi só é única entre fichas ATIVAS (não vendidas): recomprar um
   // veículo já vendido cria uma nova ficha e o histórico antigo fica intacto.
   // Garantido no banco por índices parciais (ver migration allow_rebuy_plate).
-  plate            String
-  chassi           String?
-  renavam          String?
-  color            String?
-  km               Int           @default(0)
-  fuel             String?
-  transmission     String?
-  purchasePrice    Float
-  salePrice        Float
-  acquisitionType  TipoAquisicao @default(A_VISTA)
-  downPayment      Float         @default(0)
-  installmentsCount Int          @default(1)
-  financerName     String?
+  plate                        String
+  chassi                       String?
+  renavam                      String?
+  color                        String?
+  km                           Int           @default(0)
+  fuel                         String?
+  transmission                 String?
+  purchasePrice                Float
+  salePrice                    Float
+  acquisitionType              TipoAquisicao @default(A_VISTA)
+  downPayment                  Float         @default(0)
+  installmentsCount            Int           @default(1)
+  financerName                 String?
   // Compra com repasse/troca: parte do valor negociado vai para quitar o
   // financiamento do antigo dono (banco) e para débitos do veículo; o líquido
   // é o que sobra para o vendedor. Credores separados nas contas a pagar.
-  payoffAmount     Float         @default(0)
-  payoffTo         String?
-  debtsAmount      Float         @default(0)
+  payoffAmount                 Float         @default(0)
+  payoffTo                     String?
+  debtsAmount                  Float         @default(0)
   // Detalhamento opcional do total acima: [{ description, amount, dueDate }].
   // Vazio = um título só, como antes. Fica no veículo (e não só no formulário)
   // porque editar o veículo apaga e recria os títulos da compra.
-  debtsItems       Json          @default("[]")
+  debtsItems                   Json          @default("[]")
   // Quitação REAL (boleto do banco), quando diferente do acordado
   // (payoffAmount). O título sai pelo real e a diferença vira custo de ajuste
   // (acréscimo → custo; menor → reduz o custo) — o líquido ao vendedor não
   // muda. Nulo = boleto igual ao acordado.
-  payoffActualAmount Float?
+  payoffActualAmount           Float?
   // Em nome de quem o veículo está: o proprietário lido do último CRLV
   // anexado (preenchido pela leitura por IA; sobrescrito a cada leitura).
-  docOwnerName     String?
+  docOwnerName                 String?
   // Marcado MANUALMENTE como "em processo de transferência no DETRAN" — para
   // casos antigos em que a taxa foi paga fora do sistema e não há custo de
   // "transferência" para acender o selo sozinho. Anexar o CRLV novo encerra o
   // processo (o selo vira "Transferido"), independentemente desta marca.
-  transferInProgress Boolean     @default(false)
+  transferInProgress           Boolean       @default(false)
   // Sócio ao qual o PÓS-VENDA do veículo está ATRELADO: enquanto marcado, toda
   // despesa de pós-venda lançada no carro é custeada pelo capital deste sócio
   // (aporte, Banco Neutro), sem tocar no caixa. Só vale com o carro VENDIDO;
   // limpar volta ao custeio normal. String pura (sem FK), como capitalPayer.
   postSaleCapitalBeneficiaryId String?
-  status           StatusVeiculo @default(ESTOQUE)
+  status                       StatusVeiculo @default(ESTOQUE)
   // "Postado" na vitrine pública (opt-in manual, exige ao menos 1 foto).
-  published        Boolean       @default(false)
+  published                    Boolean       @default(false)
   // Quando foi postado na vitrine (selo "Chegou agora" nos primeiros dias).
-  publishedAt      DateTime?
+  publishedAt                  DateTime?
   // Anúncio: destaque promocional (tanque cheio, transferência grátis, brinde…).
-  adPromo          String?
+  adPromo                      String?
   // Anúncio: campos OCULTOS (preco/ano/km/cor/combustivel/cambio/versao).
   // Vazio = mostra tudo (todos pré-selecionados).
-  adHiddenFields   String[]      @default([])
+  adHiddenFields               String[]      @default([])
   // Veículo de terceiro numa operação de financiamento de terceiros: NÃO é
   // patrimônio da loja — fica fora do estoque, da vitrine e dos relatórios.
-  intermediation   Boolean       @default(false)
+  intermediation               Boolean       @default(false)
   // Veículo CONSIGNADO: pertence a um terceiro (o consignante = supplier), mas
   // fica no estoque/vitrine e é vendido como um veículo normal. purchasePrice
   // fica 0 (não é patrimônio comprado); a loja deve ao dono `ownerRefundAmount`
   // quando o carro é vendido (vira conta DEVOLUCAO_PROPRIETARIO ou aporte de
   // capital, apurado no fechamento da venda).
-  consigned        Boolean       @default(false)
-  ownerRefundAmount Float        @default(0)
-  entryDate        DateTime      @default(now())
+  consigned                    Boolean       @default(false)
+  ownerRefundAmount            Float         @default(0)
+  entryDate                    DateTime      @default(now())
 
   // --- Renave (Resolução Contran nº 1.026/2026) -----------------------------
   // Escrituração eletrônica de entrada e saída do estoque. O registro em si é
   // feito no Renave, por uma integradora autorizada — aqui ficam os DADOS que
   // o registro exige e o comprovante (protocolo) do que já foi registrado,
   // para a ficha do carro bater com o livro eletrônico.
-  renaveSituacao   RenaveSituacao @default(SEM_REGISTRO)
+  renaveSituacao         RenaveSituacao           @default(SEM_REGISTRO)
   // Entrada no estoque (arts. 12, 15, 16 e 17).
-  renaveEntradaTitulo   TituloNegocio?
+  renaveEntradaTitulo    TituloNegocio?
   renaveEntradaProtocolo String?
-  renaveEntradaEm       DateTime?
+  renaveEntradaEm        DateTime?
   // NF-e da compra/entrada (art. 5º, VI e art. 14, I): número, série e chave.
-  entryNfeNumber   String?
-  entryNfeSerie    String?
-  entryNfeKey      String?
-  entryNfeIssuedAt DateTime?
+  entryNfeNumber         String?
+  entryNfeSerie          String?
+  entryNfeKey            String?
+  entryNfeIssuedAt       DateTime?
   // Identificação prévia de entrada, substituível por vistoria (art. 15, II e
   // parágrafo único).
-  renavePreviaTipo TipoIdentificacaoPrevia?
-  renavePreviaNumero String?
-  renavePreviaEm   DateTime?
+  renavePreviaTipo       TipoIdentificacaoPrevia?
+  renavePreviaNumero     String?
+  renavePreviaEm         DateTime?
   // Assinatura do vendedor na compra de usado (art. 15, VIII).
-  renaveAssinaturaTipo TipoAssinaturaVendedor?
-  renaveAssinaturaEm   DateTime?
+  renaveAssinaturaTipo   TipoAssinaturaVendedor?
+  renaveAssinaturaEm     DateTime?
   // Documento de porte obrigatório exigido no registro de saída (art. 18, II).
-  crvNumber        String?
-  crvSecurityCode  String?
+  crvNumber              String?
+  crvSecurityCode        String?
   // Contrato eletrônico de consignação registrado no Renave (art. 20, §§ 1º a
   // 3º). O prazo de 30 dias do § 7º conta a partir de `consignContractAt`.
-  consignContractId String?
-  consignContractAt DateTime?
+  consignContractId      String?
+  consignContractAt      DateTime?
   // Saída do estoque (arts. 13, 18 e 19).
-  renaveSaidaTitulo    TituloNegocio?
-  renaveSaidaProtocolo String?
-  renaveSaidaEm        DateTime?
-  exitNfeNumber    String?
-  exitNfeSerie     String?
-  exitNfeKey       String?
-  exitNfeIssuedAt  DateTime?
+  renaveSaidaTitulo      TituloNegocio?
+  renaveSaidaProtocolo   String?
+  renaveSaidaEm          DateTime?
+  exitNfeNumber          String?
+  exitNfeSerie           String?
+  exitNfeKey             String?
+  exitNfeIssuedAt        DateTime?
   // Anotação/restrição no Renavam quando o veículo tem pendência posterior à
   // entrada ou foi retomado (art. 2º, IX e art. 11).
-  renaveVinculoMotivo String?
-  renaveNotes      String?
-  photoUrl         String?
-  notes            String?
-  supplierId       String?
-  supplier         Supplier?     @relation(fields: [supplierId], references: [id])
-  payables         Payable[]
-  receivables      Receivable[]
-  costs            VehicleCost[]
-  fuelEntries      FuelEntry[]
-  attachments      VehicleAttachment[]
-  sale             Sale?         @relation("SaleVehicle")
-  tradeInForSale   Sale?         @relation("SaleTradeIn")
-  purchaseRequests PurchaseRequest[]
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  renaveVinculoMotivo    String?
+  renaveNotes            String?
+  photoUrl               String?
+  notes                  String?
+  supplierId             String?
+  supplier               Supplier?                @relation(fields: [supplierId], references: [id])
+  payables               Payable[]
+  receivables            Receivable[]
+  costs                  VehicleCost[]
+  fuelEntries            FuelEntry[]
+  attachments            VehicleAttachment[]
+  showroomVisits         ShowroomVisit[]
+  sale                   Sale?                    @relation("SaleVehicle")
+  tradeInForSale         Sale?                    @relation("SaleTradeIn")
+  purchaseRequests       PurchaseRequest[]
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
 
-  cardItems        CardInvoiceItem[]
+  cardItems CardInvoiceItem[]
 
   @@index([supplierId])
   @@map("vehicles")
@@ -690,53 +696,77 @@ enum StatusAvaliacao {
 }
 
 model VehicleAppraisal {
-  id              String          @id @default(cuid())
+  id                String          @id @default(cuid())
   // Identificação do veículo (dados FIPE/placa — não vira Vehicle do estoque).
-  plate           String?
-  brand           String?
-  model           String?
-  version         String?
-  manufactureYear Int?
-  modelYear       Int?
-  color           String?
-  fuel            String?
-  transmission    String?
-  km              Int?
-  chassi          String?
-  renavam         String?
-  fipePrice       Float?
-  fipeModelo      String?
+  plate             String?
+  brand             String?
+  model             String?
+  version           String?
+  manufactureYear   Int?
+  modelYear         Int?
+  color             String?
+  fuel              String?
+  transmission      String?
+  km                Int?
+  chassi            String?
+  renavam           String?
+  fipePrice         Float?
+  fipeModelo        String?
   // Avaliação em si.
-  appraisalPrice  Float?
+  appraisalPrice    Float?
   // Quanto o proprietário quer pelo veículo (pedido dele, não a avaliação da loja).
-  ownerAskingPrice Float?
-  optionals       String[]        @default([])
-  checklist       Json            @default("{}")
-  notes           String?
+  ownerAskingPrice  Float?
+  optionals         String[]        @default([])
+  checklist         Json            @default("{}")
+  notes             String?
   // Contato do proprietário/ofertante.
-  ownerName       String?
-  ownerPhone      String?
+  ownerName         String?
+  ownerPhone        String?
   // Conferência de entrega (re-marcação do mesmo checklist).
-  status          StatusAvaliacao @default(AVALIADO)
+  status            StatusAvaliacao @default(AVALIADO)
   deliveryChecklist Json?
-  deliveryNotes   String?
-  deliveredAt     DateTime?
-  checkedBy       String?
-  createdById     String?
-  createdByName   String?
+  deliveryNotes     String?
+  deliveredAt       DateTime?
+  checkedBy         String?
+  createdById       String?
+  createdByName     String?
   // Vitrine: avaliação anunciada como REPASSE (carro que não é do estoque).
   // O anúncio mostra fotos e ficha, nunca o valor avaliado nem o pedido do
   // proprietário — o preço exibido é só o `repassePrice`, quando informado.
-  published       Boolean         @default(false)
-  publishedAt     DateTime?
-  repassePrice    Float?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  published         Boolean         @default(false)
+  publishedAt       DateTime?
+  repassePrice      Float?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
 
-  photos VehicleAppraisalPhoto[]
+  photos         VehicleAppraisalPhoto[]
+  showroomVisits ShowroomVisit[]
 
   @@index([status])
   @@map("vehicle_appraisals")
+}
+
+/**
+ * Visita ao ANÚNCIO público (vitrine): uma linha por abertura da página do
+ * veículo do estoque ou da avaliação postada como repasse.
+ * `visitor` é um identificador anônimo guardado em cookie no navegador de quem
+ * visita — serve só para não contar dez vezes quem recarregou a página e para
+ * saber quantas PESSOAS diferentes viram o anúncio. Não é IP, nome nem nada que
+ * identifique alguém. Aberturas feitas por quem está logado no sistema (a
+ * própria equipe) não são registradas.
+ */
+model ShowroomVisit {
+  id          String            @id @default(cuid())
+  vehicleId   String?
+  vehicle     Vehicle?          @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  appraisalId String?
+  appraisal   VehicleAppraisal? @relation(fields: [appraisalId], references: [id], onDelete: Cascade)
+  visitor     String
+  viewedAt    DateTime          @default(now())
+
+  @@index([vehicleId, viewedAt])
+  @@index([appraisalId, viewedAt])
+  @@map("showroom_visits")
 }
 
 model VehicleAppraisalPhoto {
@@ -757,36 +787,36 @@ model VehicleAppraisalPhoto {
 // mecânica...). Sempre gera uma conta a pagar vinculada, mantendo o
 // financeiro integrado; a soma entra no custo total e na margem real.
 model VehicleCost {
-  id          String                @id @default(cuid())
-  vehicleId   String
-  vehicle     Vehicle               @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
-  description String
-  category    CategoriaCustoVeiculo
-  amount      Float
-  date        DateTime              @default(now())
+  id                   String                @id @default(cuid())
+  vehicleId            String
+  vehicle              Vehicle               @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  description          String
+  category             CategoriaCustoVeiculo
+  amount               Float
+  date                 DateTime              @default(now())
   // Custo lançado depois que o veículo já foi vendido (pós-venda): não entra na
   // margem da venda, aparece à parte no Lucro/Prejuízo e no prontuário.
-  postSale    Boolean               @default(false)
+  postSale             Boolean               @default(false)
   // Custo custeado pelo CAPITAL de um sócio (veículo atrelado a ele): o título
   // vira RETIRADA do capital do sócio e NÃO conta como despesa/pós-venda da
   // empresa (é custo do sócio, dono do resultado do carro). String pura, sem FK.
   capitalBeneficiaryId String?
-  notes       String?
-  payableId   String?               @unique
-  payable     Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)
+  notes                String?
+  payableId            String?               @unique
+  payable              Payable?              @relation(fields: [payableId], references: [id], onDelete: SetNull)
   // Custo vindo de um lançamento da fatura do cartão (1:1) — apagar o item
   // apaga o custo junto.
-  cardItemId  String?               @unique
-  cardItem    CardInvoiceItem?      @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
+  cardItemId           String?               @unique
+  cardItem             CardInvoiceItem?      @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
   // Lote da rotina de remuneração de capital sobre estoque (para estorno).
-  stockInterestRunId String?
+  stockInterestRunId   String?
   // Peça do almoxarifado aplicada neste veículo: o valor SAI do estoque de peças
   // e entra no custo do carro — sem gerar conta a pagar (a compra já foi feita
   // quando a peça entrou no almoxarifado). Excluir o custo devolve as unidades.
-  partId      String?
-  part        Part?                 @relation(fields: [partId], references: [id])
-  partQuantity Int?
-  createdAt   DateTime              @default(now())
+  partId               String?
+  part                 Part?                 @relation(fields: [partId], references: [id])
+  partQuantity         Int?
+  createdAt            DateTime              @default(now())
 
   @@index([stockInterestRunId])
   @@index([partId])
@@ -802,235 +832,235 @@ enum StatusPreVenda {
 // Pré-venda: rascunho da negociação para revisão/impressão. NÃO gera nenhum
 // lançamento financeiro; só ao "Registrar venda" ela vira uma venda de fato.
 model PreSale {
-  id                String         @id @default(cuid())
-  number            Int            @unique @default(autoincrement())
-  saleType          TipoOperacao   @default(VENDA)
-  vehicleId         String
-  customerId        String
-  saleDate          DateTime       @default(now())
-  totalAmount       Float
-  paymentMethod     FormaPagamento
+  id                        String         @id @default(cuid())
+  number                    Int            @unique @default(autoincrement())
+  saleType                  TipoOperacao   @default(VENDA)
+  vehicleId                 String
+  customerId                String
+  saleDate                  DateTime       @default(now())
+  totalAmount               Float
+  paymentMethod             FormaPagamento
   // Financiamento de terceiros: valor liberado pelo banco (F) e valor devolvido
   // ao cliente (D). O proprietário do documento (VENDEDOR do contrato) é um
   // terceiro cujos dados ficam nos campos owner*.
-  financingAmount   Float          @default(0)
-  refundAmount      Float          @default(0)
+  financingAmount           Float          @default(0)
+  refundAmount              Float          @default(0)
   // Refinanciamento: o proprietário refinancia o próprio veículo. A financeira
   // paga o valor financiado direto ao financiado; a loja recebe só o retorno.
-  refinancing       Boolean        @default(false)
-  ownerName         String?
-  ownerDocument     String?
-  ownerPhone        String?
-  ownerAddress      String?
+  refinancing               Boolean        @default(false)
+  ownerName                 String?
+  ownerDocument             String?
+  ownerPhone                String?
+  ownerAddress              String?
   // Dados bancários do comprador (para a transferência da devolução no contrato).
-  buyerBankName        String?
-  buyerBankAgency      String?
-  buyerBankAccount     String?
-  buyerBankAccountType String?
-  buyerPixKey          String?
+  buyerBankName             String?
+  buyerBankAgency           String?
+  buyerBankAccount          String?
+  buyerBankAccountType      String?
+  buyerPixKey               String?
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
-  installmentsInfoCount  Int?
-  installmentsInfoAmount Float?
-  downPayment       Float          @default(0)
-  installmentsCount Int            @default(0)
-  financerAccountId String?
-  financedAmount    Float?
+  installmentsInfoCount     Int?
+  installmentsInfoAmount    Float?
+  downPayment               Float          @default(0)
+  installmentsCount         Int            @default(0)
+  financerAccountId         String?
+  financedAmount            Float?
   // Financiamento JÁ recebido: o valor financiado pelo banco já entrou na loja
   // (está no sinal/entradas). Quando true, o repasse do banco não vira conta a
   // receber e o excedente não gera devolução ao cliente (evita duplicidade).
-  financedAlreadyReceived Boolean  @default(false)
+  financedAlreadyReceived   Boolean        @default(false)
   // Financeira/banco indicado pelo cliente, NÃO conveniado à loja (sem conta
   // financeira). Guarda o nome para o contrato; o repasse vira conta a receber
   // comum. Nulo quando a financeira é conveniada (usa financerAccountId).
-  financerName      String?
-  sellerName        String?
-  sellerId          String?
-  seller            User?          @relation("PreSaleSeller", fields: [sellerId], references: [id])
-  notes             String?
+  financerName              String?
+  sellerName                String?
+  sellerId                  String?
+  seller                    User?          @relation("PreSaleSeller", fields: [sellerId], references: [id])
+  notes                     String?
   // Troca (veículo recebido do cliente) — dados brutos, o veículo só é criado
   // ao converter em venda.
-  tradeIn           Boolean        @default(false)
-  tiPlate           String?
-  tiBrand           String?
-  tiModel           String?
-  tiVersion         String?
-  tiManufactureYear Int?
-  tiModelYear       Int?
-  tiColor           String?
-  tiKm              Int?
-  tiFuel            String?
-  tiTransmission    String?
-  tiChassi          String?
-  tiNegotiated      Float?
-  tiPayoff          Float?
-  tiPayoffTo        String?
-  tiDebts           Float?
+  tradeIn                   Boolean        @default(false)
+  tiPlate                   String?
+  tiBrand                   String?
+  tiModel                   String?
+  tiVersion                 String?
+  tiManufactureYear         Int?
+  tiModelYear               Int?
+  tiColor                   String?
+  tiKm                      Int?
+  tiFuel                    String?
+  tiTransmission            String?
+  tiChassi                  String?
+  tiNegotiated              Float?
+  tiPayoff                  Float?
+  tiPayoffTo                String?
+  tiDebts                   Float?
   /// Detalhamento dos débitos do veículo da troca (ver Vehicle.debtsItems).
-  tiDebtsItems      Json           @default("[]")
-  tiSupplierName    String?
+  tiDebtsItems              Json           @default("[]")
+  tiSupplierName            String?
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
-  returnLevel       Int            @default(0)
+  returnLevel               Int            @default(0)
   // Comissão do vendedor (R$) — convertida em conta a pagar ao fechar a venda.
-  commissionAmount  Float          @default(0)
+  commissionAmount          Float          @default(0)
   // Indicações de venda: [{ name, amount }] — cada uma vira conta a pagar
   // (categoria Comissão) ao converter a pré-venda.
-  referrals         Json           @default("[]")
+  referrals                 Json           @default("[]")
   // Transferência (DETRAN) cobrada: vira conta a pagar ao converter a venda.
-  transferCharged   Boolean        @default(false)
-  transferAmount    Float          @default(0)
+  transferCharged           Boolean        @default(false)
+  transferAmount            Float          @default(0)
   // Facultativo: pagar ao vendedor a comissão sobre o retorno da financeira.
-  takeReturnCommission Boolean     @default(false)
+  takeReturnCommission      Boolean        @default(false)
   // Seguro vendido junto ao financiamento (comissão a receber, valor e data
   // desconhecidos até cair).
-  insuranceSold     Boolean        @default(false)
+  insuranceSold             Boolean        @default(false)
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
-  viaPaidTraffic    Boolean        @default(false)
+  viaPaidTraffic            Boolean        @default(false)
   // Consignado: destino da devolução ao proprietário escolhido na negociação. O
   // valor em si é re-derivado do veículo na conversão em venda.
-  ownerRefundToCapital     Boolean  @default(false)
-  ownerRefundBeneficiaryId String?
+  ownerRefundToCapital      Boolean        @default(false)
+  ownerRefundBeneficiaryId  String?
   // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga.
-  commissionToCapital      Boolean  @default(false)
+  commissionToCapital       Boolean        @default(false)
   // Venda paga com o CAPITAL de um sócio: no fechamento, o valor é recebido no
   // Banco Neutro e vira retirada do capital dele — independente de quem é o
   // cliente/nome no contrato.
   capitalPayerBeneficiaryId String?
   // Token público para a verificação da ficha via QR Code (página /verificar).
-  publicToken       String         @unique @default(uuid())
-  status            StatusPreVenda @default(ABERTA)
-  convertedSaleId   String?
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
+  publicToken               String         @unique @default(uuid())
+  status                    StatusPreVenda @default(ABERTA)
+  convertedSaleId           String?
+  createdAt                 DateTime       @default(now())
+  updatedAt                 DateTime       @updatedAt
 
   @@index([customerId])
   @@map("pre_sales")
 }
 
 model Sale {
-  id                String         @id @default(cuid())
-  orderNumber       Int            @unique @default(autoincrement())
-  saleType          TipoOperacao   @default(VENDA)
+  id                        String               @id @default(cuid())
+  orderNumber               Int                  @unique @default(autoincrement())
+  saleType                  TipoOperacao         @default(VENDA)
   // Financiamento de terceiros: valor liberado pelo banco (F), valor devolvido
   // ao cliente (D) e dados do proprietário do documento (VENDEDOR do contrato).
-  financingAmount   Float          @default(0)
-  refundAmount      Float          @default(0)
+  financingAmount           Float                @default(0)
+  refundAmount              Float                @default(0)
   // Refinanciamento: proprietário refinancia o próprio veículo (F vai direto ao
   // financiado; a loja recebe só o retorno).
-  refinancing       Boolean        @default(false)
-  ownerName         String?
-  ownerDocument     String?
-  ownerPhone        String?
-  ownerAddress      String?
+  refinancing               Boolean              @default(false)
+  ownerName                 String?
+  ownerDocument             String?
+  ownerPhone                String?
+  ownerAddress              String?
   // Dados bancários do comprador (para a transferência da devolução no contrato).
-  buyerBankName        String?
-  buyerBankAgency      String?
-  buyerBankAccount     String?
-  buyerBankAccountType String?
-  buyerPixKey          String?
+  buyerBankName             String?
+  buyerBankAgency           String?
+  buyerBankAccount          String?
+  buyerBankAccountType      String?
+  buyerPixKey               String?
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
-  installmentsInfoCount  Int?
-  installmentsInfoAmount Float?
+  installmentsInfoCount     Int?
+  installmentsInfoAmount    Float?
   // Consignado: o veículo era de um terceiro. `ownerRefundAmount` (cópia travada
   // do veículo no fechamento) é o valor devido ao proprietário. Se
   // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário
   // escolhido (sem sair do caixa); senão vira conta a pagar ao dono.
-  consigned              Boolean   @default(false)
-  ownerRefundAmount      Float     @default(0)
-  ownerRefundToCapital   Boolean   @default(false)
-  ownerRefundBeneficiaryId String?
-  ownerRefundBeneficiary CapitalBeneficiary? @relation("SaleOwnerRefund", fields: [ownerRefundBeneficiaryId], references: [id])
+  consigned                 Boolean              @default(false)
+  ownerRefundAmount         Float                @default(0)
+  ownerRefundToCapital      Boolean              @default(false)
+  ownerRefundBeneficiaryId  String?
+  ownerRefundBeneficiary    CapitalBeneficiary?  @relation("SaleOwnerRefund", fields: [ownerRefundBeneficiaryId], references: [id])
   // Comissão do vendedor aplicada no capital dele (aporte) em vez de paga em
   // dinheiro — só quando o vendedor é beneficiário do capital.
-  commissionToCapital    Boolean   @default(false)
-  vehicleId         String         @unique
-  vehicle           Vehicle        @relation("SaleVehicle", fields: [vehicleId], references: [id])
-  tradeInVehicleId  String?        @unique
-  tradeInVehicle    Vehicle?       @relation("SaleTradeIn", fields: [tradeInVehicleId], references: [id])
-  customerId        String
-  customer          Customer       @relation(fields: [customerId], references: [id])
-  saleDate          DateTime       @default(now())
-  totalAmount       Float
-  downPayment        Float          @default(0)
-  installmentsCount Int            @default(0)
-  paymentMethod     FormaPagamento
-  sellerName        String?
-  sellerId          String?
-  seller            User?          @relation("SaleSeller", fields: [sellerId], references: [id])
+  commissionToCapital       Boolean              @default(false)
+  vehicleId                 String               @unique
+  vehicle                   Vehicle              @relation("SaleVehicle", fields: [vehicleId], references: [id])
+  tradeInVehicleId          String?              @unique
+  tradeInVehicle            Vehicle?             @relation("SaleTradeIn", fields: [tradeInVehicleId], references: [id])
+  customerId                String
+  customer                  Customer             @relation(fields: [customerId], references: [id])
+  saleDate                  DateTime             @default(now())
+  totalAmount               Float
+  downPayment               Float                @default(0)
+  installmentsCount         Int                  @default(0)
+  paymentMethod             FormaPagamento
+  sellerName                String?
+  sellerId                  String?
+  seller                    User?                @relation("SaleSeller", fields: [sellerId], references: [id])
   // Financiamento: banco/financeira e valor financiado (repasse)
-  financerName      String?
-  financedAmount    Float?
+  financerName              String?
+  financedAmount            Float?
   // Financiamento JÁ recebido (está no sinal/entradas): não gera repasse a
   // receber do banco nem devolução ao cliente.
-  financedAlreadyReceived Boolean @default(false)
+  financedAlreadyReceived   Boolean              @default(false)
   // Conta financeira da financeira (o valor financiado fica nela até a
   // financeira pagar/transferir para a conta da empresa)
-  financerAccountId String?
-  financerAccount   FinancialAccount? @relation("SaleFinancer", fields: [financerAccountId], references: [id])
+  financerAccountId         String?
+  financerAccount           FinancialAccount?    @relation("SaleFinancer", fields: [financerAccountId], references: [id])
   // Data em que a financeira pagou (repasse transferido para a conta da empresa)
-  financerSettledAt DateTime?
+  financerSettledAt         DateTime?
   // Retorno da financeira: nível R-xx usado, valor líquido (após imposto) e a
   // data em que a financeira pagou o retorno (liquidado separado do repasse).
-  returnLevel       Int            @default(0)
-  returnNet         Float          @default(0)
-  returnSettledAt   DateTime?
+  returnLevel               Int                  @default(0)
+  returnNet                 Float                @default(0)
+  returnSettledAt           DateTime?
   // Valor realmente pago pela financeira (pode diferir do programado returnNet)
-  returnPaidAmount  Float?
+  returnPaidAmount          Float?
   // Comissão sobre o SEGURO vendido junto ao financiamento. Diferente do
   // retorno, não tem fórmula nem valor conhecido na venda: fica só marcada e
   // pendente (nada é lançado), e o valor entra quando o dinheiro cai.
-  insuranceSold     Boolean        @default(false)
-  insuranceAmount   Float?
-  insuranceCommissionAmount Float  @default(0)
-  insuranceSettledAt DateTime?
+  insuranceSold             Boolean              @default(false)
+  insuranceAmount           Float?
+  insuranceCommissionAmount Float                @default(0)
+  insuranceSettledAt        DateTime?
   // Comissão do vendedor (valor em R$, digitado na venda). Gera uma conta a
   // pagar (categoria Comissão, centro Administrativo) quando > 0.
-  commissionAmount  Float          @default(0)
+  commissionAmount          Float                @default(0)
   // Indicações de venda: [{ name, amount }] — cada uma gera uma conta a pagar
   // (categoria Comissão, centro Administrativo), como a comissão do vendedor.
-  referrals         Json           @default("[]")
+  referrals                 Json                 @default("[]")
   // Transferência (DETRAN) cobrada na venda: quando cobrada, vira uma conta a
   // pagar (custo, igual à comissão) e reduz o resultado daquela venda.
-  transferCharged   Boolean        @default(false)
-  transferAmount    Float          @default(0)
+  transferCharged           Boolean              @default(false)
+  transferAmount            Float                @default(0)
   // Quando a transferência de propriedade no DETRAN foi concluída. Nulo = o
   // carro ainda está no nome do dono anterior (multa e ponto continuam caindo
   // para ele). Não confundir com transferCharged, que é só a cobrança.
-  transferDoneAt    DateTime?
+  transferDoneAt            DateTime?
   // Comissão do vendedor sobre o retorno da financeira (calculada no registro):
   // vira conta a pagar (Comissão) e reduz o resultado por competência.
-  returnCommissionAmount Float     @default(0)
+  returnCommissionAmount    Float                @default(0)
   // Informativo: venda originada de anúncio de tráfego pago (card do dashboard).
-  viaPaidTraffic    Boolean        @default(false)
-  notes             String?
-  status            StatusVenda    @default(CONCLUIDA)
-  receivables       Receivable[]
-  payables          Payable[]
+  viaPaidTraffic            Boolean              @default(false)
+  notes                     String?
+  status                    StatusVenda          @default(CONCLUIDA)
+  receivables               Receivable[]
+  payables                  Payable[]
   // Aportes de capital gerados por esta venda (devolução do consignado aplicada
   // no capital de um beneficiário).
-  capitalRefunds    CapitalTransaction[] @relation("SaleCapitalRefund")
-  createdAt         DateTime       @default(now())
+  capitalRefunds            CapitalTransaction[] @relation("SaleCapitalRefund")
+  createdAt                 DateTime             @default(now())
 
   @@index([customerId])
   @@map("sales")
 }
 
 model Part {
-  id          String     @id @default(cuid())
-  code        String     @unique
-  name        String
-  description String?
-  quantity    Int        @default(0)
-  minQuantity Int        @default(0)
-  costPrice   Float
-  salePrice   Float
-  supplierId  String?
-  supplier    Supplier?  @relation(fields: [supplierId], references: [id])
-  payables    Payable[]
-  partSales   PartSale[]
+  id           String        @id @default(cuid())
+  code         String        @unique
+  name         String
+  description  String?
+  quantity     Int           @default(0)
+  minQuantity  Int           @default(0)
+  costPrice    Float
+  salePrice    Float
+  supplierId   String?
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id])
+  payables     Payable[]
+  partSales    PartSale[]
   // Aplicações desta peça em veículos do estoque.
   vehicleCosts VehicleCost[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
   @@index([supplierId])
   @@map("parts")
@@ -1060,70 +1090,70 @@ model PartSale {
 }
 
 model Payable {
-  id           String          @id @default(cuid())
+  id                   String              @id @default(cuid())
   // Número sequencial da Ordem de Pagamento (igual Agrasty).
-  orderNumber  Int             @unique @default(autoincrement())
+  orderNumber          Int                 @unique @default(autoincrement())
   // Token público para verificação da Ordem de Pagamento via QR Code.
-  publicToken  String          @unique @default(uuid())
-  description  String
-  category     CategoriaPagar
+  publicToken          String              @unique @default(uuid())
+  description          String
+  category             CategoriaPagar
   // Categoria livre/personalizada informada pelo usuário (ex.: "Revisão").
   // Quando presente, prevalece sobre o rótulo do enum na exibição.
-  categoryLabel String?
+  categoryLabel        String?
   // Nº do documento de origem (nota fiscal, fatura, boleto) informado no lançamento.
-  documentNumber String?
-  amount       Float
-  dueDate      DateTime
-  paymentDate  DateTime?
-  status       StatusConta     @default(PENDENTE)
-  supplierId   String?
-  supplier     Supplier?       @relation(fields: [supplierId], references: [id])
-  vehicleId    String?
-  vehicle      Vehicle?        @relation(fields: [vehicleId], references: [id])
-  partId       String?
-  part         Part?           @relation(fields: [partId], references: [id])
+  documentNumber       String?
+  amount               Float
+  dueDate              DateTime
+  paymentDate          DateTime?
+  status               StatusConta         @default(PENDENTE)
+  supplierId           String?
+  supplier             Supplier?           @relation(fields: [supplierId], references: [id])
+  vehicleId            String?
+  vehicle              Vehicle?            @relation(fields: [vehicleId], references: [id])
+  partId               String?
+  part                 Part?               @relation(fields: [partId], references: [id])
   // Quantidade de peças desta compra: com o valor do título, dá o custo
   // unitário pago — é o histórico de preços que a ficha da peça mostra.
-  partQuantity Int?
-  vehicleCost  VehicleCost?
+  partQuantity         Int?
+  vehicleCost          VehicleCost?
   // Venda de origem (ex.: comissão do vendedor gerada por uma venda).
-  saleId       String?
-  sale         Sale?           @relation(fields: [saleId], references: [id], onDelete: SetNull)
+  saleId               String?
+  sale                 Sale?               @relation(fields: [saleId], references: [id], onDelete: SetNull)
   // Beneficiário usuário (ex.: vendedor da comissão) — dados bancários na ordem.
-  beneficiaryUserId String?
-  beneficiaryUser   User?      @relation("PayableBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: SetNull)
-  recurringId  String?
-  recurring    RecurringEntry? @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  beneficiaryUserId    String?
+  beneficiaryUser      User?               @relation("PayableBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: SetNull)
+  recurringId          String?
+  recurring            RecurringEntry?     @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   // Solicitação de compra que gerou este título (espelho da aprovação).
-  purchaseRequestId String?
-  purchaseRequest   PurchaseRequest? @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
+  purchaseRequestId    String?
+  purchaseRequest      PurchaseRequest?    @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
   // Anexos do título (ex.: nota fiscal, comprovante).
-  attachments  PayableAttachment[]
-  reconciledAt DateTime?
-  bankRef      String?
-  employeeId   String?
-  consortiumId String?
-  consortium   Consortium?     @relation(fields: [consortiumId], references: [id], onDelete: SetNull)
-  costCenterId String?
-  costCenter   CostCenter?     @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  attachments          PayableAttachment[]
+  reconciledAt         DateTime?
+  bankRef              String?
+  employeeId           String?
+  consortiumId         String?
+  consortium           Consortium?         @relation(fields: [consortiumId], references: [id], onDelete: SetNull)
+  costCenterId         String?
+  costCenter           CostCenter?         @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   // Sócio do capital (fluxo Capital): ao BAIXAR o título, gera a RETIRADA dele.
   capitalBeneficiaryId String?
   capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
-  accountId    String?
-  account      FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  accountId            String?
+  account              FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
   // Combo de pagamentos: título jogado numa cesta para pagar em conjunto.
-  paymentComboId String?
-  paymentCombo   PaymentCombo?  @relation(fields: [paymentComboId], references: [id], onDelete: SetNull)
-  notes        String?
+  paymentComboId       String?
+  paymentCombo         PaymentCombo?       @relation(fields: [paymentComboId], references: [id], onDelete: SetNull)
+  notes                String?
   // Lançamento avulso feito direto no Livro caixa (não é um título do a-pagar).
   // Excluir um avulso no caixa apaga de vez; excluir um título estorna (volta PENDENTE).
-  avulso       Boolean         @default(false)
+  avulso               Boolean             @default(false)
   // Fatura de cartão de crédito: o título é uma linha só (total da fatura) e os
   // lançamentos individuais ficam em cardItems, cada um com seu fluxo.
-  cardInvoice  Boolean         @default(false)
-  cardItems    CardInvoiceItem[]
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  cardInvoice          Boolean             @default(false)
+  cardItems            CardInvoiceItem[]
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   @@index([paymentComboId])
   // Índices de leitura: a lista/filtros de Contas a pagar, a DRE e as buscas por
@@ -1158,93 +1188,93 @@ enum ComboStatus {
 // para quitar em conjunto. O beneficiário do borderô é o próprio usuário que o
 // montou (recebe o total para pagar as contas). Ciclo: ABERTO → SOLICITADO → PAGO.
 model PaymentCombo {
-  id          String      @id @default(cuid())
-  name        String
-  status      ComboStatus @default(ABERTO)
-  notes       String?
+  id               String            @id @default(cuid())
+  name             String
+  status           ComboStatus       @default(ABERTO)
+  notes            String?
   // Beneficiário/dono: usuário logado que montou o combo (dados do borderô).
-  userId      String?
-  user        User?       @relation("UserPaymentCombos", fields: [userId], references: [id], onDelete: SetNull)
-  requestedAt DateTime?
-  paidAt      DateTime?
+  userId           String?
+  user             User?             @relation("UserPaymentCombos", fields: [userId], references: [id], onDelete: SetNull)
+  requestedAt      DateTime?
+  paidAt           DateTime?
   // Quanto do total foi abatido no saldo devedor de capital do beneficiário
   // (vira aporte na baixa); o restante saiu em dinheiro. 0 = sem abatimento.
-  capitalAbatement Float  @default(0)
+  capitalAbatement Float             @default(0)
   // Se true, paga o valor INTEGRAL ao beneficiário mesmo com saldo devedor
   // (não abate o capital). Default false = abate como de costume.
-  payFull     Boolean     @default(false)
+  payFull          Boolean           @default(false)
   // Forma de recebimento escolhida pelo solicitante: "conta" | "pix".
-  payoutMethod String?
+  payoutMethod     String?
   // Conta que pagou o combo (na baixa).
-  accountId   String?
-  account     FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  payables    Payable[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  accountId        String?
+  account          FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  payables         Payable[]
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
 
   @@map("payment_combos")
 }
 
 // Arquivo anexado a um título de contas a pagar (nota fiscal, comprovante…).
 model PayableAttachment {
-  id         String   @id @default(cuid())
-  payableId  String
-  payable    Payable  @relation(fields: [payableId], references: [id], onDelete: Cascade)
+  id          String   @id @default(cuid())
+  payableId   String
+  payable     Payable  @relation(fields: [payableId], references: [id], onDelete: Cascade)
   // Tipo do anexo: BOLETO / COMPROVANTE (slots dedicados, um de cada por
   // título) ou OUTRO (anexos gerais da ordem de pagamento).
-  kind       String   @default("OUTRO")
+  kind        String   @default("OUTRO")
   description String
-  filename   String
-  mimeType   String
-  size       Int
-  data       Bytes
-  createdAt  DateTime @default(now())
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime @default(now())
 
   @@index([payableId])
   @@map("payable_attachments")
 }
 
 model Receivable {
-  id                String            @id @default(cuid())
-  description       String
+  id                   String              @id @default(cuid())
+  description          String
   // Nº do documento de origem (nota fiscal, recibo) informado no lançamento.
-  documentNumber    String?
-  category          CategoriaReceber
+  documentNumber       String?
+  category             CategoriaReceber
   // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
-  categoryLabel     String?
-  amount            Float
-  dueDate           DateTime
-  receivedDate      DateTime?
-  status            StatusRecebimento @default(PENDENTE)
-  customerId        String?
-  customer          Customer?         @relation(fields: [customerId], references: [id])
-  saleId            String?
-  sale              Sale?             @relation(fields: [saleId], references: [id])
-  vehicleId         String?
-  vehicle           Vehicle?          @relation(fields: [vehicleId], references: [id])
-  partSaleId        String?
-  partSale          PartSale?         @relation(fields: [partSaleId], references: [id])
-  installmentNumber Int?
-  totalInstallments Int?
-  recurringId       String?
-  recurring         RecurringEntry?   @relation(fields: [recurringId], references: [id], onDelete: SetNull)
-  reconciledAt      DateTime?
-  bankRef           String?
-  costCenterId      String?
-  costCenter        CostCenter?       @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
+  categoryLabel        String?
+  amount               Float
+  dueDate              DateTime
+  receivedDate         DateTime?
+  status               StatusRecebimento   @default(PENDENTE)
+  customerId           String?
+  customer             Customer?           @relation(fields: [customerId], references: [id])
+  saleId               String?
+  sale                 Sale?               @relation(fields: [saleId], references: [id])
+  vehicleId            String?
+  vehicle              Vehicle?            @relation(fields: [vehicleId], references: [id])
+  partSaleId           String?
+  partSale             PartSale?           @relation(fields: [partSaleId], references: [id])
+  installmentNumber    Int?
+  totalInstallments    Int?
+  recurringId          String?
+  recurring            RecurringEntry?     @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  reconciledAt         DateTime?
+  bankRef              String?
+  costCenterId         String?
+  costCenter           CostCenter?         @relation(fields: [costCenterId], references: [id], onDelete: SetNull)
   // Sócio do capital (fluxo Capital): ao RECEBER o título, gera o APORTE dele.
   capitalBeneficiaryId String?
   capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
-  accountId         String?
-  account           FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
-  notes             String?
+  accountId            String?
+  account              FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  notes                String?
   // Comprovante do depósito de um sinal/entrada antecipada: id do VehicleAttachment
   // (string pura, sem FK — servido por /anexos/[id]). Nulo quando não há anexo.
-  proofAttachmentId String?
+  proofAttachmentId    String?
   // Lançamento avulso feito direto no Livro caixa (não é um título do a-receber).
-  avulso            Boolean           @default(false)
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  avulso               Boolean             @default(false)
+  createdAt            DateTime            @default(now())
+  updatedAt            DateTime            @updatedAt
 
   @@index([customerId])
   @@map("receivables")
@@ -1297,7 +1327,7 @@ model FuelPrice {
 model DashboardSnapshot {
   id            String   @id @default(cuid())
   referenceDate DateTime // dia de trabalho do caixa fechado
-  data          Json     // PatrimonialStats + { equacao, lucroPrejuizo, check1Ok, check2Ok }
+  data          Json // PatrimonialStats + { equacao, lucroPrejuizo, check1Ok, check2Ok }
   version       Int      @default(1)
   archivedBy    String?
   archivedAt    DateTime @default(now())
@@ -1332,39 +1362,39 @@ model LaunchCategory {
 
 // Sócio/investidor da empresa: acompanha aportes, retiradas e pró-labore.
 model CapitalBeneficiary {
-  id           String               @id @default(cuid())
-  name         String
+  id                      String                 @id @default(cuid())
+  name                    String
   // Beneficiário que representa a própria empresa (criado pelos Parâmetros)
-  isCompany    Boolean              @default(false)
-  proLabore    Float                @default(0)
+  isCompany               Boolean                @default(false)
+  proLabore               Float                  @default(0)
   // Entra na rotina do fechamento mensal (crédito do pró-labore).
-  includeInMonthlyClosing Boolean   @default(false)
-  active       Boolean              @default(true)
-  notes        String?
+  includeInMonthlyClosing Boolean                @default(false)
+  active                  Boolean                @default(true)
+  notes                   String?
   // Vínculo 1:1 com um usuário do sistema (o sócio que também tem login).
-  userId       String?              @unique
-  user         User?                @relation("BeneficiaryUser", fields: [userId], references: [id], onDelete: SetNull)
+  userId                  String?                @unique
+  user                    User?                  @relation("BeneficiaryUser", fields: [userId], references: [id], onDelete: SetNull)
   // Agrupamento pai→filhos: um beneficiário "responsável" reúne outros
   // vinculados (ex.: cauções recebidas em nome dele). Só agrupa/visualiza —
   // não altera nenhum cálculo financeiro. Um nível apenas.
-  parentId     String?
-  parent       CapitalBeneficiary?  @relation("BeneficiaryParent", fields: [parentId], references: [id], onDelete: SetNull)
-  children     CapitalBeneficiary[] @relation("BeneficiaryParent")
-  transactions CapitalTransaction[]
-  allocations  InvestmentAllocation[]
-  purchaseRequests PurchaseRequest[]
-  payables     Payable[]
-  receivables  Receivable[]
-  recurringEntries RecurringEntry[]
+  parentId                String?
+  parent                  CapitalBeneficiary?    @relation("BeneficiaryParent", fields: [parentId], references: [id], onDelete: SetNull)
+  children                CapitalBeneficiary[]   @relation("BeneficiaryParent")
+  transactions            CapitalTransaction[]
+  allocations             InvestmentAllocation[]
+  purchaseRequests        PurchaseRequest[]
+  payables                Payable[]
+  receivables             Receivable[]
+  recurringEntries        RecurringEntry[]
   // Vendas de consignados cuja devolução ao proprietário foi aplicada no capital
   // deste beneficiário (aporte).
-  ownerRefundSales Sale[]           @relation("SaleOwnerRefund")
+  ownerRefundSales        Sale[]                 @relation("SaleOwnerRefund")
   // Contas financeiras cujo titular verdadeiro é este beneficiário (sócio).
-  ownedAccounts    FinancialAccount[] @relation("AccountOwner")
-  createdAt    DateTime             @default(now())
-  updatedAt    DateTime             @updatedAt
+  ownedAccounts           FinancialAccount[]     @relation("AccountOwner")
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
 
-  cardItems     CardInvoiceItem[]
+  cardItems CardInvoiceItem[]
 
   @@map("capital_beneficiaries")
 }
@@ -1397,29 +1427,29 @@ model InvestmentAllocation {
 // Movimentação de capital: aportes entram no caixa (conta a receber
 // recebida) e retiradas/pró-labore saem (conta a pagar paga).
 model CapitalTransaction {
-  id            String             @id @default(cuid())
-  beneficiaryId String
-  beneficiary   CapitalBeneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
-  kind          TipoCapital
-  amount        Float
-  date          DateTime           @default(now())
-  description   String?
-  payableId     String?
-  receivableId  String?
+  id                 String             @id @default(cuid())
+  beneficiaryId      String
+  beneficiary        CapitalBeneficiary @relation(fields: [beneficiaryId], references: [id], onDelete: Cascade)
+  kind               TipoCapital
+  amount             Float
+  date               DateTime           @default(now())
+  description        String?
+  payableId          String?
+  receivableId       String?
   // Aporte gerado por uma venda (devolução ao proprietário do consignado ou
   // comissão aplicada no capital): permite estornar ao cancelar a venda.
-  saleId        String?
-  sale          Sale?              @relation("SaleCapitalRefund", fields: [saleId], references: [id], onDelete: SetNull)
+  saleId             String?
+  sale               Sale?              @relation("SaleCapitalRefund", fields: [saleId], references: [id], onDelete: SetNull)
   // Gerada pelo fechamento mensal (zeragem do L/P e pró-labore): permite o
   // estorno completo ao reabrir o mês.
-  monthlyClosingId String?
-  monthlyClosing   MonthlyClosing? @relation(fields: [monthlyClosingId], references: [id], onDelete: SetNull)
+  monthlyClosingId   String?
+  monthlyClosing     MonthlyClosing?    @relation(fields: [monthlyClosingId], references: [id], onDelete: SetNull)
   // Lote da rotina de remuneração de capital sobre estoque (para estorno).
   stockInterestRunId String?
   // Retirada gerada por um lançamento CAPITAL da fatura do cartão (1:1).
-  cardItemId    String?            @unique
-  cardItem      CardInvoiceItem?   @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
-  createdAt     DateTime           @default(now())
+  cardItemId         String?            @unique
+  cardItem           CardInvoiceItem?   @relation(fields: [cardItemId], references: [id], onDelete: Cascade)
+  createdAt          DateTime           @default(now())
 
   @@index([stockInterestRunId])
   // Toda baixa procura a movimentação pelo título/recebível vinculado.
@@ -1448,15 +1478,15 @@ model StockInterestRun {
 // zera o L/P do mês transferindo o resultado para o capital da empresa, credita
 // o pró-labore dos beneficiários marcados e trava lançamentos no mês fechado.
 model MonthlyClosing {
-  id        String   @id @default(cuid())
-  year      Int
-  month     Int // 1-12
-  result    Float // resultado (L/P) do mês transferido ao capital da empresa
-  closedBy  String?
-  closedAt  DateTime @default(now())
-  snapshot  Json     @default("{}")
+  id           String               @id @default(cuid())
+  year         Int
+  month        Int // 1-12
+  result       Float // resultado (L/P) do mês transferido ao capital da empresa
+  closedBy     String?
+  closedAt     DateTime             @default(now())
+  snapshot     Json                 @default("{}")
   transactions CapitalTransaction[]
-  createdAt DateTime @default(now())
+  createdAt    DateTime             @default(now())
 
   @@unique([year, month])
   @@map("monthly_closings")
@@ -1504,47 +1534,47 @@ model FuelEntry {
 // Lançamento recorrente: gera automaticamente uma conta a pagar ou a
 // receber todo mês no dia configurado (aluguel, salários, assinaturas...).
 model RecurringEntry {
-  id              String            @id @default(cuid())
-  kind            TipoRecorrencia
-  description     String
-  amount          Float
-  dayOfMonth      Int
+  id                      String              @id @default(cuid())
+  kind                    TipoRecorrencia
+  description             String
+  amount                  Float
+  dayOfMonth              Int
   // Fluxo estrutural (VEICULOS/ADMINISTRATIVO/CAPITAL) do título gerado; null =
   // ADMINISTRATIVO (comportamento antigo).
-  structuralKey   String?
+  structuralKey           String?
   // Quando > 0, a recorrência é "a cada N dias" (a partir de startDate). Quando
   // null, é mensal por dayOfMonth.
-  intervalDays    Int?
+  intervalDays            Int?
   // Antecipa o vencimento para o último dia útil quando o dia cai em fim de
   // semana ou feriado nacional (padrão de guias de impostos: DAS/FGTS/DARF).
-  anticipateToBusinessDay Boolean @default(false)
+  anticipateToBusinessDay Boolean             @default(false)
   // Fatura de cartão de crédito: o título gerado nasce com lançamentos
   // detalháveis (a recorrência só marca o dia do pagamento; o valor de cada
   // mês vira a soma dos lançamentos digitados na fatura).
-  cardInvoice     Boolean @default(false)
+  cardInvoice             Boolean             @default(false)
   // Sócio do capital: quando o fluxo é CAPITAL, o título gerado carrega este
   // beneficiário e, ao ser baixado, lança o aporte/retirada dele.
-  capitalBeneficiaryId String?
-  capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
-  categoryPagar   CategoriaPagar?
-  categoryReceber CategoriaReceber?
+  capitalBeneficiaryId    String?
+  capitalBeneficiary      CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
+  categoryPagar           CategoriaPagar?
+  categoryReceber         CategoriaReceber?
   // Rótulo de exibição da categoria (gerenciável). Nulo = usa o rótulo do enum.
-  categoryLabel   String?
-  supplierId      String?
-  supplier        Supplier?         @relation(fields: [supplierId], references: [id])
-  customerId      String?
-  customer        Customer?         @relation(fields: [customerId], references: [id])
-  active          Boolean           @default(true)
-  startDate       DateTime          @default(now())
-  endDate         DateTime?
+  categoryLabel           String?
+  supplierId              String?
+  supplier                Supplier?           @relation(fields: [supplierId], references: [id])
+  customerId              String?
+  customer                Customer?           @relation(fields: [customerId], references: [id])
+  active                  Boolean             @default(true)
+  startDate               DateTime            @default(now())
+  endDate                 DateTime?
   // Ocorrências EXCLUÍDAS pelo usuário (chave "AAAA-MM-DD" do vencimento):
   // a geração pula esses dias para o título excluído não renascer.
-  skippedDays     String[]          @default([])
-  notes           String?
-  payables        Payable[]
-  receivables     Receivable[]
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  skippedDays             String[]            @default([])
+  notes                   String?
+  payables                Payable[]
+  receivables             Receivable[]
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
 
   @@index([supplierId])
   @@index([customerId])
@@ -1585,23 +1615,23 @@ model AiUsage {
 // Assinatura da própria plataforma: o contrato desta empresa com o fornecedor
 // do sistema. Linha única (id fixo "subscription"), visível só ao administrador.
 model Subscription {
-  id            String    @id @default("subscription")
+  id               String    @id @default("subscription")
   // TESTE | EM_DIA | A_VENCER | ATRASADO | BLOQUEADO
-  status        String    @default("TESTE")
-  planName      String    @default("Padrão")
-  monthlyAmount Float     @default(0)
-  dueDay        Int       @default(10)
-  nextChargeAt  DateTime?
-  startedAt     DateTime?
-  notes         String?
+  status           String    @default("TESTE")
+  planName         String    @default("Padrão")
+  monthlyAmount    Float     @default(0)
+  dueDay           Int       @default(10)
+  nextChargeAt     DateTime?
+  startedAt        DateTime?
+  notes            String?
   // Dados da CONTRATADA (fornecedora do sistema), usados no contrato.
   providerName     String?
   providerDocument String?
   providerAddress  String?
   providerEmail    String?
   providerPhone    String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   payments  SubscriptionPayment[]
   contracts SubscriptionContract[]
@@ -1662,84 +1692,90 @@ model LoginThrottle {
 // Parâmetros da empresa (linha única): dados usados nos documentos
 // impressos (ordem de compra, contrato, venda) e na marca do sistema.
 model CompanySettings {
-  id                String   @id @default("company")
+  id                      String    @id @default("company")
   // Simulador de financiamento na vitrine pública (desligado por padrão).
-  showroomSimulator Boolean  @default(false)
-  razaoSocial       String   @default("MVP Veículos")
-  nomeFantasia      String   @default("MVP Veículos")
-  cnpj              String?
-  inscricaoEstadual String?
-  phone             String?
-  email             String?
-  address           String?
-  city              String?
-  uf                String?
-  logoDataUrl       String?
+  showroomSimulator       Boolean   @default(false)
+  razaoSocial             String    @default("MVP Veículos")
+  nomeFantasia            String    @default("MVP Veículos")
+  cnpj                    String?
+  inscricaoEstadual       String?
+  phone                   String?
+  email                   String?
+  address                 String?
+  city                    String?
+  uf                      String?
+  logoDataUrl             String?
   // Domínio oficial do site (ex.: https://mvpveiculos.com.br). Usado para montar
   // os links públicos: QR Codes (ficha/ordem), vitrine e sitemap do Google.
-  publicUrl         String?
+  publicUrl               String?
   // Instagram da loja (@usuario ou URL) — aparece no rodapé da vitrine pública.
-  instagram         String?
+  instagram               String?
   // Bloqueio do sistema (modo manutenção): só admins navegam; os demais veem o
   // aviso e as ações são recusadas até desbloquear.
-  systemLocked      Boolean  @default(false)
-  systemLockedBy    String?
-  systemLockedAt    DateTime?
+  systemLocked            Boolean   @default(false)
+  systemLockedBy          String?
+  systemLockedAt          DateTime?
   // Bloqueio por falta de pagamento: só o Super Admin liga/desliga e, enquanto
   // ativo, NINGUÉM da loja entra (nem o administrador) — diferente da
   // manutenção, que deixa o administrador trabalhando.
-  paymentBlocked        Boolean   @default(false)
-  paymentBlockedAt      DateTime?
-  paymentBlockedMessage String?
+  paymentBlocked          Boolean   @default(false)
+  paymentBlockedAt        DateTime?
+  paymentBlockedMessage   String?
   // Parecer IA: configuração da inteligência artificial (provedor, chave, modelo).
   // A chave nunca é devolvida ao cliente; sem chave, o parecer fica indisponível.
-  aiProvider        String?
-  aiApiKey          String?
-  aiModel           String?
+  aiProvider              String?
+  aiApiKey                String?
+  aiModel                 String?
   // Consulta por placa (traz também o valor FIPE): token do provedor veicular.
   // Igual à chave da IA — cadastrado aqui vence a variável de ambiente da
   // instalação, e nunca é devolvido ao cliente.
-  plateApiToken     String?
+  plateApiToken           String?
   // --- Renave (Resolução Contran nº 1.026/2026) -----------------------------
   // Modo de implantação: enquanto ligado, o sistema só AVISA sobre o que a
   // resolução vai exigir — nada é bloqueado. `renaveObrigatorioEm` é a data
   // citada nos avisos (art. 33: 90 dias da publicação, 30/06/2026).
-  renaveImplantacao Boolean  @default(true)
-  renaveObrigatorioEm DateTime?
+  renaveImplantacao       Boolean   @default(true)
+  renaveObrigatorioEm     DateTime?
   // Dados da adesão (arts. 7º, 8º e 30): situação, integradora contratada,
   // CNAE principal e validade do certificado digital e-CNPJ.
-  renaveAderido     Boolean  @default(false)
-  renaveAderidoEm   DateTime?
-  renaveIntegradora String?
+  renaveAderido           Boolean   @default(false)
+  renaveAderidoEm         DateTime?
+  renaveIntegradora       String?
   // "AVALIACAO" (em negociação, ainda sem contrato) ou "CONTRATADA". Enquanto
   // for só avaliação, a etapa da integradora continua pendente no roteiro.
   renaveIntegradoraStatus String?
-  renaveCnae        String?
+  renaveCnae              String?
   // Anotações da implantação: o que a integradora respondeu, o que o DETRAN do
   // estado ainda não liberou, o que ficou de vir por escrito. Fica no sistema
   // para a equipe consultar — não em conversa de WhatsApp.
-  renaveObservacoes String?
+  renaveObservacoes       String?
   // Situação do DETRAN do estado no Renave de USADOS: "NAO_ADERIDO",
   // "HOMOLOGACAO" ou "ADERIDO". Enquanto o estado não opera, as etapas que
   // dependem dele saem da cobrança do roteiro — a loja não pode fazer nada a
   // respeito, e comprar crédito de integradora nessa hora é dinheiro parado.
-  detranRenaveStatus String?
-  /** Quando a loja conferiu a situação no portal (o mapa muda com frequência). */
-  detranRenaveCheckedAt DateTime?
-  /** Protocolo da consulta feita ao DETRAN — prova de diligência da loja. */
-  detranProtocolo   String?
-  eCnpjValidUntil   DateTime?
+  detranRenaveStatus      String?
+  /**
+   * Quando a loja conferiu a situação no portal (o mapa muda com frequência).
+   */
+  detranRenaveCheckedAt   DateTime?
+  /**
+   * Protocolo da consulta feita ao DETRAN — prova de diligência da loja.
+   */
+  detranProtocolo         String?
+  eCnpjValidUntil         DateTime?
   // Comunicação de venda (SICOVE): a prestadora cobra por serviço prestado e
   // fatura tudo num boleto mensal. Os valores mudam com reajuste, então ficam
   // aqui — o lançamento automático ao anexar o comprovante lê daqui.
   // Vazio = o lançamento fica desligado.
-  sicoveFornecedor  String?
-  sicoveComunicado  Float?
-  sicoveCancelamento Float?
-  /** Dia do vencimento do boleto mensal da prestadora (padrão 10). */
-  sicoveVencimentoDia Int?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  sicoveFornecedor        String?
+  sicoveComunicado        Float?
+  sicoveCancelamento      Float?
+  /**
+   * Dia do vencimento do boleto mensal da prestadora (padrão 10).
+   */
+  sicoveVencimentoDia     Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
 
   @@map("company_settings")
 }
@@ -1775,23 +1811,23 @@ model CardInvoiceItem {
  * automática quando a loja não tiver taxa própria cadastrada.
  */
 model FinancingRate {
-  id              String    @id @default(cuid())
-  name            String    @unique
+  id               String    @id @default(cuid())
+  name             String    @unique
   // Nome EXATO da instituição no Banco Central, para buscar a taxa oficial.
-  bcbInstitution  String?
+  bcbInstitution   String?
   // Taxa negociada pela loja (% ao mês). Tem prioridade sobre a do BC.
-  monthlyRate     Float?
-  maxInstallments Int       @default(48)
-  minDownPercent  Float     @default(20)
-  active          Boolean   @default(true)
-  sortOrder       Int       @default(0)
+  monthlyRate      Float?
+  maxInstallments  Int       @default(48)
+  minDownPercent   Float     @default(20)
+  active           Boolean   @default(true)
+  sortOrder        Int       @default(0)
   // Cache da taxa do Banco Central (atualizado no máximo 1x por dia).
-  bcbMonthlyRate  Float?
-  bcbYearlyRate   Float?
+  bcbMonthlyRate   Float?
+  bcbYearlyRate    Float?
   bcbReferenceDate DateTime?
-  bcbFetchedAt    DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  bcbFetchedAt     DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
 
   @@map("financing_rates")
 }

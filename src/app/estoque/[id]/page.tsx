@@ -28,6 +28,7 @@ import AdSettings from "./AdSettings";
 import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
+import { resumoDeVisitas } from "@/lib/showroom-visits";
 import QRCode from "qrcode";
 import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
@@ -99,6 +100,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "lucro"),
       userCan("estoque", "sinal"),
     ]);
+
+  // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
+  const visitas = await resumoDeVisitas({ vehicleId: vehicle.id });
 
   // Renave: o que a escrituração exige, o que falta e o prazo citado nos avisos.
   const renaveCompany = await getCompany();
@@ -726,6 +730,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())}
               published={vehicle.published}
               inStock={vehicle.status === "ESTOQUE"}
+              visitas={visitas}
               canManage={canEditar}
               canPublish={canPublicar}
             />

@@ -130,6 +130,10 @@ story += tela(
         "enquadrar. A primeira miniatura é a capa do anúncio.",
         "<b>Publicar na vitrine:</b> no cartão de fotos, “Postar na vitrine”. Exige ao menos uma foto "
         "e o carro em estoque. Depois de publicado aparece o link “Ver anúncio”.",
+        "<b>Visitas no anúncio:</b> logo abaixo, o cartão mostra quantas vezes o anúncio foi "
+        "aberto, quantas nos últimos 7 dias e quantas pessoas diferentes o viram. A listagem do "
+        "estoque tem a coluna <b>Visitas</b>, para comparar os carros. Quem está logado no sistema "
+        "não é contado, e recarregar a página não conta de novo.",
         "<b>Leitura automática:</b> anexe o contrato de compra, o CRLV ou a ATPV-e e use o botão de "
         "ler documento — os campos vazios são preenchidos e as divergências viram aviso.",
         "<b>Custos:</b> lance preparação, peças e serviços no cartão de custos; cada lançamento vira "
@@ -161,7 +165,8 @@ story += tela(
         "Gere o <b>PDF da avaliação</b> para enviar ao cliente.",
         "<b>Publicar como repasse:</b> no cartão “Vitrine (repasse)”, informe o preço (opcional) e "
         "poste. O anúncio sai no site com a tarja REPASSE sobre as fotos; valor avaliado, pedido do "
-        "proprietário e placa nunca aparecem. Sem preço, o anúncio mostra “Consulte”.",
+        "proprietário e placa nunca aparecem. Sem preço, o anúncio mostra “Consulte”. O mesmo "
+        "cartão mostra as <b>visitas</b> que o anúncio recebeu.",
         "<b>Na entrega</b>, refaça o mesmo checklist em “Conferência de entrega”: o sistema compara "
         "com a avaliação e destaca as divergências.",
     ],
