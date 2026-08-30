@@ -3,10 +3,12 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import PlateCoverEditor from "@/components/PlateCoverEditor";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehiclePhotosAction,
   deleteVehicleAttachmentAction,
+  replaceVehiclePhotoAction,
   toggleVehiclePublishedAction,
 } from "../actions";
 
@@ -44,6 +46,7 @@ export default function VehiclePhotos({
   const [publishing, startPublish] = useTransition();
   const [publishError, setPublishError] = useState<string | null>(null);
   const [deleting, startDelete] = useTransition();
+  const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
 
   // Redimensiona no navegador (JPEG, lado máx. 1600px) e envia em LOTES pequenos.
   // Assim a quantidade de fotos não depende do limite de 25 MB por requisição —
@@ -158,23 +161,52 @@ export default function VehiclePhotos({
                 />
               </a>
               {canManage ? (
-                <button
-                  type="button"
-                  disabled={deleting}
-                  onClick={() => {
-                    if (!confirm("Excluir esta foto?")) return;
-                    startDelete(() => deleteVehicleAttachmentAction(p.id, vehicleId));
-                  }}
-                  className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
-                  title="Excluir foto"
-                >
-                  ✕
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={deleting}
+                    onClick={() => {
+                      if (!confirm("Excluir esta foto?")) return;
+                      startDelete(() => deleteVehicleAttachmentAction(p.id, vehicleId));
+                    }}
+                    className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"
+                    title="Excluir foto"
+                  >
+                    ✕
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCoverPhotoId(p.id)}
+                    className="absolute inset-x-1 bottom-1 rounded-md bg-black/60 px-1.5 py-1 text-[11px] font-medium text-white hover:bg-black/80"
+                    title="Cobrir a placa"
+                  >
+                    🔒 Cobrir placa
+                  </button>
+                </>
               ) : null}
             </div>
           ))}
         </div>
       )}
+
+      {coverPhotoId ? (
+        <PlateCoverEditor
+          imageUrl={`/anexos/${coverPhotoId}`}
+          onClose={() => setCoverPhotoId(null)}
+          onSave={async (file) => {
+            const fd = new FormData();
+            fd.set("vehicleId", vehicleId);
+            fd.set("replaceId", coverPhotoId);
+            fd.set("photo", file);
+            const res = await replaceVehiclePhotoAction({}, fd);
+            return res.error ?? null;
+          }}
+          onSaved={() => {
+            setCoverPhotoId(null);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {canManage ? (
         <form ref={formRef} className="space-y-2">

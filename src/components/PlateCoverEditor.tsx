@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
-import { replaceAppraisalPhotoAction } from "../actions";
 
 type Rect = { x: number; y: number; w: number; h: number }; // frações 0..1
 
@@ -12,17 +11,21 @@ const MAX_SIDE = 1600;
  * Editor para COBRIR A PLACA de uma foto: o usuário arrasta uma ou mais tarjas
  * sobre a placa; ao salvar, a imagem é redesenhada no navegador com as tarjas
  * pretas e substitui a foto original. Assim dá para encaminhar as fotos a
- * interessados sem expor a placa.
+ * interessados (ou publicar na vitrine) sem expor a placa.
+ *
+ * Componente genérico: quem usa diz de ONDE vem a imagem (`imageUrl`) e o que
+ * fazer com o arquivo gerado (`onSave`, que devolve a mensagem de erro ou null).
+ * É usado tanto nas fotos da avaliação quanto nas fotos do veículo do estoque.
  */
 export default function PlateCoverEditor({
-  appraisalId,
-  photoId,
+  imageUrl,
   onClose,
+  onSave,
   onSaved,
 }: {
-  appraisalId: string;
-  photoId: string;
+  imageUrl: string;
   onClose: () => void;
+  onSave: (file: File) => Promise<string | null>;
   onSaved: () => void;
 }) {
   const surfaceRef = useRef<HTMLDivElement>(null);
@@ -81,7 +84,7 @@ export default function PlateCoverEditor({
     setSaving(true);
     try {
       const img = document.createElement("img");
-      img.src = `/avaliacoes/foto/${photoId}`;
+      img.src = imageUrl;
       await img.decode();
       const natW = img.naturalWidth || 1;
       const natH = img.naturalHeight || 1;
@@ -114,13 +117,9 @@ export default function PlateCoverEditor({
       }
 
       const file = new File([blob], "foto-placa-coberta.jpg", { type: "image/jpeg" });
-      const fd = new FormData();
-      fd.set("appraisalId", appraisalId);
-      fd.set("replaceId", photoId);
-      fd.set("photo", file);
-      const res = await replaceAppraisalPhotoAction({}, fd);
-      if (res.error) {
-        setError(res.error);
+      const erro = await onSave(file);
+      if (erro) {
+        setError(erro);
         setSaving(false);
         return;
       }
@@ -164,7 +163,7 @@ export default function PlateCoverEditor({
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={`/avaliacoes/foto/${photoId}`}
+              src={imageUrl}
               alt="Foto do veículo"
               draggable={false}
               className="block w-full select-none"
