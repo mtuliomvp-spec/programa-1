@@ -12,6 +12,7 @@ import {
   isNewArrival,
 } from "./shared";
 import ShareButton from "./ShareButton";
+import RepasseTag from "./RepasseTag";
 import ThemeToggle from "./ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
 
@@ -269,8 +270,13 @@ export default async function VitrinePage({
                         </div>
                       )}
                     </Link>
-                    {/* Selos sobre a foto */}
-                    <div className="pointer-events-none absolute left-2 top-2 flex flex-col items-start gap-1.5">
+                    {v.repasse ? <RepasseTag /> : null}
+                    {/* Selos sobre a foto — abaixo da tarja, quando é repasse */}
+                    <div
+                      className={`pointer-events-none absolute left-2 flex flex-col items-start gap-1.5 ${
+                        v.repasse ? "top-10" : "top-2"
+                      }`}
+                    >
                       {isNewArrival(v) ? (
                         <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white shadow">
                           ✨ Chegou agora
@@ -282,7 +288,7 @@ export default async function VitrinePage({
                         </span>
                       ) : null}
                     </div>
-                    <div className="absolute right-2 top-2">
+                    <div className={`absolute right-2 ${v.repasse ? "top-10" : "top-2"}`}>
                       <ShareButton
                         compact
                         title={titulo}

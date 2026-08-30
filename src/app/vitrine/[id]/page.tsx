@@ -169,12 +169,24 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
 
         {/* Galeria com lightbox navegável (setas/teclado no desktop, swipe no celular) */}
         {v.photoIds.length > 0 ? (
-          <VitrineGallery photoIds={v.photoIds} title={titulo} />
+          <VitrineGallery photoIds={v.photoIds} title={titulo} repasse={v.repasse} />
         ) : (
           <div className="mt-4 flex aspect-[4/3] w-full items-center justify-center rounded-2xl bg-slate-100 text-6xl dark:bg-slate-800">
             🚗
           </div>
         )}
+
+        {/* Repasse: carro de terceiro intermediado pela loja — o cliente
+            precisa saber disso antes de perguntar o preço. */}
+        {v.repasse ? (
+          <div className="mt-4 flex items-center gap-3 rounded-2xl border border-slate-300 bg-slate-100 px-5 py-4 dark:border-slate-700 dark:bg-slate-800">
+            <span className="text-2xl">🔁</span>
+            <p className="text-sm font-medium text-slate-700 dark:text-slate-200">
+              <strong className="font-bold">Repasse.</strong> Veículo de terceiro intermediado pela{" "}
+              {nome} — fale com a equipe para condições e disponibilidade.
+            </p>
+          </div>
+        ) : null}
 
         {/* Destaque promocional do anúncio (tanque cheio, transferência, brinde…) */}
         {v.adPromo ? (
@@ -221,7 +233,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
 
         {/* Simulador de financiamento: só com preço visível, simulador ligado
             nos Parâmetros e ao menos uma financeira com taxa. */}
-        {company?.showroomSimulator && showPrice && rates.length > 0 ? (
+        {company?.showroomSimulator && showPrice && !v.repasse && rates.length > 0 ? (
           <FinancingSimulator
             price={v.salePrice}
             vehicleTitle={titulo}

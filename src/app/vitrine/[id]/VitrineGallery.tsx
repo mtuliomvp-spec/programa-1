@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import RepasseTag from "../RepasseTag";
 
 /**
  * Galeria de fotos da vitrine com lightbox navegável. Ao tocar qualquer foto,
@@ -10,9 +11,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 export default function VitrineGallery({
   photoIds,
   title,
+  repasse = false,
 }: {
   photoIds: string[];
   title: string;
+  /** Anúncio de repasse: a tarja acompanha a foto grande e o lightbox. */
+  repasse?: boolean;
 }) {
   const total = photoIds.length;
   const [openIndex, setOpenIndex] = useState<number | null>(null);
@@ -64,11 +68,12 @@ export default function VitrineGallery({
         <button
           type="button"
           onClick={() => setOpenIndex(0)}
-          className="block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800"
+          className="relative block w-full cursor-zoom-in overflow-hidden rounded-2xl border border-slate-200 dark:border-slate-800"
           aria-label="Ampliar foto"
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={`/vitrine/foto/${photoIds[0]}`} alt={title} className="w-full object-cover" />
+          {repasse ? <RepasseTag size="lg" /> : null}
         </button>
         {total > 1 ? (
           <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
@@ -77,7 +82,7 @@ export default function VitrineGallery({
                 key={pid}
                 type="button"
                 onClick={() => setOpenIndex(i + 1)}
-                className="cursor-zoom-in overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800"
+                className="relative cursor-zoom-in overflow-hidden rounded-lg border border-slate-200 dark:border-slate-800"
                 aria-label={`Ampliar foto ${i + 2}`}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -87,6 +92,7 @@ export default function VitrineGallery({
                   loading="lazy"
                   className="aspect-square w-full object-cover"
                 />
+                {repasse ? <RepasseTag /> : null}
               </button>
             ))}
           </div>
@@ -127,13 +133,15 @@ export default function VitrineGallery({
             </button>
           </div>
 
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={`/vitrine/foto/${photoIds[openIndex as number]}`}
-            alt={title}
-            onClick={(e) => e.stopPropagation()}
-            className="max-h-[85vh] max-w-[92vw] object-contain select-none"
-          />
+          <div className="relative" onClick={(e) => e.stopPropagation()}>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={`/vitrine/foto/${photoIds[openIndex as number]}`}
+              alt={title}
+              className="max-h-[85vh] max-w-[92vw] object-contain select-none"
+            />
+            {repasse ? <RepasseTag size="lg" /> : null}
+          </div>
 
           {total > 1 ? (
             <>

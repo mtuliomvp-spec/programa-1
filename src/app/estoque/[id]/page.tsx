@@ -717,7 +717,13 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehiclePhotos
               vehicleId={vehicle.id}
-              photos={vehicle.attachments.filter((a) => a.kind === "FOTO_VEICULO")}
+              // Na MESMA ordem da vitrine (mais antiga primeiro): assim a
+              // primeira miniatura aqui é a capa do anúncio. Os documentos
+              // seguem na ordem da consulta (mais recentes primeiro).
+              photos={vehicle.attachments
+                .filter((a) => a.kind === "FOTO_VEICULO")
+                .slice()
+                .sort((x, y) => x.createdAt.getTime() - y.createdAt.getTime())}
               published={vehicle.published}
               inStock={vehicle.status === "ESTOQUE"}
               canManage={canEditar}

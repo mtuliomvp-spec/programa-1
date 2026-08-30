@@ -288,7 +288,7 @@ export async function replaceAppraisalPhotoAction(
 
   const original = await prisma.vehicleAppraisalPhoto.findUnique({
     where: { id: replaceId },
-    select: { id: true, appraisalId: true },
+    select: { id: true, appraisalId: true, createdAt: true },
   });
   if (!original || original.appraisalId !== appraisalId) {
     return { error: "Foto não encontrada." };
@@ -300,18 +300,27 @@ export async function replaceAppraisalPhotoAction(
   if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Imagem muito grande (máximo 15 MB)." };
 
   const buffer = Buffer.from(await file.arrayBuffer());
-  await prisma.vehicleAppraisalPhoto.create({
-    data: {
-      appraisalId,
-      filename: file.name || "foto.jpg",
-      mimeType: file.type || "image/jpeg",
-      size: file.size,
-      data: buffer,
-    },
-  });
-  await prisma.vehicleAppraisalPhoto.delete({ where: { id: replaceId } });
+  // A foto nova herda o `createdAt` da original: a galeria é ordenada por essa
+  // data, então cobrir a placa não muda a foto de lugar (e, no repasse
+  // publicado, não troca a capa do anúncio). Trocar o id é proposital — o
+  // endereço da imagem sem tarja deixa de existir.
+  await prisma.$transaction([
+    prisma.vehicleAppraisalPhoto.create({
+      data: {
+        appraisalId,
+        filename: file.name || "foto.jpg",
+        mimeType: file.type || "image/jpeg",
+        size: file.size,
+        data: buffer,
+        createdAt: original.createdAt,
+      },
+    }),
+    prisma.vehicleAppraisalPhoto.delete({ where: { id: replaceId } }),
+  ]);
 
   revalidatePath(`/avaliacoes/${appraisalId}`);
+  revalidatePath("/vitrine");
+  revalidatePath(`/vitrine/${appraisalId}`);
   return { ok: true };
 }
 
@@ -365,4 +374,84 @@ export async function recordDeliveryConferenceAction(
   revalidatePath("/avaliacoes");
   revalidatePath(`/avaliacoes/${id}`);
   redirect(`/avaliacoes/${id}`);
+}
+
+/**
+ * Publica (ou tira do ar) a avaliação na VITRINE como REPASSE — carro de
+ * terceiro que a loja intermedeia, anunciado ao lado dos veículos do estoque
+ * com uma tarja "Repasse" sobre as fotos.
+ *
+ * O anúncio leva só a ficha e as fotos: o valor avaliado e o pedido do
+ * proprietário nunca saem daqui. O preço exibido é o `repassePrice`, opcional
+ * — sem ele o anúncio mostra "Consulte".
+ */
+export async function publishAppraisalAction(
+  id: string,
+  publish: boolean,
+  repassePrice: number | null,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["avaliacoes", "criar"],
+      ["avaliacoes", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const appraisal = await prisma.vehicleAppraisal.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      brand: true,
+      model: true,
+      manufactureYear: true,
+      modelYear: true,
+      km: true,
+      published: true,
+      _count: { select: { photos: true } },
+    },
+  });
+  if (!appraisal) return { ok: false, error: "Avaliação não encontrada." };
+
+  if (repassePrice != null && (!Number.isFinite(repassePrice) || repassePrice <= 0)) {
+    return { ok: false, error: "Informe um preço de repasse válido (ou deixe em branco)." };
+  }
+
+  if (publish) {
+    // O anúncio precisa ficar apresentável: sem estes campos a vitrine
+    // mostraria "0/0" e "0 km" no lugar da ficha do carro.
+    const faltando = [
+      !appraisal.brand ? "marca" : null,
+      !appraisal.model ? "modelo" : null,
+      appraisal.manufactureYear == null ? "ano de fabricação" : null,
+      appraisal.modelYear == null ? "ano do modelo" : null,
+      appraisal.km == null ? "km" : null,
+    ].filter(Boolean);
+    if (faltando.length > 0) {
+      return {
+        ok: false,
+        error: `Preencha ${faltando.join(", ")} na avaliação antes de postar na vitrine.`,
+      };
+    }
+    if (appraisal._count.photos === 0) {
+      return { ok: false, error: "Anexe ao menos uma foto antes de postar." };
+    }
+  }
+
+  await prisma.vehicleAppraisal.update({
+    where: { id },
+    data: {
+      published: publish,
+      repassePrice,
+      // Marca a data só ao entrar no ar (selo "Chegou agora" e ordem da vitrine).
+      ...(publish && !appraisal.published ? { publishedAt: new Date() } : {}),
+    },
+  });
+
+  revalidatePath(`/avaliacoes/${id}`);
+  revalidatePath("/avaliacoes");
+  revalidatePath("/vitrine");
+  revalidatePath(`/vitrine/${id}`);
+  return { ok: true };
 }
