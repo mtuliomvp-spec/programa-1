@@ -11,6 +11,7 @@ import Can from "@/components/Can";
 import PrintButton from "@/components/PrintButton";
 import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
+import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
 import type { StatusVeiculo } from "@prisma/client";
 
@@ -201,6 +202,10 @@ export default async function EstoquePage({
     if (!preSaleByVehicle.has(ps.vehicleId)) preSaleByVehicle.set(ps.vehicleId, ps.number);
   }
 
+  // Visitas ao anúncio de todos os veículos da tela, em duas consultas
+  // agregadas (nunca uma por linha).
+  const visitas = await visitasPorVeiculo(vehicles.map((v) => v.id));
+
   const allRows = vehicles.map((v) => {
     // Momento do ÚLTIMO lançamento de transferência (custo/conta com a palavra)
     // e do ÚLTIMO CRLV anexado. Um CRLV no NOSSO nome anexado DEPOIS do
@@ -287,6 +292,9 @@ export default async function EstoquePage({
       .reduce((s, p) => s + p.amount, 0),
     daysInStock: daysBetween(v.entryDate, now),
     // Veículo recebido em troca (é o carro que entrou numa venda como troca).
+    // Visitas ao anúncio na vitrine (0 para quem nunca foi publicado).
+    visitas: visitas.get(v.id)?.total ?? 0,
+    visitas7: visitas.get(v.id)?.ultimos7 ?? 0,
     receivedInTrade: v.tradeInForSale != null,
     tradeOrigin: v.tradeInForSale
       ? `Recebido em troca na venda #${String(v.tradeInForSale.orderNumber).padStart(4, "0")}` +
@@ -446,6 +454,7 @@ export default async function EstoquePage({
               const b = vitrineBadge(v.published, v.status, v.preSaleNumber != null);
               return <Badge tone={b.tone}>{b.label}</Badge>;
             })()}
+            {v.visitas > 0 ? <Badge tone="info">👁️ {v.visitas} visitas</Badge> : null}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
@@ -511,6 +520,18 @@ export default async function EstoquePage({
         </Td>
       ) : null}
       <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
+      <Td className="text-right tabular-nums">
+        {v.visitas > 0 ? (
+          <span title="Aberturas do anúncio na vitrine">
+            {v.visitas}
+            {v.visitas7 > 0 ? (
+              <span className="block text-[11px] text-slate-400">{v.visitas7} em 7 dias</span>
+            ) : null}
+          </span>
+        ) : (
+          <span className="text-slate-300">—</span>
+        )}
+      </Td>
       <Td className="text-right">
         {v.status !== "VENDIDO" ? (
           <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock}</Badge>
@@ -694,6 +715,7 @@ export default async function EstoquePage({
                   <Th>KM</Th>
                   {canVerCusto ? <Th className="text-right">Custo pago</Th> : null}
                   <Th className="text-right">Preço de venda</Th>
+                  <Th className="text-right">Visitas</Th>
                   <Th className="text-right">Dias</Th>
                   <Th>Status</Th>
                   <Th />
@@ -704,7 +726,7 @@ export default async function EstoquePage({
                 {showDivider ? (
                   <tr className="bg-slate-50">
                     <td
-                      colSpan={canVerCusto ? 10 : 9}
+                      colSpan={canVerCusto ? 11 : 10}
                       className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
                     >
                       Vendidos ({vendidos.length})

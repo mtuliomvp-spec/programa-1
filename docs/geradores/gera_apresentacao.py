@@ -104,7 +104,8 @@ story.append(grade([
      "partir dos mesmos dados."),
     ("🌐 Vitrine pública inclusa",
      "Um clique publica o carro no site da loja, com galeria, selo de novidade, simulador de "
-     "financiamento e contato direto no WhatsApp."),
+     "financiamento e contato direto no WhatsApp. E cada anúncio conta quantas pessoas o "
+     "abriram — dá para saber qual carro está atraindo olhar antes de mexer no preço."),
     ("📋 Papelada da compra",
      "Ordem de compra e contrato saem prontos, numerados e com os dados da empresa — inclusive no "
      "modelo Renave."),

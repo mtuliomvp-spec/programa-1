@@ -18,10 +18,13 @@ export default function AppraisalShowcase({
   appraisalId,
   published,
   repassePrice,
+  visitas,
 }: {
   appraisalId: string;
   published: boolean;
   repassePrice: number | null;
+  /** Visitas ao anúncio de repasse (não conta a equipe logada). */
+  visitas: { total: number; ultimos7: number; pessoas: number };
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -96,6 +99,22 @@ export default function AppraisalShowcase({
         {error ? <p className="w-full text-sm font-medium text-rose-600">{error}</p> : null}
         {ok ? <p className="w-full text-sm font-medium text-emerald-700">{ok}</p> : null}
       </div>
+
+      {visitas.total > 0 ? (
+        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 rounded-lg border border-slate-200 px-4 py-3">
+          <span className="text-sm font-semibold text-slate-800">
+            👁️ {visitas.total} visita{visitas.total === 1 ? "" : "s"} no anúncio
+          </span>
+          <span className="text-xs text-slate-500">
+            {visitas.ultimos7} nos últimos 7 dias · {visitas.pessoas} pessoa
+            {visitas.pessoas === 1 ? "" : "s"} diferente{visitas.pessoas === 1 ? "" : "s"}
+          </span>
+        </div>
+      ) : published ? (
+        <p className="text-xs text-slate-500">
+          👁️ Nenhuma visita ao anúncio ainda — ele acabou de entrar no ar.
+        </p>
+      ) : null}
     </div>
   );
 }

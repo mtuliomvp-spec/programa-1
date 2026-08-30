@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requireModule, userCan } from "@/lib/guards";
+import { resumoDeVisitas } from "@/lib/showroom-visits";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, LinkButton, PageHeader, Badge } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -40,6 +41,8 @@ export default async function AvaliacaoDetailPage({
   ]);
   // Gerenciar fotos: quem cria OU edita avaliação (mesma regra da action).
   const canManagePhotos = canCreate || canEdit;
+
+  const visitas = await resumoDeVisitas({ appraisalId: a.id });
 
   const title = [a.brand, a.model, a.version].filter(Boolean).join(" ") || "Veículo";
   const checklist = parseChecklist(a.checklist);
@@ -123,6 +126,7 @@ export default async function AvaliacaoDetailPage({
             appraisalId={a.id}
             published={a.published}
             repassePrice={a.repassePrice}
+            visitas={visitas}
           />
         </Card>
       ) : null}
