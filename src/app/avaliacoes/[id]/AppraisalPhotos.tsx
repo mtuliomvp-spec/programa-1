@@ -3,9 +3,13 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
+import PlateCoverEditor from "@/components/PlateCoverEditor";
 import { resizeImageToJpeg } from "@/lib/image-resize";
-import { uploadAppraisalPhotosAction, deleteAppraisalPhotoAction } from "../actions";
-import PlateCoverEditor from "./PlateCoverEditor";
+import {
+  uploadAppraisalPhotosAction,
+  deleteAppraisalPhotoAction,
+  replaceAppraisalPhotoAction,
+} from "../actions";
 
 type Photo = { id: string; filename: string };
 
@@ -125,9 +129,16 @@ export default function AppraisalPhotos({
 
       {coverPhotoId ? (
         <PlateCoverEditor
-          appraisalId={appraisalId}
-          photoId={coverPhotoId}
+          imageUrl={`/avaliacoes/foto/${coverPhotoId}`}
           onClose={() => setCoverPhotoId(null)}
+          onSave={async (file) => {
+            const fd = new FormData();
+            fd.set("appraisalId", appraisalId);
+            fd.set("replaceId", coverPhotoId);
+            fd.set("photo", file);
+            const res = await replaceAppraisalPhotoAction({}, fd);
+            return res.error ?? null;
+          }}
           onSaved={() => {
             setCoverPhotoId(null);
             router.refresh();

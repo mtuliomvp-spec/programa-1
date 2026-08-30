@@ -1766,6 +1766,69 @@ export async function uploadVehiclePhotosAction(
   return { ok: true };
 }
 
+/**
+ * Substitui uma FOTO do veículo pela versão com a PLACA COBERTA (a tarja é
+ * desenhada no navegador; aqui só chega a imagem pronta).
+ *
+ * A foto nova nasce com o MESMO `createdAt` da original e a original é
+ * apagada. Isso importa por dois motivos:
+ *
+ *  • a vitrine ordena as fotos por `createdAt` e usa a primeira como capa do
+ *    anúncio — sem copiar a data, cobrir a placa da foto de capa jogaria ela
+ *    para o fim da galeria e trocaria a capa do anúncio;
+ *  • como o id muda, o endereço da imagem antiga (que ainda mostra a placa)
+ *    deixa de existir — nada fica pendurado em cache nem em link já enviado.
+ */
+export async function replaceVehiclePhotoAction(
+  _prev: AttachmentState,
+  formData: FormData,
+): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "editar");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const vehicleId = String(formData.get("vehicleId") || "").trim();
+  const replaceId = String(formData.get("replaceId") || "").trim();
+  if (!vehicleId || !replaceId) return { error: "Foto inválida." };
+
+  const original = await prisma.vehicleAttachment.findUnique({
+    where: { id: replaceId },
+    select: { id: true, vehicleId: true, kind: true, description: true, createdAt: true },
+  });
+  if (!original || original.vehicleId !== vehicleId || original.kind !== "FOTO_VEICULO") {
+    return { error: "Foto não encontrada." };
+  }
+
+  const file = formData.get("photo");
+  if (!(file instanceof File) || file.size === 0) return { error: "Imagem inválida." };
+  if (!file.type.startsWith("image/")) return { error: "Arquivo não é uma imagem." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { error: "Imagem muito grande (máximo 15 MB)." };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  await prisma.$transaction([
+    prisma.vehicleAttachment.create({
+      data: {
+        vehicleId,
+        kind: "FOTO_VEICULO",
+        description: original.description,
+        filename: file.name || "foto.jpg",
+        mimeType: file.type || "image/jpeg",
+        size: file.size,
+        data: buffer,
+        createdAt: original.createdAt,
+      },
+    }),
+    prisma.vehicleAttachment.delete({ where: { id: replaceId } }),
+  ]);
+
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/vitrine");
+  revalidatePath(`/vitrine/${vehicleId}`);
+  return { ok: true };
+}
+
 /** Coordenada válida ou null (aceita string vazia / fora de faixa → null). */
 function parseCoord(value: FormDataEntryValue | null, max: number): number | null {
   if (value == null || value === "") return null;
