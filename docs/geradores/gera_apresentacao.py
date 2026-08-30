@@ -155,8 +155,21 @@ story.append(grade([
      "do beneficiário. Cada um acompanha as suas em tela própria."),
     ("🛡️ Segurança na negociação",
      "Consulta de débitos do veículo, leitura das guias de IPVA, multa e licenciamento, e desconto "
-     "automático no acerto com o proprietário."),
+     "automático no acerto com o proprietário. E a foto antifraude do comprador, carimbada com "
+     "data, hora e endereço."),
 ]))
+story.append(caixa([
+    p("<font color='#2563EB'><b>Foto antifraude: quem levou o carro, onde e quando</b></font>",
+      "card_t"),
+    p("Na entrega, o vendedor fotografa o comprador pelo próprio celular — câmera traseira ou selfie. "
+      "A imagem sai <b>carimbada com o nome da loja, data e hora, o endereço do local e as "
+      "coordenadas do GPS</b>, e fica anexada ao prontuário do veículo, não numa pasta do celular de "
+      "alguém. É o que sustenta a versão da loja quando aparece a alegação de que a venda nunca "
+      "aconteceu ou de que quem assinou era outra pessoa. A localização é opcional: negada, a foto é "
+      "anexada mesmo assim. A lista do estoque marca cada carro vendido que ainda está sem a foto.",
+      "card_p"),
+], fundo=AZUL_F, borda=AZUL_B))
+story.append(Spacer(1, 4 * mm))
 story.append(caixa([
     p("<b>Peças e solicitações de compra.</b> Almoxarifado com estoque mínimo, venda de balcão e peça "
       "vinculada ao veículo que a consumiu. As compras seguem o fluxo solicitação → aprovação → conta "
