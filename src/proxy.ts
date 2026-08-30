@@ -69,6 +69,10 @@ export default function proxy(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)",
+    // `documentos/` fica de fora junto com os demais estáticos: são os PDFs
+    // públicos da plataforma (apresentação comercial e manual do sistema),
+    // servidos direto de public/ e pensados para serem compartilhados por link.
+    // Passar pelo porteiro impediria o arquivo de ser entregue.
+    "/((?!_next/static|_next/image|favicon\\.ico|documentos/|.*\\.(?:png|jpg|jpeg|svg|webp|ico|txt|xml)$).*)",
   ],
 };

@@ -169,6 +169,54 @@ export default async function AssinaturaPage() {
         )}
       </Card>
 
+      {/* Material da plataforma: os dois PDFs ficam versionados no próprio
+          repositório (public/documentos), então acompanham cada publicação —
+          quem abrir a tela sempre pega a versão atual, sem upload manual. */}
+      <Card className="mt-4">
+        <CardHeader
+          title="Documentos do sistema"
+          description="Apresentação comercial e manual de uso — sempre na versão publicada"
+        />
+        <div className="grid gap-3 p-5 sm:grid-cols-2">
+          {[
+            {
+              arquivo: "/documentos/fincore360-apresentacao.pdf",
+              titulo: "Apresentação do sistema",
+              texto:
+                "Documento comercial do Fincore360: o que o sistema faz, o diferencial do farol de integridade, os leitores com IA e como funciona a contratação. Use para apresentar a plataforma a outra loja.",
+            },
+            {
+              arquivo: "/documentos/fincore360-manual-do-sistema.pdf",
+              titulo: "Manual do sistema",
+              texto:
+                "Todas as telas do menu, do Dashboard à última configuração: o que cada uma faz e o passo a passo de uso. Serve de consulta no dia a dia e para treinar quem está chegando.",
+            },
+          ].map((doc) => (
+            <div key={doc.arquivo} className="rounded-xl border border-slate-200 p-4">
+              <p className="text-sm font-semibold text-slate-800">📘 {doc.titulo}</p>
+              <p className="mt-1 text-xs text-slate-500">{doc.texto}</p>
+              <div className="mt-3 flex items-center gap-3">
+                <a
+                  href={doc.arquivo}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sm font-medium text-blue-700 hover:underline"
+                >
+                  Abrir
+                </a>
+                <a
+                  href={doc.arquivo}
+                  download
+                  className="text-sm font-medium text-blue-700 hover:underline"
+                >
+                  Baixar PDF
+                </a>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
       <Card className="mt-4">
         <CardHeader
           title="Contrato de prestação de serviço"
