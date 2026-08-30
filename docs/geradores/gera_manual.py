@@ -138,6 +138,11 @@ story += tela(
         "ler documento — os campos vazios são preenchidos e as divergências viram aviso.",
         "<b>Custos:</b> lance preparação, peças e serviços no cartão de custos; cada lançamento vira "
         "conta a pagar e entra no custo que aparece no lucro da venda.",
+        "<b>Foto do cliente (antifraude):</b> no cartão de mesmo nome, “Fotografar cliente” usa a "
+        "câmera traseira e “Selfie com o cliente”, a frontal. A foto sai carimbada com a loja, data e "
+        "hora, endereço e coordenadas do GPS; você confere a prévia e toca em <b>Anexar foto</b>. Ela "
+        "fica no prontuário do veículo. Se o aparelho negar a localização, a foto é anexada assim "
+        "mesmo, marcada como sem localização.",
     ],
 )
 story += tela(
@@ -182,6 +187,9 @@ story += tela(
         "<b>Efetivar</b> gera as contas a receber, as comissões a pagar, o repasse da financeira "
         "quando houver, e baixa o carro do estoque.",
         "Na ficha da venda ficam o contrato, o recibo e o link de conferência para o cliente.",
+        "<b>Na entrega do carro</b>, registre a <b>foto do cliente (antifraude)</b> na ficha do "
+        "veículo: é a prova de quem levou o carro, com data, hora e local. A lista do estoque acusa "
+        "o vendido que ainda está sem ela.",
         "Precisou corrigir? Estorne pela própria ficha — o sistema desfaz os títulos gerados.",
     ],
 )
