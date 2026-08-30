@@ -25,9 +25,27 @@ export type ShowroomVehicle = {
   adHiddenFields: string[];
   // Data da postagem na vitrine (selo "Chegou agora" nos primeiros dias).
   publishedAt: Date | null;
+  /**
+   * REPASSE: o anúncio veio de uma AVALIAÇÃO, não do estoque — é carro de
+   * terceiro que a loja repassa. Muda a tarja da foto e desliga o simulador
+   * de financiamento (repasse é negócio entre lojas).
+   */
+  repasse: boolean;
 };
 
+/** Vitrine = veículos do estoque postados + avaliações postadas como repasse. */
 export async function getShowroomVehicles(): Promise<ShowroomVehicle[]> {
+  const [estoque, repasses] = await Promise.all([
+    getShowroomStockVehicles(),
+    getShowroomRepasses(),
+  ]);
+  // Mais recentes primeiro, misturando as duas origens.
+  return [...estoque, ...repasses].sort(
+    (a, b) => (b.publishedAt?.getTime() ?? 0) - (a.publishedAt?.getTime() ?? 0),
+  );
+}
+
+async function getShowroomStockVehicles(): Promise<ShowroomVehicle[]> {
   const [vehicles, openPreSales] = await Promise.all([
     prisma.vehicle.findMany({
       where: { published: true, status: "ESTOQUE", intermediation: false },
@@ -59,7 +77,59 @@ export async function getShowroomVehicles(): Promise<ShowroomVehicle[]> {
   const preSold = new Set(openPreSales.map((p) => p.vehicleId));
   return vehicles
     .filter((v) => !preSold.has(v.id))
-    .map(({ attachments, ...v }) => ({ ...v, photoIds: attachments.map((a) => a.id) }));
+    .map(({ attachments, ...v }) => ({
+      ...v,
+      photoIds: attachments.map((a) => a.id),
+      repasse: false,
+    }));
+}
+
+/**
+ * Avaliações postadas como REPASSE. O anúncio leva só a ficha do carro e as
+ * fotos: nada de placa, chassi, valor avaliado ou pedido do proprietário.
+ * Sem `repassePrice` informado, o preço sai como "Consulte" (mesmo caminho do
+ * campo de preço oculto do estoque).
+ */
+async function getShowroomRepasses(): Promise<ShowroomVehicle[]> {
+  const avaliacoes = await prisma.vehicleAppraisal.findMany({
+    where: { published: true },
+    orderBy: { publishedAt: "desc" },
+    select: {
+      id: true,
+      brand: true,
+      model: true,
+      version: true,
+      manufactureYear: true,
+      modelYear: true,
+      km: true,
+      color: true,
+      fuel: true,
+      transmission: true,
+      repassePrice: true,
+      publishedAt: true,
+      photos: { orderBy: { createdAt: "asc" }, select: { id: true } },
+    },
+  });
+
+  return avaliacoes.map((a) => ({
+    id: a.id,
+    brand: a.brand ?? "",
+    model: a.model ?? "",
+    version: a.version,
+    manufactureYear: a.manufactureYear ?? 0,
+    modelYear: a.modelYear ?? 0,
+    km: a.km ?? 0,
+    color: a.color,
+    fuel: a.fuel,
+    transmission: a.transmission,
+    salePrice: a.repassePrice ?? 0,
+    photoIds: a.photos.map((p) => p.id),
+    adPromo: null,
+    // Sem preço de repasse, o anúncio mostra "Consulte" em vez de R$ 0,00.
+    adHiddenFields: a.repassePrice == null ? ["preco"] : [],
+    publishedAt: a.publishedAt,
+    repasse: true,
+  }));
 }
 
 export async function getShowroomVehicle(id: string): Promise<ShowroomVehicle | null> {

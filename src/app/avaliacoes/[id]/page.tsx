@@ -12,6 +12,7 @@ import {
   diffChecklist,
 } from "@/lib/appraisals";
 import AppraisalPhotos from "./AppraisalPhotos";
+import AppraisalShowcase from "./AppraisalShowcase";
 import DeliveryConference from "./DeliveryConference";
 import DeleteAppraisalButton from "./DeleteAppraisalButton";
 
@@ -111,6 +112,20 @@ export default async function AvaliacaoDetailPage({
           canManage={canManagePhotos}
         />
       </Card>
+
+      {canManagePhotos ? (
+        <Card>
+          <CardHeader
+            title="Vitrine (repasse)"
+            description="Anuncie este carro na página pública da loja, marcado como repasse"
+          />
+          <AppraisalShowcase
+            appraisalId={a.id}
+            published={a.published}
+            repassePrice={a.repassePrice}
+          />
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader title="Dados do veículo" />

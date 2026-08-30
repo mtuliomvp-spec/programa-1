@@ -724,6 +724,12 @@ model VehicleAppraisal {
   checkedBy       String?
   createdById     String?
   createdByName   String?
+  // Vitrine: avaliação anunciada como REPASSE (carro que não é do estoque).
+  // O anúncio mostra fotos e ficha, nunca o valor avaliado nem o pedido do
+  // proprietário — o preço exibido é só o `repassePrice`, quando informado.
+  published       Boolean         @default(false)
+  publishedAt     DateTime?
+  repassePrice    Float?
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
 
