@@ -121,9 +121,10 @@ story.append(caixa([
       "mesmo site, marcado com a tarja <b>REPASSE</b> sobre as fotos. O anúncio mostra só a ficha e as "
       "imagens — valor avaliado, pedido do proprietário e placa nunca aparecem.", "card_p"),
     Spacer(1, 4),
-    p("<b>Novo: cobrir a placa.</b> Em qualquer foto — da avaliação ou do veículo do estoque — dá para "
-      "arrastar uma tarja sobre a placa antes de publicar ou encaminhar. A foto original sai do ar no "
-      "mesmo instante.", "card_p"),
+    p("<b>Novo: cobrir a placa.</b> Em qualquer foto — da avaliação ou do veículo do estoque — basta "
+      "tocar nos quatro cantos da placa: a tarja assume a forma exata dela, mesmo inclinada, e não "
+      "invade a lataria. O editor amplia até 6×, para a foto tirada de longe. A foto original sai do "
+      "ar no mesmo instante.", "card_p"),
 ], fundo=AZUL_F, borda=AZUL_B))
 story.append(PageBreak())
 

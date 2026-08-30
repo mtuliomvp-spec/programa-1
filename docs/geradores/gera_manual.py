@@ -125,8 +125,9 @@ story += tela(
         "manutenções, documentos (CRLV, ATPV-e, outros), débitos do veículo, adiantamentos, Renave, "
         "comunicação de venda e a ordem de compra.",
         "<b>Fotos:</b> envie várias de uma vez (são otimizadas automaticamente). Cada foto tem “Cobrir "
-        "placa” — arraste a tarja sobre a placa antes de publicar ou encaminhar. A primeira miniatura "
-        "é a capa do anúncio.",
+        "placa”: <b>toque nos quatro cantos da placa</b> e a tarja fica com a forma exata dela, mesmo "
+        "inclinada. Aproxime com o <b>+</b> (até 6×) quando a foto for tirada de longe e arraste para "
+        "enquadrar. A primeira miniatura é a capa do anúncio.",
         "<b>Publicar na vitrine:</b> no cartão de fotos, “Postar na vitrine”. Exige ao menos uma foto "
         "e o carro em estoque. Depois de publicado aparece o link “Ver anúncio”.",
         "<b>Leitura automática:</b> anexe o contrato de compra, o CRLV ou a ATPV-e e use o botão de "
@@ -155,7 +156,8 @@ story += tela(
     [
         "“Nova avaliação”: digite a placa para puxar os dados, marque o checklist (OK, atenção ou "
         "problema, com observação) e informe os valores.",
-        "Anexe as fotos e use “Cobrir placa” nas que forem circular.",
+        "Anexe as fotos e use “Cobrir placa” nas que forem circular — quatro toques nos cantos da "
+        "placa e ela some da imagem.",
         "Gere o <b>PDF da avaliação</b> para enviar ao cliente.",
         "<b>Publicar como repasse:</b> no cartão “Vitrine (repasse)”, informe o preço (opcional) e "
         "poste. O anúncio sai no site com a tarja REPASSE sobre as fotos; valor avaliado, pedido do "

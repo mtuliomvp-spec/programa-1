@@ -3,27 +3,34 @@
 import { useRef, useState } from "react";
 import { Button } from "@/components/ui";
 
-type Rect = { x: number; y: number; w: number; h: number }; // frações 0..1 da imagem
+type Ponto = { x: number; y: number }; // frações 0..1 da imagem
+type Poligono = Ponto[];
 
 const MAX_SIDE = 1600;
 const ZOOM_MAX = 6;
 const ZOOM_PASSO = 1;
+const CANTOS = 4;
+/** Movimento acima disso (em px de tela) é arrasto para mover a foto, não toque. */
+const TOQUE_MAX_PX = 8;
 
 /**
- * Editor para COBRIR A PLACA de uma foto: o usuário arrasta uma ou mais tarjas
- * sobre a placa; ao salvar, a imagem é redesenhada no navegador com as tarjas
- * pretas e substitui a foto original. Assim dá para encaminhar as fotos a
- * interessados (ou publicar na vitrine) sem expor a placa.
+ * Editor para COBRIR A PLACA de uma foto: o usuário toca nos QUATRO CANTOS da
+ * placa e o sistema pinta exatamente aquele quadrilátero. Ao salvar, a imagem é
+ * redesenhada no navegador com as tarjas e substitui a foto original.
+ *
+ * Por que quatro toques, e não um retângulo arrastado: a placa quase nunca está
+ * de frente. Na foto do carro de lado ela aparece inclinada e em perspectiva —
+ * um retângulo reto grande o bastante para tapar a placa inteira acaba
+ * invadindo o para-choque e fica feio. Marcando canto a canto, a tarja tem a
+ * forma da placa e cobre só ela.
+ *
+ * ZOOM: de longe a placa ocupa poucos pixels na tela. O editor amplia até 6×;
+ * o arrasto move a foto e o toque marca o canto. O zoom é só lupa — os pontos
+ * são guardados em fração da IMAGEM, então o que é salvo não muda.
  *
  * Componente genérico: quem usa diz de ONDE vem a imagem (`imageUrl`) e o que
  * fazer com o arquivo gerado (`onSave`, que devolve a mensagem de erro ou null).
- * É usado tanto nas fotos da avaliação quanto nas fotos do veículo do estoque.
- *
- * ZOOM: na foto tirada de longe (o carro de lado, no pátio) a placa ocupa uns
- * poucos pixels na tela — o dedo cobre justamente o que se quer mirar e a tarja
- * sai torta. Por isso o editor amplia até 6×: aproxima-se a placa, arrasta-se a
- * tarja com folga e o retângulo continua sendo guardado em fração da IMAGEM,
- * não da tela. Ou seja, o zoom é só a lupa — não altera o que é salvo.
+ * É usado nas fotos da avaliação e nas fotos do veículo do estoque.
  */
 export default function PlateCoverEditor({
   imageUrl,
@@ -37,21 +44,18 @@ export default function PlateCoverEditor({
   onSaved: () => void;
 }) {
   const imagemRef = useRef<HTMLDivElement>(null);
-  const [rects, setRects] = useState<Rect[]>([]);
-  const [draft, setDraft] = useState<Rect | null>(null);
-  const startRef = useRef<{ x: number; y: number } | null>(null);
-  const panRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const [poligonos, setPoligonos] = useState<Poligono[]>([]);
+  const [cantos, setCantos] = useState<Ponto[]>([]);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [zoom, setZoom] = useState(1);
   // Deslocamento em % do tamanho NÃO ampliado (o translate roda antes do scale).
   const [pan, setPan] = useState({ x: 0, y: 0 });
-  const [modo, setModo] = useState<"tarja" | "mover">("tarja");
-  const ampliado = zoom > 1;
-  const movendo = ampliado && modo === "mover";
+  const arrasteRef = useRef<{ x: number; y: number; px: number; py: number; moveu: boolean } | null>(
+    null,
+  );
 
-  /** Limite do deslocamento que ainda mantém a foto preenchendo a moldura. */
   function limitePan(z: number) {
     return 50 * (1 - 1 / z);
   }
@@ -64,15 +68,14 @@ export default function PlateCoverEditor({
       x: Math.min(limite, Math.max(-limite, atual.x)),
       y: Math.min(limite, Math.max(-limite, atual.y)),
     }));
-    if (z === 1) setModo("tarja");
   }
 
   /**
-   * Ponto do evento em fração da IMAGEM. A conta usa o retângulo do elemento já
-   * transformado (o navegador devolve a caixa depois do zoom e do arrasto), então
-   * vale para qualquer ampliação sem matemática extra.
+   * Ponto do evento em fração da IMAGEM. Usa o retângulo do elemento já
+   * transformado (o navegador devolve a caixa depois do zoom e do arrasto),
+   * então vale para qualquer ampliação sem matemática extra.
    */
-  function pointFromEvent(e: React.PointerEvent): { x: number; y: number } | null {
+  function pontoDoEvento(e: React.PointerEvent): Ponto | null {
     const el = imagemRef.current;
     if (!el) return null;
     const rect = el.getBoundingClientRect();
@@ -82,60 +85,63 @@ export default function PlateCoverEditor({
     return { x: Math.min(1, Math.max(0, x)), y: Math.min(1, Math.max(0, y)) };
   }
 
+  // Um gesto só resolve as duas coisas: arrastar move a foto, tocar marca o
+  // canto. Sem modo para trocar — o que decide é o tanto que o dedo andou.
   function onPointerDown(e: React.PointerEvent) {
     if (saving) return;
     (e.target as Element).setPointerCapture?.(e.pointerId);
-    if (movendo) {
-      panRef.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y };
-      return;
-    }
-    const p = pointFromEvent(e);
-    if (!p) return;
-    startRef.current = p;
-    setDraft({ x: p.x, y: p.y, w: 0, h: 0 });
+    arrasteRef.current = { x: e.clientX, y: e.clientY, px: pan.x, py: pan.y, moveu: false };
   }
 
   function onPointerMove(e: React.PointerEvent) {
-    if (panRef.current) {
-      const el = imagemRef.current;
-      if (!el) return;
-      const rect = el.getBoundingClientRect();
-      // O arrasto na tela vira % do tamanho não ampliado (por isso divide pelo zoom).
-      const dx = ((e.clientX - panRef.current.x) / rect.width) * 100;
-      const dy = ((e.clientY - panRef.current.y) / rect.height) * 100;
-      const limite = limitePan(zoom);
-      setPan({
-        x: Math.min(limite, Math.max(-limite, panRef.current.px + dx)),
-        y: Math.min(limite, Math.max(-limite, panRef.current.py + dy)),
-      });
-      return;
-    }
-    if (!startRef.current) return;
-    const p = pointFromEvent(e);
-    if (!p) return;
-    const s = startRef.current;
-    setDraft({
-      x: Math.min(s.x, p.x),
-      y: Math.min(s.y, p.y),
-      w: Math.abs(p.x - s.x),
-      h: Math.abs(p.y - s.y),
+    const a = arrasteRef.current;
+    if (!a) return;
+    const dxPx = e.clientX - a.x;
+    const dyPx = e.clientY - a.y;
+    if (!a.moveu && Math.hypot(dxPx, dyPx) <= TOQUE_MAX_PX) return;
+    a.moveu = true;
+    if (zoom === 1) return; // sem ampliação não há para onde mover
+    const el = imagemRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const limite = limitePan(zoom);
+    setPan({
+      x: Math.min(limite, Math.max(-limite, a.px + (dxPx / rect.width) * 100)),
+      y: Math.min(limite, Math.max(-limite, a.py + (dyPx / rect.height) * 100)),
     });
   }
 
-  function onPointerUp() {
-    panRef.current = null;
-    // Com zoom, a tarja da placa é pequena em fração da imagem: o mínimo tem de
-    // ser baixo o bastante para não descartar um retângulo legítimo.
-    if (draft && draft.w > 0.004 && draft.h > 0.004) {
-      setRects((r) => [...r, draft]);
+  function onPointerUp(e: React.PointerEvent) {
+    const a = arrasteRef.current;
+    arrasteRef.current = null;
+    if (!a || a.moveu || saving) return;
+    const p = pontoDoEvento(e);
+    if (!p) return;
+    setError(null);
+    const proximos = [...cantos, p];
+    if (proximos.length >= CANTOS) {
+      setPoligonos((atual) => [...atual, proximos]);
+      setCantos([]);
+    } else {
+      setCantos(proximos);
     }
-    setDraft(null);
-    startRef.current = null;
+  }
+
+  function desfazer() {
+    if (cantos.length > 0) {
+      setCantos((c) => c.slice(0, -1));
+      return;
+    }
+    setPoligonos((p) => p.slice(0, -1));
   }
 
   async function handleSave() {
-    if (rects.length === 0) {
-      setError("Arraste uma tarja sobre a placa antes de salvar.");
+    if (poligonos.length === 0) {
+      setError(
+        cantos.length > 0
+          ? `Faltam ${CANTOS - cantos.length} canto(s) para fechar a tarja.`
+          : "Toque nos quatro cantos da placa antes de salvar.",
+      );
       return;
     }
     setError(null);
@@ -161,8 +167,16 @@ export default function PlateCoverEditor({
       }
       ctx.drawImage(img, 0, 0, cw, ch);
       ctx.fillStyle = "#000000";
-      for (const r of rects) {
-        ctx.fillRect(r.x * cw, r.y * ch, r.w * cw, r.h * ch);
+      for (const pol of poligonos) {
+        ctx.beginPath();
+        pol.forEach((pt, i) => {
+          const x = pt.x * cw;
+          const y = pt.y * ch;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fill();
       }
 
       const blob = await new Promise<Blob | null>((resolve) =>
@@ -188,7 +202,8 @@ export default function PlateCoverEditor({
     }
   }
 
-  const shown = draft ? [...rects, draft] : rects;
+  const emPontos = (pol: Ponto[]) => pol.map((p) => `${p.x * 100},${p.y * 100}`).join(" ");
+  const temAlgo = poligonos.length > 0 || cantos.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3">
@@ -208,14 +223,10 @@ export default function PlateCoverEditor({
 
         <div className="overflow-y-auto p-4">
           <p className="mb-3 text-xs text-slate-500">
-            {movendo
-              ? "Arraste para posicionar a foto. Toque em “Tarja” para voltar a marcar."
-              : "Arraste o dedo (ou o mouse) sobre a placa para criar uma tarja preta. Você pode aplicar mais de uma."}{" "}
-            <b>Placa pequena?</b> Use o <b>+</b> para aproximar antes de marcar.
+            <b>Toque nos quatro cantos da placa</b>, um de cada vez — a tarja fica com a forma exata
+            dela, mesmo inclinada. Use o <b>+</b> para aproximar e <b>arraste</b> para mover a foto.
           </p>
 
-          {/* Controles de zoom: sem eles, a placa de uma foto tirada de longe
-              fica menor que o dedo e não há como mirar. */}
           <div className="mb-2 flex flex-wrap items-center gap-2">
             <div className="flex items-center overflow-hidden rounded-lg border border-slate-300">
               <button
@@ -241,30 +252,23 @@ export default function PlateCoverEditor({
               </button>
             </div>
 
-            {ampliado ? (
-              <div className="flex items-center overflow-hidden rounded-lg border border-slate-300">
-                <button
-                  type="button"
-                  onClick={() => setModo("tarja")}
-                  className={`h-9 px-3 text-sm font-medium ${
-                    modo === "tarja" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  Tarja
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setModo("mover")}
-                  className={`h-9 px-3 text-sm font-medium ${
-                    modo === "mover" ? "bg-slate-900 text-white" : "text-slate-700 hover:bg-slate-100"
-                  }`}
-                >
-                  Mover foto
-                </button>
-              </div>
-            ) : null}
+            <span
+              className={`rounded-full px-2.5 py-1 text-xs font-semibold ${
+                cantos.length > 0
+                  ? "bg-amber-100 text-amber-800"
+                  : poligonos.length > 0
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-100 text-slate-600"
+              }`}
+            >
+              {cantos.length > 0
+                ? `Faltam ${CANTOS - cantos.length} canto(s)`
+                : poligonos.length > 0
+                  ? `${poligonos.length} tarja(s) pronta(s)`
+                  : "Marque o 1º canto"}
+            </span>
 
-            {ampliado ? (
+            {zoom > 1 ? (
               <button
                 type="button"
                 onClick={() => {
@@ -282,12 +286,11 @@ export default function PlateCoverEditor({
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
-            className={`relative mx-auto block w-full touch-none select-none overflow-hidden rounded-lg border border-slate-200 bg-slate-100 ${
-              movendo ? "cursor-grab" : "cursor-crosshair"
-            }`}
+            className="relative mx-auto block w-full cursor-crosshair touch-none select-none overflow-hidden rounded-lg border border-slate-200 bg-slate-100"
           >
             <div
               ref={imagemRef}
+              className="relative"
               style={{
                 transform: `scale(${zoom}) translate(${pan.x}%, ${pan.y}%)`,
                 transformOrigin: "center",
@@ -300,19 +303,44 @@ export default function PlateCoverEditor({
                 draggable={false}
                 className="block w-full select-none"
               />
-              {/* As tarjas ficam DENTRO do elemento ampliado: acompanham o zoom
-                  e o arrasto sem recalcular nada. */}
-              {shown.map((r, i) => (
-                <div
+
+              {/* As tarjas e as marcas ficam DENTRO do elemento ampliado:
+                  acompanham zoom e arrasto sem recalcular nada. O SVG estica
+                  junto (preserveAspectRatio="none"), então o ponto em % cai
+                  exatamente sobre o mesmo pixel da foto. */}
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="pointer-events-none absolute inset-0 h-full w-full"
+              >
+                {poligonos.map((pol, i) => (
+                  <polygon key={i} points={emPontos(pol)} fill="#000000" />
+                ))}
+                {cantos.length > 1 ? (
+                  <polyline
+                    points={emPontos(cantos)}
+                    fill="rgba(0,0,0,0.35)"
+                    stroke="#facc15"
+                    strokeWidth="0.3"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                ) : null}
+              </svg>
+
+              {/* Marcas dos cantos já tocados. O contra-scale mantém a bolinha
+                  do mesmo tamanho na tela em qualquer ampliação. */}
+              {cantos.map((c, i) => (
+                <span
                   key={i}
-                  className="absolute bg-black"
+                  className="absolute flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-[10px] font-bold text-slate-900 shadow"
                   style={{
-                    left: `${r.x * 100}%`,
-                    top: `${r.y * 100}%`,
-                    width: `${r.w * 100}%`,
-                    height: `${r.h * 100}%`,
+                    left: `${c.x * 100}%`,
+                    top: `${c.y * 100}%`,
+                    transform: `translate(-50%, -50%) scale(${1 / zoom})`,
                   }}
-                />
+                >
+                  {i + 1}
+                </span>
               ))}
             </div>
           </div>
@@ -322,19 +350,17 @@ export default function PlateCoverEditor({
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-200 px-4 py-3">
           <div className="flex gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setRects((r) => r.slice(0, -1))}
-              disabled={saving || rects.length === 0}
-            >
-              Desfazer tarja
+            <Button type="button" variant="secondary" onClick={desfazer} disabled={saving || !temAlgo}>
+              Desfazer
             </Button>
             <Button
               type="button"
               variant="secondary"
-              onClick={() => setRects([])}
-              disabled={saving || rects.length === 0}
+              onClick={() => {
+                setPoligonos([]);
+                setCantos([]);
+              }}
+              disabled={saving || !temAlgo}
             >
               Limpar
             </Button>
