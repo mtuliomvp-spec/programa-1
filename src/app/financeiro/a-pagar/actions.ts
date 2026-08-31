@@ -1637,6 +1637,8 @@ export type ReadNfeResult = {
   suppliers?: { id: string; name: string }[];
   /** Veículos, para quando o fluxo escolhido na revisão for "Veículos". */
   vehicles?: { id: string; label: string }[];
+  /** Sócios/beneficiários, para quando o fluxo escolhido for "Capital". */
+  beneficiaries?: { id: string; name: string }[];
 };
 
 /** O que o usuário confirmou na revisão. */
@@ -1659,6 +1661,8 @@ export type ApplyNfePayload = {
     structuralKey: string | null;
     /** Veículo que recebe o custo — obrigatório para o fluxo Veículos valer. */
     vehicleId: string | null;
+    /** Beneficiário — obrigatório para o fluxo Capital valer. */
+    capitalBeneficiaryId: string | null;
     parcelas: { parcela: number; total: number; valor: number; vencimento: string }[];
   }[];
 };
@@ -1760,7 +1764,7 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   }
   if (notas.length === 0) return { ok: false, error: "Nenhuma NF-e encontrada no PDF." };
 
-  const [suppliers, veiculos] = await Promise.all([
+  const [suppliers, veiculos, beneficiarios] = await Promise.all([
     prisma.supplier.findMany({
       orderBy: { name: "asc" },
       select: { id: true, name: true, document: true },
@@ -1770,6 +1774,11 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
     prisma.vehicle.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
       select: { id: true, brand: true, model: true, plate: true, status: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
     }),
   ]);
 
@@ -1856,6 +1865,7 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
       id: v.id,
       label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
     })),
+    beneficiaries: beneficiarios,
   };
 }
 
@@ -1961,12 +1971,29 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
       ? nota.structuralKey
       : "ADMINISTRATIVO";
     let vehicleId: string | null = null;
-    if (nota.vehicleId) {
+    if (fluxo === "VEICULOS" && nota.vehicleId) {
       const v = await prisma.vehicle.findUnique({
         where: { id: nota.vehicleId },
         select: { id: true },
       });
       vehicleId = v?.id ?? null;
+    }
+
+    // Capital é a mesma regra do lançamento manual: sem beneficiário o fluxo
+    // não existe (a retirada não teria dono), então a nota é pulada com aviso.
+    let capitalBeneficiaryId: string | null = null;
+    if (fluxo === "CAPITAL") {
+      const b = nota.capitalBeneficiaryId
+        ? await prisma.capitalBeneficiary.findUnique({
+            where: { id: nota.capitalBeneficiaryId },
+            select: { id: true },
+          })
+        : null;
+      if (!b) {
+        outcomes.push(`NF ${numero}: escolha o beneficiário do capital — pulada.`);
+        continue;
+      }
+      capitalBeneficiaryId = b.id;
     }
 
     const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas);
@@ -2003,6 +2030,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         supplierId,
         structuralKey: fluxo,
         vehicleId,
+        capitalBeneficiaryId,
         notes: [
           itensResumo ? `Itens NF ${numero}: ${itensResumo}` : null,
           nota.emitidaEm ? `emissão ${nota.emitidaEm}` : null,
