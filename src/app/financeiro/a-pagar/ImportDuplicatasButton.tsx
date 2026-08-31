@@ -19,21 +19,24 @@ const MAX_BYTES = 15 * 1024 * 1024;
 const NEW_SUPPLIER = "__new__";
 
 /**
- * Fluxos que fazem sentido numa nota de fornecedor. Capital fica de fora: nota
- * de peça não é aporte nem retirada de sócio, e o fluxo pediria o beneficiário.
+ * Os quatro fluxos, como no lançamento manual. Capital aparece porque acontece:
+ * a nota paga em nome de um sócio vira retirada dele — e aí o beneficiário é
+ * obrigatório, senão a retirada ficaria sem dono.
  */
 const FLUXOS = [
   { key: "VEICULOS", nome: "Veículos — o custo entra na ficha do carro" },
   { key: "PECAS", nome: "Peças — almoxarifado" },
   { key: "ADMINISTRATIVO", nome: "Administrativo — despesa da loja" },
+  { key: "CAPITAL", nome: "Capital — retirada em nome de um sócio" },
 ] as const;
 
 /** Uma nota lida, com as escolhas que o usuário fez na revisão. */
 type NotaRevisao = NfeNotaPlano & {
   arquivo: number; // índice do arquivo de onde veio
   escolhaFornecedor: string; // id do fornecedor ou NEW_SUPPLIER
-  fluxo: string; // fluxo estrutural do título (Veículos, Peças, Administrativo)
+  fluxo: string; // fluxo estrutural do título
   veiculoId: string; // só vale no fluxo Veículos; "" = nenhum
+  beneficiarioId: string; // só vale no fluxo Capital; "" = nenhum
   marcadas: Set<number>; // parcelas marcadas (por número da parcela)
 };
 
@@ -79,6 +82,7 @@ export default function ImportDuplicatasButton() {
   const [notas, setNotas] = useState<NotaRevisao[]>([]);
   const [fornecedores, setFornecedores] = useState<{ id: string; name: string }[]>([]);
   const [veiculos, setVeiculos] = useState<{ id: string; label: string }[]>([]);
+  const [beneficiarios, setBeneficiarios] = useState<{ id: string; name: string }[]>([]);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [outcomes, setOutcomes] = useState<string[] | null>(null);
 
@@ -92,6 +96,7 @@ export default function ImportDuplicatasButton() {
     setNotas([]);
     setFornecedores([]);
     setVeiculos([]);
+    setBeneficiarios([]);
     setAvisos([]);
     setOutcomes(null);
   }
@@ -117,6 +122,7 @@ export default function ImportDuplicatasButton() {
         const todosAvisos: string[] = [];
         let cadastro: { id: string; name: string }[] = [];
         let carros: { id: string; label: string }[] = [];
+        let socios: { id: string; name: string }[] = [];
         for (const f of files) {
           const base64 = await fileToBase64(f);
           const res = await readNfeAction(base64);
@@ -127,6 +133,7 @@ export default function ImportDuplicatasButton() {
           lidos.push({ nome: f.name, base64, totalNotas: res.notas.length });
           if (res.suppliers?.length) cadastro = res.suppliers;
           if (res.vehicles?.length) carros = res.vehicles;
+          if (res.beneficiaries?.length) socios = res.beneficiaries;
           todosAvisos.push(...(res.avisos ?? []));
           for (const n of res.notas) {
             encontradas.push({
@@ -138,6 +145,7 @@ export default function ImportDuplicatasButton() {
               // reposição do almoxarifado ou despesa da loja.
               fluxo: "",
               veiculoId: "",
+              beneficiarioId: "",
               // Tudo marcado; o usuário desmarca o que não quiser lançar.
               marcadas: new Set(n.parcelas.map((p) => p.parcela)),
             });
@@ -151,6 +159,7 @@ export default function ImportDuplicatasButton() {
         setNotas(encontradas);
         setFornecedores(cadastro);
         setVeiculos(carros);
+        setBeneficiarios(socios);
         setAvisos(todosAvisos);
         return;
       }
@@ -192,6 +201,11 @@ export default function ImportDuplicatasButton() {
       setError(`No fluxo Veículos, indique o veículo da NF ${semVeiculo.numero}.`);
       return;
     }
+    const semBeneficiario = comMarcadas.find((n) => n.fluxo === "CAPITAL" && !n.beneficiarioId);
+    if (semBeneficiario) {
+      setError(`No fluxo Capital, escolha o beneficiário da NF ${semBeneficiario.numero}.`);
+      return;
+    }
     setError(null);
     setCreating(true);
     try {
@@ -210,6 +224,8 @@ export default function ImportDuplicatasButton() {
             newSupplierName: n.escolhaFornecedor === NEW_SUPPLIER ? n.emitenteNome : null,
             structuralKey: n.fluxo || null,
             vehicleId: n.fluxo === "VEICULOS" && n.veiculoId ? n.veiculoId : null,
+            capitalBeneficiaryId:
+              n.fluxo === "CAPITAL" && n.beneficiarioId ? n.beneficiarioId : null,
             parcelas: n.parcelas.filter((p) => n.marcadas.has(p.parcela)),
           }))
           .filter((n) => n.parcelas.length > 0);
@@ -402,6 +418,33 @@ export default function ImportDuplicatasButton() {
                         </Select>
                         <span className="mt-1 block font-normal text-slate-400">
                           O valor entra no custo desse carro. Vendido, entra como despesa pós-venda.
+                        </span>
+                      </label>
+                    ) : null}
+
+                    {n.fluxo === "CAPITAL" ? (
+                      <label className="mt-2 block text-xs font-medium text-slate-600">
+                        Beneficiário do capital
+                        <Select
+                          value={n.beneficiarioId}
+                          onChange={(e) =>
+                            setNotas((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, beneficiarioId: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          className="mt-1"
+                        >
+                          <option value="">Selecione o beneficiário…</option>
+                          {beneficiarios.map((b) => (
+                            <option key={b.id} value={b.id}>
+                              {b.name}
+                            </option>
+                          ))}
+                        </Select>
+                        <span className="mt-1 block font-normal text-slate-400">
+                          O valor entra como retirada desse sócio.
                         </span>
                       </label>
                     ) : null}
