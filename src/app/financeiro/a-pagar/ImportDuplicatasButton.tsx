@@ -18,10 +18,22 @@ import {
 const MAX_BYTES = 15 * 1024 * 1024;
 const NEW_SUPPLIER = "__new__";
 
+/**
+ * Fluxos que fazem sentido numa nota de fornecedor. Capital fica de fora: nota
+ * de peça não é aporte nem retirada de sócio, e o fluxo pediria o beneficiário.
+ */
+const FLUXOS = [
+  { key: "VEICULOS", nome: "Veículos — o custo entra na ficha do carro" },
+  { key: "PECAS", nome: "Peças — almoxarifado" },
+  { key: "ADMINISTRATIVO", nome: "Administrativo — despesa da loja" },
+] as const;
+
 /** Uma nota lida, com as escolhas que o usuário fez na revisão. */
 type NotaRevisao = NfeNotaPlano & {
   arquivo: number; // índice do arquivo de onde veio
   escolhaFornecedor: string; // id do fornecedor ou NEW_SUPPLIER
+  fluxo: string; // fluxo estrutural do título (Veículos, Peças, Administrativo)
+  veiculoId: string; // só vale no fluxo Veículos; "" = nenhum
   marcadas: Set<number>; // parcelas marcadas (por número da parcela)
 };
 
@@ -66,6 +78,7 @@ export default function ImportDuplicatasButton() {
   const [arquivos, setArquivos] = useState<ArquivoLido[]>([]);
   const [notas, setNotas] = useState<NotaRevisao[]>([]);
   const [fornecedores, setFornecedores] = useState<{ id: string; name: string }[]>([]);
+  const [veiculos, setVeiculos] = useState<{ id: string; label: string }[]>([]);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [outcomes, setOutcomes] = useState<string[] | null>(null);
 
@@ -78,6 +91,7 @@ export default function ImportDuplicatasButton() {
     setArquivos([]);
     setNotas([]);
     setFornecedores([]);
+    setVeiculos([]);
     setAvisos([]);
     setOutcomes(null);
   }
@@ -102,6 +116,7 @@ export default function ImportDuplicatasButton() {
         const encontradas: NotaRevisao[] = [];
         const todosAvisos: string[] = [];
         let cadastro: { id: string; name: string }[] = [];
+        let carros: { id: string; label: string }[] = [];
         for (const f of files) {
           const base64 = await fileToBase64(f);
           const res = await readNfeAction(base64);
@@ -111,12 +126,18 @@ export default function ImportDuplicatasButton() {
           }
           lidos.push({ nome: f.name, base64, totalNotas: res.notas.length });
           if (res.suppliers?.length) cadastro = res.suppliers;
+          if (res.vehicles?.length) carros = res.vehicles;
           todosAvisos.push(...(res.avisos ?? []));
           for (const n of res.notas) {
             encontradas.push({
               ...n,
               arquivo: lidos.length - 1,
               escolhaFornecedor: n.supplierId ?? NEW_SUPPLIER,
+              // Fluxo em branco de propósito: é escolha do usuário, não palpite
+              // do sistema — a mesma nota de peça pode ser custo do carro,
+              // reposição do almoxarifado ou despesa da loja.
+              fluxo: "",
+              veiculoId: "",
               // Tudo marcado; o usuário desmarca o que não quiser lançar.
               marcadas: new Set(n.parcelas.map((p) => p.parcela)),
             });
@@ -129,6 +150,7 @@ export default function ImportDuplicatasButton() {
         setArquivos(lidos);
         setNotas(encontradas);
         setFornecedores(cadastro);
+        setVeiculos(carros);
         setAvisos(todosAvisos);
         return;
       }
@@ -157,6 +179,19 @@ export default function ImportDuplicatasButton() {
       setError("Marque ao menos uma parcela para lançar.");
       return;
     }
+    // O fluxo define onde o gasto aparece no resultado: sem ele, o título
+    // cairia calado em Administrativo. E "Veículos" sem carro não existe.
+    const comMarcadas = notas.filter((n) => n.marcadas.size > 0);
+    const semFluxo = comMarcadas.find((n) => !n.fluxo);
+    if (semFluxo) {
+      setError(`Escolha o fluxo da NF ${semFluxo.numero}.`);
+      return;
+    }
+    const semVeiculo = comMarcadas.find((n) => n.fluxo === "VEICULOS" && !n.veiculoId);
+    if (semVeiculo) {
+      setError(`No fluxo Veículos, indique o veículo da NF ${semVeiculo.numero}.`);
+      return;
+    }
     setError(null);
     setCreating(true);
     try {
@@ -173,6 +208,8 @@ export default function ImportDuplicatasButton() {
             itensResumo: n.itensResumo,
             supplierId: n.escolhaFornecedor === NEW_SUPPLIER ? null : n.escolhaFornecedor,
             newSupplierName: n.escolhaFornecedor === NEW_SUPPLIER ? n.emitenteNome : null,
+            structuralKey: n.fluxo || null,
+            vehicleId: n.fluxo === "VEICULOS" && n.veiculoId ? n.veiculoId : null,
             parcelas: n.parcelas.filter((p) => n.marcadas.has(p.parcela)),
           }))
           .filter((n) => n.parcelas.length > 0);
@@ -321,6 +358,53 @@ export default function ImportDuplicatasButton() {
                         Nenhum cadastro casou pelo CNPJ — confira antes de lançar.
                       </p>
                     )}
+
+                    <label className="mt-2 block text-xs font-medium text-slate-600">
+                      Fluxo (obra estrutural)
+                      <Select
+                        value={n.fluxo}
+                        onChange={(e) =>
+                          setNotas((prev) =>
+                            prev.map((x, j) => (j === i ? { ...x, fluxo: e.target.value } : x)),
+                          )
+                        }
+                        className="mt-1"
+                      >
+                        <option value="">Escolha o fluxo…</option>
+                        {FLUXOS.map((f) => (
+                          <option key={f.key} value={f.key}>
+                            {f.nome}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+
+                    {n.fluxo === "VEICULOS" ? (
+                      <label className="mt-2 block text-xs font-medium text-slate-600">
+                        Veículo
+                        <Select
+                          value={n.veiculoId}
+                          onChange={(e) =>
+                            setNotas((prev) =>
+                              prev.map((x, j) =>
+                                j === i ? { ...x, veiculoId: e.target.value } : x,
+                              ),
+                            )
+                          }
+                          className="mt-1"
+                        >
+                          <option value="">Selecione o veículo…</option>
+                          {veiculos.map((v) => (
+                            <option key={v.id} value={v.id}>
+                              {v.label}
+                            </option>
+                          ))}
+                        </Select>
+                        <span className="mt-1 block font-normal text-slate-400">
+                          O valor entra no custo desse carro. Vendido, entra como despesa pós-venda.
+                        </span>
+                      </label>
+                    ) : null}
 
                     {n.itensResumo ? (
                       <p className="mt-2 text-xs text-slate-500">

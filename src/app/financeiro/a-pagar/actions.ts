@@ -12,7 +12,7 @@ import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
-import { STRUCTURAL_KEY_VALUES, isStructuralKey } from "@/lib/structural-flows";
+import { STRUCTURAL_KEY_VALUES, isStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
@@ -1635,6 +1635,8 @@ export type ReadNfeResult = {
   avisos?: string[];
   /** Cadastro de fornecedores, para o usuário trocar o escolhido na revisão. */
   suppliers?: { id: string; name: string }[];
+  /** Veículos, para quando o fluxo escolhido na revisão for "Veículos". */
+  vehicles?: { id: string; label: string }[];
 };
 
 /** O que o usuário confirmou na revisão. */
@@ -1653,6 +1655,10 @@ export type ApplyNfePayload = {
     /** Fornecedor escolhido na revisão; sem ele, `newSupplierName` é cadastrado. */
     supplierId: string | null;
     newSupplierName: string | null;
+    /** Fluxo estrutural escolhido na revisão (Veículos, Peças, Administrativo). */
+    structuralKey: string | null;
+    /** Veículo que recebe o custo — obrigatório para o fluxo Veículos valer. */
+    vehicleId: string | null;
     parcelas: { parcela: number; total: number; valor: number; vencimento: string }[];
   }[];
 };
@@ -1754,10 +1760,18 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   }
   if (notas.length === 0) return { ok: false, error: "Nenhuma NF-e encontrada no PDF." };
 
-  const suppliers = await prisma.supplier.findMany({
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, document: true },
-  });
+  const [suppliers, veiculos] = await Promise.all([
+    prisma.supplier.findMany({
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, document: true },
+    }),
+    // Em estoque primeiro; vendidos entram porque peça comprada depois da
+    // venda ainda é despesa pós-venda daquele carro.
+    prisma.vehicle.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
+    }),
+  ]);
 
   const plano: NfeNotaPlano[] = [];
   const avisos: string[] = [];
@@ -1838,6 +1852,10 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
     notas: plano,
     avisos,
     suppliers: suppliers.map((s) => ({ id: s.id, name: s.name })),
+    vehicles: veiculos.map((v) => ({
+      id: v.id,
+      label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+    })),
   };
 }
 
@@ -1935,6 +1953,22 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     };
 
     const itensResumo = (nota.itensResumo || "").trim();
+
+    // Fluxo e veículo escolhidos na revisão. "Veículos" sem carro indicado não
+    // existe (o próprio `effectiveStructuralKey` joga em Administrativo), então
+    // o vínculo é conferido aqui — um id inventado não vira custo de carro.
+    const fluxo: StructuralKey = isStructuralKey(nota.structuralKey)
+      ? nota.structuralKey
+      : "ADMINISTRATIVO";
+    let vehicleId: string | null = null;
+    if (nota.vehicleId) {
+      const v = await prisma.vehicle.findUnique({
+        where: { id: nota.vehicleId },
+        select: { id: true },
+      });
+      vehicleId = v?.id ?? null;
+    }
+
     const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas);
 
     for (const { parc, due, docNum, match } of casadas) {
@@ -1967,11 +2001,12 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         amount: parc.valor,
         dueDate: due,
         supplierId,
-        structuralKey: "ADMINISTRATIVO",
+        structuralKey: fluxo,
+        vehicleId,
         notes: [
           itensResumo ? `Itens NF ${numero}: ${itensResumo}` : null,
           nota.emitidaEm ? `emissão ${nota.emitidaEm}` : null,
-          "importado da NF-e — vincule o veículo",
+          vehicleId ? "importado da NF-e" : "importado da NF-e — vincule o veículo",
         ]
           .filter(Boolean)
           .join(" · "),

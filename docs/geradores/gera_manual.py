@@ -268,6 +268,9 @@ story += tela(
         "título novo</i> ou <i>anexa ao título nº tal, já lançado</i>. Nada entra no financeiro até "
         "você desmarcar o que não quiser e tocar em <b>Confirmar e lançar</b>. O fornecedor pode ser "
         "trocado ali mesmo, quando o CNPJ da nota não casar com o cadastro.",
+        "<b>O fluxo é escolhido na revisão</b> e é obrigatório: <i>Veículos</i> (aí você indica o "
+        "carro, e o valor entra no custo dele), <i>Peças</i> (almoxarifado) ou <i>Administrativo</i> "
+        "(despesa da loja). É o que decide onde o gasto aparece no resultado do mês.",
         "Cada título gera <b>ordem de pagamento</b> em PDF com os dados bancários do beneficiário.",
     ],
 )
