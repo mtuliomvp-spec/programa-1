@@ -7,15 +7,25 @@ import { formatCurrency } from "@/lib/format";
 import {
   readDuplicatasAction,
   createDuplicatasAction,
-  importNfeAction,
+  readNfeAction,
+  applyNfeAction,
   type ReadDuplicatasResult,
   type ImportDuplicatasResult,
+  type NfeNotaPlano,
+  type ImportNfeResult,
 } from "./actions";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 const NEW_SUPPLIER = "__new__";
 
-type NfeFileResult = { file: string; outcomes: string[]; error?: string };
+/** Uma nota lida, com as escolhas que o usuário fez na revisão. */
+type NotaRevisao = NfeNotaPlano & {
+  arquivo: number; // índice do arquivo de onde veio
+  escolhaFornecedor: string; // id do fornecedor ou NEW_SUPPLIER
+  marcadas: Set<number>; // parcelas marcadas (por número da parcela)
+};
+
+type ArquivoLido = { nome: string; base64: string; totalNotas: number };
 
 /** DANFE/NF-e baixada tem "procNFe" ou a chave de 44 dígitos no nome. */
 function looksLikeNfe(name: string): boolean {
@@ -32,10 +42,14 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * "Importar NFs do fornecedor" em duas etapas: (1) a IA lê o PDF da relação de
- * duplicatas e mostra o fornecedor identificado + as parcelas; (2) o usuário
- * CONFIRMA o fornecedor (pode estar cadastrado com outro nome — ex.: "PMZ")
- * e o sistema cria os títulos que ainda não existem.
+ * "Importar NFs do fornecedor" em duas etapas, para os dois tipos de arquivo:
+ *
+ *  • NF-e/DANFE: a IA lê as notas e o sistema mostra, parcela a parcela, o que
+ *    vai acontecer (criar título novo ou anexar a um já lançado). Nada entra no
+ *    financeiro antes do "Confirmar e lançar" — antes o título era criado
+ *    direto, e um número errado da leitura entrava sem ninguém ver.
+ *  • Relatório de duplicatas: a IA lê e o usuário confirma o fornecedor (pode
+ *    estar cadastrado com outro nome) e as parcelas.
  */
 export default function ImportDuplicatasButton() {
   const router = useRouter();
@@ -46,16 +60,26 @@ export default function ImportDuplicatasButton() {
   const [supplierId, setSupplierId] = useState<string>("");
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [result, setResult] = useState<ImportDuplicatasResult | null>(null);
-  const [nfeResults, setNfeResults] = useState<NfeFileResult[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Revisão das NF-e
+  const [arquivos, setArquivos] = useState<ArquivoLido[]>([]);
+  const [notas, setNotas] = useState<NotaRevisao[]>([]);
+  const [fornecedores, setFornecedores] = useState<{ id: string; name: string }[]>([]);
+  const [avisos, setAvisos] = useState<string[]>([]);
+  const [outcomes, setOutcomes] = useState<string[] | null>(null);
 
   function reset() {
     setError(null);
     setRead(null);
     setResult(null);
-    setNfeResults(null);
     setSupplierId("");
     setChecked(new Set());
+    setArquivos([]);
+    setNotas([]);
+    setFornecedores([]);
+    setAvisos([]);
+    setOutcomes(null);
   }
 
   async function handleFiles(files: File[]) {
@@ -72,27 +96,40 @@ export default function ImportDuplicatasButton() {
     }
     setBusy(true);
     try {
-      // NF-e (DANFE): uma ou várias — cada nota vira anexo no título existente
-      // ou um título novo com as peças. Relatório de duplicatas: um por vez,
-      // com a confirmação do fornecedor.
-      const nfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1;
-      if (nfe) {
-        const results: NfeFileResult[] = [];
+      const ehNfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1;
+      if (ehNfe) {
+        const lidos: ArquivoLido[] = [];
+        const encontradas: NotaRevisao[] = [];
+        const todosAvisos: string[] = [];
+        let cadastro: { id: string; name: string }[] = [];
         for (const f of files) {
-          try {
-            const base64 = await fileToBase64(f);
-            const res = await importNfeAction(base64, f.name);
-            results.push(
-              res.ok
-                ? { file: f.name, outcomes: res.outcomes }
-                : { file: f.name, outcomes: [], error: res.error || "Não foi possível importar." },
-            );
-          } catch {
-            results.push({ file: f.name, outcomes: [], error: "Não foi possível importar." });
+          const base64 = await fileToBase64(f);
+          const res = await readNfeAction(base64);
+          if (!res.ok || !res.notas) {
+            todosAvisos.push(`${f.name}: ${res.error || "não foi possível ler."}`);
+            continue;
+          }
+          lidos.push({ nome: f.name, base64, totalNotas: res.notas.length });
+          if (res.suppliers?.length) cadastro = res.suppliers;
+          todosAvisos.push(...(res.avisos ?? []));
+          for (const n of res.notas) {
+            encontradas.push({
+              ...n,
+              arquivo: lidos.length - 1,
+              escolhaFornecedor: n.supplierId ?? NEW_SUPPLIER,
+              // Tudo marcado; o usuário desmarca o que não quiser lançar.
+              marcadas: new Set(n.parcelas.map((p) => p.parcela)),
+            });
           }
         }
-        setNfeResults(results);
-        router.refresh();
+        if (encontradas.length === 0) {
+          setError(todosAvisos[0] || "Nenhuma nota utilizável nos arquivos enviados.");
+          return;
+        }
+        setArquivos(lidos);
+        setNotas(encontradas);
+        setFornecedores(cadastro);
+        setAvisos(todosAvisos);
         return;
       }
 
@@ -104,7 +141,6 @@ export default function ImportDuplicatasButton() {
       }
       setRead(res);
       setSupplierId(res.suggestedSupplierId ?? NEW_SUPPLIER);
-      // Todas as parcelas vêm marcadas — o usuário desmarca as que não quer criar.
       setChecked(new Set((res.duplicatas ?? []).map((_, i) => i)));
     } catch {
       setError("Não foi possível importar. Tente novamente.");
@@ -112,6 +148,68 @@ export default function ImportDuplicatasButton() {
       setBusy(false);
       if (fileRef.current) fileRef.current.value = "";
     }
+  }
+
+  const marcadasTotal = notas.reduce((s, n) => s + n.marcadas.size, 0);
+
+  async function confirmarNfe() {
+    if (marcadasTotal === 0) {
+      setError("Marque ao menos uma parcela para lançar.");
+      return;
+    }
+    setError(null);
+    setCreating(true);
+    try {
+      const saida: string[] = [];
+      for (const [i, arq] of arquivos.entries()) {
+        const doArquivo = notas
+          .filter((n) => n.arquivo === i)
+          .map((n) => ({
+            numero: n.numero,
+            emitenteNome: n.emitenteNome,
+            emitidaEm: n.emitidaEm,
+            paginaInicial: n.paginaInicial,
+            paginaFinal: n.paginaFinal,
+            itensResumo: n.itensResumo,
+            supplierId: n.escolhaFornecedor === NEW_SUPPLIER ? null : n.escolhaFornecedor,
+            newSupplierName: n.escolhaFornecedor === NEW_SUPPLIER ? n.emitenteNome : null,
+            parcelas: n.parcelas.filter((p) => n.marcadas.has(p.parcela)),
+          }))
+          .filter((n) => n.parcelas.length > 0);
+        if (doArquivo.length === 0) continue;
+        const res: ImportNfeResult = await applyNfeAction({
+          base64: arq.base64,
+          filename: arq.nome,
+          totalNotas: arq.totalNotas,
+          notas: doArquivo,
+        });
+        if (!res.ok) {
+          setError(res.error || "Não foi possível lançar.");
+          return;
+        }
+        saida.push(...res.outcomes);
+      }
+      setNotas([]);
+      setArquivos([]);
+      setOutcomes(saida);
+      router.refresh();
+    } catch {
+      setError("Não foi possível lançar os títulos. Tente novamente.");
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  function alternarParcela(notaIdx: number, parcela: number) {
+    setNotas((prev) =>
+      prev.map((n, i) => {
+        if (i !== notaIdx) return n;
+        const marcadas = new Set(n.marcadas);
+        if (marcadas.has(parcela)) marcadas.delete(parcela);
+        else marcadas.add(parcela);
+        return { ...n, marcadas };
+      }),
+    );
   }
 
   async function handleCreate() {
@@ -144,7 +242,8 @@ export default function ImportDuplicatasButton() {
     }
   }
 
-  const open = Boolean(error || read || result || nfeResults);
+  const emRevisaoNfe = notas.length > 0;
+  const open = Boolean(error || read || result || emRevisaoNfe || outcomes);
 
   return (
     <>
@@ -169,6 +268,121 @@ export default function ImportDuplicatasButton() {
             <h2 className="text-base font-semibold text-slate-900">Importar NFs do fornecedor</h2>
             {error ? <p className="mt-3 text-sm font-medium text-rose-600">{error}</p> : null}
 
+            {/* ---------------- Revisão das NF-e (antes de lançar) ---------------- */}
+            {emRevisaoNfe ? (
+              <div className="mt-3 space-y-4 text-sm">
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  <strong>Nada foi lançado ainda.</strong> Confira as notas abaixo, desmarque o que
+                  não quiser e confirme no fim.
+                </p>
+
+                {notas.map((n, i) => (
+                  <div key={`${n.numero}-${i}`} className="rounded-lg border border-slate-200 p-3">
+                    <p className="font-semibold text-slate-800">
+                      NF {n.numero}
+                      {n.emitidaEm ? (
+                        <span className="font-normal text-slate-500"> · emitida {n.emitidaEm}</span>
+                      ) : null}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Emitente: {n.emitenteNome || "não identificado"}
+                      {n.emitenteCnpj ? ` · CNPJ ${n.emitenteCnpj}` : ""}
+                    </p>
+
+                    <label className="mt-2 block text-xs font-medium text-slate-600">
+                      Lançar no fornecedor
+                      <Select
+                        value={n.escolhaFornecedor}
+                        onChange={(e) =>
+                          setNotas((prev) =>
+                            prev.map((x, j) =>
+                              j === i ? { ...x, escolhaFornecedor: e.target.value } : x,
+                            ),
+                          )
+                        }
+                        className="mt-1"
+                      >
+                        <option value={NEW_SUPPLIER}>
+                          ➕ Cadastrar &quot;{n.emitenteNome || "novo fornecedor"}&quot;
+                        </option>
+                        {fornecedores.map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                          </option>
+                        ))}
+                      </Select>
+                    </label>
+                    {n.supplierId ? (
+                      <p className="mt-1 text-xs text-slate-400">
+                        Casou pelo CNPJ com <strong>{n.supplierNome}</strong>.
+                      </p>
+                    ) : (
+                      <p className="mt-1 text-xs text-amber-700">
+                        Nenhum cadastro casou pelo CNPJ — confira antes de lançar.
+                      </p>
+                    )}
+
+                    {n.itensResumo ? (
+                      <p className="mt-2 text-xs text-slate-500">
+                        <span className="font-medium text-slate-600">Itens:</span>{" "}
+                        {n.itensResumo.length > 220
+                          ? `${n.itensResumo.slice(0, 220)}…`
+                          : n.itensResumo}
+                      </p>
+                    ) : null}
+
+                    <div className="mt-2 space-y-1">
+                      {n.parcelas.map((p) => (
+                        <label key={p.parcela} className="flex items-start gap-2 text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={n.marcadas.has(p.parcela)}
+                            onChange={() => alternarParcela(i, p.parcela)}
+                            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+                          />
+                          <span>
+                            Parcela {p.parcela}/{p.total} — <strong>{formatCurrency(p.valor)}</strong>{" "}
+                            (venc. {p.vencimento})
+                            <span
+                              className={`ml-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                p.acao === "CRIAR"
+                                  ? "bg-emerald-100 text-emerald-800"
+                                  : "bg-slate-100 text-slate-600"
+                              }`}
+                            >
+                              {p.acao === "CRIAR"
+                                ? "cria título novo"
+                                : `anexa ao título nº ${p.tituloExistente}`}
+                            </span>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+
+                {avisos.length > 0 ? (
+                  <ul className="list-inside list-disc text-xs text-amber-700">
+                    {avisos.map((a, i) => (
+                      <li key={i}>{a}</li>
+                    ))}
+                  </ul>
+                ) : null}
+
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="secondary" onClick={reset} disabled={creating}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" onClick={confirmarNfe} disabled={creating || marcadasTotal === 0}>
+                    {creating
+                      ? "Lançando…"
+                      : `Confirmar e lançar ${marcadasTotal} parcela${marcadasTotal === 1 ? "" : "s"}`}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* ---------------- Revisão do relatório de duplicatas ---------------- */}
             {read ? (
               <div className="mt-3 space-y-3 text-sm">
                 <div>
@@ -263,6 +477,7 @@ export default function ImportDuplicatasButton() {
               </div>
             ) : null}
 
+            {/* ---------------- Resultado ---------------- */}
             {result ? (
               <div className="mt-3 space-y-3 text-sm">
                 {result.created.length > 0 ? (
@@ -295,22 +510,14 @@ export default function ImportDuplicatasButton() {
               </div>
             ) : null}
 
-            {nfeResults ? (
+            {outcomes ? (
               <div className="mt-3 space-y-3 text-sm">
-                {nfeResults.map((r, i) => (
-                  <div key={i}>
-                    <p className="break-all font-medium text-slate-700">📄 {r.file}</p>
-                    {r.error ? (
-                      <p className="mt-1 text-rose-600">{r.error}</p>
-                    ) : (
-                      <ul className="mt-1 list-inside list-disc text-slate-600">
-                        {r.outcomes.map((o, j) => (
-                          <li key={j}>{o}</li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                ))}
+                <p className="font-medium text-emerald-700">✓ Lançamento concluído:</p>
+                <ul className="list-inside list-disc text-slate-700">
+                  {outcomes.map((o, i) => (
+                    <li key={i}>{o}</li>
+                  ))}
+                </ul>
                 <p className="text-xs text-slate-400">
                   Nos títulos criados, as peças da nota já estão na descrição/observações — falta só
                   vincular o veículo.
@@ -318,7 +525,7 @@ export default function ImportDuplicatasButton() {
               </div>
             ) : null}
 
-            {!read ? (
+            {!read && !emRevisaoNfe ? (
               <div className="mt-4 flex justify-end">
                 <Button type="button" onClick={reset}>
                   Fechar

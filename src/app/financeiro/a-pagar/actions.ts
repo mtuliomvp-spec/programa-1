@@ -1600,205 +1600,389 @@ export type ImportNfeResult = {
   outcomes: string[];
 };
 
+/** Uma parcela da nota e o que vai acontecer com ela quando for confirmada. */
+export type NfeParcelaPlano = {
+  parcela: number;
+  total: number;
+  valor: number;
+  vencimento: string;
+  /** CRIAR = título novo; ANEXAR = a nota entra num título que já existe. */
+  acao: "CRIAR" | "ANEXAR";
+  /** Nº do título já lançado, quando a ação é ANEXAR. */
+  tituloExistente: string | null;
+};
+
+/** Uma nota do PDF, já lida e conferida contra o que existe no financeiro. */
+export type NfeNotaPlano = {
+  numero: string;
+  emitenteNome: string | null;
+  emitenteCnpj: string | null;
+  emitidaEm: string | null;
+  paginaInicial: number | null;
+  paginaFinal: number | null;
+  itensResumo: string;
+  /** Fornecedor já cadastrado que casou pelo CNPJ (null = vai ser cadastrado). */
+  supplierId: string | null;
+  supplierNome: string;
+  parcelas: NfeParcelaPlano[];
+};
+
+export type ReadNfeResult = {
+  ok: boolean;
+  error?: string;
+  notas?: NfeNotaPlano[];
+  /** Notas que não dá para lançar (sem número, sem valor…), com o motivo. */
+  avisos?: string[];
+  /** Cadastro de fornecedores, para o usuário trocar o escolhido na revisão. */
+  suppliers?: { id: string; name: string }[];
+};
+
+/** O que o usuário confirmou na revisão. */
+export type ApplyNfePayload = {
+  base64: string;
+  filename: string;
+  /** Quantas notas o PDF tinha (define se o anexo é a página da nota ou o PDF inteiro). */
+  totalNotas: number;
+  notas: {
+    numero: string;
+    emitenteNome: string | null;
+    emitidaEm: string | null;
+    paginaInicial: number | null;
+    paginaFinal: number | null;
+    itensResumo: string;
+    /** Fornecedor escolhido na revisão; sem ele, `newSupplierName` é cadastrado. */
+    supplierId: string | null;
+    newSupplierName: string | null;
+    parcelas: { parcela: number; total: number; valor: number; vencimento: string }[];
+  }[];
+};
+
+const soDigitos = (s: string | null) => (s || "").replace(/\D/g, "");
+const mesmoDiaUTC = (a: Date, b: Date) =>
+  a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
+
 /**
- * Importa uma NF-e (DANFE em PDF): a IA lê nº, fornecedor, parcelas
- * (fatura/duplicatas) e os ITENS (peças). Para cada parcela: se o título já
- * existe (mesmas regras de dedup da relação de duplicatas), a NF é ANEXADA a
- * ele e as peças entram nas observações; senão o título é CRIADO com as peças
- * na descrição/observações — e a NF anexada. Resta só vincular o veículo.
+ * Casa as parcelas de uma nota com títulos JÁ LANÇADOS — as mesmas regras da
+ * relação de duplicatas (mesmo valor e, além disso, nº do documento parecido ou
+ * mesmo fornecedor vencendo no mesmo dia).
+ *
+ * É consulta pura: serve tanto para MOSTRAR o plano na revisão quanto para
+ * aplicá-lo depois. Como o mesmo código roda nas duas vezes, o que o usuário lê
+ * na tela é o que vai acontecer.
  */
-export async function importNfeAction(base64: string, filename: string): Promise<ImportNfeResult> {
+async function casarParcelasDaNfe(
+  numero: string,
+  supplierId: string | null,
+  parcelas: { valor: number; vencimento: string; parcela: number; total: number }[],
+) {
+  const candidatos = await prisma.payable.findMany({
+    where: {
+      OR: [
+        ...(supplierId ? [{ supplierId }] : []),
+        { documentNumber: { contains: numero } },
+        { amount: { in: parcelas.map((p) => p.valor) } },
+      ],
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      documentNumber: true,
+      amount: true,
+      dueDate: true,
+      supplierId: true,
+      notes: true,
+    },
+  });
+  // Um título só pode casar com UMA parcela: o que já foi usado sai da lista.
+  const disponiveis = [...candidatos];
+
+  return parcelas.map((parc) => {
+    const due = new Date(`${parc.vencimento}T12:00:00Z`);
+    const docNum = `NF ${numero} parc. ${parc.parcela}`;
+    const mesmoValor = (p: (typeof candidatos)[number]) => Math.abs(p.amount - parc.valor) <= 0.005;
+    const mesmoDoc = (p: (typeof candidatos)[number]) =>
+      p.documentNumber === docNum ||
+      soDigitos(p.documentNumber).replace(/^0+/, "").includes(numero);
+    const possiveis = disponiveis.filter(
+      (p) =>
+        mesmoValor(p) &&
+        (mesmoDoc(p) || (supplierId != null && p.supplierId === supplierId && mesmoDiaUTC(p.dueDate, due))),
+    );
+    const match =
+      possiveis.find((p) => mesmoDoc(p) && mesmoDiaUTC(p.dueDate, due)) ??
+      possiveis.find(mesmoDoc) ??
+      possiveis[0];
+    if (match) disponiveis.splice(disponiveis.indexOf(match), 1);
+    return { parc, due, docNum, match: match ?? null };
+  });
+}
+
+/** Resumo dos itens da nota, usado na descrição e nas observações do título. */
+function resumoDosItens(itens: { descricao: string; quantidade: number | null }[]): string {
+  return itens
+    .filter((i) => i.descricao.trim())
+    .map(
+      (i) =>
+        `${i.descricao.trim()}${i.quantidade != null && i.quantidade > 1 ? ` (x${i.quantidade})` : ""}`,
+    )
+    .join(", ");
+}
+
+/**
+ * ETAPA 1 de "Importar NFs do fornecedor": a IA lê o PDF (uma ou várias DANFEs)
+ * e devolve o PLANO — fornecedor identificado, itens e, parcela a parcela, se o
+ * título seria criado ou se a nota seria anexada a um título já lançado.
+ *
+ * Nada é gravado aqui. O lançamento só acontece em `applyNfeAction`, depois do
+ * usuário conferir na tela: importar era criar título direto, sem revisão, e
+ * um número errado da IA entrava no financeiro sem ninguém ver.
+ */
+export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   try {
     await assertCan("financeiro", "criar");
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", outcomes: [] };
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  if (!base64) return { ok: false, error: "Anexe o PDF da NF-e.", outcomes: [] };
+  if (!base64) return { ok: false, error: "Anexe o PDF da NF-e." };
 
-  // Um PDF pode trazer VÁRIAS NF-e (DANFEs concatenadas): a IA devolve cada
-  // nota com o intervalo de páginas, e cada uma é processada por vez.
   let notas;
   try {
     const { extractNfeLote } = await import("@/lib/nfe-ai");
     notas = await extractNfeLote(base64);
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a NF-e.", outcomes: [] };
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a NF-e." };
   }
-  if (notas.length === 0) {
-    return { ok: false, error: "Nenhuma NF-e encontrada no PDF.", outcomes: [] };
+  if (notas.length === 0) return { ok: false, error: "Nenhuma NF-e encontrada no PDF." };
+
+  const suppliers = await prisma.supplier.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, document: true },
+  });
+
+  const plano: NfeNotaPlano[] = [];
+  const avisos: string[] = [];
+
+  for (const nfe of notas) {
+    const numero = soDigitos(nfe.numero).replace(/^0+/, "");
+    if (!numero) {
+      avisos.push("Uma das notas está sem número identificado — não dá para lançar.");
+      continue;
+    }
+
+    // Fornecedor: CNPJ exato → mesma raiz (outra filial) → nenhum (cadastra depois).
+    const cnpj = soDigitos(nfe.emitenteCnpj);
+    const cadastrado =
+      (cnpj ? suppliers.find((s) => soDigitos(s.document) === cnpj) : undefined) ??
+      (cnpj.length === 14
+        ? suppliers.find(
+            (s) =>
+              soDigitos(s.document).slice(0, 8) === cnpj.slice(0, 8) &&
+              soDigitos(s.document).length === 14,
+          )
+        : undefined) ??
+      null;
+
+    const parcelasNfe = nfe.duplicatas.filter(
+      (d) =>
+        d.valor != null &&
+        d.valor > 0 &&
+        d.vencimento &&
+        !Number.isNaN(Date.parse(`${d.vencimento}T00:00:00Z`)),
+    );
+    const bruto =
+      parcelasNfe.length > 0
+        ? parcelasNfe.map((d) => ({ vencimento: d.vencimento as string, valor: d.valor as number }))
+        : nfe.valorTotal != null && nfe.valorTotal > 0
+          ? [
+              {
+                vencimento: nfe.emitidaEm || new Date().toISOString().slice(0, 10),
+                valor: nfe.valorTotal,
+              },
+            ]
+          : [];
+    if (bruto.length === 0) {
+      avisos.push(`NF ${numero}: valor/vencimento não identificados — não dá para lançar.`);
+      continue;
+    }
+
+    const parcelas = bruto.map((b, i) => ({ ...b, parcela: i + 1, total: bruto.length }));
+    const casadas = await casarParcelasDaNfe(numero, cadastrado?.id ?? null, parcelas);
+
+    plano.push({
+      numero,
+      emitenteNome: nfe.emitenteNome,
+      emitenteCnpj: nfe.emitenteCnpj,
+      emitidaEm: nfe.emitidaEm,
+      paginaInicial: nfe.paginaInicial,
+      paginaFinal: nfe.paginaFinal,
+      itensResumo: resumoDosItens(nfe.itens),
+      supplierId: cadastrado?.id ?? null,
+      supplierNome:
+        cadastrado?.name ?? ((nfe.emitenteNome || "").trim() || "Fornecedor não identificado"),
+      parcelas: casadas.map(({ parc, match }) => ({
+        parcela: parc.parcela,
+        total: parc.total,
+        valor: parc.valor,
+        vencimento: parc.vencimento,
+        acao: match ? ("ANEXAR" as const) : ("CRIAR" as const),
+        tituloExistente: match ? String(match.orderNumber).padStart(4, "0") : null,
+      })),
+    });
+  }
+
+  if (plano.length === 0) {
+    return { ok: false, error: avisos[0] || "Nenhuma nota utilizável no PDF." };
+  }
+  return {
+    ok: true,
+    notas: plano,
+    avisos,
+    suppliers: suppliers.map((s) => ({ id: s.id, name: s.name })),
+  };
+}
+
+/**
+ * ETAPA 2: cria/anexa SÓ o que o usuário marcou na revisão. A conferência
+ * contra o que já existe é refeita aqui (e não herdada da tela), para o caso de
+ * alguém ter lançado o mesmo título enquanto a revisão estava aberta.
+ */
+export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNfeResult> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", outcomes: [] };
+  }
+  const notas = (payload?.notas ?? []).filter((n) => n.parcelas.length > 0);
+  if (!payload?.base64 || notas.length === 0) {
+    return { ok: false, error: "Marque ao menos uma parcela para lançar.", outcomes: [] };
   }
 
   const { PDFDocument } = await import("pdf-lib");
-  const fullBytes = Buffer.from(base64, "base64");
+  const fullBytes = Buffer.from(payload.base64, "base64");
   const original = await PDFDocument.load(fullBytes);
   const pageCount = original.getPageCount();
-
-  const digits = (s: string | null) => (s || "").replace(/\D/g, "");
-  const sameDay = (a: Date, b: Date) => a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
-  const suppliers = await prisma.supplier.findMany({ select: { id: true, name: true, document: true } });
   const outcomes: string[] = [];
 
-  for (const nfe of notas) {
-  const numero = digits(nfe.numero).replace(/^0+/, "");
-  if (!numero) {
-    outcomes.push("Nota sem número identificado — pulada.");
-    continue;
-  }
+  for (const nota of notas) {
+    const numero = soDigitos(nota.numero).replace(/^0+/, "");
+    if (!numero) continue;
 
-  // Fornecedor: CNPJ exato → mesma raiz (filial diferente) → nome (cria).
-  const cnpj = digits(nfe.emitenteCnpj);
-  let supplier =
-    (cnpj ? suppliers.find((s) => digits(s.document) === cnpj) : undefined) ??
-    (cnpj.length === 14
-      ? suppliers.find((s) => digits(s.document).slice(0, 8) === cnpj.slice(0, 8) && digits(s.document).length === 14)
-      : undefined) ??
-    null;
-  if (!supplier) {
-    const nome = (nfe.emitenteNome || "").trim();
-    if (!nome) {
-      outcomes.push(`NF ${numero}: fornecedor (emitente) não identificado — pulada.`);
-      continue;
-    }
-    const id = await resolveSupplierByName(nome);
-    supplier = { id, name: nome, document: null };
-    suppliers.push(supplier);
-  }
-  const supplierId = supplier.id;
-
-  // Peças da nota (para a descrição e as observações do título).
-  const itens = nfe.itens.filter((i) => i.descricao.trim());
-  const itensResumo = itens
-    .map((i) => `${i.descricao.trim()}${i.quantidade != null && i.quantidade > 1 ? ` (x${i.quantidade})` : ""}`)
-    .join(", ");
-
-  // Parcelas: as duplicatas do DANFE; sem elas, uma única no total da nota.
-  const parcelasNfe = nfe.duplicatas.filter(
-    (d) => d.valor != null && d.valor > 0 && d.vencimento && !Number.isNaN(Date.parse(`${d.vencimento}T00:00:00Z`)),
-  );
-  const parcelas =
-    parcelasNfe.length > 0
-      ? parcelasNfe.map((d) => ({ vencimento: d.vencimento as string, valor: d.valor as number }))
-      : nfe.valorTotal != null && nfe.valorTotal > 0
-        ? [{ vencimento: nfe.emitidaEm || new Date().toISOString().slice(0, 10), valor: nfe.valorTotal }]
-        : [];
-  if (parcelas.length === 0) {
-    outcomes.push(`NF ${numero}: valor/vencimento não identificados — pulada.`);
-    continue;
-  }
-
-  // Títulos existentes para o dedup (globais, como na relação de duplicatas).
-  const existing = await prisma.payable.findMany({
-    where: {
-      OR: [
-        { supplierId },
-        { documentNumber: { contains: numero } },
-        { amount: { in: parcelas.map((p) => p.valor) } },
-      ],
-    },
-    select: { id: true, orderNumber: true, documentNumber: true, amount: true, dueDate: true, supplierId: true, notes: true },
-  });
-  // Recorta as páginas DESTA nota (PDF com várias NF-e); com uma nota só, ou
-  // intervalo inválido, o anexo é o PDF inteiro.
-  let notaBytes: Buffer = fullBytes;
-  if (
-    notas.length > 1 &&
-    nfe.paginaInicial != null &&
-    nfe.paginaFinal != null &&
-    nfe.paginaInicial >= 1 &&
-    nfe.paginaFinal >= nfe.paginaInicial &&
-    nfe.paginaFinal <= pageCount
-  ) {
-    const single = await PDFDocument.create();
-    const idxs = Array.from(
-      { length: nfe.paginaFinal - nfe.paginaInicial + 1 },
-      (_, k) => (nfe.paginaInicial as number) - 1 + k,
-    );
-    const pages = await single.copyPages(original, idxs);
-    for (const pg of pages) single.addPage(pg);
-    notaBytes = Buffer.from(await single.save());
-  }
-
-  const attachNfe = async (payableId: string) => {
-    const already = await prisma.payableAttachment.findFirst({
-      where: { payableId, description: `NF-e ${numero}` },
-      select: { id: true },
-    });
-    if (already) return;
-    await prisma.payableAttachment.create({
-      data: {
-        payableId,
-        kind: "OUTRO",
-        description: `NF-e ${numero}`,
-        filename: notas.length > 1 ? `nfe-${numero}.pdf` : filename || `nfe-${numero}.pdf`,
-        mimeType: "application/pdf",
-        size: notaBytes.byteLength,
-        data: new Uint8Array(notaBytes),
-      },
-    });
-  };
-
-  for (const [idx, parc] of parcelas.entries()) {
-    const parcela = idx + 1;
-    const due = new Date(`${parc.vencimento}T12:00:00Z`);
-    const docNum = `NF ${numero} parc. ${parcela}`;
-    const label = `NF ${numero} parc. ${parcela}/${parcelas.length} — ${brl(parc.valor)} (venc. ${parc.vencimento})`;
-
-    const sameAmount = (p: (typeof existing)[number]) => Math.abs(p.amount - parc.valor) <= 0.005;
-    const docMatch = (p: (typeof existing)[number]) =>
-      p.documentNumber === docNum || digits(p.documentNumber).replace(/^0+/, "").includes(numero);
-    const candidates = existing.filter(
-      (p) => sameAmount(p) && (docMatch(p) || (p.supplierId === supplierId && sameDay(p.dueDate, due))),
-    );
-    const match =
-      candidates.find((p) => docMatch(p) && sameDay(p.dueDate, due)) ??
-      candidates.find(docMatch) ??
-      candidates[0];
-
-    if (match) {
-      existing.splice(existing.indexOf(match), 1);
-      await attachNfe(match.id);
-      // Peças entram nas observações do título existente (sem duplicar).
-      if (itensResumo && !(match.notes || "").includes("Itens NF")) {
-        await prisma.payable.update({
-          where: { id: match.id },
-          data: { notes: [(match.notes || "").trim() || null, `Itens NF ${numero}: ${itensResumo}`].filter(Boolean).join(" · ") },
-        });
+    // Fornecedor: o escolhido na revisão; se o usuário optou por cadastrar, é
+    // agora que o cadastro nasce (nunca na leitura).
+    let supplierId = nota.supplierId;
+    let supplierNome = "";
+    if (supplierId) {
+      const s = await prisma.supplier.findUnique({
+        where: { id: supplierId },
+        select: { id: true, name: true },
+      });
+      if (!s) {
+        outcomes.push(`NF ${numero}: fornecedor escolhido não existe mais — pulada.`);
+        continue;
       }
-      outcomes.push(`${label} → NF anexada ao título nº ${String(match.orderNumber).padStart(4, "0")} (já lançado)`);
-      continue;
+      supplierNome = s.name;
+    } else {
+      const nome = (nota.newSupplierName || nota.emitenteNome || "").trim();
+      if (!nome) {
+        outcomes.push(`NF ${numero}: fornecedor não identificado — pulada.`);
+        continue;
+      }
+      supplierId = await resolveSupplierByName(nome);
+      supplierNome = nome;
     }
 
-    const payable = await createManualPayable({
-      description: `Peças ${supplier.name} - NF ${numero}${parcelas.length > 1 ? ` (parc. ${parcela}/${parcelas.length})` : ""}${itensResumo ? ` — ${itensResumo.slice(0, 120)}` : ""}`,
-      category: "COMPRA_PECA",
-      categoryLabel: "Compra de peças",
-      documentNumber: docNum,
-      amount: parc.valor,
-      dueDate: due,
-      supplierId,
-      structuralKey: "ADMINISTRATIVO",
-      notes: [
-        itensResumo ? `Itens NF ${numero}: ${itensResumo}` : null,
-        nfe.emitidaEm ? `emissão ${nfe.emitidaEm}` : null,
-        "importado da NF-e — vincule o veículo",
-      ]
-        .filter(Boolean)
-        .join(" · "),
-      alreadyPaid: false,
-    });
-    await attachNfe(payable.id);
-    existing.push({
-      id: payable.id,
-      orderNumber: payable.orderNumber,
-      documentNumber: docNum,
-      amount: parc.valor,
-      dueDate: due,
-      supplierId,
-      notes: null,
-    });
-    outcomes.push(`${label} → título nº ${String(payable.orderNumber).padStart(4, "0")} criado (com as peças)`);
+    // Recorta as páginas DESTA nota (PDF com várias DANFEs); com uma nota só, ou
+    // intervalo inválido, o anexo é o PDF inteiro.
+    let notaBytes: Buffer = fullBytes;
+    if (
+      payload.totalNotas > 1 &&
+      nota.paginaInicial != null &&
+      nota.paginaFinal != null &&
+      nota.paginaInicial >= 1 &&
+      nota.paginaFinal >= nota.paginaInicial &&
+      nota.paginaFinal <= pageCount
+    ) {
+      const single = await PDFDocument.create();
+      const idxs = Array.from(
+        { length: nota.paginaFinal - nota.paginaInicial + 1 },
+        (_, k) => (nota.paginaInicial as number) - 1 + k,
+      );
+      const pages = await single.copyPages(original, idxs);
+      for (const pg of pages) single.addPage(pg);
+      notaBytes = Buffer.from(await single.save());
+    }
+
+    const anexarNfe = async (payableId: string) => {
+      const already = await prisma.payableAttachment.findFirst({
+        where: { payableId, description: `NF-e ${numero}` },
+        select: { id: true },
+      });
+      if (already) return;
+      await prisma.payableAttachment.create({
+        data: {
+          payableId,
+          kind: "OUTRO",
+          description: `NF-e ${numero}`,
+          filename:
+            payload.totalNotas > 1
+              ? `nfe-${numero}.pdf`
+              : payload.filename || `nfe-${numero}.pdf`,
+          mimeType: "application/pdf",
+          size: notaBytes.byteLength,
+          data: new Uint8Array(notaBytes),
+        },
+      });
+    };
+
+    const itensResumo = (nota.itensResumo || "").trim();
+    const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas);
+
+    for (const { parc, due, docNum, match } of casadas) {
+      const label = `NF ${numero} parc. ${parc.parcela}/${parc.total} — ${brl(parc.valor)} (venc. ${parc.vencimento})`;
+
+      if (match) {
+        await anexarNfe(match.id);
+        // Peças entram nas observações do título existente (sem duplicar).
+        if (itensResumo && !(match.notes || "").includes("Itens NF")) {
+          await prisma.payable.update({
+            where: { id: match.id },
+            data: {
+              notes: [(match.notes || "").trim() || null, `Itens NF ${numero}: ${itensResumo}`]
+                .filter(Boolean)
+                .join(" · "),
+            },
+          });
+        }
+        outcomes.push(
+          `${label} → NF anexada ao título nº ${String(match.orderNumber).padStart(4, "0")} (já lançado)`,
+        );
+        continue;
+      }
+
+      const payable = await createManualPayable({
+        description: `Peças ${supplierNome} - NF ${numero}${parc.total > 1 ? ` (parc. ${parc.parcela}/${parc.total})` : ""}${itensResumo ? ` — ${itensResumo.slice(0, 120)}` : ""}`,
+        category: "COMPRA_PECA",
+        categoryLabel: "Compra de peças",
+        documentNumber: docNum,
+        amount: parc.valor,
+        dueDate: due,
+        supplierId,
+        structuralKey: "ADMINISTRATIVO",
+        notes: [
+          itensResumo ? `Itens NF ${numero}: ${itensResumo}` : null,
+          nota.emitidaEm ? `emissão ${nota.emitidaEm}` : null,
+          "importado da NF-e — vincule o veículo",
+        ]
+          .filter(Boolean)
+          .join(" · "),
+        alreadyPaid: false,
+      });
+      await anexarNfe(payable.id);
+      outcomes.push(
+        `${label} → título nº ${String(payable.orderNumber).padStart(4, "0")} criado (com as peças)`,
+      );
+    }
   }
-  } // fim do loop das notas
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");

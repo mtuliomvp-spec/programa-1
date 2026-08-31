@@ -268,8 +268,8 @@ story.append(grade([
      "Anexe o contrato no cadastro do veículo: dados do carro, valores e o fornecedor entram sozinhos. "
      "O contrato fica anexado à ficha."),
     ("🧾 NF-e / DANFE de peças",
-     "Várias notas de uma vez: cria os títulos que faltam, anexa a nota ao título certo e ainda lê "
-     "quais peças foram compradas."),
+     "Várias notas de uma vez. Antes de gravar, o sistema mostra parcela a parcela o que vai "
+     "fazer — criar o título ou anexar a nota a um já lançado — e só age depois do seu OK."),
     ("✅ Comprovantes de pagamento",
      "Um PDF com vários comprovantes do banco: o sistema separa página por página e anexa cada um ao "
      "seu título — pago ou ainda em aberto."),

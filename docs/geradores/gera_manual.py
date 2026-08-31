@@ -222,8 +222,9 @@ story += tela(
         "“Nova solicitação”: o que precisa, para qual veículo ou setor, com foto ou orçamento anexado "
         "pelo celular.",
         "O administrador aprova ou recusa; ao concluir, o título entra em Contas a pagar.",
-        "<b>“Importar NF”</b> lê a nota do fornecedor (PDF) e cria os títulos que faltam, já com a "
-        "nota anexada e as peças identificadas.",
+        "<b>“Importar NF”</b> lê a nota do fornecedor (PDF) e <b>mostra o que vai lançar</b> antes "
+        "de gravar; ao confirmar, cria os títulos que faltam, já com a nota anexada e as peças "
+        "identificadas.",
     ],
 )
 story.append(PageBreak())
@@ -262,6 +263,11 @@ story += tela(
         "“Devolveu mercadoria?” para abater o valor da NF de devolução.",
         "<b>Importar comprovantes</b> e <b>Importar NFs do fornecedor</b> processam PDFs com vários "
         "documentos de uma vez, anexando cada um ao título certo.",
+        "<b>A importação de NF passa por revisão.</b> Depois da leitura, a tela lista cada nota com "
+        "o fornecedor identificado, os itens e, parcela a parcela, o que vai acontecer — <i>cria "
+        "título novo</i> ou <i>anexa ao título nº tal, já lançado</i>. Nada entra no financeiro até "
+        "você desmarcar o que não quiser e tocar em <b>Confirmar e lançar</b>. O fornecedor pode ser "
+        "trocado ali mesmo, quando o CNPJ da nota não casar com o cadastro.",
         "Cada título gera <b>ordem de pagamento</b> em PDF com os dados bancários do beneficiário.",
     ],
 )
