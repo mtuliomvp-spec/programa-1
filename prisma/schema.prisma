@@ -863,6 +863,13 @@ model PreSale {
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
   installmentsInfoCount     Int?
   installmentsInfoAmount    Float?
+  // Quitação do financiamento anterior do veículo com parte do valor financiado
+  // (boleto do banco credor). Só informativo: consta no contrato e na ficha; o
+  // boleto em si fica anexado ao veículo de terceiro.
+  payoffBank                String?
+  payoffAmount              Float?
+  payoffBarcode             String?
+  payoffDueDate             DateTime?
   downPayment               Float          @default(0)
   installmentsCount         Int            @default(0)
   financerAccountId         String?
@@ -962,6 +969,11 @@ model Sale {
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
   installmentsInfoCount     Int?
   installmentsInfoAmount    Float?
+  // Quitação do financiamento anterior (cópia da pré-venda; consta no contrato).
+  payoffBank                String?
+  payoffAmount              Float?
+  payoffBarcode             String?
+  payoffDueDate             DateTime?
   // Consignado: o veículo era de um terceiro. `ownerRefundAmount` (cópia travada
   // do veículo no fechamento) é o valor devido ao proprietário. Se
   // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário

@@ -53,6 +53,11 @@ export default async function ContratoIntermediacaoPage({
           ? { count: sale.installmentsInfoCount, amount: sale.installmentsInfoAmount }
           : null
       }
+      payoff={
+        sale.payoffAmount
+          ? { bank: sale.payoffBank, amount: sale.payoffAmount, barcode: sale.payoffBarcode, dueDate: sale.payoffDueDate }
+          : null
+      }
       backHref={`/vendas/financiamento-terceiros/${sale.id}`}
     />
   );

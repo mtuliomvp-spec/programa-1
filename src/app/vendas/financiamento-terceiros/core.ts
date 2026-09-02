@@ -80,8 +80,23 @@ export const intermediationSchema = z.object({
     .optional()
     .transform((s) => parseReferrals(s)),
   notes: z.string().optional(),
+  // Quitação do financiamento anterior (opcional): parte do valor financiado
+  // paga o boleto do banco credor do veículo. Consta no contrato.
+  payoffEnabled: z.coerce.boolean().optional(),
+  payoffBank: z.string().optional(),
+  payoffAmount: z.coerce.number().min(0).default(0),
+  payoffBarcode: z.string().optional(),
+  payoffDueDate: z.string().optional(),
 })
   .superRefine((d, ctx) => {
+    if (d.payoffEnabled) {
+      if (!(d.payoffAmount > 0)) {
+        ctx.addIssue({ code: "custom", path: ["payoffAmount"], message: "Informe o valor da quitação do financiamento anterior" });
+      }
+      if (!d.payoffBank?.trim()) {
+        ctx.addIssue({ code: "custom", path: ["payoffBank"], message: "Informe o banco credor da quitação" });
+      }
+    }
     if (!normalizeRenavam(d.renavam)) {
       ctx.addIssue({ code: "custom", path: ["renavam"], message: "Informe o RENAVAM do veículo" });
     }
@@ -97,6 +112,18 @@ export const intermediationSchema = z.object({
   });
 
 export type IntermediationFormState = { error?: string };
+
+/** Prefixo da descrição do anexo do boleto de quitação (no veículo de terceiro). */
+export const PAYOFF_BOLETO_PREFIX = "Boleto de quitação do financiamento anterior";
+
+/** Boletos de quitação anexados ao veículo de terceiro desta operação. */
+export async function listPayoffBoletos(vehicleId: string) {
+  return prisma.vehicleAttachment.findMany({
+    where: { vehicleId, kind: "DOCUMENTO", description: { startsWith: PAYOFF_BOLETO_PREFIX } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, description: true, filename: true, size: true, createdAt: true },
+  });
+}
 export type IntermediationData = z.infer<typeof intermediationSchema>;
 
 /** Valida F/D e a placa; devolve os valores normalizados. `excludeVehicleId`
@@ -206,6 +233,11 @@ function buildPreSaleData(
     installmentsInfoCount: d.installmentsInfoCount,
     installmentsInfoAmount: d.installmentsInfoAmount,
     notes: d.notes || null,
+    // Quitação do financiamento anterior: só quando marcada (senão limpa).
+    payoffBank: d.payoffEnabled ? d.payoffBank?.trim() || null : null,
+    payoffAmount: d.payoffEnabled ? Math.round(d.payoffAmount * 100) / 100 : null,
+    payoffBarcode: d.payoffEnabled ? d.payoffBarcode?.replace(/\s+/g, " ").trim() || null : null,
+    payoffDueDate: d.payoffEnabled && d.payoffDueDate ? parseDateInput(d.payoffDueDate) : null,
   };
 }
 
@@ -334,6 +366,10 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     installmentsInfoCount: pre.installmentsInfoCount,
     installmentsInfoAmount: pre.installmentsInfoAmount,
     notes: pre.notes,
+    payoffBank: pre.payoffBank,
+    payoffAmount: pre.payoffAmount,
+    payoffBarcode: pre.payoffBarcode,
+    payoffDueDate: pre.payoffDueDate,
   });
 
   await prisma.preSale.update({

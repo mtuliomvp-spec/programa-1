@@ -60,6 +60,8 @@ export type IntermediationContractData = {
   financerName: string | null;
   // Parcelamento informado ao comprador (só informativo, preenchido na venda).
   installmentsInfo: { count: number; amount: number } | null;
+  // Quitação do financiamento anterior do veículo com parte do valor financiado.
+  payoff?: { bank: string | null; amount: number; barcode: string | null; dueDate: Date | null } | null;
   backHref: string;
 };
 
@@ -281,6 +283,36 @@ export default function IntermediationContractDocument(d: IntermediationContract
             </p>
           ) : null}
         </Clausula>
+
+        {d.payoff && d.payoff.amount > 0 ? (
+          <Clausula n={++n} titulo="Da quitação do financiamento anterior">
+            <p>
+              As partes declaram que o veículo objeto deste contrato encontra-se{" "}
+              <strong>financiado junto a {d.payoff.bank || "instituição financeira credora"}</strong> e que, do
+              valor {d.refinancing ? "financiado" : "devolvido ao(à) COMPRADOR(A)"}, a importância de{" "}
+              <strong>{formatCurrency(d.payoff.amount)}</strong> será destinada à{" "}
+              <strong>quitação desse financiamento anterior</strong>, mediante pagamento do boleto emitido
+              pelo banco credor
+              {d.payoff.dueDate ? <>, com vencimento em <strong>{formatDate(d.payoff.dueDate)}</strong></> : null}
+              {d.refinancing
+                ? ", a cargo do(a) FINANCIADO(A)."
+                : ", efetuado pela INTERMEDIADORA por conta e ordem do(a) COMPRADOR(A), abatendo-se esse valor da devolução prevista na cláusula anterior."}
+            </p>
+            {d.payoff.barcode ? (
+              <p className="rounded-md bg-slate-50 p-2 text-xs">
+                <span className="text-slate-500">Código de barras / linha digitável do boleto:</span>{" "}
+                <strong className="break-all font-mono">{d.payoff.barcode}</strong>
+              </p>
+            ) : null}
+            <p>
+              A baixa do gravame e a regularização do veículo junto ao banco credor e ao órgão de trânsito
+              permanecem de responsabilidade{" "}
+              {d.refinancing ? "do(a) FINANCIADO(A)" : "do(a) VENDEDOR(A) e do(a) COMPRADOR(A)"}, não
+              respondendo a INTERMEDIADORA por eventual saldo residual, encargos ou diferença de valor
+              apurada pelo banco credor após a data do boleto.
+            </p>
+          </Clausula>
+        ) : null}
 
         <Clausula n={++n} titulo="Do foro">
           <p>

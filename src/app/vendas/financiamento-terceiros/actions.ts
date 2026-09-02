@@ -12,8 +12,11 @@ import {
   createIntermediationPreSale,
   updateIntermediationPreSale,
   convertIntermediationPreSale,
+  PAYOFF_BOLETO_PREFIX,
   type IntermediationFormState,
 } from "./core";
+
+const PAYOFF_BOLETO_MAX_BYTES = 15 * 1024 * 1024;
 
 /**
  * Gera a pré-venda (ficha) ou salva alterações quando há `preSaleId`. Não
@@ -45,6 +48,28 @@ export async function createIntermediationPreSaleAction(
       : await createIntermediationPreSale(parsed.data);
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Não foi possível salvar a pré-venda." };
+  }
+
+  // Boleto da quitação do financiamento anterior: fica anexado ao veículo de
+  // terceiro (mesmo prontuário da foto do cliente), com o nome do banco e o
+  // valor na descrição — é por ela que a ficha e a operação o encontram.
+  const boleto = formData.get("payoffBoleto");
+  if (parsed.data.payoffEnabled && boleto instanceof File && boleto.size > 0) {
+    if (boleto.size > PAYOFF_BOLETO_MAX_BYTES) {
+      return { error: "O boleto é muito grande (máximo 15 MB). A pré-venda foi salva sem o anexo." };
+    }
+    const pre = await prisma.preSale.findUniqueOrThrow({ where: { id }, select: { vehicleId: true } });
+    await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId: pre.vehicleId,
+        kind: "DOCUMENTO",
+        description: `${PAYOFF_BOLETO_PREFIX} — ${parsed.data.payoffBank?.trim() || "banco"} · R$ ${parsed.data.payoffAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+        filename: boleto.name || "boleto-quitacao.pdf",
+        mimeType: boleto.type || "application/octet-stream",
+        size: boleto.size,
+        data: Buffer.from(await boleto.arrayBuffer()),
+      },
+    });
   }
 
   revalidatePath("/vendas/financiamento-terceiros");

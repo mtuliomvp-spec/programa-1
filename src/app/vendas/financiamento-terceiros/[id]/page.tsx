@@ -5,6 +5,8 @@ import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { cancelIntermediationAction } from "../actions";
+import { listPayoffBoletos } from "../core";
+import PayoffCard from "../PayoffCard";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +37,7 @@ export default async function FinanciamentoTerceirosDetailPage({
     include: { vehicle: true, customer: true, financerAccount: true },
   });
   if (!sale || sale.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
+  const boletos = await listPayoffBoletos(sale.vehicleId);
 
   const referrals = parseReferrals(sale.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
@@ -126,6 +129,12 @@ export default async function FinanciamentoTerceirosDetailPage({
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
+
+      <PayoffCard
+        className="mt-4"
+        payoff={{ bank: sale.payoffBank, amount: sale.payoffAmount, barcode: sale.payoffBarcode, dueDate: sale.payoffDueDate }}
+        boletos={boletos}
+      />
 
       <Card className="mt-4">
         <CardHeader

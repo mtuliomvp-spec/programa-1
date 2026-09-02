@@ -65,6 +65,12 @@ export type IntermediationInitial = {
   installmentsInfoCount?: number;
   installmentsInfoAmount?: number;
   notes?: string;
+  payoffBank?: string;
+  payoffAmount?: number;
+  payoffBarcode?: string;
+  payoffDueDate?: string;
+  /** Boletos já anexados (edição) — só para mostrar que existem. */
+  payoffBoletos?: { id: string; filename: string }[];
 };
 
 const initialState: IntermediationFormState = {};
@@ -120,6 +126,8 @@ export default function IntermediationForm({
   const [returnLevel, setReturnLevel] = useState(initial?.returnLevel ?? 0);
   const [takeReturnCommission, setTakeReturnCommission] = useState(Boolean(initial?.takeReturnCommission));
   const [referrals, setReferrals] = useState<{ name: string; amount: number }[]>(initial?.referrals ?? []);
+  const [payoffEnabled, setPayoffEnabled] = useState(Boolean(initial?.payoffAmount && initial.payoffAmount > 0));
+  const [payoffAmount, setPayoffAmount] = useState(initial?.payoffAmount ?? 0);
 
   const financer = financers.find((f) => f.id === financerId) || null;
 
@@ -646,6 +654,80 @@ export default function IntermediationForm({
             <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
           </Field>
         </div>
+      </fieldset>
+
+      {/* Quitação do financiamento anterior: parte do valor financiado paga o
+          boleto do banco credor do veículo. Só informativo (consta no contrato e
+          na ficha); o boleto fica anexado ao veículo de terceiro. */}
+      <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-700">
+          Quitação do financiamento anterior (opcional)
+        </legend>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="payoffEnabled"
+            value="true"
+            checked={payoffEnabled}
+            onChange={(e) => setPayoffEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Parte do valor financiado será usada para quitar o financiamento anterior do veículo
+        </label>
+        {payoffEnabled ? (
+          <>
+            <p className="text-xs text-slate-500">
+              Consta no contrato de intermediação: banco credor, valor, código de barras e vencimento do
+              boleto. {refinancing
+                ? "No refinanciamento a quitação é feita pelo financiado com o valor liberado."
+                : "A loja paga o boleto com essa parte da devolução (D), em vez de devolvê-la ao comprador."}
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Banco credor (onde o veículo está financiado)" required>
+                <BankInput name="payoffBank" defaultValue={initial?.payoffBank ?? ""} placeholder="Ex.: Banco C6" />
+              </Field>
+              <Field label="Valor da quitação (R$)" required>
+                <MoneyInput
+                  name="payoffAmount"
+                  defaultValue={initial?.payoffAmount ?? null}
+                  onValueChange={setPayoffAmount}
+                  placeholder="Valor do boleto de quitação"
+                />
+              </Field>
+              <Field label="Código de barras / linha digitável">
+                <Input
+                  name="payoffBarcode"
+                  defaultValue={initial?.payoffBarcode ?? ""}
+                  placeholder="33690.00009 00000.010330 35036.240535 7 15560005331584"
+                  inputMode="numeric"
+                />
+              </Field>
+              <Field label="Vencimento do boleto">
+                <Input type="date" name="payoffDueDate" defaultValue={initial?.payoffDueDate ?? ""} />
+              </Field>
+              <Field label="Arquivo do boleto (PDF ou imagem)">
+                <input
+                  type="file"
+                  name="payoffBoleto"
+                  accept="application/pdf,image/*"
+                  className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                />
+                {initial?.payoffBoletos?.length ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Já anexado: {initial.payoffBoletos.map((b) => b.filename).join(", ")}. Enviar outro
+                    arquivo acrescenta, não substitui.
+                  </p>
+                ) : null}
+              </Field>
+            </div>
+            {!refinancing && payoffAmount > refund && refund > 0 ? (
+              <p className="text-xs text-amber-700">
+                A quitação ({formatCurrency(payoffAmount)}) é maior que a devolução ao comprador (
+                {formatCurrency(refund)}). Confira os valores.
+              </p>
+            ) : null}
+          </>
+        ) : null}
       </fieldset>
 
       {/* Vendedor / comissões */}
