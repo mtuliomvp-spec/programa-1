@@ -12,6 +12,7 @@ import {
   isNewArrival,
 } from "./shared";
 import ShareButton from "./ShareButton";
+import ContatoWhatsApp from "./ContatoWhatsApp";
 import RepasseTag from "./RepasseTag";
 import ThemeToggle from "./ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
@@ -331,14 +332,14 @@ export default async function VitrinePage({
                         Ver detalhes
                       </Link>
                       {zap ? (
-                        <a
+                        // Conta a visita (com contato) mesmo sem abrir o anúncio.
+                        <ContatoWhatsApp
                           href={zap}
-                          target="_blank"
-                          rel="noopener noreferrer"
+                          alvo={v.id}
                           className="inline-flex h-9 flex-1 items-center justify-center gap-1 rounded-lg bg-emerald-600 text-sm font-semibold text-white hover:bg-emerald-700"
                         >
                           💬 Tenho interesse
-                        </a>
+                        </ContatoWhatsApp>
                       ) : null}
                     </div>
                   </div>

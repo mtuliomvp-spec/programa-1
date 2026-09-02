@@ -15,15 +15,16 @@ import {
 type Photo = { id: string; filename: string; createdAt: Date | string };
 
 /**
- * Quantas pessoas abriram o anúncio deste carro na vitrine. Fica junto do
- * botão de postar porque é a resposta da pergunta que vem logo depois de
+ * Quantas pessoas abriram o anúncio deste carro na vitrine (ou tocaram em
+ * "Tenho interesse" direto no card) e quantas chamaram no WhatsApp. Fica junto
+ * do botão de postar porque é a resposta da pergunta que vem logo depois de
  * publicar: "está aparecendo para alguém?".
  */
 function VisitasDoAnuncio({
   visitas,
   published,
 }: {
-  visitas: { total: number; ultimos7: number; pessoas: number };
+  visitas: { total: number; ultimos7: number; pessoas: number; contatos: number };
   published: boolean;
 }) {
   if (visitas.total === 0) {
@@ -41,6 +42,12 @@ function VisitasDoAnuncio({
       <span className="text-xs text-slate-500">
         {visitas.ultimos7} nos últimos 7 dias · {visitas.pessoas} pessoa
         {visitas.pessoas === 1 ? "" : "s"} diferente{visitas.pessoas === 1 ? "" : "s"}
+      </span>
+      <span
+        className={`text-xs font-medium ${visitas.contatos > 0 ? "text-emerald-700" : "text-slate-500"}`}
+        title="Visitantes que tocaram em “Tenho interesse” / WhatsApp"
+      >
+        💬 {visitas.contatos} contato{visitas.contatos === 1 ? "" : "s"} pelo WhatsApp
       </span>
       {!published ? (
         <span className="text-xs text-amber-700">anúncio fora do ar agora</span>
@@ -69,7 +76,7 @@ export default function VehiclePhotos({
   published: boolean;
   inStock: boolean;
   /** Visitas ao anúncio na vitrine (não conta a equipe logada). */
-  visitas: { total: number; ultimos7: number; pessoas: number };
+  visitas: { total: number; ultimos7: number; pessoas: number; contatos: number };
   canManage?: boolean;
   canPublish?: boolean;
 }) {
