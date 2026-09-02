@@ -9,6 +9,7 @@ import {
   whatsappLink,
   vehicleTitle,
   displayName,
+  displayVersion,
   isNewArrival,
 } from "./shared";
 import ShareButton from "./ShareButton";
@@ -312,7 +313,7 @@ export default async function VitrinePage({
                       <p className="truncate font-semibold text-slate-900 dark:text-white">{displayName(v.brand, v.model)}</p>
                       <p className="mt-0.5 truncate text-xs text-slate-500 dark:text-slate-400">
                         {[
-                          v.version ? displayName(v.version) : null,
+                          displayVersion(v.brand, v.model, v.version),
                           `${v.manufactureYear}/${v.modelYear}`,
                           `${v.km.toLocaleString("pt-BR")} km`,
                           v.fuel,

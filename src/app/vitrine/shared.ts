@@ -152,33 +152,12 @@ export function whatsappLink(phone: string | null | undefined, text: string): st
   return `https://wa.me/${full}?text=${encodeURIComponent(text)}`;
 }
 
-// Siglas de marca/modelo que ficam em MAIÚSCULAS na exibição.
-const SIGLAS = new Set(["vw", "gm", "bmw", "byd", "jac", "gwm", "ram", "kia", "mini", "jeep", "ma"]);
-const MINUSCULAS = new Set(["de", "da", "do", "e"]);
+// Nome de exibição (marca/modelo/versão sem repetição): funções puras em
+// src/lib/vehicle-display.ts; reexportadas aqui para quem já importa da vitrine.
+export { displayName, displayVersion } from "@/lib/vehicle-display";
+import { displayName } from "@/lib/vehicle-display";
 
-/**
- * Nome de exibição padronizado para a vitrine: "vw polo track ma" →
- * "VW Polo Track MA". Siglas conhecidas e palavras com número ficam em
- * maiúsculas (HB20, T-CROSS não: só o dígito força caixa alta da palavra
- * curta); o resto vira Inicial Maiúscula. Não altera o dado cadastrado.
- */
-export function displayName(...parts: (string | null | undefined)[]): string {
-  const raw = parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
-  return raw
-    .split(" ")
-    .map((w) => {
-      const low = w.toLowerCase();
-      if (SIGLAS.has(low)) return w.toUpperCase();
-      if (MINUSCULAS.has(low)) return low;
-      if (/\d/.test(w) && w.length <= 4) return w.toUpperCase(); // hb20, s10, c4
-      return w
-        .split("-")
-        .map((p) => (p ? p[0].toUpperCase() + p.slice(1).toLowerCase() : p))
-        .join("-");
-    })
-    .join(" ");
-}
-
+/** Título do anúncio: "VW Polo Track MA 2024/2025" (versão sem repetir o modelo). */
 export function vehicleTitle(v: ShowroomVehicle): string {
   return `${displayName(v.brand, v.model, v.version)} ${v.manufactureYear}/${v.modelYear}`;
 }

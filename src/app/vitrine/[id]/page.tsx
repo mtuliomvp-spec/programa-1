@@ -12,6 +12,7 @@ import {
   whatsappLink,
   vehicleTitle,
   displayName,
+  displayVersion,
   similarVehicles,
 } from "../shared";
 import VitrineGallery from "./VitrineGallery";
@@ -137,6 +138,8 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
 
   const nome = company?.nomeFantasia || "MVP Veículos";
   const titulo = vehicleTitle(v);
+  // Versão só com o que acrescenta ao modelo (cadastro "Polo Track MA" + "MA" → nada).
+  const versao = displayVersion(v.brand, v.model, v.version);
   const parecidos = similarVehicles(all, v);
   // Campos ocultos do anúncio (gerenciados na ficha; vazio = mostra tudo).
   const hidden = new Set(v.adHiddenFields);
@@ -166,7 +169,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
       <main className="mx-auto max-w-4xl px-4 py-6">
         <h1 className="text-2xl font-bold text-slate-900 dark:text-white">{displayName(v.brand, v.model)}</h1>
         <p className="mt-0.5 text-sm text-slate-500 dark:text-slate-400">
-          {[v.version ? displayName(v.version) : null, `${v.manufactureYear}/${v.modelYear}`]
+          {[displayVersion(v.brand, v.model, v.version), `${v.manufactureYear}/${v.modelYear}`]
             .filter(Boolean)
             .join(" · ")}
         </p>
@@ -261,7 +264,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           {!hidden.has("cor") && v.color ? <Spec label="Cor" value={v.color} /> : null}
           {!hidden.has("combustivel") && v.fuel ? <Spec label="Combustível" value={v.fuel} /> : null}
           {!hidden.has("cambio") && v.transmission ? <Spec label="Câmbio" value={v.transmission} /> : null}
-          {!hidden.has("versao") && v.version ? <Spec label="Versão" value={v.version} /> : null}
+          {!hidden.has("versao") && versao ? <Spec label="Versão" value={versao} /> : null}
         </div>
 
         {/* Quem não fechou com este, vê outros na mesma faixa antes de sair */}
