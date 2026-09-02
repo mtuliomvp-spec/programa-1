@@ -7,7 +7,8 @@ import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { computeReturn } from "@/lib/retorno";
 import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
 import PayoffCard from "../../PayoffCard";
-import { listPayoffBoletos } from "../../core";
+import CrlvLine from "../../CrlvLine";
+import { listPayoffBoletos, listIntermediationCrlvs } from "../../core";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -41,13 +42,14 @@ export default async function IntermediationPreSalePage({
   if (pre.status === "CONVERTIDA" && pre.convertedSaleId) {
     redirect(`/vendas/financiamento-terceiros/${pre.convertedSaleId}`);
   }
-  const [vehicle, customer, financerAccount, boletos] = await Promise.all([
+  const [vehicle, customer, financerAccount, boletos, crlvs] = await Promise.all([
     prisma.vehicle.findUnique({ where: { id: pre.vehicleId } }),
     prisma.customer.findUnique({ where: { id: pre.customerId } }),
     pre.financerAccountId
       ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId } })
       : Promise.resolve(null),
     listPayoffBoletos(pre.vehicleId),
+    listIntermediationCrlvs(pre.vehicleId),
   ]);
   // Veículo/cliente podem não existir mais (ex.: apagados num "zerar dados").
   // Ainda assim a ficha precisa abrir para poder ser cancelada.
@@ -137,6 +139,7 @@ export default async function IntermediationPreSalePage({
           <p><span className="text-slate-500">Financeira:</span> {financerAccount?.name || "—"}</p>
           <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
           <p><span className="text-slate-500">Banco do comprador:</span> {pre.buyerBankName || "—"} {pre.buyerBankAgency ? `· Ag ${pre.buyerBankAgency}` : ""} {pre.buyerBankAccount ? `· Cc ${pre.buyerBankAccount}` : ""}</p>
+          <CrlvLine crlvs={crlvs} />
         </div>
       </Card>
 

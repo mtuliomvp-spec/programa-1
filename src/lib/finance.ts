@@ -994,9 +994,12 @@ export async function createIntermediationVehicle(input: {
   salePrice?: number | null;
   entryDate: Date;
   notes?: string | null;
+  /** Em nome de quem está o documento (proprietário lido do CRLV). */
+  docOwnerName?: string | null;
 }) {
   return prisma.vehicle.create({
     data: {
+      docOwnerName: input.docOwnerName || null,
       brand: input.brand,
       model: input.model,
       version: input.version || null,

@@ -13,7 +13,7 @@ import { lookupCepAction } from "@/app/cep-actions";
 import { findPersonByDocument } from "@/app/person-lookup";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel } from "@/lib/retorno";
-import { createIntermediationPreSaleAction } from "./actions";
+import { createIntermediationPreSaleAction, readIntermediationCrlvAction } from "./actions";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import type { IntermediationFormState } from "./core";
 
@@ -71,6 +71,8 @@ export type IntermediationInitial = {
   payoffDueDate?: string;
   /** Boletos já anexados (edição) — só para mostrar que existem. */
   payoffBoletos?: { id: string; filename: string }[];
+  /** CRLVs já anexados (edição). */
+  crlvs?: { id: string; filename: string; description: string }[];
 };
 
 const initialState: IntermediationFormState = {};
@@ -96,6 +98,9 @@ export default function IntermediationForm({
   const [ownerMsg, setOwnerMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [cepLookup, startCepLookup] = useTransition();
   const [cepMsg, setCepMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [crlvReading, startCrlvRead] = useTransition();
+  const [crlvMsg, setCrlvMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  const [crlvExercicio, setCrlvExercicio] = useState("");
 
   const [refinancing, setRefinancing] = useState(Boolean(initial?.refinancing));
   const [customerList, setCustomerList] = useState<Customer[]>(customers);
@@ -196,6 +201,67 @@ export default function IntermediationForm({
     });
   }
 
+  /**
+   * CRLV anexado: a IA lê o documento e preenche o PROPRIETÁRIO (nome e
+   * CPF/CNPJ — o documento é a verdade, então sobrescreve) e o VEÍCULO (placa,
+   * marca/modelo, anos, cor, combustível, chassi, RENAVAM). Versão, KM e câmbio
+   * só entram quando vazios (o CRLV não os traz, ou traz incompletos). Depois
+   * tenta trazer telefone/endereço de um cadastro já existente pelo CPF/CNPJ.
+   */
+  function handleCrlvChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCrlvMsg(null);
+    startCrlvRead(async () => {
+      const fd = new FormData();
+      fd.set("file", file);
+      const r = await readIntermediationCrlvAction(fd);
+      if (!r.ok) {
+        setCrlvMsg({ tone: "err", text: r.error });
+        return;
+      }
+      const d = r.data;
+      const preenchidos: string[] = [];
+      const placaAtual = readField("plate").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+      if (d.placa && placaAtual && placaAtual !== d.placa) {
+        setCrlvMsg({
+          tone: "err",
+          text: `Este CRLV é da placa ${d.placa}, mas o formulário está com ${placaAtual}. Nada foi preenchido — confira o arquivo.`,
+        });
+        return;
+      }
+      if (d.proprietario) {
+        setField("ownerName", d.proprietario);
+        setOwnerNameLive(d.proprietario);
+        preenchidos.push("proprietário");
+      }
+      if (d.cpfCnpj) {
+        setField("ownerDocument", d.cpfCnpj);
+        preenchidos.push("CPF/CNPJ");
+      }
+      if (d.placa) setField("plate", d.placa);
+      if (d.marca) setField("brand", d.marca);
+      if (d.modelo) setField("model", d.modelo);
+      if (d.anoFabricacao) setField("manufactureYear", String(d.anoFabricacao));
+      if (d.anoModelo) setField("modelYear", String(d.anoModelo));
+      if (d.cor) setField("color", d.cor);
+      if (d.combustivel) setField("fuel", d.combustivel);
+      if (d.chassi) setField("chassi", d.chassi);
+      if (d.renavam) setField("renavam", d.renavam);
+      if (d.transmissao && !readField("transmission")) setField("transmission", d.transmissao);
+      if (d.placa || d.marca || d.chassi) preenchidos.push("veículo");
+      setCrlvExercicio(d.exercicio ?? "");
+      setCrlvMsg({
+        tone: "ok",
+        text: preenchidos.length
+          ? `CRLV lido: ${preenchidos.join(", ")} preenchido(s). Confira e complete telefone e endereço.`
+          : "CRLV lido, mas não foi possível identificar os dados. Preencha à mão.",
+      });
+      // Cadastro já existente com esse CPF/CNPJ: traz telefone e endereço.
+      if (d.cpfCnpj) handleOwnerDocBlur();
+    });
+  }
+
   // Proprietário pessoa jurídica: busca nome/telefone/endereço pelo CNPJ.
   function handleOwnerCnpjLookup() {
     const doc = readField("ownerDocument");
@@ -293,6 +359,36 @@ export default function IntermediationForm({
         <legend className="px-1 text-sm font-semibold text-slate-700">
           Proprietário do documento (Vendedor)
         </legend>
+        {/* CRLV: anexar → a IA lê e preenche proprietário e veículo. O arquivo
+            segue no formulário e é anexado ao veículo de terceiro ao salvar. */}
+        <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+          <Field label="CRLV do veículo (PDF ou foto) — lê e preenche o proprietário e o veículo">
+            <input
+              type="file"
+              name="crlvFile"
+              accept="application/pdf,image/*"
+              onChange={handleCrlvChange}
+              disabled={crlvReading}
+              className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+            />
+            <input type="hidden" name="crlvExercicio" value={crlvExercicio} />
+            {crlvReading ? (
+              <p className="mt-1 text-xs text-slate-500">Lendo o CRLV… nome, CPF/CNPJ e dados do veículo vêm preenchidos.</p>
+            ) : null}
+            {crlvMsg ? (
+              <p className={`mt-1 text-xs font-medium ${crlvMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
+                {crlvMsg.text}
+              </p>
+            ) : null}
+            {!crlvReading && !crlvMsg ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Ao anexar, o sistema lê o documento e preenche nome e CPF/CNPJ do proprietário, placa,
+                marca/modelo, anos, cor, combustível, chassi e RENAVAM. O CRLV fica anexado ao veículo.
+                {initial?.crlvs?.length ? ` Já anexado: ${initial.crlvs.map((c) => c.filename).join(", ")}.` : ""}
+              </p>
+            ) : null}
+          </Field>
+        </div>
         {customerList.length > 0 ? (
           <Field label="Usar um cliente já cadastrado (opcional)">
             <Select value={ownerPickId} onChange={(e) => handlePickOwnerCustomer(e.target.value)}>
