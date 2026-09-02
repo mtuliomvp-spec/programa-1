@@ -6,10 +6,16 @@ import { prisma } from "@/lib/prisma";
 /**
  * Visitas ao anúncio público (vitrine).
  *
- * O que conta como visita: a abertura da página do anúncio por um VISITANTE —
- * quem está logado no sistema (a própria equipe conferindo o anúncio) não é
+ * O que conta como visita: um VISITANTE abrir a página do anúncio OU tocar em
+ * "Tenho interesse" (WhatsApp) direto no card da vitrine — esse segundo caminho
+ * não passa pela página do anúncio, e mesmo assim é interesse real no carro.
+ * Quem está logado no sistema (a própria equipe conferindo o anúncio) não é
  * contado, senão o número diria mais sobre a loja do que sobre o interesse do
  * público.
+ *
+ * Contato: a visita em que o visitante tocou no WhatsApp. É a mesma linha da
+ * visita, marcada — assim "3 visitas, 1 contato" quer dizer três pessoas/abertu-
+ * ras e uma delas chamou a loja, sem contar a mesma pessoa duas vezes.
  *
  * Quem é o visitante: um identificador anônimo sorteado e guardado num cookie
  * do navegador dele. Não é IP nem nada que identifique a pessoa; serve só para
@@ -22,9 +28,9 @@ const UM_ANO = 60 * 60 * 24 * 365;
 /** Recarregar a página dentro desta janela não conta de novo. */
 const JANELA_MINUTOS = 30;
 
-export type ResumoVisitas = { total: number; ultimos7: number; pessoas: number };
+export type ResumoVisitas = { total: number; ultimos7: number; pessoas: number; contatos: number };
 
-export const VISITAS_ZERADAS: ResumoVisitas = { total: 0, ultimos7: 0, pessoas: 0 };
+export const VISITAS_ZERADAS: ResumoVisitas = { total: 0, ultimos7: 0, pessoas: 0, contatos: 0 };
 
 /** Identificador anônimo do visitante; cria e grava no cookie na primeira vez. */
 async function idDoVisitante(): Promise<string> {
@@ -43,11 +49,16 @@ async function idDoVisitante(): Promise<string> {
 }
 
 /**
- * Registra a abertura do anúncio. `alvo` é o id da página — o próprio servidor
+ * Registra a visita ao anúncio. `alvo` é o id da página — o próprio servidor
  * descobre se é veículo ou avaliação (e ignora o que não estiver no ar), para
  * ninguém inflar o contador mandando ids à toa.
+ *
+ * `contato = true` quando o visitante tocou no WhatsApp: se ele já tinha uma
+ * visita recente (abriu o anúncio e depois chamou), essa visita é marcada como
+ * contato em vez de virar uma segunda visita; se não tinha (tocou direto no
+ * card da vitrine), nasce uma visita já marcada.
  */
-export async function registrarVisita(alvo: string): Promise<void> {
+export async function registrarVisita(alvo: string, contato = false): Promise<void> {
   const id = String(alvo || "").trim();
   if (!id) return;
 
@@ -66,22 +77,27 @@ export async function registrarVisita(alvo: string): Promise<void> {
 
   const recente = await prisma.showroomVisit.findFirst({
     where: { ...alvoWhere, visitor, viewedAt: { gte: desde } },
-    select: { id: true },
+    select: { id: true, contact: true },
   });
-  if (recente) return;
+  if (recente) {
+    if (contato && !recente.contact) {
+      await prisma.showroomVisit.update({ where: { id: recente.id }, data: { contact: true } });
+    }
+    return;
+  }
 
-  await prisma.showroomVisit.create({ data: { ...alvoWhere, visitor } });
+  await prisma.showroomVisit.create({ data: { ...alvoWhere, visitor, contact: contato } });
 }
 
 function seteDiasAtras(): Date {
   return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 }
 
-/** Resumo de um anúncio: total, últimos 7 dias e pessoas diferentes. */
+/** Resumo de um anúncio: total, últimos 7 dias, pessoas diferentes e contatos. */
 export async function resumoDeVisitas(
   alvo: { vehicleId: string } | { appraisalId: string },
 ): Promise<ResumoVisitas> {
-  const [total, ultimos7, distintos] = await Promise.all([
+  const [total, ultimos7, distintos, contatos] = await Promise.all([
     prisma.showroomVisit.count({ where: alvo }),
     prisma.showroomVisit.count({ where: { ...alvo, viewedAt: { gte: seteDiasAtras() } } }),
     prisma.showroomVisit.findMany({
@@ -89,21 +105,22 @@ export async function resumoDeVisitas(
       select: { visitor: true },
       distinct: ["visitor"],
     }),
+    prisma.showroomVisit.count({ where: { ...alvo, contact: true } }),
   ]);
-  return { total, ultimos7, pessoas: distintos.length };
+  return { total, ultimos7, pessoas: distintos.length, contatos };
 }
 
+export type VisitasResumidas = { total: number; ultimos7: number; contatos: number };
+
 /**
- * Visitas de vários veículos de uma vez (listagem do estoque): duas consultas
+ * Visitas de vários veículos de uma vez (listagem do estoque): três consultas
  * agregadas, em vez de uma por linha.
  */
-export async function visitasPorVeiculo(
-  ids: string[],
-): Promise<Map<string, { total: number; ultimos7: number }>> {
-  const mapa = new Map<string, { total: number; ultimos7: number }>();
+export async function visitasPorVeiculo(ids: string[]): Promise<Map<string, VisitasResumidas>> {
+  const mapa = new Map<string, VisitasResumidas>();
   if (ids.length === 0) return mapa;
 
-  const [totais, recentes] = await Promise.all([
+  const [totais, recentes, contatos] = await Promise.all([
     prisma.showroomVisit.groupBy({
       by: ["vehicleId"],
       where: { vehicleId: { in: ids } },
@@ -114,16 +131,22 @@ export async function visitasPorVeiculo(
       where: { vehicleId: { in: ids }, viewedAt: { gte: seteDiasAtras() } },
       _count: { _all: true },
     }),
+    prisma.showroomVisit.groupBy({
+      by: ["vehicleId"],
+      where: { vehicleId: { in: ids }, contact: true },
+      _count: { _all: true },
+    }),
   ]);
 
+  const pega = (id: string) => mapa.get(id) ?? { total: 0, ultimos7: 0, contatos: 0 };
   for (const t of totais) {
-    if (!t.vehicleId) continue;
-    mapa.set(t.vehicleId, { total: t._count._all, ultimos7: 0 });
+    if (t.vehicleId) mapa.set(t.vehicleId, { ...pega(t.vehicleId), total: t._count._all });
   }
   for (const r of recentes) {
-    if (!r.vehicleId) continue;
-    const atual = mapa.get(r.vehicleId) ?? { total: 0, ultimos7: 0 };
-    mapa.set(r.vehicleId, { ...atual, ultimos7: r._count._all });
+    if (r.vehicleId) mapa.set(r.vehicleId, { ...pega(r.vehicleId), ultimos7: r._count._all });
+  }
+  for (const c of contatos) {
+    if (c.vehicleId) mapa.set(c.vehicleId, { ...pega(c.vehicleId), contatos: c._count._all });
   }
   return mapa;
 }

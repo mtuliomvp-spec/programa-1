@@ -763,6 +763,8 @@ model ShowroomVisit {
   appraisal   VehicleAppraisal? @relation(fields: [appraisalId], references: [id], onDelete: Cascade)
   visitor     String
   viewedAt    DateTime          @default(now())
+  /// O visitante tocou em "Tenho interesse"/WhatsApp (contato com a loja).
+  contact     Boolean           @default(false)
 
   @@index([vehicleId, viewedAt])
   @@index([appraisalId, viewedAt])

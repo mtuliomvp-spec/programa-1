@@ -24,7 +24,7 @@ export default function AppraisalShowcase({
   published: boolean;
   repassePrice: number | null;
   /** Visitas ao anúncio de repasse (não conta a equipe logada). */
-  visitas: { total: number; ultimos7: number; pessoas: number };
+  visitas: { total: number; ultimos7: number; pessoas: number; contatos: number };
 }) {
   const router = useRouter();
   const [pending, start] = useTransition();
@@ -108,6 +108,12 @@ export default function AppraisalShowcase({
           <span className="text-xs text-slate-500">
             {visitas.ultimos7} nos últimos 7 dias · {visitas.pessoas} pessoa
             {visitas.pessoas === 1 ? "" : "s"} diferente{visitas.pessoas === 1 ? "" : "s"}
+          </span>
+          <span
+            className={`text-xs font-medium ${visitas.contatos > 0 ? "text-emerald-700" : "text-slate-500"}`}
+            title="Visitantes que tocaram em “Tenho interesse” / WhatsApp"
+          >
+            💬 {visitas.contatos} contato{visitas.contatos === 1 ? "" : "s"} pelo WhatsApp
           </span>
         </div>
       ) : published ? (

@@ -295,6 +295,7 @@ export default async function EstoquePage({
     // Visitas ao anúncio na vitrine (0 para quem nunca foi publicado).
     visitas: visitas.get(v.id)?.total ?? 0,
     visitas7: visitas.get(v.id)?.ultimos7 ?? 0,
+    contatos: visitas.get(v.id)?.contatos ?? 0,
     receivedInTrade: v.tradeInForSale != null,
     tradeOrigin: v.tradeInForSale
       ? `Recebido em troca na venda #${String(v.tradeInForSale.orderNumber).padStart(4, "0")}` +
@@ -454,7 +455,11 @@ export default async function EstoquePage({
               const b = vitrineBadge(v.published, v.status, v.preSaleNumber != null);
               return <Badge tone={b.tone}>{b.label}</Badge>;
             })()}
-            {v.visitas > 0 ? <Badge tone="info">👁️ {v.visitas} visitas</Badge> : null}
+            {v.visitas > 0 ? (
+              <Badge tone="info">
+                👁️ {v.visitas} visitas{v.contatos > 0 ? ` · 💬 ${v.contatos}` : ""}
+              </Badge>
+            ) : null}
             <Badge tone={agingTone(v.daysInStock)}>{v.daysInStock} dias em estoque</Badge>
           </div>
         ) : (
@@ -522,10 +527,13 @@ export default async function EstoquePage({
       <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
       <Td className="text-right tabular-nums">
         {v.visitas > 0 ? (
-          <span title="Aberturas do anúncio na vitrine">
+          <span title="Visitas ao anúncio na vitrine · contatos pelo WhatsApp">
             {v.visitas}
             {v.visitas7 > 0 ? (
               <span className="block text-[11px] text-slate-400">{v.visitas7} em 7 dias</span>
+            ) : null}
+            {v.contatos > 0 ? (
+              <span className="block text-[11px] font-medium text-emerald-700">💬 {v.contatos}</span>
             ) : null}
           </span>
         ) : (

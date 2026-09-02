@@ -1,4 +1,5 @@
 import type { CompanySettings } from "@prisma/client";
+import ContatoWhatsApp from "./ContatoWhatsApp";
 
 /** Peças compartilhadas das páginas públicas da vitrine (tema, rodapé, zap flutuante). */
 
@@ -100,17 +101,23 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
   );
 }
 
-/** Botão de WhatsApp fixo no canto (o do topo some quando a página rola). */
-export function FloatingWhatsApp({ href }: { href: string | null }) {
+/**
+ * Botão de WhatsApp fixo no canto (o do topo some quando a página rola).
+ * Com `alvo` (id do anúncio), o clique também marca a visita como contato.
+ */
+export function FloatingWhatsApp({ href, alvo }: { href: string | null; alvo?: string }) {
   if (!href) return null;
+  const classe =
+    "fixed bottom-5 right-5 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-3xl shadow-lg shadow-emerald-500/30 transition hover:scale-105 hover:bg-emerald-600 print:hidden";
+  if (alvo) {
+    return (
+      <ContatoWhatsApp href={href} alvo={alvo} ariaLabel="Falar no WhatsApp" className={classe}>
+        💬
+      </ContatoWhatsApp>
+    );
+  }
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      aria-label="Falar no WhatsApp"
-      className="fixed bottom-5 right-5 z-40 inline-flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500 text-3xl shadow-lg shadow-emerald-500/30 transition hover:scale-105 hover:bg-emerald-600 print:hidden"
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" aria-label="Falar no WhatsApp" className={classe}>
       💬
     </a>
   );

@@ -18,6 +18,7 @@ import VitrineGallery from "./VitrineGallery";
 import RegistraVisita from "./RegistraVisita";
 import FinancingSimulator from "./FinancingSimulator";
 import ShareButton from "../ShareButton";
+import ContatoWhatsApp from "../ContatoWhatsApp";
 import ThemeToggle from "../ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
 
@@ -209,14 +210,14 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
           </div>
           <div className="flex flex-wrap items-center gap-2">
             {zap ? (
-              <a
+              // Marca a visita desta pessoa como contato com a loja.
+              <ContatoWhatsApp
                 href={zap}
-                target="_blank"
-                rel="noopener noreferrer"
+                alvo={v.id}
                 className="inline-flex h-12 items-center gap-2 rounded-xl bg-emerald-600 px-5 text-base font-semibold text-white hover:bg-emerald-700"
               >
                 💬 Falar com a equipe {nome}
-              </a>
+              </ContatoWhatsApp>
             ) : (
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 Contato: {company?.phone || "telefone não informado"}
@@ -310,7 +311,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
         <PublicFooter company={company} />
       </main>
 
-      <FloatingWhatsApp href={zap} />
+      <FloatingWhatsApp href={zap} alvo={v.id} />
     </div>
   );
 }
