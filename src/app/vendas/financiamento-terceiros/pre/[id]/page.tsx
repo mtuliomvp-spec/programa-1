@@ -28,11 +28,11 @@ export default async function IntermediationPreSalePage({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ erro?: string }>;
+  searchParams: Promise<{ erro?: string; reaberta?: string }>;
 }) {
   await requireModule("vendas");
   const { id } = await params;
-  const { erro } = await searchParams;
+  const { erro, reaberta } = await searchParams;
 
   const pre = await prisma.preSale.findUnique({ where: { id } });
   if (!pre || pre.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
@@ -88,6 +88,13 @@ export default async function IntermediationPreSalePage({
       {erro ? (
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
           {erro}
+        </div>
+      ) : null}
+      {reaberta && !canceled ? (
+        <div className="mb-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
+          A operação foi <strong>cancelada</strong> e esta <strong>pré-venda foi reaberta</strong>. Os
+          lançamentos foram revertidos — ajuste o que precisar e registre de novo; nada precisa ser
+          redigitado.
         </div>
       ) : null}
       {canceled ? (

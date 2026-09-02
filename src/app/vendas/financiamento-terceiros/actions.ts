@@ -93,13 +93,36 @@ export async function cancelIntermediationPreSaleAction(preSaleId: string) {
   redirect("/vendas/financiamento-terceiros");
 }
 
-/** Cancela uma operação já concluída (reverte os lançamentos). */
+/**
+ * Cancela uma operação já concluída (reverte os lançamentos) e REABRE a
+ * pré-venda que a gerou — mesma regra da venda de estoque: a ficha volta a
+ * ABERTA com tudo preenchido (veículo, comprador, proprietário, financeira,
+ * valores, comissão), para ajustar e registrar de novo sem redigitar. Numa
+ * operação já cancelada (modo "corrigir resíduos") nada é reaberto.
+ */
 export async function cancelIntermediationAction(id: string) {
   await assertCan("vendas", "cancelar");
+  const before = await prisma.sale.findUnique({ where: { id }, select: { status: true } });
+  const pre = await prisma.preSale.findFirst({
+    where: { convertedSaleId: id, status: "CONVERTIDA", saleType: "FINANCIAMENTO_TERCEIROS" },
+    select: { id: true },
+  });
   await cancelVehicleSale(id);
+  let reopenedPreSaleId: string | null = null;
+  if (before?.status === "CONCLUIDA" && pre) {
+    await prisma.preSale.update({
+      where: { id: pre.id },
+      data: { status: "ABERTA", convertedSaleId: null },
+    });
+    reopenedPreSaleId = pre.id;
+  }
   revalidatePath("/vendas/financiamento-terceiros");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
+  if (reopenedPreSaleId) {
+    revalidatePath(`/vendas/financiamento-terceiros/pre/${reopenedPreSaleId}`);
+    redirect(`/vendas/financiamento-terceiros/pre/${reopenedPreSaleId}?reaberta=1`);
+  }
   redirect(`/vendas/financiamento-terceiros/${id}`);
 }
