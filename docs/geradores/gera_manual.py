@@ -138,6 +138,10 @@ story += tela(
         "não conta de novo.",
         "<b>Leitura automática:</b> anexe o contrato de compra, o CRLV ou a ATPV-e e use o botão de "
         "ler documento — os campos vazios são preenchidos e as divergências viram aviso.",
+        "<b>Transferência ao comprador:</b> no veículo vendido, anexar o CRLV já no nome do "
+        "comprador encerra sozinho o “Processo de transferência em aberto” e o aviso “No nome do "
+        "dono anterior”, registrando a data do documento na venda. Para um CRLV anexado antes, "
+        "use “Ler dados” ou confirme a data no cartão da venda.",
         "<b>Custos:</b> lance preparação, peças e serviços no cartão de custos; cada lançamento vira "
         "conta a pagar e entra no custo que aparece no lucro da venda.",
         "<b>Foto do cliente (antifraude):</b> no cartão de mesmo nome, “Fotografar cliente” usa a "

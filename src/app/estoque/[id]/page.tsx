@@ -29,6 +29,7 @@ import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { resumoDeVisitas } from "@/lib/showroom-visits";
+import { crlvNoNomeDoComprador, houseNameKeys, isOwnName } from "@/lib/doc-owner";
 import QRCode from "qrcode";
 import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
@@ -103,6 +104,20 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
   const visitas = await resumoDeVisitas({ vehicleId: vehicle.id });
+
+  // Vendido, sem a transferência marcada, mas com o CRLV mais recente já em
+  // nome de terceiro (o comprador): a ficha oferece confirmar com um toque.
+  const ultimoCrlv = vehicle.attachments.find((a) => a.kind === "CRLV") ?? null;
+  const crlvDoComprador =
+    vehicle.docOwnerName && vehicle.sale
+      ? crlvNoNomeDoComprador({
+          status: vehicle.status,
+          docOwnerName: vehicle.docOwnerName,
+          docOwnerIsOurs: isOwnName(vehicle.docOwnerName, await houseNameKeys()),
+          lastCrlvAt: ultimoCrlv?.createdAt ?? null,
+          sale: vehicle.sale,
+        })
+      : false;
 
   // Renave: o que a escrituração exige, o que falta e o prazo citado nos avisos.
   const renaveCompany = await getCompany();
@@ -596,6 +611,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                         : ""
                     }
                     canManage={canComunicacao || canEditar}
+                    crlvOwner={crlvDoComprador ? vehicle.docOwnerName : null}
+                    crlvDate={
+                      crlvDoComprador && ultimoCrlv
+                        ? ultimoCrlv.createdAt.toISOString().slice(0, 10)
+                        : null
+                    }
                   />
                 </div>
 

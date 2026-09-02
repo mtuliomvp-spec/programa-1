@@ -32,6 +32,8 @@ const crlvSchema = z.object({
   combustivel: z.string().nullable(),
   transmissao: z.string().nullable(),
   proprietario: z.string().nullable(),
+  cpfCnpj: z.string().nullable(),
+  dataEmissao: z.string().nullable(),
 });
 
 export type CrlvExtraido = z.infer<typeof crlvSchema>;
@@ -54,6 +56,8 @@ const CRLV_JSON_SCHEMA = {
     "combustivel",
     "transmissao",
     "proprietario",
+    "cpfCnpj",
+    "dataEmissao",
   ],
   properties: {
     placa: { type: ["string", "null"], description: "só letras e números, ex. ABC1D23" },
@@ -71,6 +75,15 @@ const CRLV_JSON_SCHEMA = {
       type: ["string", "null"],
       description: "nome completo do PROPRIETÁRIO como impresso no documento",
     },
+    cpfCnpj: {
+      type: ["string", "null"],
+      description:
+        "CPF/CNPJ do proprietário, só dígitos; null se estiver mascarado com asteriscos ou incompleto",
+    },
+    dataEmissao: {
+      type: ["string", "null"],
+      description: "data impressa no campo LOCAL/DATA do documento, no formato DD/MM/AAAA",
+    },
   },
 } as const;
 
@@ -84,8 +97,10 @@ const SYSTEM_PROMPT =
   "3) PLACA: só letras e números (ABC1D23 ou ABC1234). " +
   "4) EXERCÍCIO é o ano de licenciamento do documento (costuma aparecer como 'EXERCÍCIO' no topo). " +
   "5) PROPRIETÁRIO: o nome completo impresso no campo de proprietário do documento (pessoa ou empresa). " +
-  "6) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "7) Responda somente com o JSON pedido.";
+  "6) CPF/CNPJ do proprietário: só os dígitos, e SOMENTE se estiver completo — mascarado com asteriscos vai null. " +
+  "7) DATA DE EMISSÃO: a data do campo LOCAL/DATA (ao lado da cidade), em DD/MM/AAAA. " +
+  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "9) Responda somente com o JSON pedido.";
 
 /** Tipos de imagem que a API aceita no bloco `image`. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
