@@ -206,6 +206,9 @@ story += tela(
     [
         "“+ Nova operação”: dados do veículo e do comprador, banco financiador e valor.",
         "Também tem etapa de pré-venda e conferência antes de concluir.",
+        "<b>Permissões próprias:</b> “Financiamento de terceiros: criar/editar pré-venda” deixa o "
+        "vendedor montar a ficha e o contrato; só quem tem “Financiamento de terceiros: registrar” "
+        "conclui a operação — a mesma separação da pré-venda de estoque, decidida à parte.",
         "Gera o <b>contrato de intermediação</b> e a comissão a receber.",
     ],
 )

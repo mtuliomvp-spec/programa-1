@@ -24,9 +24,10 @@ export async function createIntermediationPreSaleAction(
   formData: FormData,
 ): Promise<IntermediationFormState> {
   try {
-    // Criar/editar a pré-venda (ficha) exige a permissão de pré-venda — não a de
-    // registrar/efetivar (essa é exigida só na conversão em venda).
-    await assertCan("vendas", "prevenda");
+    // Criar/editar a pré-venda (ficha) exige a permissão própria do
+    // financiamento de terceiros — não a de registrar/concluir (essa é exigida
+    // só na conversão em venda).
+    await assertCan("vendas", "terceiros");
     await assertBooksBalanced();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
@@ -54,7 +55,9 @@ export async function createIntermediationPreSaleAction(
 /** Conclui a pré-venda → gera a venda (movimenta dinheiro, exige caixa aberto). */
 export async function convertIntermediationAction(preSaleId: string) {
   try {
-    await assertCan("vendas", "registrar");
+    // Concluir é permissão à parte de montar a ficha (e da venda de estoque):
+    // o vendedor pré-finaliza, quem tem esta permissão registra.
+    await assertCan("vendas", "registrarterceiros");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -77,7 +80,7 @@ export async function convertIntermediationAction(preSaleId: string) {
 
 /** Cancela a pré-venda (ainda não concluída) e apaga o veículo de terceiro. */
 export async function cancelIntermediationPreSaleAction(preSaleId: string) {
-  await assertCan("vendas", "prevenda");
+  await assertCan("vendas", "terceiros");
   const pre = await prisma.preSale.findUnique({ where: { id: preSaleId } });
   if (pre && pre.status === "ABERTA") {
     await prisma.preSale.update({ where: { id: preSaleId }, data: { status: "CANCELADA" } });

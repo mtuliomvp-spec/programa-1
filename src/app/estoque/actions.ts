@@ -1895,6 +1895,7 @@ export async function uploadClientPhotoAction(
       ["estoque", "editar"],
       ["vendas", "prevenda"],
       ["vendas", "registrar"],
+      ["vendas", "terceiros"],
       ["vendas", "foto"],
     ]);
   } catch (e) {

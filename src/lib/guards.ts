@@ -104,6 +104,7 @@ export async function canUseFormLookup(): Promise<boolean> {
     ["estoque", "editar"],
     ["vendas", "prevenda"],
     ["vendas", "registrar"],
+    ["vendas", "terceiros"],
     // O painel de cadastrar fornecedor (com busca de CNPJ) também aparece na
     // Nova solicitação de compra.
     ["compras", "criar"],

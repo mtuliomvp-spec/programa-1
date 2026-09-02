@@ -11,12 +11,15 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
   {
     key: "vendedor",
     label: "Vendedor",
-    // Vê estoque e vendas, cria/edita pré-venda, cuida dos cadastros de clientes
-    // e vê relatórios. NÃO registra/cancela venda nem acessa financeiro/admin.
+    // Vê estoque e vendas, cria/edita pré-venda (de estoque e de financiamento
+    // de terceiros), cuida dos cadastros de clientes e vê relatórios. NÃO
+    // registra/cancela venda nem conclui financiamento de terceiros, nem acessa
+    // financeiro/admin.
     permissions: [
       "estoque.visualizar",
       "vendas.visualizar",
       "vendas.prevenda",
+      "vendas.terceiros",
       "cadastros.visualizar",
       "cadastros.criar",
       "cadastros.editar",
