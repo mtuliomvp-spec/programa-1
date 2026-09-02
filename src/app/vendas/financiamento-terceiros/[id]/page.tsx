@@ -5,8 +5,9 @@ import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { cancelIntermediationAction } from "../actions";
-import { listPayoffBoletos } from "../core";
+import { listPayoffBoletos, listIntermediationCrlvs } from "../core";
 import PayoffCard from "../PayoffCard";
+import CrlvLine from "../CrlvLine";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -37,7 +38,10 @@ export default async function FinanciamentoTerceirosDetailPage({
     include: { vehicle: true, customer: true, financerAccount: true },
   });
   if (!sale || sale.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
-  const boletos = await listPayoffBoletos(sale.vehicleId);
+  const [boletos, crlvs] = await Promise.all([
+    listPayoffBoletos(sale.vehicleId),
+    listIntermediationCrlvs(sale.vehicleId),
+  ]);
 
   const referrals = parseReferrals(sale.referrals);
   const referralsTotal = referrals.reduce((s, r) => s + r.amount, 0);
@@ -81,6 +85,7 @@ export default async function FinanciamentoTerceirosDetailPage({
           <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{sale.customer.name}</strong></p>
           <p><span className="text-slate-500">Financeira:</span> {sale.financerAccount?.name || "—"}</p>
           <p><span className="text-slate-500">Data:</span> {formatDate(sale.saleDate)}</p>
+          <CrlvLine crlvs={crlvs} />
         </div>
       </Card>
 

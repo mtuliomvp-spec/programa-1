@@ -205,6 +205,9 @@ story += tela(
     "sai do estoque, mas a comissão entra no caixa.",
     [
         "“+ Nova operação”: dados do veículo e do comprador, banco financiador e valor.",
+        "<b>CRLV do veículo:</b> anexe o documento no bloco do proprietário e o sistema lê e preenche "
+        "nome e CPF/CNPJ do proprietário, placa, marca/modelo, anos, cor, combustível, chassi e "
+        "RENAVAM. O CRLV fica anexado ao veículo e aparece na ficha da operação.",
         "Também tem etapa de pré-venda e conferência antes de concluir.",
         "<b>Permissões próprias:</b> “Financiamento de terceiros: criar/editar pré-venda” deixa o "
         "vendedor montar a ficha e o contrato; só quem tem “Financiamento de terceiros: registrar” "
