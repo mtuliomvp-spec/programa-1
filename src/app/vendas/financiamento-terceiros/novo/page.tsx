@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { requireModule } from "@/lib/guards";
+import { requireAction } from "@/lib/guards";
 import { toDateInputValue } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
@@ -14,7 +14,8 @@ export default async function NovoFinanciamentoTerceirosPage({
 }: {
   searchParams: Promise<{ preSale?: string }>;
 }) {
-  await requireModule("vendas");
+  // Montar/editar a ficha exige a permissão própria do financiamento de terceiros.
+  await requireAction("vendas", "terceiros");
   const { preSale: preSaleId } = await searchParams;
 
   // Edição: carrega a pré-venda em aberto para pré-preencher o formulário.

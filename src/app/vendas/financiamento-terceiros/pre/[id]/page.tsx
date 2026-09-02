@@ -96,16 +96,25 @@ export default async function IntermediationPreSalePage({
         </div>
       ) : (
         <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Pré-venda (ficha) — ainda não gera lançamentos. Revise, imprima o contrato e clique em
-          <strong> Registrar</strong> para concluir.
+          Pré-venda (ficha) — ainda não gera lançamentos. Revise, imprima o contrato e
+          {(await userCan("vendas", "registrarterceiros")) ? (
+            <>
+              {" "}clique em <strong>Registrar</strong> para concluir.
+            </>
+          ) : (
+            <>
+              {" "}avise quem tem permissão de <strong>registrar</strong> o financiamento de terceiros
+              para concluir.
+            </>
+          )}
         </div>
       )}
 
       {!canceled ? (
         <IntermediationPreSaleActions
           id={pre.id}
-          canRegister={await userCan("vendas", "registrar")}
-          canPreSale={await userCan("vendas", "prevenda")}
+          canRegister={await userCan("vendas", "registrarterceiros")}
+          canPreSale={await userCan("vendas", "terceiros")}
         />
       ) : null}
 

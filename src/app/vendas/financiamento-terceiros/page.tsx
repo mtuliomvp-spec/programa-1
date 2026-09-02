@@ -99,7 +99,7 @@ export default async function FinanciamentoTerceirosListPage({
         title="Financiamento de terceiros"
         description="Operações em que a loja apenas intermediou o financiamento (o veículo é de terceiro)"
         action={
-          <Can module="vendas" action="prevenda">
+          <Can module="vendas" action="terceiros">
             <LinkButton href="/vendas/financiamento-terceiros/novo">+ Nova operação</LinkButton>
           </Can>
         }

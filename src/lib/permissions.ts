@@ -65,6 +65,11 @@ export const MODULES: ModuleConfig[] = [
       { acao: "registrar", label: "Registrar venda (efetivar)" },
       { acao: "cancelar", label: "Cancelar venda" },
       { acao: "foto", label: "Foto do cliente (antifraude)" },
+      // Financiamento de terceiros tem as suas próprias: o vendedor pode montar
+      // a ficha (pré-venda) sem poder concluir a operação — mesma separação da
+      // pré-venda de estoque, mas decidida à parte.
+      { acao: "terceiros", label: "Financiamento de terceiros: criar/editar pré-venda" },
+      { acao: "registrarterceiros", label: "Financiamento de terceiros: registrar (concluir operação)" },
     ],
   },
   {
