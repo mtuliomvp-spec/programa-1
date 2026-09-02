@@ -210,6 +210,8 @@ story += tela(
         "vendedor montar a ficha e o contrato; só quem tem “Financiamento de terceiros: registrar” "
         "conclui a operação — a mesma separação da pré-venda de estoque, decidida à parte.",
         "Gera o <b>contrato de intermediação</b> e a comissão a receber.",
+        "<b>Cancelar operação</b> reverte os lançamentos e reabre a pré-venda com tudo preenchido, "
+        "para ajustar e registrar de novo sem redigitar.",
     ],
 )
 story += tela(
