@@ -503,6 +503,10 @@ export async function setSaleTransferDoneAction(
     where: { id: saleId },
     data: { transferDoneAt: date ? parseDateInput(date) : null },
   });
+  // Transferência concluída encerra também a marca manual "em processo".
+  if (date) {
+    await prisma.vehicle.update({ where: { id: sale.vehicleId }, data: { transferInProgress: false } });
+  }
   revalidatePath("/estoque");
   revalidatePath(`/estoque/${sale.vehicleId}`);
   revalidatePath(`/vendas/${saleId}`);
@@ -840,7 +844,16 @@ async function applyCrlvToVehicle(input: {
     select: {
       plate: true, chassi: true, renavam: true, brand: true, model: true,
       manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
-      docOwnerName: true,
+      docOwnerName: true, status: true,
+      // Veículo vendido: o CRLV no nome do COMPRADOR encerra a transferência.
+      sale: {
+        select: {
+          id: true,
+          saleDate: true,
+          transferDoneAt: true,
+          customer: { select: { name: true, document: true } },
+        },
+      },
     },
   });
 
@@ -925,6 +938,32 @@ async function applyCrlvToVehicle(input: {
   if (proprietario && proprietario !== (vehicle.docOwnerName ?? "").trim()) {
     data.docOwnerName = proprietario;
     filled.push(`proprietário ${proprietario}`);
+  }
+
+  // Veículo VENDIDO ainda "no nome do dono anterior": se este CRLV já está em
+  // nome de terceiro — o próprio comprador (CPF/CNPJ ou nome) ou qualquer
+  // nome que não seja da casa, num documento emitido depois da venda — a
+  // transferência ao comprador CONCLUIU. Grava a data do documento (ou de
+  // hoje) na venda e apaga a marca manual "em processo", para o selo vermelho
+  // "No nome do dono anterior" e o "Processo de transferência em aberto"
+  // darem lugar ao "Transferido" sem ninguém precisar marcar.
+  if (proprietario && vehicle.status === "VENDIDO" && vehicle.sale && !vehicle.sale.transferDoneAt) {
+    const { houseNameKeys, isOwnName, sameParty, parseDataBr } = await import("@/lib/doc-owner");
+    const nossa = isOwnName(proprietario, await houseNameKeys());
+    const emissao = parseDataBr(crlv.dataEmissao);
+    const doComprador = sameParty(proprietario, crlv.cpfCnpj, vehicle.sale.customer);
+    const venda = new Date(vehicle.sale.saleDate);
+    venda.setUTCHours(0, 0, 0, 0);
+    const depoisDaVenda = emissao != null && emissao.getTime() >= venda.getTime();
+    if (!nossa && (doComprador || depoisDaVenda)) {
+      const quando = emissao ?? new Date();
+      await prisma.sale.update({ where: { id: vehicle.sale.id }, data: { transferDoneAt: quando } });
+      data.transferInProgress = false;
+      filled.push(
+        `transferência ao comprador concluída em ${quando.toLocaleDateString("pt-BR", { timeZone: "UTC" })} (CRLV em nome de ${proprietario})`,
+      );
+      revalidatePath(`/vendas/${vehicle.sale.id}`);
+    }
   }
 
   if (Object.keys(data).length) {

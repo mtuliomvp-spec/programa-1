@@ -13,6 +13,7 @@ import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
+import { isOwnName, crlvNoNomeDoComprador } from "@/lib/doc-owner";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -42,22 +43,17 @@ function vehicleLabel(brand: string, model: string, version: string | null): str
   return `${base} ${v}`;
 }
 
-/**
- * O veículo está no nome da CASA (a loja ou um dos sócios) ou de terceiro?
- *
- * A comparação é por `nameKey` (sem acento/pontuação/espaço) e por CONTINÊNCIA
- * nos dois sentidos, porque o CRLV traz a razão social completa enquanto o
- * cadastro costuma ter a forma curta: "MVP VEICULOS LTDA" (documento) casa com
- * "MVP Veículos" (Parâmetros). Terceiro — "FABIANO FROES NEGOCIOS LTDA" — não
- * casa com nenhuma das nossas.
- *
- * Sem nome conhecido no CRLV o selo nem aparece (ver a listagem).
- */
-function isOwnName(ownerName: string, houseKeys: string[]): boolean {
-  const key = nameKey(ownerName);
-  if (!key) return false;
-  return houseKeys.some((h) => h.length >= 4 && (key.includes(h) || h.includes(key)));
-}
+/** O que o selo de documentação precisa saber de cada veículo. */
+type DocState = {
+  hasCrlv: boolean;
+  crlvYear: string | null;
+  transferStarted: boolean;
+  docOwnerIsOurs: boolean;
+  transferInProgress: boolean;
+  saleTransferPending: boolean;
+  /** Vendido e já transferido ao comprador (marcado ou pelo CRLV no nome dele). */
+  soldTransferred: boolean;
+};
 
 /**
  * Selo de documentação do veículo, em três estados:
@@ -65,17 +61,22 @@ function isOwnName(ownerName: string, houseKeys: string[]): boolean {
  *  - "🔄 Transferência em aberto": custo de transferência (DETRAN) lançado e o
  *    CRLV novo ainda não anexado — o processo está correndo;
  *  - "✓ CRLV {ano}" (ou "✓ Transferido · CRLV {ano}"): o CRLV no nome da
- *    loja/sócio foi anexado — documentação em dia.
+ *    loja/sócio foi anexado — documentação em dia. Em veículo VENDIDO,
+ *    "Transferido" é a transferência ao COMPRADOR.
  */
-function crlvBadge(
-  hasCrlv: boolean,
-  year: string | null,
-  transferStarted: boolean,
-  docOwnerIsOurs: boolean,
-  transferManual: boolean,
-  saleTransferPending: boolean,
-): { label: string; tone: "success" | "warning" | "info" } {
+function crlvBadge({
+  hasCrlv,
+  crlvYear: year,
+  transferStarted,
+  docOwnerIsOurs,
+  transferInProgress: transferManual,
+  saleTransferPending,
+  soldTransferred,
+}: DocState): { label: string; tone: "success" | "warning" | "info" } {
   const crlv = `CRLV${year ? ` ${year}` : ""}`;
+  // Vendido e já no nome do comprador: processo encerrado, inclusive a marca
+  // manual (o CRLV novo é a prova de que a transferência concluiu).
+  if (soldTransferred) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
   // Marca MANUAL "em processo de transferência" vence tudo: o usuário afirmou
   // que a transferência ainda está correndo (ex.: veículo vendido cujo CRLV
   // ainda está no nome de um sócio, não do comprador). Desfazer a marca na ficha
@@ -165,7 +166,14 @@ export default async function EstoquePage({
           },
           // Data da venda: ordena o bloco dos vendidos (mais recente primeiro).
           // transferDoneAt: nulo = o carro ainda está no nome do dono anterior.
-          sale: { select: { saleDate: true, transferDoneAt: true } },
+          // customer: confere se o CRLV mais recente já está no nome do comprador.
+          sale: {
+            select: {
+              saleDate: true,
+              transferDoneAt: true,
+              customer: { select: { name: true, document: true } },
+            },
+          },
         },
         orderBy: { createdAt: "desc" },
       }),
@@ -225,6 +233,19 @@ export default async function EstoquePage({
     const docOwnerIsOurs = v.docOwnerName ? isOwnName(v.docOwnerName, houseKeys) : false;
     const transferConcluded =
       docOwnerIsOurs && lastCrlvAt != null && lastTransferAt != null && lastCrlvAt > lastTransferAt;
+    // Vendido com o CRLV mais recente já em nome de terceiro (o comprador):
+    // transferência ao comprador concluída, mesmo sem a marcação na venda.
+    const crlvDoComprador = crlvNoNomeDoComprador({
+      status: v.status,
+      docOwnerName: v.docOwnerName,
+      docOwnerIsOurs,
+      lastCrlvAt: lastCrlvAt != null ? new Date(lastCrlvAt) : null,
+      sale: v.sale,
+    });
+    // Quando a transferência ao comprador concluiu: a data marcada na venda ou,
+    // faltando ela, a do CRLV no nome do comprador.
+    const transferDone: Date | null =
+      v.sale?.transferDoneAt ?? (crlvDoComprador && lastCrlvAt != null ? new Date(lastCrlvAt) : null);
 
     return {
     ...v,
@@ -234,6 +255,9 @@ export default async function EstoquePage({
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
     // Documento no nome da loja/sócio (verde) ou de terceiro (vermelho).
     docOwnerIsOurs,
+    // Nome no documento é o esperado: da casa — ou, em veículo vendido já
+    // transferido, do comprador (também verde: é onde o carro deve estar).
+    docOwnerOk: docOwnerIsOurs || (v.status === "VENDIDO" && transferDone != null),
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
@@ -252,8 +276,11 @@ export default async function EstoquePage({
       v.transferInProgress ||
       v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
       v.payables.some((p) => /transfer[eê]ncia/i.test(p.description)),
-    // Transferência no DETRAN concluída (só faz sentido em veículo vendido).
-    transferDoneAt: v.sale?.transferDoneAt ?? null,
+    // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
+    // marcada na venda ou provada pelo CRLV no nome do comprador.
+    transferDoneAt: transferDone,
+    transferDoneByCrlv: !v.sale?.transferDoneAt && transferDone != null,
+    soldTransferred: v.status === "VENDIDO" && transferDone != null,
     // Em veículo VENDIDO/PRÉ-VENDIDO ainda no nosso nome, uma transferência
     // lançada (custo/conta com "transferência") significa a transferência ao
     // COMPRADOR em andamento — então o selo "em processo" deve vencer o
@@ -262,7 +289,7 @@ export default async function EstoquePage({
     // processo"). Não vale se a baixa no DETRAN já foi marcada como concluída.
     saleTransferPending:
       (v.status === "VENDIDO" || preSaleByVehicle.has(v.id)) &&
-      !v.sale?.transferDoneAt &&
+      transferDone == null &&
       (v.transferInProgress ||
         // Detecção automática só enquanto o processo NÃO concluiu (CRLV no
         // nosso nome anexado depois do lançamento encerra o aviso); a marca
@@ -316,14 +343,7 @@ export default async function EstoquePage({
   // DETRAN (transferDoneAt) dos vendidos.
   const docMatch = (v: (typeof allRows)[number]): boolean => {
     if (!docFilter) return true;
-    const badge = crlvBadge(
-      v.hasCrlv,
-      v.crlvYear,
-      v.transferStarted,
-      v.docOwnerIsOurs,
-      v.transferInProgress,
-      v.saleTransferPending,
-    );
+    const badge = crlvBadge(v);
     switch (docFilter) {
       case "TRANSFERENCIA":
         return badge.label.startsWith("🔄");
@@ -398,7 +418,7 @@ export default async function EstoquePage({
             {v.docOwnerName ? (
               <p className="mt-0.5 truncate text-[11px] text-slate-500">
                 Este veículo está em nome de{" "}
-                <strong className={v.docOwnerIsOurs ? "text-emerald-600" : "text-rose-600"}>
+                <strong className={v.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
                   {v.docOwnerName}
                 </strong>
               </p>
@@ -445,7 +465,7 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
+            <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.renavePendentes > 0 ? (
               <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
@@ -464,7 +484,7 @@ export default async function EstoquePage({
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
+            <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.renavePendentes > 0 ? (
               <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
@@ -478,7 +498,9 @@ export default async function EstoquePage({
             </Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
-                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                ? v.transferDoneByCrlv
+                  ? "✓ Transferido · CRLV no nome do comprador"
+                  : `✓ Transferido em ${formatDate(v.transferDoneAt)}`
                 : "⚠ No nome do dono anterior"}
             </Badge>
           </div>
@@ -495,7 +517,7 @@ export default async function EstoquePage({
         {v.docOwnerName ? (
           <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
             Este veículo está em nome de{" "}
-            <strong className={v.docOwnerIsOurs ? "text-emerald-600" : "text-rose-600"}>
+            <strong className={v.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
               {v.docOwnerName}
             </strong>
           </span>
@@ -565,7 +587,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).tone}>{crlvBadge(v.hasCrlv, v.crlvYear, v.transferStarted, v.docOwnerIsOurs, v.transferInProgress, v.saleTransferPending).label}</Badge>
+          <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
         </span>
         {v.hasAtpv ? (
           <span className="mt-1 block">
@@ -600,7 +622,9 @@ export default async function EstoquePage({
             </Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
-                ? `✓ Transferido em ${formatDate(v.transferDoneAt)}`
+                ? v.transferDoneByCrlv
+                  ? "✓ Transferido · CRLV no nome do comprador"
+                  : `✓ Transferido em ${formatDate(v.transferDoneAt)}`
                 : "⚠ No nome do dono anterior"}
             </Badge>
           </span>
