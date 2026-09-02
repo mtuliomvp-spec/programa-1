@@ -4,6 +4,7 @@ import { toDateInputValue } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import IntermediationForm, { type IntermediationInitial } from "../IntermediationForm";
+import { listPayoffBoletos } from "../core";
 import { getCompany } from "@/lib/company";
 import { RENAVE_PRAZO_PADRAO, avisoIntermediacao, avisoApontamentoLoja } from "@/lib/renave";
 
@@ -64,6 +65,11 @@ export default async function NovoFinanciamentoTerceirosPage({
         installmentsInfoCount: pre.installmentsInfoCount ?? undefined,
         installmentsInfoAmount: pre.installmentsInfoAmount ?? undefined,
         notes: pre.notes ?? undefined,
+        payoffBank: pre.payoffBank ?? undefined,
+        payoffAmount: pre.payoffAmount ?? undefined,
+        payoffBarcode: pre.payoffBarcode ?? undefined,
+        payoffDueDate: pre.payoffDueDate ? toDateInputValue(pre.payoffDueDate) : undefined,
+        payoffBoletos: (await listPayoffBoletos(pre.vehicleId)).map((b) => ({ id: b.id, filename: b.filename })),
       };
     }
   }

@@ -1053,6 +1053,11 @@ async function vehicleSale(input: {
   // Parcelamento informado ao comprador (só informativo, consta no contrato).
   installmentsInfoCount?: number | null;
   installmentsInfoAmount?: number | null;
+  // Quitação do financiamento anterior (financiamento de terceiros; contrato).
+  payoffBank?: string | null;
+  payoffAmount?: number | null;
+  payoffBarcode?: string | null;
+  payoffDueDate?: Date | null;
   sellerName?: string | null;
   // Vendedor = usuário (beneficiário da comissão, com dados bancários).
   sellerId?: string | null;
@@ -1211,6 +1216,10 @@ async function vehicleSale(input: {
         buyerPixKey: input.buyerPixKey || null,
         installmentsInfoCount: input.installmentsInfoCount ?? null,
         installmentsInfoAmount: input.installmentsInfoAmount ?? null,
+        payoffBank: input.payoffBank || null,
+        payoffAmount: input.payoffAmount ?? null,
+        payoffBarcode: input.payoffBarcode || null,
+        payoffDueDate: input.payoffDueDate ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
         consigned: Boolean(input.consigned),

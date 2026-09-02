@@ -6,6 +6,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { computeReturn } from "@/lib/retorno";
 import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
+import PayoffCard from "../../PayoffCard";
+import { listPayoffBoletos } from "../../core";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -39,12 +41,13 @@ export default async function IntermediationPreSalePage({
   if (pre.status === "CONVERTIDA" && pre.convertedSaleId) {
     redirect(`/vendas/financiamento-terceiros/${pre.convertedSaleId}`);
   }
-  const [vehicle, customer, financerAccount] = await Promise.all([
+  const [vehicle, customer, financerAccount, boletos] = await Promise.all([
     prisma.vehicle.findUnique({ where: { id: pre.vehicleId } }),
     prisma.customer.findUnique({ where: { id: pre.customerId } }),
     pre.financerAccountId
       ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId } })
       : Promise.resolve(null),
+    listPayoffBoletos(pre.vehicleId),
   ]);
   // Veículo/cliente podem não existir mais (ex.: apagados num "zerar dados").
   // Ainda assim a ficha precisa abrir para poder ser cancelada.
@@ -182,6 +185,12 @@ export default async function IntermediationPreSalePage({
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
+
+      <PayoffCard
+        className="mb-4"
+        payoff={{ bank: pre.payoffBank, amount: pre.payoffAmount, barcode: pre.payoffBarcode, dueDate: pre.payoffDueDate }}
+        boletos={boletos}
+      />
 
       {vehicle ? (
         <Card className="mb-4">
