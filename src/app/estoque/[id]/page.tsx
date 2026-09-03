@@ -63,7 +63,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         },
         orderBy: { date: "asc" },
       },
-      sale: { include: { customer: true, receivables: true } },
+      // payables da venda: transferência DETRAN, comissões, devolução —
+      // títulos ligados à VENDA (não ao carro) que também aparecem no cartão
+      // "Contas a pagar vinculadas", marcados como "da venda".
+      sale: { include: { customer: true, receivables: true, payables: { orderBy: { dueDate: "asc" } } } },
       attachments: {
         select: {
           id: true,
@@ -104,6 +107,17 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
   const visitas = await resumoDeVisitas({ vehicleId: vehicle.id });
+
+  // Títulos ligados à VENDA (transferência DETRAN, comissões, devolução ao
+  // cliente): não são custos do carro, por isso não estavam no cartão — e o
+  // usuário procurava a transferência na ficha sem achar. Entram marcados como
+  // "da venda", sem repetir o que já está ligado ao veículo. Venda cancelada
+  // não tem títulos (foram revertidos).
+  const idsDoVeiculo = new Set(vehicle.payables.map((p) => p.id));
+  const titulosDaVenda =
+    vehicle.sale && vehicle.sale.status !== "CANCELADA"
+      ? vehicle.sale.payables.filter((p) => !idsDoVeiculo.has(p.id))
+      : [];
 
   // Vendido, sem a transferência marcada, mas com o CRLV mais recente já em
   // nome de terceiro (o comprador): a ficha oferece confirmar com um toque.
@@ -541,8 +555,15 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           ) : null}
 
           <Card>
-            <CardHeader title="Contas a pagar vinculadas" description="Compra do veículo e custos lançados" />
-            {vehicle.payables.length === 0 ? (
+            <CardHeader
+              title="Contas a pagar vinculadas"
+              description={
+                titulosDaVenda.length > 0
+                  ? "Compra do veículo, custos lançados e os títulos da venda (transferência, comissões, devolução)"
+                  : "Compra do veículo e custos lançados"
+              }
+            />
+            {vehicle.payables.length === 0 && titulosDaVenda.length === 0 ? (
               <p className="px-5 py-4 text-sm text-slate-500">Nenhuma conta a pagar vinculada.</p>
             ) : (
               <Table>
@@ -558,6 +579,21 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   {vehicle.payables.map((p) => (
                     <Tr key={p.id}>
                       <Td>{p.description}</Td>
+                      <Td>{formatDate(p.dueDate)}</Td>
+                      <Td>{formatCurrency(p.amount)}</Td>
+                      <Td>
+                        <Badge tone={payableStatusTone[p.status]}>{payableStatusLabel[p.status]}</Badge>
+                      </Td>
+                    </Tr>
+                  ))}
+                  {titulosDaVenda.map((p) => (
+                    <Tr key={p.id}>
+                      <Td>
+                        {p.description}
+                        <span className="ml-2 inline-block rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-semibold text-sky-800">
+                          da venda
+                        </span>
+                      </Td>
                       <Td>{formatDate(p.dueDate)}</Td>
                       <Td>{formatCurrency(p.amount)}</Td>
                       <Td>
