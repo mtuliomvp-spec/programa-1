@@ -986,6 +986,186 @@ async function applyCrlvToVehicle(input: {
   return { filled, warnings };
 }
 
+/** Descrição do anexo que identifica o orçamento/recibo do despachante. */
+const TRANSFER_QUOTE_RE = /^or[çc]amento de transfer/i;
+
+/**
+ * Lê o orçamento/recibo do despachante e lança o título da transferência.
+ *
+ * - Confere a placa do recibo com a do veículo (recibo de outro carro não
+ *   lança nada, só avisa).
+ * - Fornecedor = o despachante do cabeçalho (reaproveita o cadastro pelo CNPJ
+ *   ou nome; cadastra se não existir).
+ * - Custo "Transferência de propriedade" (Documentação) com o total do recibo
+ *   → vira conta a pagar do veículo. A palavra "transferência" na descrição é
+ *   o que acende o selo "Processo de transferência em aberto" na lista.
+ * - Campo "Cliente" do recibo = para quem o veículo será transferido. Quando é
+ *   o nome da própria loja/sócio (ex.: "MVP"), a transferência é para o nome da
+ *   loja; senão o nome fica guardado na ficha (transferToName).
+ * - Não lança duas vezes: mesmo valor já lançado como transferência neste
+ *   veículo é ignorado com aviso.
+ */
+async function applyTransferQuote(input: {
+  vehicleId: string;
+  attachmentId: string;
+  buffer: Buffer;
+  mimeType: string;
+}): Promise<{ filled: string[]; warnings: string[] }> {
+  const { extractTransferQuote } = await import("@/lib/transfer-quote-ai");
+  const q = await extractTransferQuote(input.buffer.toString("base64"), input.mimeType);
+
+  const filled: string[] = [];
+  const warnings: string[] = [];
+
+  const vehicle = await prisma.vehicle.findUniqueOrThrow({
+    where: { id: input.vehicleId },
+    select: { id: true, plate: true, brand: true, model: true, status: true, transferToName: true },
+  });
+
+  // Placa do recibo × veículo (quando o recibo traz placa legível).
+  const placaLida = plateKey(q.placa);
+  if (placaLida && plateIdentityKey(placaLida) !== plateIdentityKey(vehicle.plate)) {
+    return {
+      filled,
+      warnings: [
+        `Este orçamento parece ser de outro carro (placa ${placaLida}, o veículo é ${vehicle.plate}). Nada foi lançado — o anexo continua salvo.`,
+      ],
+    };
+  }
+
+  // Para quem o veículo será transferido (campo "Cliente").
+  const cliente = (q.cliente || "").trim();
+  if (cliente) {
+    const { houseNameKeys, isOwnName } = await import("@/lib/doc-owner");
+    const paraLoja = isOwnName(cliente, await houseNameKeys());
+    const novo = paraLoja ? null : cliente;
+    if (novo !== vehicle.transferToName) {
+      await prisma.vehicle.update({ where: { id: vehicle.id }, data: { transferToName: novo } });
+    }
+    filled.push(paraLoja ? `transferência para o nome da loja (cliente "${cliente}")` : `transferência para ${cliente}`);
+  }
+
+  // Valor: total escrito ou, faltando, a soma das linhas.
+  const itens = q.itens.filter((i) => i.valor > 0).map((i) => ({ ...i, valor: Math.round(i.valor * 100) / 100 }));
+  const somaItens = Math.round(itens.reduce((s, i) => s + i.valor, 0) * 100) / 100;
+  const total = q.total && q.total > 0 ? Math.round(q.total * 100) / 100 : somaItens;
+  if (!(total > 0)) {
+    warnings.push("Não deu para ler o valor do orçamento — lance o custo da transferência à mão.");
+    return { filled, warnings };
+  }
+  if (somaItens > 0 && Math.abs(somaItens - total) > 0.01) {
+    warnings.push(
+      `A soma das linhas (${somaItens.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) difere do total escrito (${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}) — o título saiu com o total; confira o recibo.`,
+    );
+  }
+
+  // Quem pode lançar custo: sem a permissão, o anexo fica e o título não sai.
+  const { userCan } = await import("@/lib/guards");
+  if (!(await userCan("estoque", "custos"))) {
+    warnings.push("Orçamento lido, mas você não tem permissão para lançar custos — peça a quem tem para lançar o título.");
+    return { filled, warnings };
+  }
+  try {
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    warnings.push(`Orçamento lido, mas o título não foi lançado: ${e instanceof Error ? e.message : "lançamento bloqueado."}`);
+    return { filled, warnings };
+  }
+
+  // Já lançado? (mesmo valor, custo de transferência neste veículo)
+  const repetido = await prisma.vehicleCost.findFirst({
+    where: { vehicleId: vehicle.id, description: { contains: "transfer", mode: "insensitive" }, amount: total },
+    select: { id: true },
+  });
+  if (repetido) {
+    warnings.push(
+      `Já existe um custo de transferência de ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} neste veículo — o título não foi lançado de novo.`,
+    );
+    return { filled, warnings };
+  }
+
+  // Fornecedor: o despachante do cabeçalho.
+  let supplierId: string | null = null;
+  const despachante = (q.despachanteNome || "").trim();
+  if (despachante) {
+    const { findSupplierByIdentity } = await import("@/lib/person-dedupe");
+    const existente = await findSupplierByIdentity(despachante, q.despachanteCnpj);
+    if (existente) {
+      supplierId = existente.id;
+    } else {
+      const criado = await prisma.supplier.create({
+        data: {
+          name: despachante,
+          document: q.despachanteCnpj?.replace(/\D/g, "") || null,
+          phone: q.despachanteTelefone || null,
+        },
+        select: { id: true },
+      });
+      supplierId = criado.id;
+      filled.push(`despachante ${despachante} cadastrado como fornecedor`);
+    }
+  }
+
+  const { parseDataBr } = await import("@/lib/doc-owner");
+  const dataRecibo = parseDataBr(q.data);
+  const hoje = await getCashboxWorkDate();
+  const destino = cliente && !filled.some((f) => f.includes("nome da loja")) ? ` para ${cliente}` : "";
+  const linhas = itens.map((i) => `${i.descricao}: ${i.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`).join(" · ");
+
+  await addVehicleCostWithPayable({
+    vehicleId: vehicle.id,
+    description: `Transferência de propriedade${destino} — despachante${despachante ? ` ${despachante}` : ""}`,
+    category: "DOCUMENTACAO",
+    amount: total,
+    date: hoje,
+    alreadyPaid: false,
+    dueDate: dataRecibo && dataRecibo.getTime() > hoje.getTime() ? dataRecibo : hoje,
+    installments: 1,
+    supplierId,
+    notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}).${linhas ? ` Linhas: ${linhas}.` : ""}`,
+  });
+  filled.push(
+    `título de ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} lançado no Contas a pagar${despachante ? ` (${despachante})` : ""}`,
+  );
+  if (itens.length) filled.push(`linhas: ${linhas}`);
+  return { filled, warnings };
+}
+
+/**
+ * Lê um orçamento de transferência JÁ anexado (botão "Ler e lançar" na ficha):
+ * mesma regra do anexo novo, só muda de onde vêm os bytes.
+ */
+export async function readTransferQuoteAttachmentAction(attachmentId: string): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "comunicacao");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const att = await prisma.vehicleAttachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, vehicleId: true, kind: true, mimeType: true, description: true, data: true },
+  });
+  if (!att) return { error: "Anexo não encontrado." };
+  if (att.kind !== "DOCUMENTO" || !TRANSFER_QUOTE_RE.test(att.description)) {
+    return { error: "Este anexo não é um orçamento de transferência." };
+  }
+  try {
+    const read = await applyTransferQuote({
+      vehicleId: att.vehicleId,
+      attachmentId: att.id,
+      buffer: Buffer.from(att.data),
+      mimeType: att.mimeType,
+    });
+    revalidatePath(`/estoque/${att.vehicleId}`);
+    revalidatePath("/estoque");
+    revalidatePath("/financeiro/a-pagar");
+    return { ok: true, filled: read.filled, warnings: read.warnings };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ler o orçamento." };
+  }
+}
+
 export async function uploadVehicleAttachmentAction(
   _prev: AttachmentState,
   formData: FormData,
@@ -1050,11 +1230,26 @@ export async function uploadVehicleAttachmentAction(
     }
   }
 
+  // Orçamento/recibo do despachante: a IA lê as linhas cobradas e lança o
+  // título da transferência no Contas a pagar (custo do veículo), e guarda
+  // para quem o carro será transferido (campo "Cliente"). Como no CRLV, a
+  // leitura nunca derruba o anexo.
+  if (kind === "DOCUMENTO" && TRANSFER_QUOTE_RE.test(description)) {
+    try {
+      read = await applyTransferQuote({ vehicleId, attachmentId: attachment.id, buffer, mimeType });
+    } catch (e) {
+      read = {
+        filled: [],
+        warnings: [e instanceof Error ? e.message : "Não foi possível ler o orçamento automaticamente."],
+      };
+    }
+  }
+
   // Comprovante de comunicação de venda (SICOVE): a prestadora cobra por
   // serviço, então anexar o comprovante lança sozinho o título daquele custo no
   // carro. Como no CRLV, nada aqui pode derrubar o anexo — o documento fica
   // guardado mesmo que a cobrança não seja lançada.
-  if (kind === "DOCUMENTO") {
+  if (kind === "DOCUMENTO" && !TRANSFER_QUOTE_RE.test(description)) {
     try {
       const { lancarCobrancaSicove } = await import("@/lib/sicove");
       const cobranca = await lancarCobrancaSicove({ vehicleId, buffer });

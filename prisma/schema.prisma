@@ -544,6 +544,9 @@ model Vehicle {
   // "transferência" para acender o selo sozinho. Anexar o CRLV novo encerra o
   // processo (o selo vira "Transferido"), independentemente desta marca.
   transferInProgress           Boolean       @default(false)
+  // Para quem o veículo será transferido, lido do campo "Cliente" do
+  // orçamento/recibo do despachante (nulo = para o nome da própria loja).
+  transferToName               String?
   // Sócio ao qual o PÓS-VENDA do veículo está ATRELADO: enquanto marcado, toda
   // despesa de pós-venda lançada no carro é custeada pelo capital deste sócio
   // (aporte, Banco Neutro), sem tocar no caixa. Só vale com o carro VENDIDO;

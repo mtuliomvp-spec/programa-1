@@ -423,6 +423,11 @@ export default async function EstoquePage({
                 </strong>
               </p>
             ) : null}
+            {v.transferToName && !v.transferDoneAt ? (
+              <p className="mt-0.5 truncate text-[11px] text-sky-700">
+                🔄 Transferência para <strong>{v.transferToName}</strong>
+              </p>
+            ) : null}
           </div>
           <div className="flex shrink-0 flex-col items-end gap-1">
             <Badge tone={statusLabel[v.status].tone}>{statusLabel[v.status].label}</Badge>
@@ -520,6 +525,11 @@ export default async function EstoquePage({
             <strong className={v.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
               {v.docOwnerName}
             </strong>
+          </span>
+        ) : null}
+        {v.transferToName && !v.transferDoneAt ? (
+          <span className="mt-0.5 block text-[11px] font-normal text-sky-700">
+            🔄 Transferência para <strong>{v.transferToName}</strong>
           </span>
         ) : null}
       </Td>

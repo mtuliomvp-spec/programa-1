@@ -138,6 +138,12 @@ story += tela(
         "não conta de novo.",
         "<b>Leitura automática:</b> anexe o contrato de compra, o CRLV ou a ATPV-e e use o botão de "
         "ler documento — os campos vazios são preenchidos e as divergências viram aviso.",
+        "<b>Orçamento do despachante:</b> anexe o recibo/orçamento da transferência (foto ou PDF) no "
+        "cartão de mesmo nome. A IA lê as linhas cobradas e o total, cadastra o despachante como "
+        "fornecedor se preciso e lança o título da transferência no Contas a pagar, como custo do "
+        "veículo. O campo “Cliente” do recibo diz para quem o carro será transferido (o nome da loja "
+        "significa transferência para a própria loja). “Ler e lançar” faz o mesmo num orçamento já "
+        "anexado; recibo de outra placa ou valor já lançado não gera título.",
         "<b>Transferência ao comprador:</b> no veículo vendido, anexar o CRLV já no nome do "
         "comprador encerra sozinho o “Processo de transferência em aberto” e o aviso “No nome do "
         "dono anterior”, registrando a data do documento na venda. Para um CRLV anexado antes, "
