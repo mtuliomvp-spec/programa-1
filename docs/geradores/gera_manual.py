@@ -143,7 +143,11 @@ story += tela(
         "fornecedor se preciso e lança o título da transferência no Contas a pagar, como custo do "
         "veículo. O campo “Cliente” do recibo diz para quem o carro será transferido (o nome da loja "
         "significa transferência para a própria loja). “Ler e lançar” faz o mesmo num orçamento já "
-        "anexado; recibo de outra placa ou valor já lançado não gera título.",
+        "anexado; recibo de outra placa ou valor já lançado não gera título. No <b>veículo vendido</b> "
+        "com a transferência já reservada na venda, o orçamento <b>ajusta o título “Transferência "
+        "DETRAN”</b> para o valor real e a diferença entra no resultado daquela venda (a mais é "
+        "prejuízo); se o título já foi pago ou o mês está fechado, só a diferença a mais é lançada "
+        "como custo pós-venda.",
         "<b>Transferência ao comprador:</b> no veículo vendido, anexar o CRLV já no nome do "
         "comprador encerra sozinho o “Processo de transferência em aberto” e o aviso “No nome do "
         "dono anterior”, registrando a data do documento na venda. Para um CRLV anexado antes, "
