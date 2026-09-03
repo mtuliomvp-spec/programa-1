@@ -550,7 +550,9 @@ story += tela("Sistema, Uso de IA e Desempenho", "/sistema",
               ])
 story += tela("Minhas comissões", "/minhas-comissoes",
               "Autoatendimento: cada pessoa vê as próprias comissões, pagas e a pagar.",
-              ["Aparece para todo usuário, sem depender de permissão.",
+              ["Aparece para todo usuário, sem depender de permissão. Logo abaixo do nome da loja, "
+               "no menu, fica o contador <b>Versão N</b>: é o número da atualização que está no ar "
+               "(sobe a cada publicação).",
                "Mostra a venda de origem e a situação de cada comissão."])
 
 story.append(CondPageBreak(40 * mm))
