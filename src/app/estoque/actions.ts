@@ -1073,17 +1073,7 @@ async function applyTransferQuote(input: {
     return { filled, warnings };
   }
 
-  // Já lançado? (mesmo valor, custo de transferência neste veículo)
-  const repetido = await prisma.vehicleCost.findFirst({
-    where: { vehicleId: vehicle.id, description: { contains: "transfer", mode: "insensitive" }, amount: total },
-    select: { id: true },
-  });
-  if (repetido) {
-    warnings.push(
-      `Já existe um custo de transferência de ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} neste veículo — o título não foi lançado de novo.`,
-    );
-    return { filled, warnings };
-  }
+  const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
   // Fornecedor: o despachante do cabeçalho.
   let supplierId: string | null = null;
@@ -1110,8 +1100,96 @@ async function applyTransferQuote(input: {
   const { parseDataBr } = await import("@/lib/doc-owner");
   const dataRecibo = parseDataBr(q.data);
   const hoje = await getCashboxWorkDate();
+  const vencimento = dataRecibo && dataRecibo.getTime() > hoje.getTime() ? dataRecibo : hoje;
   const destino = cliente && !filled.some((f) => f.includes("nome da loja")) ? ` para ${cliente}` : "";
-  const linhas = itens.map((i) => `${i.descricao}: ${i.valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`).join(" · ");
+  const linhas = itens.map((i) => `${i.descricao}: ${brl(i.valor)}`).join(" · ");
+
+  // Veículo VENDIDO com a transferência já RESERVADA na venda (título
+  // "Transferência DETRAN" criado no registro da venda, reconhecido por
+  // competência): o orçamento AJUSTA esse título em vez de criar outro. O
+  // valor da venda (transferAmount) acompanha, então a diferença entra no
+  // resultado daquela venda — a mais é prejuízo, a menos volta como sobra — e
+  // a equação patrimonial continua fechada (título e competência mudam juntos).
+  if (vehicle.status === "VENDIDO") {
+    const venda = await prisma.sale.findFirst({
+      where: { vehicleId: vehicle.id, status: "CONCLUIDA" },
+      orderBy: { saleDate: "desc" },
+      select: { id: true, saleDate: true, transferAmount: true },
+    });
+    const reservado = venda
+      ? await prisma.payable.findFirst({
+          where: { saleId: venda.id, category: "COMISSAO", description: { startsWith: "Transferência DETRAN" } },
+          select: { id: true, amount: true, status: true },
+        })
+      : null;
+    if (venda && reservado) {
+      const antes = Math.round(reservado.amount * 100) / 100;
+      const diff = Math.round((total - antes) * 100) / 100;
+      let mesAberto = true;
+      try {
+        await assertMonthOpen(venda.saleDate);
+      } catch {
+        mesAberto = false;
+      }
+      if (reservado.status !== "PAGO" && mesAberto) {
+        await prisma.$transaction([
+          prisma.payable.update({
+            where: { id: reservado.id },
+            data: { amount: total, supplierId: supplierId ?? undefined, dueDate: vencimento },
+          }),
+          prisma.sale.update({
+            where: { id: venda.id },
+            data: { transferCharged: true, transferAmount: total },
+          }),
+        ]);
+        filled.push(
+          diff > 0
+            ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(total)} — a diferença de ${brl(diff)} entra como prejuízo no resultado da venda`
+            : diff < 0
+              ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(total)} — a sobra de ${brl(-diff)} volta ao resultado da venda`
+              : `título "Transferência DETRAN" da venda já está em ${brl(total)} — fornecedor e vencimento atualizados`,
+        );
+        if (itens.length) filled.push(`linhas: ${linhas}`);
+        revalidatePath(`/vendas/${venda.id}`);
+        return { filled, warnings };
+      }
+      // Título já pago ou mês da venda fechado: não dá para mexer no reservado.
+      // Só a DIFERENÇA a mais vira custo pós-venda (prejuízo) hoje.
+      if (diff <= 0) {
+        warnings.push(
+          `A transferência desta venda já estava ${reservado.status === "PAGO" ? "paga" : "fechada no mês"} em ${brl(antes)} e o orçamento é de ${brl(total)} — nada a lançar.`,
+        );
+        return { filled, warnings };
+      }
+      await addVehicleCostWithPayable({
+        vehicleId: vehicle.id,
+        description: `Diferença da transferência${destino} — orçamento ${brl(total)} × reservado ${brl(antes)} — despachante${despachante ? ` ${despachante}` : ""}`,
+        category: "DOCUMENTACAO",
+        amount: diff,
+        date: hoje,
+        alreadyPaid: false,
+        dueDate: vencimento,
+        installments: 1,
+        supplierId,
+        notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}). A transferência de ${brl(antes)} já estava ${reservado.status === "PAGO" ? "paga" : "em mês fechado"}; só a diferença entra agora.${linhas ? ` Linhas: ${linhas}.` : ""}`,
+      });
+      filled.push(
+        `a transferência de ${brl(antes)} já estava ${reservado.status === "PAGO" ? "paga" : "em mês fechado"}: lançada só a diferença de ${brl(diff)} como custo pós-venda (prejuízo)`,
+      );
+      if (itens.length) filled.push(`linhas: ${linhas}`);
+      return { filled, warnings };
+    }
+  }
+
+  // Já lançado? (mesmo valor, custo de transferência neste veículo)
+  const repetido = await prisma.vehicleCost.findFirst({
+    where: { vehicleId: vehicle.id, description: { contains: "transfer", mode: "insensitive" }, amount: total },
+    select: { id: true },
+  });
+  if (repetido) {
+    warnings.push(`Já existe um custo de transferência de ${brl(total)} neste veículo — o título não foi lançado de novo.`);
+    return { filled, warnings };
+  }
 
   await addVehicleCostWithPayable({
     vehicleId: vehicle.id,
@@ -1120,14 +1198,12 @@ async function applyTransferQuote(input: {
     amount: total,
     date: hoje,
     alreadyPaid: false,
-    dueDate: dataRecibo && dataRecibo.getTime() > hoje.getTime() ? dataRecibo : hoje,
+    dueDate: vencimento,
     installments: 1,
     supplierId,
     notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}).${linhas ? ` Linhas: ${linhas}.` : ""}`,
   });
-  filled.push(
-    `título de ${total.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} lançado no Contas a pagar${despachante ? ` (${despachante})` : ""}`,
-  );
+  filled.push(`título de ${brl(total)} lançado no Contas a pagar${despachante ? ` (${despachante})` : ""}`);
   if (itens.length) filled.push(`linhas: ${linhas}`);
   return { filled, warnings };
 }
