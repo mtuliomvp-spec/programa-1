@@ -146,8 +146,8 @@ story += tela(
         "anexado; recibo de outra placa ou valor já lançado não gera título. No <b>veículo vendido</b> "
         "com a transferência já reservada na venda, o orçamento <b>ajusta o título “Transferência "
         "DETRAN”</b> para o valor real e a diferença entra no resultado daquela venda (a mais é "
-        "prejuízo); se o título já foi pago ou o mês está fechado, só a diferença a mais é lançada "
-        "como custo pós-venda.",
+        "prejuízo), mesmo com o mês da venda já fechado (o sistema avisa que o resultado do mês "
+        "muda); só se o título já foi pago é que a diferença a mais vira custo pós-venda.",
         "<b>Transferência ao comprador:</b> no veículo vendido, anexar o CRLV já no nome do "
         "comprador encerra sozinho o “Processo de transferência em aberto” e o aviso “No nome do "
         "dono anterior”, registrando a data do documento na venda. Para um CRLV anexado antes, "

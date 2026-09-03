@@ -1123,47 +1123,74 @@ async function applyTransferQuote(input: {
         })
       : null;
     if (venda && reservado) {
+      // Um título "Diferença da transferência" criado por uma leitura anterior
+      // (quando a regra ainda não ajustava o reservado) é ABSORVIDO: o
+      // pendente sai e o valor entra no título da transferência; o já pago
+      // fica e desconta do alvo (senão a diferença seria cobrada duas vezes).
+      const diferencas = await prisma.vehicleCost.findMany({
+        where: { vehicleId: vehicle.id, description: { startsWith: "Diferença da transferência" } },
+        select: { id: true, amount: true, payable: { select: { status: true } } },
+      });
+      let diffPaga = 0;
+      for (const d of diferencas) {
+        if (d.payable?.status === "PAGO") {
+          diffPaga += d.amount;
+        } else {
+          await deleteVehicleCost(d.id);
+          filled.push(`título de diferença de ${brl(d.amount)} absorvido no título da transferência`);
+        }
+      }
+      const alvo = Math.round((total - diffPaga) * 100) / 100;
       const antes = Math.round(reservado.amount * 100) / 100;
-      const diff = Math.round((total - antes) * 100) / 100;
-      let mesAberto = true;
+      const diff = Math.round((alvo - antes) * 100) / 100;
+      const mesVenda = venda.saleDate.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric", timeZone: "UTC" });
+      let mesFechado = false;
       try {
         await assertMonthOpen(venda.saleDate);
       } catch {
-        mesAberto = false;
+        mesFechado = true;
       }
-      if (reservado.status !== "PAGO" && mesAberto) {
+      if (reservado.status !== "PAGO") {
+        // Título e competência mudam JUNTOS (equação patrimonial segue
+        // fechada). Vale mesmo com o mês da venda fechado: o valor real da
+        // transferência é da venda, e a diferença é prejuízo daquela venda.
         await prisma.$transaction([
           prisma.payable.update({
             where: { id: reservado.id },
-            data: { amount: total, supplierId: supplierId ?? undefined, dueDate: vencimento },
+            data: { amount: alvo, supplierId: supplierId ?? undefined, dueDate: vencimento },
           }),
           prisma.sale.update({
             where: { id: venda.id },
-            data: { transferCharged: true, transferAmount: total },
+            data: { transferCharged: true, transferAmount: alvo },
           }),
         ]);
         filled.push(
           diff > 0
-            ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(total)} — a diferença de ${brl(diff)} entra como prejuízo no resultado da venda`
+            ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(alvo)} — a diferença de ${brl(diff)} entra como prejuízo no resultado da venda`
             : diff < 0
-              ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(total)} — a sobra de ${brl(-diff)} volta ao resultado da venda`
-              : `título "Transferência DETRAN" da venda já está em ${brl(total)} — fornecedor e vencimento atualizados`,
+              ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(alvo)} — a sobra de ${brl(-diff)} volta ao resultado da venda`
+              : `título "Transferência DETRAN" da venda já está em ${brl(alvo)} — fornecedor e vencimento atualizados`,
         );
+        if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
+        if (mesFechado && diff !== 0) {
+          warnings.push(
+            `O mês da venda (${mesVenda}) já estava fechado: o resultado daquele mês muda em ${brl(-diff)} com este ajuste (o fechamento registrado não é refeito).`,
+          );
+        }
         if (itens.length) filled.push(`linhas: ${linhas}`);
         revalidatePath(`/vendas/${venda.id}`);
+        revalidatePath("/financeiro/a-pagar");
         return { filled, warnings };
       }
-      // Título já pago ou mês da venda fechado: não dá para mexer no reservado.
-      // Só a DIFERENÇA a mais vira custo pós-venda (prejuízo) hoje.
+      // Título já PAGO: o que foi pago não muda. Só a DIFERENÇA a mais vira
+      // custo pós-venda (prejuízo) hoje.
       if (diff <= 0) {
-        warnings.push(
-          `A transferência desta venda já estava ${reservado.status === "PAGO" ? "paga" : "fechada no mês"} em ${brl(antes)} e o orçamento é de ${brl(total)} — nada a lançar.`,
-        );
+        warnings.push(`A transferência desta venda já estava paga em ${brl(antes)} e o orçamento é de ${brl(total)} — nada a lançar.`);
         return { filled, warnings };
       }
       await addVehicleCostWithPayable({
         vehicleId: vehicle.id,
-        description: `Diferença da transferência${destino} — orçamento ${brl(total)} × reservado ${brl(antes)} — despachante${despachante ? ` ${despachante}` : ""}`,
+        description: `Diferença da transferência${destino} — orçamento ${brl(total)} × pago ${brl(antes)} — despachante${despachante ? ` ${despachante}` : ""}`,
         category: "DOCUMENTACAO",
         amount: diff,
         date: hoje,
@@ -1171,11 +1198,9 @@ async function applyTransferQuote(input: {
         dueDate: vencimento,
         installments: 1,
         supplierId,
-        notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}). A transferência de ${brl(antes)} já estava ${reservado.status === "PAGO" ? "paga" : "em mês fechado"}; só a diferença entra agora.${linhas ? ` Linhas: ${linhas}.` : ""}`,
+        notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}). A transferência de ${brl(antes)} já estava paga; só a diferença entra agora.${linhas ? ` Linhas: ${linhas}.` : ""}`,
       });
-      filled.push(
-        `a transferência de ${brl(antes)} já estava ${reservado.status === "PAGO" ? "paga" : "em mês fechado"}: lançada só a diferença de ${brl(diff)} como custo pós-venda (prejuízo)`,
-      );
+      filled.push(`a transferência de ${brl(antes)} já estava paga: lançada só a diferença de ${brl(diff)} como custo pós-venda (prejuízo)`);
       if (itens.length) filled.push(`linhas: ${linhas}`);
       return { filled, warnings };
     }
