@@ -31,6 +31,8 @@ const boletoSchema = z.object({
   tipo: z.string().nullable(),
   descricao: z.string().nullable(),
   cedente: z.string().nullable(),
+  // Linha digitável: vai para o título e sai na Ordem de Pagamento (copiar/colar).
+  linhaDigitavel: z.string().nullable().optional(),
 });
 
 export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
@@ -56,7 +58,7 @@ function normalizeTipo(raw: string | null): BoletoTipo | null {
 const BOLETO_ITEM_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["valor", "valorSemDesconto", "vencimento", "tipo", "descricao", "cedente"],
+  required: ["valor", "valorSemDesconto", "vencimento", "tipo", "descricao", "cedente", "linhaDigitavel"],
   properties: {
     valor: {
       type: ["number", "null"],
@@ -79,6 +81,11 @@ const BOLETO_ITEM_SCHEMA = {
       description: "descrição curta do que o boleto cobra, ex. 'IPVA 2026 cota única'",
     },
     cedente: { type: ["string", "null"], description: "beneficiário/cedente do boleto" },
+    linhaDigitavel: {
+      type: ["string", "null"],
+      description:
+        "linha digitável do código de barras, como impressa (com pontos e espaços); null se não constar",
+    },
   },
 } as const;
 
@@ -112,8 +119,10 @@ const SYSTEM_PROMPT =
   "devolva UM ITEM POR BOLETO DISTINTO, cada um com o seu valor e vencimento. Não some valores de " +
   "boletos diferentes e não repita o mesmo boleto (a 2ª via / o canhoto do MESMO documento, com " +
   "mesmo valor e vencimento, conta uma vez só). " +
-  "5) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "6) Responda somente com o JSON pedido.";
+  "5) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
+  "48 em guia de concessionária/órgão). É o que o usuário copia para pagar — transcreva sem trocar dígito. " +
+  "6) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "7) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];

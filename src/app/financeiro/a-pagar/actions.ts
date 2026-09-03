@@ -17,6 +17,7 @@ import { getNeutralAccountId } from "@/lib/accounts";
 import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
 import { appliedOf, freeCapitalOf } from "@/lib/investments";
+import { linhaDigitavelValida, normalizeBarcodeLine } from "@/lib/barcode-line";
 import type { CategoriaPagar } from "@prisma/client";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -782,6 +783,8 @@ const updatePayableSchema = z.object({
   description: z.string().min(1, "Informe a descrição"),
   categoryLabel: z.string().optional(),
   documentNumber: z.string().optional(),
+  // Linha digitável do boleto/fatura (para copiar na Ordem de Pagamento).
+  barcode: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
@@ -896,6 +899,9 @@ export async function updatePayableAction(
     category,
     categoryLabel: cat.label,
     documentNumber: d.documentNumber?.trim() || null,
+    // Digitada errada (não parece linha digitável), o campo é limpo em vez de
+    // guardar algo que não dá para pagar.
+    barcode: normalizeBarcodeLine(d.barcode),
     amount,
     // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
     // que já tem título — mudar a data aqui liberaria o dia original e faria
@@ -2260,6 +2266,14 @@ export async function readPayableBoletoAction(formData: FormData): Promise<ReadB
         cedente: b.cedente,
       };
     });
+    // Linha digitável: vai direto para o título (é só uma ajuda para pagar, não
+    // mexe em valor nem em data). Com vários boletos no arquivo, guarda a do
+    // primeiro que trouxer — a lista aparece na tela para o usuário conferir.
+    const linha = linhaDigitavelValida(lidos.map((b) => b.linhaDigitavel));
+    if (linha) {
+      await prisma.payable.update({ where: { id: payableId }, data: { barcode: linha } });
+      revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+    }
     if (!boletos.length) {
       return {
         ok: false,

@@ -3161,6 +3161,8 @@ export async function updateManualPayable(input: {
   category: CategoriaPagar;
   categoryLabel?: string | null;
   documentNumber?: string | null;
+  /** Linha digitável do boleto/fatura (Ordem de Pagamento). */
+  barcode?: string | null;
   amount: number;
   dueDate: Date;
   supplierId?: string | null;
@@ -3189,6 +3191,9 @@ export async function updateManualPayable(input: {
         category: input.category,
         categoryLabel: input.categoryLabel || null,
         documentNumber: input.documentNumber || null,
+        // Só mexe quando o chamador informa: outras rotinas (aplicar boleto,
+        // ajustes) atualizam o título sem tocar na linha digitável já guardada.
+        ...(input.barcode !== undefined ? { barcode: input.barcode } : {}),
         amount: input.amount,
         dueDate: input.dueDate,
         supplierId: input.supplierId || null,

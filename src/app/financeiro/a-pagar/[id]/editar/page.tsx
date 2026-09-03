@@ -183,6 +183,7 @@ export default async function EditarPayablePage({
               description: payable.description,
               categoryLabel: payable.categoryLabel || categoryLabelByEnum[payable.category] || "Outros",
               documentNumber: payable.documentNumber,
+              barcode: payable.barcode,
               amount: payable.amount,
               dueDate: payable.dueDate.toISOString(),
               supplierId: payable.supplierId,

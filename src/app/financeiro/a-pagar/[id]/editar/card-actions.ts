@@ -8,6 +8,7 @@ import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { classifyCardCharge, resolveBeneficiaryIds } from "@/lib/card-flow";
 import { extractFaturaFromPdf } from "@/lib/fatura-ai";
 import { effectiveStructuralKey } from "@/lib/structural-flows";
+import { normalizeBarcodeLine } from "@/lib/barcode-line";
 
 /**
  * Lançamentos da fatura de cartão (itens dentro de um título cardInvoice).
@@ -235,6 +236,11 @@ export async function importCardInvoicePdfAction(formData: FormData): Promise<Im
       capitalBeneficiaryId: beneficiaryIds[classifyCardCharge(l.descricao, l.cartao_final)],
     })),
   });
+
+  // Linha digitável da fatura: fica no título e sai na Ordem de Pagamento com
+  // botão de copiar (é o que o usuário cola no leitor do banco para pagar).
+  const linha = normalizeBarcodeLine(fatura.linha_digitavel);
+  if (linha) await prisma.payable.update({ where: { id: payableId }, data: { barcode: linha } });
 
   // Guarda o PDF junto do título (auditoria/conferência).
   await prisma.payableAttachment.create({

@@ -18,6 +18,8 @@ type Payable = {
   description: string;
   categoryLabel: string;
   documentNumber: string | null;
+  /** Linha digitável do boleto/fatura (sai na Ordem de Pagamento). */
+  barcode: string | null;
   amount: number;
   dueDate: string;
   supplierId: string | null;
@@ -81,6 +83,19 @@ export default function EditPayableForm({
           <Input name="documentNumber" defaultValue={payable.documentNumber || ""} placeholder="Ex: NF 12345" />
         </Field>
       </div>
+
+      <Field label="Linha digitável (código de barras do boleto/fatura)">
+        <Input
+          name="barcode"
+          defaultValue={payable.barcode || ""}
+          inputMode="numeric"
+          placeholder="Ex: 03399.63290 64000.000006 00125.601014 5 12345678901234"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Aparece na Ordem de Pagamento com botão de copiar, para colar no leitor do banco. Ao anexar
+          o boleto (ou importar a fatura do cartão), o sistema preenche sozinho.
+        </p>
+      </Field>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         {amountLocked ? (
