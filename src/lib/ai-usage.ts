@@ -23,6 +23,7 @@ export const AI_FEATURES = {
   atpv: "ATPV-e",
   boleto: "Boleto",
   fatura: "Fatura de cartão",
+  orcamento: "Orçamento do despachante",
   parecer: "Parecer IA",
 } as const;
 

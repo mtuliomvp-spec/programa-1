@@ -810,11 +810,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           <Card>
             <CardHeader
               title="Orçamento de transferência (despachante)"
-              description="Anexe o orçamento da transferência de propriedade emitido pelo despachante"
+              description="Anexe o orçamento/recibo do despachante: a IA lê e lança o título da transferência no Contas a pagar"
             />
             <VehicleTransferQuote
               vehicleId={vehicle.id}
               canManage={canComunicacao}
+              transferToName={vehicle.transferToName}
               quotes={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
               )}
