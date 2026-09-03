@@ -1114,7 +1114,7 @@ async function applyTransferQuote(input: {
     const venda = await prisma.sale.findFirst({
       where: { vehicleId: vehicle.id, status: "CONCLUIDA" },
       orderBy: { saleDate: "desc" },
-      select: { id: true, saleDate: true, transferAmount: true },
+      select: { id: true, saleDate: true, transferAmount: true, transferReservedAmount: true },
     });
     const reservado = venda
       ? await prisma.payable.findFirst({
@@ -1143,6 +1143,14 @@ async function applyTransferQuote(input: {
       const alvo = Math.round((total - diffPaga) * 100) / 100;
       const antes = Math.round(reservado.amount * 100) / 100;
       const diff = Math.round((alvo - antes) * 100) / 100;
+      // O que foi RESERVADO no registro da venda (não o valor atual do título,
+      // que numa releitura já é o ajustado): é a referência do "de → para".
+      // Vendas antigas sem o campo: fixa agora, antes do primeiro ajuste.
+      const reservadoNaVenda = venda.transferReservedAmount ?? antes;
+      if (venda.transferReservedAmount == null) {
+        await prisma.sale.update({ where: { id: venda.id }, data: { transferReservedAmount: antes } });
+      }
+      const diffTotal = Math.round((alvo - reservadoNaVenda) * 100) / 100;
       const mesVenda = venda.saleDate.toLocaleDateString("pt-BR", { month: "2-digit", year: "numeric", timeZone: "UTC" });
       let mesFechado = false;
       try {
@@ -1164,7 +1172,12 @@ async function applyTransferQuote(input: {
               // Mesma observação do título lançado do zero: o que o despachante
               // cobra, linha a linha, e de onde veio o ajuste.
               notes:
-                `Ajustado pela leitura do orçamento do despachante (anexo ${input.attachmentId}): de ${brl(antes)} (reservado na venda) para ${brl(alvo)}.` +
+                `Ajustado pela leitura do orçamento do despachante (anexo ${input.attachmentId}): de ${brl(reservadoNaVenda)} (reservado na venda) para ${brl(alvo)}` +
+                (diffTotal > 0
+                  ? ` — diferença de ${brl(diffTotal)} no resultado da venda (prejuízo).`
+                  : diffTotal < 0
+                    ? ` — sobra de ${brl(-diffTotal)} no resultado da venda.`
+                    : ".") +
                 (diffPaga > 0 ? ` Diferença de ${brl(diffPaga)} já paga em título próprio.` : "") +
                 (linhas ? ` Linhas: ${linhas}.` : ""),
             },
@@ -1179,7 +1192,7 @@ async function applyTransferQuote(input: {
             ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(alvo)} — a diferença de ${brl(diff)} entra como prejuízo no resultado da venda`
             : diff < 0
               ? `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(alvo)} — a sobra de ${brl(-diff)} volta ao resultado da venda`
-              : `título "Transferência DETRAN" da venda já está em ${brl(alvo)} — fornecedor e vencimento atualizados`,
+              : `título "Transferência DETRAN" da venda já está em ${brl(alvo)} (reservado na venda: ${brl(reservadoNaVenda)}) — fornecedor, vencimento e observação atualizados`,
         );
         if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
         if (mesFechado && diff !== 0) {
