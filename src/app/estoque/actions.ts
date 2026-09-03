@@ -1157,7 +1157,17 @@ async function applyTransferQuote(input: {
         await prisma.$transaction([
           prisma.payable.update({
             where: { id: reservado.id },
-            data: { amount: alvo, supplierId: supplierId ?? undefined, dueDate: vencimento },
+            data: {
+              amount: alvo,
+              supplierId: supplierId ?? undefined,
+              dueDate: vencimento,
+              // Mesma observação do título lançado do zero: o que o despachante
+              // cobra, linha a linha, e de onde veio o ajuste.
+              notes:
+                `Ajustado pela leitura do orçamento do despachante (anexo ${input.attachmentId}): de ${brl(antes)} (reservado na venda) para ${brl(alvo)}.` +
+                (diffPaga > 0 ? ` Diferença de ${brl(diffPaga)} já paga em título próprio.` : "") +
+                (linhas ? ` Linhas: ${linhas}.` : ""),
+            },
           }),
           prisma.sale.update({
             where: { id: venda.id },
