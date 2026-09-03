@@ -1,4 +1,5 @@
 import clsx from "@/lib/clsx";
+import { buildDateLabel, versaoLabel } from "@/lib/app-version";
 
 export default function BrandMark({
   dark = false,
@@ -31,6 +32,13 @@ export default function BrandMark({
         </p>
         <p className={clsx("text-[11px]", dark ? "text-slate-400" : "text-slate-500")}>
           Gestão de seminovos
+        </p>
+        {/* Contador de versão: número do PR que está no ar (ver next.config.ts). */}
+        <p
+          className={clsx("text-[10px] font-medium tabular-nums", dark ? "text-sky-300/80" : "text-blue-600/80")}
+          title={buildDateLabel() ? `Publicada em ${buildDateLabel()}` : undefined}
+        >
+          {versaoLabel()}
         </p>
       </div>
     </div>
