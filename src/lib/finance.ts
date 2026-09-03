@@ -1203,6 +1203,9 @@ async function vehicleSale(input: {
         referrals,
         transferCharged,
         transferAmount,
+        // Valor RESERVADO no registro da venda: não muda quando o orçamento do
+        // despachante ajusta a transferência (é a referência do "de → para").
+        transferReservedAmount: transferCharged ? transferAmount : null,
         viaPaidTraffic: Boolean(input.viaPaidTraffic),
         saleType: input.saleType === "FINANCIAMENTO_TERCEIROS" ? "FINANCIAMENTO_TERCEIROS" : "VENDA",
         refinancing: Boolean(input.refinancing),
