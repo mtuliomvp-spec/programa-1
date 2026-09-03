@@ -1122,6 +1122,9 @@ model Payable {
   categoryLabel        String?
   // Nº do documento de origem (nota fiscal, fatura, boleto) informado no lançamento.
   documentNumber       String?
+  // Linha digitável do código de barras (boleto/fatura): sai na Ordem de
+  // Pagamento com botão de copiar, para colar no leitor do banco.
+  barcode              String?
   amount               Float
   dueDate              DateTime
   paymentDate          DateTime?

@@ -29,6 +29,7 @@ const faturaSchema = z.object({
   banco: z.string().nullable(),
   vencimento: z.string().nullable(),
   total_a_pagar: z.number(),
+  linha_digitavel: z.string().nullable().optional(),
   lancamentos: z.array(itemSchema),
 });
 
@@ -39,11 +40,16 @@ export type FaturaItem = z.infer<typeof itemSchema>;
 const FATURA_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["banco", "vencimento", "total_a_pagar", "lancamentos"],
+  required: ["banco", "vencimento", "total_a_pagar", "linha_digitavel", "lancamentos"],
   properties: {
     banco: { type: ["string", "null"] },
     vencimento: { type: ["string", "null"], description: "dd/mm/aaaa" },
     total_a_pagar: { type: "number" },
+    linha_digitavel: {
+      type: ["string", "null"],
+      description:
+        "linha digitável do código de barras da fatura, como impressa (com os pontos e espaços); null se não constar",
+    },
     lancamentos: {
       type: "array",
       items: {
@@ -70,7 +76,9 @@ const SYSTEM_PROMPT =
   "2) IGNORE pagamentos, créditos, estornos recebidos (valores negativos, 'DEB AUTOM DE FATURA', 'PAGAMENTO') e linhas de valor 0,00 (ex.: anuidade zerada). " +
   "3) Para cada lançamento informe a data (dd/mm), a descrição como está na fatura, a parcela (x/y) quando houver, os 4 últimos dígitos do cartão e o primeiro nome do portador daquela seção. " +
   "4) A soma dos lançamentos deve bater com o total a pagar da fatura quando a fatura anterior foi quitada integralmente; confira antes de responder. " +
-  "5) Nunca invente valores: transcreva. Responda somente com o JSON pedido.";
+  "5) LINHA DIGITÁVEL: o código de barras da fatura em números (costuma vir no topo ou no rodapé, em 5 blocos, " +
+  "com 47 ou 48 dígitos no total). Transcreva exatamente como impressa; se não constar, devolva null. " +
+  "6) Nunca invente valores: transcreva. Responda somente com o JSON pedido.";
 
 export async function extractFaturaFromPdf(pdfBase64: string): Promise<FaturaExtraida> {
   const config = await getParecerConfig();

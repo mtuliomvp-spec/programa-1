@@ -11,6 +11,8 @@ import { userCan } from "@/lib/guards";
 import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
 import SetSupplierForm from "./SetSupplierForm";
 import PayableAttachments from "./PayableAttachments";
+import CopyBarcode from "./CopyBarcode";
+import { formatBarcodeLine } from "@/lib/barcode-line";
 
 export const dynamic = "force-dynamic";
 
@@ -173,6 +175,9 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
         [pixLabel, bene!.pixKey || "—"],
       ]
     : [["Dados bancários", naoCadMsg]];
+  // Linha digitável do boleto/fatura: no PDF vai como linha da seção de
+  // pagamento; na tela, num bloco próprio com botão de copiar.
+  if (payable.barcode) pagamentoRows.push(["Linha digitável", formatBarcodeLine(payable.barcode)]);
 
   const sections: OrdemPdfData["sections"] = [
     { title: "Dados do título", rows: tituloRows },
@@ -238,7 +243,9 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
 
         <Section title="Dados para pagamento">
           {hasBankData ? (
-            pagamentoRows.map(([label, value]) => <Row key={label} label={label} value={value} strong={label.startsWith("Chave PIX") && !!bene?.pixKey} />)
+            pagamentoRows
+              .filter(([label]) => label !== "Linha digitável")
+              .map(([label, value]) => <Row key={label} label={label} value={value} strong={label.startsWith("Chave PIX") && !!bene?.pixKey} />)
           ) : (
             <p className="py-1.5 text-sm text-amber-700">
               Dados bancários não cadastrados.{" "}
@@ -251,6 +258,11 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
               )}
             </p>
           )}
+          {payable.barcode ? (
+            <div className="mt-2">
+              <CopyBarcode value={payable.barcode} />
+            </div>
+          ) : null}
         </Section>
 
         {payable.notes ? (

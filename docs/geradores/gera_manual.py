@@ -300,6 +300,10 @@ story += tela(
         "(despesa da loja) ou <i>Capital</i> (aí você escolhe o sócio, e o valor vira retirada dele "
         "quando o título for pago). É o que decide onde o gasto aparece no resultado do mês.",
         "Cada título gera <b>ordem de pagamento</b> em PDF com os dados bancários do beneficiário.",
+        "<b>Linha digitável:</b> a ordem de pagamento mostra o código de barras do boleto/fatura com o "
+        "botão <b>Copiar</b> — copia só os números, para colar no “pagar com código de barras” do "
+        "aplicativo do banco. É preenchida sozinha ao anexar o boleto ou importar a fatura do cartão, "
+        "e pode ser digitada na edição do título.",
     ],
 )
 story += tela(
