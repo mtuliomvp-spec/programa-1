@@ -5,7 +5,7 @@ import { parseReferrals } from "@/lib/referrals";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { cancelIntermediationAction } from "../actions";
-import { listPayoffBoletos, listIntermediationCrlvs } from "../core";
+import { listPayoffBoletos, listIntermediationCrlvs, identificacaoVeiculo } from "../core";
 import PayoffCard from "../PayoffCard";
 import CrlvLine from "../CrlvLine";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
@@ -63,7 +63,7 @@ export default async function FinanciamentoTerceirosDetailPage({
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title={`Financiamento de terceiros${sale.refinancing ? " (Refinanciamento)" : ""}`}
-        description={`${sale.vehicle.brand} ${sale.vehicle.model} · ${sale.vehicle.plate}`}
+        description={`${sale.vehicle.brand} ${sale.vehicle.model} · ${identificacaoVeiculo(sale.vehicle)}`}
         action={
           <LinkButton variant="secondary" href={`/vendas/financiamento-terceiros/${sale.id}/contrato`}>
             📄 Contrato de intermediação

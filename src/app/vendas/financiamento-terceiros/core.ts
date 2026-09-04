@@ -48,7 +48,11 @@ export const intermediationSchema = z.object({
   version: z.string().optional(),
   manufactureYear: z.coerce.number().int().min(1950).max(2100),
   modelYear: z.coerce.number().int().min(1950).max(2100),
-  plate: z.string().min(1, "Informe a placa"),
+  // 0 km: o carro ainda não foi emplacado — placa e RENAVAM só existem depois,
+  // e quem identifica o veículo no contrato é o chassi (sempre obrigatório).
+  zeroKm: z.coerce.boolean().optional(),
+  manufacturerName: z.string().optional(),
+  plate: z.string().optional(),
   // Obrigatórios: a intermediação é uma venda e gera contrato, que imprime o
   // chassi. A checagem é feita depois da normalização (o usuário pode digitar
   // com pontos/espaços), por isso `.optional()` aqui e `superRefine` abaixo.
@@ -97,8 +101,19 @@ export const intermediationSchema = z.object({
         ctx.addIssue({ code: "custom", path: ["payoffBank"], message: "Informe o banco credor da quitação" });
       }
     }
-    if (!normalizeRenavam(d.renavam)) {
-      ctx.addIssue({ code: "custom", path: ["renavam"], message: "Informe o RENAVAM do veículo" });
+    if (!d.zeroKm) {
+      if (!d.plate?.trim()) {
+        ctx.addIssue({ code: "custom", path: ["plate"], message: "Informe a placa" });
+      }
+      if (!normalizeRenavam(d.renavam)) {
+        ctx.addIssue({ code: "custom", path: ["renavam"], message: "Informe o RENAVAM do veículo" });
+      }
+    } else if (!d.manufacturerName?.trim()) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["manufacturerName"],
+        message: "Informe a montadora/concessionária da nota fiscal do veículo 0 km",
+      });
     }
     // Completo: a consulta por placa devolve o chassi mascarado, e mascarado
     // não serve para contrato nem para identificar o carro.
@@ -155,18 +170,22 @@ async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: stri
   if (D > F) {
     throw new Error("A devolução ao cliente não pode ser maior que o valor do financiamento.");
   }
-  // Mercosul: as duas grafias são o mesmo carro (ver src/lib/plate.ts).
-  const existing = await prisma.vehicle.findFirst({
-    where: {
-      plate: { in: plateVariants(d.plate) },
-      status: { not: "VENDIDO" },
-      intermediation: false,
-      ...(excludeVehicleId ? { id: { not: excludeVehicleId } } : {}),
-    },
-    select: { id: true },
-  });
-  if (existing) {
-    throw new Error("Já existe um veículo ativo no estoque com essa placa.");
+  // Mercosul: as duas grafias são o mesmo carro (ver src/lib/plate.ts). No 0 km
+  // não há placa para conferir — o chassi (único entre fichas ativas) é quem
+  // impede duplicidade.
+  if (d.plate?.trim()) {
+    const existing = await prisma.vehicle.findFirst({
+      where: {
+        plate: { in: plateVariants(d.plate) },
+        status: { not: "VENDIDO" },
+        intermediation: false,
+        ...(excludeVehicleId ? { id: { not: excludeVehicleId } } : {}),
+      },
+      select: { id: true },
+    });
+    if (existing) {
+      throw new Error("Já existe um veículo ativo no estoque com essa placa.");
+    }
   }
   let sellerName: string | null = d.sellerName || null;
   if (d.sellerId) {
@@ -259,15 +278,41 @@ function buildPreSaleData(
   };
 }
 
+/**
+ * Marcador de placa do 0 km: a ficha do veículo exige placa, mas o carro ainda
+ * não foi emplacado. Guarda "0KM-<final do chassi>" — único (o chassi é único)
+ * e nunca exibido: as telas e o contrato mostram "0 km (sem placa)".
+ */
+/**
+ * Como o carro aparece nas telas: a placa, ou "0 km · chassi …" quando ainda
+ * não foi emplacado (a placa guardada é só o marcador técnico).
+ */
+export function identificacaoVeiculo(v: {
+  plate: string;
+  chassi?: string | null;
+  zeroKm?: boolean;
+}): string {
+  if (!v.zeroKm) return v.plate;
+  return v.chassi ? `0 km · chassi ${v.chassi}` : "0 km (sem placa)";
+}
+
+export function placaZeroKm(chassi: string | null | undefined): string {
+  const c = (chassi || "").replace(/\s+/g, "").toUpperCase();
+  return `0KM-${c.slice(-8) || Date.now().toString().slice(-8)}`;
+}
+
 /** Campos do veículo de terceiro (para criar/atualizar). */
 function buildVehicleData(d: IntermediationData, F: number) {
+  const zeroKm = Boolean(d.zeroKm);
   return {
     brand: d.brand,
     model: d.model,
     version: d.version || null,
     manufactureYear: d.manufactureYear,
     modelYear: d.modelYear,
-    plate: d.plate.toUpperCase(),
+    zeroKm,
+    manufacturerName: zeroKm ? d.manufacturerName?.trim() || null : null,
+    plate: d.plate?.trim() ? d.plate.toUpperCase() : placaZeroKm(d.chassi),
     chassi: chassiOrNull(d.chassi),
     renavam: renavamOrNull(d.renavam),
     color: d.color || null,
@@ -292,7 +337,11 @@ export async function createIntermediationPreSale(d: IntermediationData): Promis
   const vehicle = await createIntermediationVehicle({
     ...buildVehicleData(d, F),
     entryDate: parseDateInput(d.saleDate),
-    notes: `Veículo de terceiro — financiamento de terceiros (proprietário: ${d.ownerName}).`,
+    notes:
+      `Veículo de terceiro — financiamento de terceiros (proprietário: ${d.ownerName}).` +
+      (d.zeroKm
+        ? ` Veículo 0 km${d.manufacturerName?.trim() ? ` da montadora ${d.manufacturerName.trim()}` : ""} — sem placa/RENAVAM até o emplacamento.`
+        : ""),
   });
 
   const pre = await prisma.preSale.create({

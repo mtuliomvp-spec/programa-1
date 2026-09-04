@@ -40,6 +40,8 @@ const docSchema = z.object({
   exercicio: z.string().nullable(),
   /** NF: número da nota (só para a descrição do anexo). */
   numeroNota: z.string().nullable(),
+  /** NF: montadora/concessionária que emitiu a nota (consta no contrato). */
+  emitente: z.string().nullable(),
 });
 
 export type DocumentoVeiculo = z.infer<typeof docSchema>;
@@ -67,6 +69,7 @@ const DOC_JSON_SCHEMA = {
     "transmissao",
     "exercicio",
     "numeroNota",
+    "emitente",
   ],
   properties: {
     documento: {
@@ -99,6 +102,11 @@ const DOC_JSON_SCHEMA = {
     transmissao: { type: ["string", "null"], description: "Manual ou Automático, se constar" },
     exercicio: { type: ["string", "null"], description: "CRLV: ano do exercício, 4 dígitos; NF: null" },
     numeroNota: { type: ["string", "null"], description: "NF: número da nota fiscal; CRLV: null" },
+    emitente: {
+      type: ["string", "null"],
+      description:
+        "NF: nome da MONTADORA/CONCESSIONÁRIA que emitiu a nota (campo DADOS DO EMITENTE), ex. VOLKSWAGEN DO BRASIL INDUSTRIA DE VEICULOS AUTOMOTORES LTDA; CRLV: null",
+    },
   },
 } as const;
 
@@ -115,8 +123,10 @@ const SYSTEM_PROMPT =
   "5) MARCA/MODELO: na NF a descrição do produto costuma vir junta ('VW/VIRTUS CL AC') — separe em marca (VW), " +
   "modelo (VIRTUS) e versão (CL AC). " +
   "6) CPF/CNPJ: só os dígitos, e SOMENTE se estiver completo — mascarado com asteriscos vai null. " +
-  "7) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "8) Responda somente com o JSON pedido.";
+  "7) EMITENTE: na NF, o nome da montadora/concessionária que emitiu a nota (bloco DADOS DO EMITENTE) — " +
+  "é a origem do veículo 0 km e vai no contrato. " +
+  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "9) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];

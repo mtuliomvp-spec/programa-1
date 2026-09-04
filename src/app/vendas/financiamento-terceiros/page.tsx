@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireModule } from "@/lib/guards";
+import { identificacaoVeiculo } from "./core";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import {
@@ -139,7 +140,7 @@ export default async function FinanciamentoTerceirosListPage({
                     {p.vehicle ? (
                       <>
                         {p.vehicle.brand} {p.vehicle.model}
-                        <span className="ml-1.5 text-xs text-slate-400">{p.vehicle.plate}</span>
+                        <span className="ml-1.5 text-xs text-slate-400">{identificacaoVeiculo(p.vehicle)}</span>
                       </>
                     ) : (
                       <span className="text-slate-400">Veículo removido</span>
@@ -193,7 +194,7 @@ export default async function FinanciamentoTerceirosListPage({
                     <Link href={`/vendas/financiamento-terceiros/${o.id}`} className="hover:underline">
                       {o.vehicle.brand} {o.vehicle.model}
                     </Link>
-                    <span className="ml-1.5 text-xs text-slate-400">{o.vehicle.plate}</span>
+                    <span className="ml-1.5 text-xs text-slate-400">{identificacaoVeiculo(o.vehicle)}</span>
                     {o.refinancing ? (
                       <span className="ml-1.5 rounded bg-blue-50 px-1 text-[10px] font-medium text-blue-700">Refi</span>
                     ) : null}

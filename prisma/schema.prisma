@@ -539,6 +539,12 @@ model Vehicle {
   // Em nome de quem o veículo está: o proprietário lido do último CRLV
   // anexado (preenchido pela leitura por IA; sobrescrito a cada leitura).
   docOwnerName                 String?
+  // Veículo 0 km (financiamento de terceiros): ainda não foi emplacado, então
+  // não tem placa nem RENAVAM — quem identifica o carro é o CHASSI. A placa
+  // guardada é um marcador técnico ("0KM-<final do chassi>"), nunca exibido.
+  zeroKm                       Boolean       @default(false)
+  // Montadora/concessionária emitente da nota fiscal do 0 km (vai no contrato).
+  manufacturerName             String?
   // Marcado MANUALMENTE como "em processo de transferência no DETRAN" — para
   // casos antigos em que a taxa foi paga fora do sistema e não há custo de
   // "transferência" para acender o selo sozinho. Anexar o CRLV novo encerra o
