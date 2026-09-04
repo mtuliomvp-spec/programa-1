@@ -282,7 +282,7 @@ export default function IntermediationForm({
       setCrlvNumeroNota(d.numeroNota ?? "");
       // NF: é 0 km — marca a opção e traz a montadora emitente da nota.
       if (ehNota) {
-        setZeroKm(true);
+        marcarZeroKm(true);
         if (d.emitente) {
           setManufacturerName(d.emitente);
           preenchidos.push("montadora");
@@ -372,6 +372,23 @@ export default function IntermediationForm({
       setField("transmission", d.transmission);
       setLookupMsg(`Dados encontrados: ${d.brand ?? ""} ${d.model ?? ""}. Confira e complete.`);
     });
+  }
+
+  /**
+   * Marca/desmarca o 0 km. Ao marcar, limpa placa e RENAVAM: o carro ainda não
+   * foi emplacado, e o que estivesse ali (inclusive o "CÓD.RENAVAM" do modelo,
+   * que a nota traz) não é do veículo.
+   */
+  function marcarZeroKm(valor: boolean) {
+    setZeroKm(valor);
+    if (valor) {
+      const limpar = (name: string) => {
+        const el = formRef.current?.elements.namedItem(name);
+        if (el instanceof HTMLInputElement) el.value = "";
+      };
+      limpar("plate");
+      limpar("renavam");
+    }
   }
 
   function setReferral(i: number, field: "name" | "amount", value: string) {
@@ -556,7 +573,7 @@ export default function IntermediationForm({
             name="zeroKm"
             value="true"
             checked={zeroKm}
-            onChange={(e) => setZeroKm(e.target.checked)}
+            onChange={(e) => marcarZeroKm(e.target.checked)}
             className="mt-0.5 h-4 w-4 rounded border-slate-300"
           />
           <span>

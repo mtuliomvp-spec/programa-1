@@ -187,6 +187,26 @@ async function validateAndPrepare(d: IntermediationData, excludeVehicleId?: stri
       throw new Error("Já existe um veículo ativo no estoque com essa placa.");
     }
   }
+  // Chassi: é ele que identifica o carro (e o único do 0 km). Sem esta conferência
+  // o banco recusava com uma mensagem técnica de índice único.
+  const chassiNormalizado = chassiOrNull(d.chassi);
+  if (chassiNormalizado) {
+    const mesmoChassi = await prisma.vehicle.findFirst({
+      where: {
+        chassi: chassiNormalizado,
+        status: { not: "VENDIDO" },
+        ...(excludeVehicleId ? { id: { not: excludeVehicleId } } : {}),
+      },
+      select: { id: true, intermediation: true },
+    });
+    if (mesmoChassi) {
+      throw new Error(
+        mesmoChassi.intermediation
+          ? "Já existe uma operação em aberto com este chassi — abra a pré-venda existente em vez de criar outra."
+          : "Já existe um veículo ativo no estoque com este chassi.",
+      );
+    }
+  }
   let sellerName: string | null = d.sellerName || null;
   if (d.sellerId) {
     const u = await prisma.user.findUnique({ where: { id: d.sellerId }, select: { name: true } });

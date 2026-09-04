@@ -129,6 +129,15 @@ export type CrlvLido = {
   emitente: string | null;
 };
 
+/**
+ * RENAVAM só é aceito com 9 a 11 dígitos. Serve de rede contra o "CÓD.RENAVAM"
+ * da nota fiscal (código do MODELO, 8 dígitos), que a leitura já deve ignorar.
+ */
+function renavamPlausivel(value: string | null | undefined): string | null {
+  const digitos = (value || "").replace(/\D/g, "");
+  return digitos.length >= 9 && digitos.length <= 11 ? digitos : null;
+}
+
 /** 18438083315 → 184.380.833-15; 14 dígitos → CNPJ com máscara. */
 function mascaraDocumento(digitos: string | null): string | null {
   const d = (digitos || "").replace(/\D/g, "");
@@ -160,7 +169,12 @@ export async function readIntermediationCrlvAction(
   try {
     const { extractVehicleDoc, tipoDocumento } = await import("@/lib/vehicle-doc-ai");
     const d = await extractVehicleDoc(Buffer.from(await file.arrayBuffer()).toString("base64"), file.type);
-    const documento = tipoDocumento(d.documento);
+    // Número da nota e emitente só existem em nota fiscal: se vieram, é NF —
+    // mesmo que a leitura tenha rotulado o documento como CRLV (já aconteceu
+    // com esta DANFE), e é o rótulo que decide placa/RENAVAM e o 0 km.
+    const rotulo = tipoDocumento(d.documento);
+    const documento: "CRLV" | "NF" | null =
+      rotulo === "NF" || d.numeroNota?.trim() || d.emitente?.trim() ? "NF" : rotulo;
     return {
       ok: true,
       data: {
@@ -172,7 +186,10 @@ export async function readIntermediationCrlvAction(
         // NF de 0 km não tem placa nem RENAVAM — o carro ainda não foi emplacado.
         placa: documento === "NF" ? null : d.placa?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || null,
         chassi: d.chassi?.replace(/\s+/g, "").toUpperCase() || null,
-        renavam: documento === "NF" ? null : d.renavam?.replace(/\D/g, "") || null,
+        // Trava por tamanho, além do tipo do documento: o "CÓD.RENAVAM" impresso
+        // na nota é o código do MODELO (8 dígitos) e já veio parar aqui. RENAVAM
+        // de verdade tem 9 (documento antigo) a 11 dígitos.
+        renavam: documento === "NF" ? null : renavamPlausivel(d.renavam),
         marca: d.marca?.trim() || null,
         modelo: d.modelo?.trim() || null,
         versao: d.versao?.trim() || null,
