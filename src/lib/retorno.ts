@@ -11,6 +11,13 @@
 
 export const RETORNO_RATE_PER_LEVEL = 0.012; // 1,2% por nível
 
+/**
+ * Níveis oferecidos nas listas de seleção (R-01 … R-08). O cálculo não tem
+ * teto — isto é só o que aparece pronto para escolher; a venda de estoque, que
+ * usa campo numérico livre, aceita qualquer nível.
+ */
+export const RETORNO_NIVEIS = [1, 2, 3, 4, 5, 6, 7, 8] as const;
+
 export type RetornoBreakdown = { gross: number; tax: number; net: number };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;

@@ -12,7 +12,7 @@ import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
 import { findPersonByDocument } from "@/app/person-lookup";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
-import { computeReturn, retornoLabel } from "@/lib/retorno";
+import { computeReturn, retornoLabel, RETORNO_NIVEIS } from "@/lib/retorno";
 import { createIntermediationPreSaleAction, readIntermediationCrlvAction } from "./actions";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import type { IntermediationFormState } from "./core";
@@ -793,7 +793,7 @@ export default function IntermediationForm({
               onChange={(e) => setReturnLevel(Number(e.target.value) || 0)}
             >
               <option value="0">Sem retorno</option>
-              {[1, 2, 3, 4, 5].map((lvl) => (
+              {RETORNO_NIVEIS.map((lvl) => (
                 <option key={lvl} value={lvl}>
                   {retornoLabel(lvl)}
                 </option>
