@@ -13,6 +13,7 @@ import {
   updateIntermediationPreSale,
   convertIntermediationPreSale,
   PAYOFF_BOLETO_PREFIX,
+  NOTA_VEICULO_PREFIX,
   type IntermediationFormState,
 } from "./core";
 
@@ -56,12 +57,20 @@ export async function createIntermediationPreSaleAction(
   if (crlvFile instanceof File && crlvFile.size > 0 && crlvFile.size <= PAYOFF_BOLETO_MAX_BYTES) {
     const pre = await prisma.preSale.findUniqueOrThrow({ where: { id }, select: { vehicleId: true } });
     const exercicio = String(formData.get("crlvExercicio") || "").match(/\d{4}/)?.[0];
+    // NF de 0 km entra como DOCUMENTO (não é CRLV): o carro ainda não tem
+    // registro, e o selo/leitura de CRLV do estoque não se aplicam a ela.
+    const ehNota = String(formData.get("crlvDocumento") || "") === "NF";
+    const numeroNota = String(formData.get("crlvNumeroNota") || "").trim();
     await prisma.vehicleAttachment.create({
       data: {
         vehicleId: pre.vehicleId,
-        kind: "CRLV",
-        description: exercicio ? `CRLV ${exercicio}` : "CRLV",
-        filename: crlvFile.name || "crlv.pdf",
+        kind: ehNota ? "DOCUMENTO" : "CRLV",
+        description: ehNota
+          ? `${NOTA_VEICULO_PREFIX}${numeroNota ? ` nº ${numeroNota}` : ""}`
+          : exercicio
+            ? `CRLV ${exercicio}`
+            : "CRLV",
+        filename: crlvFile.name || (ehNota ? "nota-fiscal.pdf" : "crlv.pdf"),
         mimeType: crlvFile.type || "application/octet-stream",
         size: crlvFile.size,
         data: Buffer.from(await crlvFile.arrayBuffer()),
@@ -97,19 +106,25 @@ export async function createIntermediationPreSaleAction(
 }
 
 export type CrlvLido = {
+  /** CRLV (usado) ou NF (0 km) — muda o que dá para preencher e o anexo. */
+  documento: "CRLV" | "NF" | null;
   proprietario: string | null;
   cpfCnpj: string | null;
+  telefone: string | null;
+  endereco: string | null;
   placa: string | null;
   chassi: string | null;
   renavam: string | null;
   marca: string | null;
   modelo: string | null;
+  versao: string | null;
   anoFabricacao: number | null;
   anoModelo: number | null;
   cor: string | null;
   combustivel: string | null;
   transmissao: string | null;
   exercicio: string | null;
+  numeroNota: string | null;
 };
 
 /** 18438083315 → 184.380.833-15; 14 dígitos → CNPJ com máscara. */
@@ -121,10 +136,11 @@ function mascaraDocumento(digitos: string | null): string | null {
 }
 
 /**
- * Lê o CRLV anexado no formulário do financiamento de terceiros (antes de a
- * pré-venda existir) e devolve os dados para o navegador preencher o
- * proprietário e o veículo. Não grava nada: o arquivo segue no formulário e é
- * anexado ao veículo de terceiro quando a ficha é salva.
+ * Lê o documento do veículo anexado no formulário do financiamento de terceiros
+ * (antes de a pré-venda existir) — CRLV de usado OU NOTA FISCAL de 0 km — e
+ * devolve os dados para o navegador preencher o proprietário e o veículo. Não
+ * grava nada: o arquivo segue no formulário e é anexado ao veículo de terceiro
+ * quando a ficha é salva.
  */
 export async function readIntermediationCrlvAction(
   formData: FormData,
@@ -135,31 +151,40 @@ export async function readIntermediationCrlvAction(
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const file = formData.get("file");
-  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Selecione o arquivo do CRLV." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Selecione o arquivo do CRLV ou da nota fiscal." };
+  }
   if (file.size > PAYOFF_BOLETO_MAX_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
   try {
-    const { extractCrlv } = await import("@/lib/crlv-ai");
-    const crlv = await extractCrlv(Buffer.from(await file.arrayBuffer()).toString("base64"), file.type);
+    const { extractVehicleDoc, tipoDocumento } = await import("@/lib/vehicle-doc-ai");
+    const d = await extractVehicleDoc(Buffer.from(await file.arrayBuffer()).toString("base64"), file.type);
+    const documento = tipoDocumento(d.documento);
     return {
       ok: true,
       data: {
-        proprietario: crlv.proprietario?.trim() || null,
-        cpfCnpj: mascaraDocumento(crlv.cpfCnpj),
-        placa: crlv.placa?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || null,
-        chassi: crlv.chassi?.replace(/\s+/g, "").toUpperCase() || null,
-        renavam: crlv.renavam?.replace(/\D/g, "") || null,
-        marca: crlv.marca?.trim() || null,
-        modelo: crlv.modelo?.trim() || null,
-        anoFabricacao: crlv.anoFabricacao,
-        anoModelo: crlv.anoModelo,
-        cor: crlv.cor?.trim() || null,
-        combustivel: crlv.combustivel?.trim() || null,
-        transmissao: crlv.transmissao?.trim() || null,
-        exercicio: crlv.exercicio?.match(/\d{4}/)?.[0] ?? null,
+        documento,
+        proprietario: d.proprietario?.trim() || null,
+        cpfCnpj: mascaraDocumento(d.cpfCnpj),
+        telefone: d.telefone?.trim() || null,
+        endereco: d.endereco?.replace(/\s+/g, " ").trim() || null,
+        // NF de 0 km não tem placa nem RENAVAM — o carro ainda não foi emplacado.
+        placa: documento === "NF" ? null : d.placa?.replace(/[^A-Za-z0-9]/g, "").toUpperCase() || null,
+        chassi: d.chassi?.replace(/\s+/g, "").toUpperCase() || null,
+        renavam: documento === "NF" ? null : d.renavam?.replace(/\D/g, "") || null,
+        marca: d.marca?.trim() || null,
+        modelo: d.modelo?.trim() || null,
+        versao: d.versao?.trim() || null,
+        anoFabricacao: d.anoFabricacao,
+        anoModelo: d.anoModelo,
+        cor: d.cor?.trim() || null,
+        combustivel: d.combustivel?.trim() || null,
+        transmissao: d.transmissao?.trim() || null,
+        exercicio: d.exercicio?.match(/\d{4}/)?.[0] ?? null,
+        numeroNota: d.numeroNota?.replace(/\s+/g, " ").trim() || null,
       },
     };
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler o CRLV." };
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler o documento." };
   }
 }
 

@@ -101,6 +101,10 @@ export default function IntermediationForm({
   const [crlvReading, startCrlvRead] = useTransition();
   const [crlvMsg, setCrlvMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [crlvExercicio, setCrlvExercicio] = useState("");
+  // Tipo do documento lido (CRLV ou NF) e o nº da nota: definem como o arquivo
+  // é anexado ao veículo quando a ficha é salva.
+  const [crlvDocumento, setCrlvDocumento] = useState("");
+  const [crlvNumeroNota, setCrlvNumeroNota] = useState("");
 
   const [refinancing, setRefinancing] = useState(Boolean(initial?.refinancing));
   const [customerList, setCustomerList] = useState<Customer[]>(customers);
@@ -202,11 +206,13 @@ export default function IntermediationForm({
   }
 
   /**
-   * CRLV anexado: a IA lê o documento e preenche o PROPRIETÁRIO (nome e
-   * CPF/CNPJ — o documento é a verdade, então sobrescreve) e o VEÍCULO (placa,
-   * marca/modelo, anos, cor, combustível, chassi, RENAVAM). Versão, KM e câmbio
-   * só entram quando vazios (o CRLV não os traz, ou traz incompletos). Depois
-   * tenta trazer telefone/endereço de um cadastro já existente pelo CPF/CNPJ.
+   * Documento do veículo anexado — CRLV (usado) ou NOTA FISCAL (0 km): a IA lê
+   * e preenche o PROPRIETÁRIO (no CRLV é o proprietário; na NF, o destinatário
+   * da nota — nome, CPF/CNPJ, telefone e endereço) e o VEÍCULO (placa,
+   * marca/modelo, versão, anos, cor, combustível, chassi, RENAVAM). O documento
+   * é a verdade, então nome e CPF/CNPJ sobrescrevem; telefone, endereço, versão
+   * e câmbio só entram quando o campo está vazio. NF de 0 km não tem placa nem
+   * RENAVAM — o aviso diz isso, para o usuário completar quando emplacar.
    */
   function handleCrlvChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -221,12 +227,15 @@ export default function IntermediationForm({
         return;
       }
       const d = r.data;
+      const ehNota = d.documento === "NF";
+      const nomeDoc = ehNota ? "Nota fiscal" : "CRLV";
+      const lido = ehNota ? "Nota fiscal lida" : "CRLV lido";
       const preenchidos: string[] = [];
       const placaAtual = readField("plate").replace(/[^A-Za-z0-9]/g, "").toUpperCase();
       if (d.placa && placaAtual && placaAtual !== d.placa) {
         setCrlvMsg({
           tone: "err",
-          text: `Este CRLV é da placa ${d.placa}, mas o formulário está com ${placaAtual}. Nada foi preenchido — confira o arquivo.`,
+          text: `Este ${nomeDoc} é da placa ${d.placa}, mas o formulário está com ${placaAtual}. Nada foi preenchido — confira o arquivo.`,
         });
         return;
       }
@@ -239,9 +248,20 @@ export default function IntermediationForm({
         setField("ownerDocument", d.cpfCnpj);
         preenchidos.push("CPF/CNPJ");
       }
+      // Telefone e endereço: a NF traz os do destinatário; não sobrescreve o
+      // que o usuário já digitou.
+      if (d.telefone && !readField("ownerPhone")) {
+        setField("ownerPhone", d.telefone);
+        preenchidos.push("telefone");
+      }
+      if (d.endereco && !readField("ownerAddress")) {
+        setField("ownerAddress", d.endereco);
+        preenchidos.push("endereço");
+      }
       if (d.placa) setField("plate", d.placa);
       if (d.marca) setField("brand", d.marca);
       if (d.modelo) setField("model", d.modelo);
+      if (d.versao && !readField("version")) setField("version", d.versao);
       if (d.anoFabricacao) setField("manufactureYear", String(d.anoFabricacao));
       if (d.anoModelo) setField("modelYear", String(d.anoModelo));
       if (d.cor) setField("color", d.cor);
@@ -251,13 +271,23 @@ export default function IntermediationForm({
       if (d.transmissao && !readField("transmission")) setField("transmission", d.transmissao);
       if (d.placa || d.marca || d.chassi) preenchidos.push("veículo");
       setCrlvExercicio(d.exercicio ?? "");
+      setCrlvDocumento(d.documento ?? "");
+      setCrlvNumeroNota(d.numeroNota ?? "");
+      // Veículo 0 km: a nota traz o carro, mas placa e RENAVAM só existem
+      // depois do emplacamento — é o que falta para registrar a operação.
+      const faltando = ehNota
+        ? [!readField("plate") ? "placa" : null, !readField("renavam") ? "RENAVAM" : null].filter(Boolean)
+        : [];
       setCrlvMsg({
         tone: "ok",
-        text: preenchidos.length
-          ? `CRLV lido: ${preenchidos.join(", ")} preenchido(s). Confira e complete telefone e endereço.`
-          : "CRLV lido, mas não foi possível identificar os dados. Preencha à mão.",
+        text: !preenchidos.length
+          ? `${lido}, mas não foi possível identificar os dados. Preencha à mão.`
+          : `${lido}: ${preenchidos.join(", ")} preenchido(s).` +
+            (faltando.length
+              ? ` Veículo 0 km ainda não tem ${faltando.join(" nem ")} — informe quando for emplacado.`
+              : " Confira e complete telefone e endereço."),
       });
-      // Cadastro já existente com esse CPF/CNPJ: traz telefone e endereço.
+      // Cadastro já existente com esse CPF/CNPJ: completa o que ficou vazio.
       if (d.cpfCnpj) handleOwnerDocBlur();
     });
   }
@@ -362,7 +392,7 @@ export default function IntermediationForm({
         {/* CRLV: anexar → a IA lê e preenche proprietário e veículo. O arquivo
             segue no formulário e é anexado ao veículo de terceiro ao salvar. */}
         <div className="rounded-lg border border-blue-100 bg-blue-50/60 p-3">
-          <Field label="CRLV do veículo (PDF ou foto) — lê e preenche o proprietário e o veículo">
+          <Field label="CRLV ou nota fiscal do veículo (PDF ou foto) — lê e preenche o proprietário e o veículo">
             <input
               type="file"
               name="crlvFile"
@@ -372,8 +402,10 @@ export default function IntermediationForm({
               className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
             />
             <input type="hidden" name="crlvExercicio" value={crlvExercicio} />
+            <input type="hidden" name="crlvDocumento" value={crlvDocumento} />
+            <input type="hidden" name="crlvNumeroNota" value={crlvNumeroNota} />
             {crlvReading ? (
-              <p className="mt-1 text-xs text-slate-500">Lendo o CRLV… nome, CPF/CNPJ e dados do veículo vêm preenchidos.</p>
+              <p className="mt-1 text-xs text-slate-500">Lendo o documento… nome, CPF/CNPJ e dados do veículo vêm preenchidos.</p>
             ) : null}
             {crlvMsg ? (
               <p className={`mt-1 text-xs font-medium ${crlvMsg.tone === "ok" ? "text-emerald-700" : "text-rose-600"}`}>
@@ -382,8 +414,10 @@ export default function IntermediationForm({
             ) : null}
             {!crlvReading && !crlvMsg ? (
               <p className="mt-1 text-xs text-slate-500">
-                Ao anexar, o sistema lê o documento e preenche nome e CPF/CNPJ do proprietário, placa,
-                marca/modelo, anos, cor, combustível, chassi e RENAVAM. O CRLV fica anexado ao veículo.
+                Serve para o <strong>CRLV</strong> (usado) e para a <strong>nota fiscal de veículo 0 km</strong>:
+                o sistema lê e preenche nome, CPF/CNPJ, telefone e endereço do proprietário (na nota, o
+                destinatário) e os dados do carro — marca/modelo, versão, anos, cor, combustível, chassi e,
+                quando existirem, placa e RENAVAM. O arquivo fica anexado ao veículo.
                 {initial?.crlvs?.length ? ` Já anexado: ${initial.crlvs.map((c) => c.filename).join(", ")}.` : ""}
               </p>
             ) : null}

@@ -116,10 +116,19 @@ export type IntermediationFormState = { error?: string };
 /** Prefixo da descrição do anexo do boleto de quitação (no veículo de terceiro). */
 export const PAYOFF_BOLETO_PREFIX = "Boleto de quitação do financiamento anterior";
 
-/** CRLVs anexados ao veículo de terceiro desta operação (lidos no formulário). */
+/** Prefixo do anexo da nota fiscal de veículo 0 km (lida no formulário). */
+export const NOTA_VEICULO_PREFIX = "Nota fiscal do veículo (0 km)";
+
+/**
+ * Documentos do veículo lidos no formulário: o CRLV (usado) e a nota fiscal do
+ * 0 km — os dois identificam o carro e o proprietário da operação.
+ */
 export async function listIntermediationCrlvs(vehicleId: string) {
   return prisma.vehicleAttachment.findMany({
-    where: { vehicleId, kind: "CRLV" },
+    where: {
+      vehicleId,
+      OR: [{ kind: "CRLV" }, { kind: "DOCUMENTO", description: { startsWith: NOTA_VEICULO_PREFIX } }],
+    },
     orderBy: { createdAt: "desc" },
     select: { id: true, description: true, filename: true, size: true, createdAt: true },
   });
