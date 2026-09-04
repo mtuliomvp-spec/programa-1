@@ -996,10 +996,16 @@ export async function createIntermediationVehicle(input: {
   notes?: string | null;
   /** Em nome de quem está o documento (proprietário lido do CRLV). */
   docOwnerName?: string | null;
+  /** 0 km: sem placa/RENAVAM até o emplacamento (identificado pelo chassi). */
+  zeroKm?: boolean;
+  /** Montadora/concessionária emitente da nota fiscal do 0 km. */
+  manufacturerName?: string | null;
 }) {
   return prisma.vehicle.create({
     data: {
       docOwnerName: input.docOwnerName || null,
+      zeroKm: Boolean(input.zeroKm),
+      manufacturerName: input.manufacturerName || null,
       brand: input.brand,
       model: input.model,
       version: input.version || null,

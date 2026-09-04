@@ -219,8 +219,11 @@ story += tela(
         "lê e preenche nome, CPF/CNPJ, telefone e endereço do proprietário e os dados do carro — "
         "marca/modelo, versão, anos, cor, combustível, chassi e, quando existirem, placa e RENAVAM. "
         "Serve para o <b>CRLV</b> do usado e para a <b>nota fiscal do 0 km</b> (aí o proprietário é o "
-        "destinatário da nota; placa e RENAVAM só existem depois do emplacamento). O arquivo fica "
-        "anexado ao veículo e aparece na ficha da operação.",
+        "destinatário da nota). O arquivo fica anexado ao veículo e aparece na ficha da operação.",
+        "<b>Veículo 0 km:</b> ao ler a nota, a opção “Veículo 0 km” é marcada sozinha e a montadora "
+        "emitente vem preenchida. A operação é registrada <b>sem placa e sem RENAVAM</b> — o carro é "
+        "identificado pelo <b>chassi</b>, e o contrato traz “0 km — sem emplacamento”, o chassi, a "
+        "montadora e a cláusula dizendo que o emplacamento corre por conta do comprador.",
         "Também tem etapa de pré-venda e conferência antes de concluir.",
         "<b>Permissões próprias:</b> “Financiamento de terceiros: criar/editar pré-venda” deixa o "
         "vendedor montar a ficha e o contrato; só quem tem “Financiamento de terceiros: registrar” "

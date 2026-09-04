@@ -67,6 +67,8 @@ export type IntermediationInitial = {
   notes?: string;
   payoffBank?: string;
   payoffAmount?: number;
+  zeroKm?: boolean;
+  manufacturerName?: string;
   payoffBarcode?: string;
   payoffDueDate?: string;
   /** Boletos já anexados (edição) — só para mostrar que existem. */
@@ -105,6 +107,11 @@ export default function IntermediationForm({
   // é anexado ao veículo quando a ficha é salva.
   const [crlvDocumento, setCrlvDocumento] = useState("");
   const [crlvNumeroNota, setCrlvNumeroNota] = useState("");
+  // 0 km: sem placa/RENAVAM até o emplacamento (marcado sozinho ao ler a NF).
+  // A montadora fica em estado (não em `setField`): o campo só existe no DOM
+  // depois que o 0 km é marcado, e a leitura preenche os dois de uma vez.
+  const [zeroKm, setZeroKm] = useState(Boolean(initial?.zeroKm));
+  const [manufacturerName, setManufacturerName] = useState(initial?.manufacturerName ?? "");
 
   const [refinancing, setRefinancing] = useState(Boolean(initial?.refinancing));
   const [customerList, setCustomerList] = useState<Customer[]>(customers);
@@ -273,18 +280,21 @@ export default function IntermediationForm({
       setCrlvExercicio(d.exercicio ?? "");
       setCrlvDocumento(d.documento ?? "");
       setCrlvNumeroNota(d.numeroNota ?? "");
-      // Veículo 0 km: a nota traz o carro, mas placa e RENAVAM só existem
-      // depois do emplacamento — é o que falta para registrar a operação.
-      const faltando = ehNota
-        ? [!readField("plate") ? "placa" : null, !readField("renavam") ? "RENAVAM" : null].filter(Boolean)
-        : [];
+      // NF: é 0 km — marca a opção e traz a montadora emitente da nota.
+      if (ehNota) {
+        setZeroKm(true);
+        if (d.emitente) {
+          setManufacturerName(d.emitente);
+          preenchidos.push("montadora");
+        }
+      }
       setCrlvMsg({
         tone: "ok",
         text: !preenchidos.length
           ? `${lido}, mas não foi possível identificar os dados. Preencha à mão.`
           : `${lido}: ${preenchidos.join(", ")} preenchido(s).` +
-            (faltando.length
-              ? ` Veículo 0 km ainda não tem ${faltando.join(" nem ")} — informe quando for emplacado.`
+            (ehNota
+              ? " Marcado como veículo 0 km: a operação é registrada sem placa e sem RENAVAM (o carro é identificado pelo chassi)."
               : " Confira e complete telefone e endereço."),
       });
       // Cadastro já existente com esse CPF/CNPJ: completa o que ficou vazio.
@@ -537,9 +547,48 @@ export default function IntermediationForm({
       {/* Veículo do terceiro */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">Veículo (de terceiro)</legend>
-        <Field label="Placa" required>
+
+        {/* 0 km: o carro sai da montadora sem placa e sem RENAVAM — quem o
+            identifica no contrato é o chassi, e a origem é a nota fiscal. */}
+        <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="zeroKm"
+            value="true"
+            checked={zeroKm}
+            onChange={(e) => setZeroKm(e.target.checked)}
+            className="mt-0.5 h-4 w-4 rounded border-slate-300"
+          />
+          <span>
+            <span className="font-medium">Veículo 0 km</span> — ainda não emplacado: a operação é
+            registrada <strong>sem placa e sem RENAVAM</strong>, e o carro é identificado pelo{" "}
+            <strong>chassi</strong> no contrato. Informe a montadora/concessionária da nota fiscal.
+          </span>
+        </label>
+
+        {zeroKm ? (
+          <Field label="Montadora / concessionária (nota fiscal do 0 km)" required>
+            <Input
+              name="manufacturerName"
+              value={manufacturerName}
+              onChange={(e) => setManufacturerName(e.target.value)}
+              placeholder="Ex.: Volkswagen do Brasil Indústria de Veículos Automotores Ltda"
+            />
+            <p className="mt-1 text-xs text-slate-400">
+              Quem emitiu a nota do veículo. Consta no contrato de intermediação, no lugar da placa.
+            </p>
+          </Field>
+        ) : null}
+
+        <Field label={zeroKm ? "Placa (só depois do emplacamento)" : "Placa"} required={!zeroKm}>
           <div className="flex flex-wrap gap-2">
-            <Input name="plate" required defaultValue={initial?.plate ?? ""} placeholder="ABC1D23" className="max-w-[180px] uppercase" />
+            <Input
+              name="plate"
+              required={!zeroKm}
+              defaultValue={initial?.plate ?? ""}
+              placeholder={zeroKm ? "Ainda sem placa (0 km)" : "ABC1D23"}
+              className="max-w-[180px] uppercase"
+            />
             <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking}>
               {looking ? "Buscando..." : "🔍 Buscar dados pela placa"}
             </Button>
@@ -583,13 +632,13 @@ export default function IntermediationForm({
               required
             />
           </Field>
-          <Field label="RENAVAM" required>
+          <Field label={zeroKm ? "RENAVAM (só depois do emplacamento)" : "RENAVAM"} required={!zeroKm}>
             <Input
               name="renavam"
               defaultValue={initial?.renavam ?? ""}
               inputMode="numeric"
-              placeholder={`${RENAVAM_LENGTH} dígitos`}
-              required
+              placeholder={zeroKm ? "Ainda sem RENAVAM (0 km)" : `${RENAVAM_LENGTH} dígitos`}
+              required={!zeroKm}
             />
           </Field>
         </div>

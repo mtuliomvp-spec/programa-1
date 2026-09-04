@@ -34,6 +34,10 @@ type ContractVehicle = {
   km: number;
   fuel: string | null;
   transmission: string | null;
+  /** 0 km: sem placa/RENAVAM — identificado pelo chassi. */
+  zeroKm?: boolean;
+  /** Montadora/concessionária emitente da nota fiscal do 0 km. */
+  manufacturerName?: string | null;
 };
 
 type BuyerBank = {
@@ -165,13 +169,39 @@ export default function IntermediationContractDocument(d: IntermediationContract
             <p><span className="text-slate-500">Marca/Modelo:</span> <strong>{vehicle.brand} {vehicle.model}</strong></p>
             <p><span className="text-slate-500">Versão:</span> {vehicle.version || "—"}</p>
             <p><span className="text-slate-500">Ano fab./mod.:</span> {vehicle.manufactureYear}/{vehicle.modelYear}</p>
-            <p><span className="text-slate-500">Placa:</span> <strong>{vehicle.plate}</strong></p>
-            <p><span className="text-slate-500">Chassi:</span> {vehicle.chassi || "—"}</p>
+            {vehicle.zeroKm ? (
+              <>
+                <p>
+                  <span className="text-slate-500">Placa:</span>{" "}
+                  <strong>0 km — sem emplacamento</strong>
+                </p>
+                <p><span className="text-slate-500">Chassi:</span> <strong>{vehicle.chassi || "—"}</strong></p>
+                <p className="col-span-2 sm:col-span-3">
+                  <span className="text-slate-500">Montadora/concessionária (nota fiscal):</span>{" "}
+                  <strong>{vehicle.manufacturerName || "—"}</strong>
+                </p>
+              </>
+            ) : (
+              <>
+                <p><span className="text-slate-500">Placa:</span> <strong>{vehicle.plate}</strong></p>
+                <p><span className="text-slate-500">Chassi:</span> {vehicle.chassi || "—"}</p>
+              </>
+            )}
             <p><span className="text-slate-500">Cor:</span> {vehicle.color || "—"}</p>
             <p><span className="text-slate-500">KM:</span> {vehicle.km.toLocaleString("pt-BR")}</p>
             <p><span className="text-slate-500">Combustível:</span> {vehicle.fuel || "—"}</p>
             <p><span className="text-slate-500">Câmbio:</span> {vehicle.transmission || "—"}</p>
           </div>
+          {vehicle.zeroKm ? (
+            <p className="mt-2 text-xs">
+              Trata-se de veículo <strong>0 km</strong>, ainda <strong>não emplacado</strong> — sem placa e
+              sem RENAVAM na data deste contrato. A identificação do bem se dá pelo <strong>chassi</strong>{" "}
+              acima e pela nota fiscal emitida por{" "}
+              <strong>{vehicle.manufacturerName || "montadora/concessionária"}</strong>. O emplacamento e o
+              registro no órgão de trânsito correm por conta{" "}
+              {d.refinancing ? "do(a) FINANCIADO(A)" : "do(a) COMPRADOR(A)"}.
+            </p>
+          ) : null}
         </Clausula>
 
         <Clausula n={++n} titulo="Do papel da intermediadora">

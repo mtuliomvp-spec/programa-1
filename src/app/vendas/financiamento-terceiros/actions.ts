@@ -125,6 +125,8 @@ export type CrlvLido = {
   transmissao: string | null;
   exercicio: string | null;
   numeroNota: string | null;
+  /** NF: montadora/concessionária emitente (vai para o campo do 0 km). */
+  emitente: string | null;
 };
 
 /** 18438083315 → 184.380.833-15; 14 dígitos → CNPJ com máscara. */
@@ -181,6 +183,7 @@ export async function readIntermediationCrlvAction(
         transmissao: d.transmissao?.trim() || null,
         exercicio: d.exercicio?.match(/\d{4}/)?.[0] ?? null,
         numeroNota: d.numeroNota?.replace(/\s+/g, " ").trim() || null,
+        emitente: documento === "NF" ? d.emitente?.replace(/\s+/g, " ").trim() || null : null,
       },
     };
   } catch (e) {

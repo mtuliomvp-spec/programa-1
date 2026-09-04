@@ -8,7 +8,7 @@ import { computeReturn } from "@/lib/retorno";
 import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
 import PayoffCard from "../../PayoffCard";
 import CrlvLine from "../../CrlvLine";
-import { listPayoffBoletos, listIntermediationCrlvs } from "../../core";
+import { listPayoffBoletos, listIntermediationCrlvs, identificacaoVeiculo } from "../../core";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -54,7 +54,7 @@ export default async function IntermediationPreSalePage({
   // Veículo/cliente podem não existir mais (ex.: apagados num "zerar dados").
   // Ainda assim a ficha precisa abrir para poder ser cancelada.
   const vehicleLabel = vehicle
-    ? `${vehicle.brand} ${vehicle.model} · ${vehicle.plate}`
+    ? `${vehicle.brand} ${vehicle.model} · ${identificacaoVeiculo(vehicle)}`
     : "Veículo removido";
   const customerName = customer?.name ?? pre.ownerName ?? "—";
 

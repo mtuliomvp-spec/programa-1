@@ -44,7 +44,10 @@ export default async function NovoFinanciamentoTerceirosPage({
         version: vehicle?.version ?? undefined,
         manufactureYear: vehicle?.manufactureYear,
         modelYear: vehicle?.modelYear,
-        plate: vehicle?.plate,
+        // 0 km: a placa guardada é só o marcador técnico — o campo fica vazio.
+        plate: vehicle?.zeroKm ? undefined : vehicle?.plate,
+        zeroKm: vehicle?.zeroKm,
+        manufacturerName: vehicle?.manufacturerName ?? undefined,
         chassi: vehicle?.chassi ?? undefined,
         renavam: vehicle?.renavam ?? undefined,
         color: vehicle?.color ?? undefined,
