@@ -3,14 +3,16 @@ import { formatDate } from "@/lib/format";
 type Crlv = { id: string; description: string; filename: string; createdAt: Date };
 
 /**
- * Linha "CRLV anexado" das fichas do financiamento de terceiros (pré-venda e
- * operação): o documento lido no formulário, com Abrir/Baixar.
+ * Linha do documento do veículo nas fichas do financiamento de terceiros
+ * (pré-venda e operação): CRLV do usado ou nota fiscal do 0 km lida no
+ * formulário, com Abrir/Baixar.
  */
 export default function CrlvLine({ crlvs }: { crlvs: Crlv[] }) {
   if (crlvs.length === 0) {
     return (
       <p className="sm:col-span-2">
-        <span className="text-slate-500">CRLV:</span> <span className="text-slate-400">não anexado</span>
+        <span className="text-slate-500">CRLV / nota fiscal:</span>{" "}
+        <span className="text-slate-400">não anexado</span>
       </p>
     );
   }
