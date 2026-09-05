@@ -405,8 +405,8 @@ export default async function EstoquePage({
 
   /** Card do celular (um por veículo). */
   const renderCard = (v: Row) => (
-    <Link key={v.id} href={`/estoque/${v.id}`} className="block">
-      <Card className="px-4 py-3.5 transition-shadow active:shadow-md">
+    <Link key={v.id} href={`/estoque/${v.id}`} className="block h-full">
+      <Card className="flex h-full flex-col px-4 py-3.5 transition-shadow active:shadow-md">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <p className="truncate font-semibold text-slate-900">
@@ -442,7 +442,7 @@ export default async function EstoquePage({
             ) : null}
           </div>
         </div>
-        <div className="mt-3 flex items-end justify-between gap-3">
+        <div className="mt-auto flex items-end justify-between gap-3 pt-3">
           {canVerCusto ? (
             <div>
               <p className="text-[11px] uppercase tracking-wide text-slate-400">Custo pago</p>
@@ -518,7 +518,13 @@ export default async function EstoquePage({
   const renderRow = (v: Row) => (
     <Tr key={v.id}>
       <Td className="font-medium text-slate-900">
-        {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
+        <Link href={`/estoque/${v.id}`} className="text-blue-700 hover:underline">
+          {v.brand} {v.model} {v.version ? <span className="text-slate-400">{v.version}</span> : null}
+        </Link>
+        <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
+          {v.plate}
+          {v.color ? ` · ${v.color}` : ""}
+        </span>
         {v.docOwnerName ? (
           <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
             Este veículo está em nome de{" "}
@@ -533,12 +539,10 @@ export default async function EstoquePage({
           </span>
         ) : null}
       </Td>
-      <Td>{v.plate}</Td>
-      <Td>{v.color || "-"}</Td>
-      <Td>
+      <Td className="whitespace-nowrap">
         {v.manufactureYear}/{v.modelYear}
+        <span className="block text-[11px] text-slate-400">{v.km.toLocaleString("pt-BR")} km</span>
       </Td>
-      <Td>{v.km.toLocaleString("pt-BR")} km</Td>
       {canVerCusto ? (
         <Td className="text-right tabular-nums">
           {formatCurrency(v.paidCost)}
@@ -557,7 +561,7 @@ export default async function EstoquePage({
         </Td>
       ) : null}
       <Td className="text-right tabular-nums">{formatCurrency(v.salePrice)}</Td>
-      <Td className="text-right tabular-nums">
+      <Td className="whitespace-nowrap text-right tabular-nums">
         {v.visitas > 0 ? (
           <span title="Visitas ao anúncio na vitrine · contatos pelo WhatsApp">
             {v.visitas}
@@ -639,11 +643,6 @@ export default async function EstoquePage({
             </Badge>
           </span>
         ) : null}
-      </Td>
-      <Td>
-        <Link href={`/estoque/${v.id}`} className="text-sm font-medium text-blue-700 hover:underline">
-          Ver detalhes
-        </Link>
       </Td>
     </Tr>
   );
@@ -734,11 +733,16 @@ export default async function EstoquePage({
         </Card>
       ) : (
         <>
-          {/* Celular: cards */}
-          <div className="space-y-3 md:hidden">
+          {/*
+            Celular e tablet: cards. O tablet (Samsung, ~1200 px) ainda perde
+            256 px para o menu lateral, e a tabela de 8 colunas não cabe no que
+            sobra — obrigava a rolar de lado. Até xl (1280 px) vale a lista em
+            cards, em duas colunas quando há largura para isso.
+          */}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:hidden">
             {emEstoque.map(renderCard)}
             {showDivider ? (
-              <p className="pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
+              <p className="col-span-full pt-2 text-xs font-semibold uppercase tracking-wide text-slate-400">
                 Vendidos ({vendidos.length})
               </p>
             ) : null}
@@ -746,21 +750,17 @@ export default async function EstoquePage({
           </div>
 
           {/* Computador: tabela */}
-          <Card className="hidden md:block">
+          <Card className="hidden xl:block">
             <Table>
               <Thead>
                 <Tr>
                   <Th>Veículo</Th>
-                  <Th>Placa</Th>
-                  <Th>Cor</Th>
-                  <Th>Ano</Th>
-                  <Th>KM</Th>
+                  <Th>Ano / KM</Th>
                   {canVerCusto ? <Th className="text-right">Custo pago</Th> : null}
                   <Th className="text-right">Preço de venda</Th>
                   <Th className="text-right">Visitas</Th>
                   <Th className="text-right">Dias</Th>
                   <Th>Status</Th>
-                  <Th />
                 </Tr>
               </Thead>
               <tbody>
@@ -768,7 +768,7 @@ export default async function EstoquePage({
                 {showDivider ? (
                   <tr className="bg-slate-50">
                     <td
-                      colSpan={canVerCusto ? 11 : 10}
+                      colSpan={canVerCusto ? 7 : 6}
                       className="px-5 py-2 text-xs font-semibold uppercase tracking-wide text-slate-400"
                     >
                       Vendidos ({vendidos.length})

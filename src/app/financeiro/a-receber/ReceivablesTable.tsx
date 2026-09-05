@@ -149,8 +149,13 @@ export default function ReceivablesTable({
               ) : null}
             </Th>
             <Th>Descrição</Th>
-            <Th>Categoria</Th>
-            <Th>Cliente</Th>
+            {/*
+              Tablet e telas médias: categoria e cliente saem das colunas e
+              viram uma linha embaixo da descrição, para a tabela caber sem
+              rolar de lado. Só na tela larga (2xl) voltam a ter coluna própria.
+            */}
+            <Th className="hidden 2xl:table-cell">Categoria</Th>
+            <Th className="hidden 2xl:table-cell">Cliente</Th>
             <Th>Vencimento</Th>
             <Th>Valor</Th>
             <Th>Status</Th>
@@ -173,23 +178,29 @@ export default function ReceivablesTable({
                     />
                   ) : null}
                 </Td>
-                <Td className="font-medium text-slate-900">
+                <Td className="font-medium break-words text-slate-900">
                   {r.description}
                   {r.notes ? (
-                    <span className="block max-w-xs truncate text-xs font-normal text-slate-500" title={r.notes}>
+                    <span
+                      className="max-w-xs text-xs font-normal text-slate-500 line-clamp-1"
+                      title={r.notes}
+                    >
                       📝 {r.notes}
                     </span>
                   ) : null}
+                  <span className="mt-0.5 block text-[11px] font-normal text-slate-500 2xl:hidden">
+                    {[r.categoryLabel, r.customerName].filter(Boolean).join(" · ")}
+                  </span>
                 </Td>
-                <Td>{r.categoryLabel}</Td>
-                <Td>{r.customerName || "-"}</Td>
+                <Td className="hidden 2xl:table-cell">{r.categoryLabel}</Td>
+                <Td className="hidden 2xl:table-cell">{r.customerName || "-"}</Td>
                 <Td className="whitespace-nowrap">{formatDate(r.dueDate)}</Td>
                 <Td className="whitespace-nowrap">{formatCurrency(r.amount)}</Td>
                 <Td>
                   <Badge tone={statusTone[r.effective]}>{statusLabel[r.effective]}</Badge>
                 </Td>
                 <Td>
-                  <div className="flex items-center justify-end gap-3">
+                  <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 2xl:flex-nowrap">
                     {showEdit && r.editable ? (
                       <Link
                         href={`/financeiro/a-receber/${r.id}/editar`}
