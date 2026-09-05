@@ -175,12 +175,17 @@ export function Thead({ children }: { children: ReactNode }) {
   return <thead className="border-b border-slate-200 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">{children}</thead>;
 }
 
+/*
+  A folga lateral das células é menor até o xl: no tablet cada coluna disputa
+  espaço com o menu lateral, e 4 px por lado em cada coluna decidem se a tabela
+  cabe na tela ou obriga a rolar de lado. No computador volta ao px-4.
+*/
 export function Th({ children, className }: { children?: ReactNode; className?: string }) {
-  return <th className={clsx("px-4 py-3 font-medium", className)}>{children}</th>;
+  return <th className={clsx("px-3 py-3 font-medium xl:px-4", className)}>{children}</th>;
 }
 
 export function Td({ children, className }: { children: ReactNode; className?: string }) {
-  return <td className={clsx("px-4 py-3 align-middle text-slate-700", className)}>{children}</td>;
+  return <td className={clsx("px-3 py-3 align-middle text-slate-700 xl:px-4", className)}>{children}</td>;
 }
 
 export function Tr({ children, className }: { children: ReactNode; className?: string }) {

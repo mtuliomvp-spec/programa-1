@@ -247,9 +247,15 @@ export default function PayablesTable({
             </Th>
             <Th>Nº</Th>
             <Th>Descrição</Th>
-            <Th>Categoria</Th>
-            <Th>Fornecedor</Th>
-            <Th>Veículo</Th>
+            {/*
+              Tablet e telas médias: categoria, fornecedor e veículo saem das
+              colunas e viram uma linha embaixo da descrição — assim vencimento,
+              valor, status e as ações cabem na tela sem rolar de lado. Só na
+              tela larga (2xl) as três voltam a ter coluna própria.
+            */}
+            <Th className="hidden 2xl:table-cell">Categoria</Th>
+            <Th className="hidden 2xl:table-cell">Fornecedor</Th>
+            <Th className="hidden 2xl:table-cell">Veículo</Th>
             <Th>Vencimento</Th>
             <Th>Valor</Th>
             <Th>Status</Th>
@@ -281,7 +287,7 @@ export default function PayablesTable({
                     {String(p.orderNumber).padStart(4, "0")}
                   </Link>
                 </Td>
-                <Td className="font-medium text-slate-900">
+                <Td className="font-medium break-words text-slate-900">
                   <Link
                     href={`/financeiro/a-pagar/${p.id}/ordem`}
                     className="text-blue-700 hover:underline"
@@ -320,12 +326,17 @@ export default function PayablesTable({
                       {p.combo.userName ? ` · ${p.combo.userName}` : ""}
                     </Link>
                   ) : null}
+                  <p className="mt-0.5 text-[11px] font-normal text-slate-500 2xl:hidden">
+                    {[p.categoryLabel, p.supplierName, p.vehicleLabel].filter(Boolean).join(" · ")}
+                  </p>
                 </Td>
-                <Td>{p.categoryLabel}</Td>
-                <Td>{p.supplierName || "-"}</Td>
-                <Td className="whitespace-nowrap text-slate-600">{p.vehicleLabel || "-"}</Td>
-                <Td>{formatDate(p.dueDate)}</Td>
-                <Td>{formatCurrency(p.amount)}</Td>
+                <Td className="hidden 2xl:table-cell">{p.categoryLabel}</Td>
+                <Td className="hidden 2xl:table-cell">{p.supplierName || "-"}</Td>
+                <Td className="hidden text-slate-600 2xl:table-cell">
+                  {p.vehicleLabel || "-"}
+                </Td>
+                <Td className="whitespace-nowrap">{formatDate(p.dueDate)}</Td>
+                <Td className="whitespace-nowrap tabular-nums">{formatCurrency(p.amount)}</Td>
                 <Td>
                   <Badge tone={statusTone[p.effective]}>{statusLabel[p.effective]}</Badge>
                   {p.accountName ? (
@@ -333,7 +344,7 @@ export default function PayablesTable({
                   ) : null}
                 </Td>
                 <Td>
-                  <div className="flex items-center justify-end gap-3">
+                  <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 2xl:flex-nowrap">
                     {p.cardInvoice ? (
                       <Link
                         href={`/financeiro/a-pagar/${p.id}/fatura`}
