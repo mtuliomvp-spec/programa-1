@@ -5,6 +5,7 @@ import { getAccountsWithBalances, getSelectableAccounts } from "@/lib/accounts";
 import { appliedByBeneficiary, reconcileInvestmentAccount, totalApplied } from "@/lib/investments";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
+import { placaExibicao } from "@/lib/vehicle-display";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { userCan } from "@/lib/guards";
 import PrintButton from "@/components/PrintButton";
@@ -41,11 +42,19 @@ export default async function AccountStatementPage({
     getAccountsWithBalances(),
     prisma.payable.findMany({
       where: { accountId: id, status: "PAGO" },
-      include: { supplier: { select: { name: true } }, capitalBeneficiary: { select: { name: true } } },
+      include: {
+        supplier: { select: { name: true } },
+        capitalBeneficiary: { select: { name: true } },
+        vehicle: { select: { plate: true, chassi: true, zeroKm: true } },
+      },
     }),
     prisma.receivable.findMany({
       where: { accountId: id, status: "RECEBIDO" },
-      include: { customer: { select: { name: true } }, capitalBeneficiary: { select: { name: true } } },
+      include: {
+        customer: { select: { name: true } },
+        capitalBeneficiary: { select: { name: true } },
+        vehicle: { select: { plate: true, chassi: true, zeroKm: true } },
+      },
     }),
     prisma.accountTransfer.findMany({
       where: { OR: [{ fromId: id }, { toId: id }] },
@@ -133,6 +142,11 @@ export default async function AccountStatementPage({
     capitalName: string | null;
     /** Observações do título (ex.: a nota escrita na hora do recebimento). */
     notes: string | null;
+    /**
+     * Placa do carro do lançamento: quem lê o extrato precisa saber de qual
+     * veículo é o gasto/entrada, e a descrição nem sempre traz a placa.
+     */
+    plate: string | null;
     kind: "entrada" | "saida";
     amount: number;
   };
@@ -144,6 +158,7 @@ export default async function AccountStatementPage({
       who: r.customer?.name || r.capitalBeneficiary?.name || "-",
       capitalName: r.capitalBeneficiary?.name ?? null,
       notes: r.notes,
+      plate: r.vehicle ? placaExibicao(r.vehicle) || null : null,
       kind: "entrada" as const,
       amount: r.amount,
     })),
@@ -154,6 +169,7 @@ export default async function AccountStatementPage({
       who: p.supplier?.name || p.capitalBeneficiary?.name || "-",
       capitalName: p.capitalBeneficiary?.name ?? null,
       notes: p.notes,
+      plate: p.vehicle ? placaExibicao(p.vehicle) || null : null,
       kind: "saida" as const,
       amount: p.amount,
     })),
@@ -166,6 +182,7 @@ export default async function AccountStatementPage({
         who: isIn ? t.from.name : t.to.name,
         capitalName: null,
         notes: null,
+        plate: null,
         kind: (isIn ? "entrada" : "saida") as "entrada" | "saida",
         amount: t.amount,
       };
@@ -185,7 +202,17 @@ export default async function AccountStatementPage({
   const rows = filtering
     ? allRows.filter(
         (m) =>
-          matchesSearch(q, formatDate(m.date), m.description, m.who, m.capitalName, m.notes, m.amount, formatCurrency(m.amount)) &&
+          matchesSearch(
+            q,
+            formatDate(m.date),
+            m.description,
+            m.who,
+            m.capitalName,
+            m.notes,
+            m.plate,
+            m.amount,
+            formatCurrency(m.amount),
+          ) &&
           inDateRange(m.date, de, ate) &&
           inValueRange(m.amount, min, max) &&
           (!tipoFilter || (tipoFilter === "ENTRADA" ? m.kind === "entrada" : m.kind === "saida")),
@@ -255,7 +282,7 @@ export default async function AccountStatementPage({
             <div className="min-w-[200px] flex-1">
               <label className="flex flex-col gap-0.5 text-xs text-slate-500">
                 Buscar
-                <Input name="q" defaultValue={q} placeholder="Descrição, quem, valor..." className="mt-0.5" />
+                <Input name="q" defaultValue={q} placeholder="Descrição, quem, placa, valor..." className="mt-0.5" />
               </label>
             </div>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
@@ -315,6 +342,11 @@ export default async function AccountStatementPage({
                   <Td className="font-medium text-slate-900">
                     {m.description}
                     {m.id.startsWith("t-") ? <Badge tone="default">Transferência</Badge> : null}
+                    {m.plate ? (
+                      <span className="mt-0.5 block text-xs font-normal text-slate-500">
+                        🚗 {m.plate}
+                      </span>
+                    ) : null}
                     {m.notes ? (
                       <span className="mt-0.5 block text-xs font-normal text-slate-500">{m.notes}</span>
                     ) : null}

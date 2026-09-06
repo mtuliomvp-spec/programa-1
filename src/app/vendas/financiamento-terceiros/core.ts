@@ -6,6 +6,7 @@ import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { plateVariants } from "@/lib/plate";
+import { placaExibicao } from "@/lib/vehicle-display";
 import { findCustomerByIdentity } from "@/lib/person-dedupe";
 import {
   chassiOrNull,
@@ -312,8 +313,7 @@ export function identificacaoVeiculo(v: {
   chassi?: string | null;
   zeroKm?: boolean;
 }): string {
-  if (!v.zeroKm) return v.plate;
-  return v.chassi ? `0 km · chassi ${v.chassi}` : "0 km (sem placa)";
+  return placaExibicao(v);
 }
 
 export function placaZeroKm(chassi: string | null | undefined): string {
