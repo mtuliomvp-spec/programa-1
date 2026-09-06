@@ -1158,10 +1158,60 @@ async function applyTransferQuote(input: {
       } catch {
         mesFechado = true;
       }
+      // Mês da venda JÁ ENCERRADO e a transferência ficou MAIS CARA: mexer no
+      // título reservado mudaria o resultado de um mês fechado — o fechamento
+      // registrado não é refeito, e aí o Lucro/Prejuízo (período aberto) e o
+      // lucro do painel (acumulado) passam a mostrar números diferentes.
+      // A regra é a mesma de qualquer custo que muda depois da venda: a
+      // diferença entra no PERÍODO ABERTO como custo pós-venda, em título
+      // próprio. O reservado continua com o que foi reservado na venda (a
+      // competência do mês fechado fica intacta) e só ganha o fornecedor, o
+      // vencimento e a observação do orçamento.
+      if (reservado.status !== "PAGO" && mesFechado && diff > 0) {
+        await prisma.payable.update({
+          where: { id: reservado.id },
+          data: {
+            supplierId: supplierId ?? undefined,
+            dueDate: vencimento,
+            notes:
+              `Orçamento do despachante lido (anexo ${input.attachmentId}): total ${brl(alvo)}. ` +
+              `Este título fica com os ${brl(antes)} reservados na venda — o mês da venda (${mesVenda}) já está encerrado, ` +
+              `então a diferença de ${brl(diff)} foi lançada como custo pós-venda no período aberto.` +
+              (diffPaga > 0 ? ` Diferença de ${brl(diffPaga)} já paga em título próprio.` : "") +
+              (linhas ? ` Linhas: ${linhas}.` : ""),
+          },
+        });
+        await addVehicleCostWithPayable({
+          vehicleId: vehicle.id,
+          description: `Diferença da transferência${destino} — orçamento ${brl(alvo)} × reservado na venda ${brl(antes)} — despachante${despachante ? ` ${despachante}` : ""}`,
+          category: "DOCUMENTACAO",
+          amount: diff,
+          date: hoje,
+          alreadyPaid: false,
+          dueDate: vencimento,
+          installments: 1,
+          supplierId,
+          notes:
+            `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}). ` +
+            `O mês da venda (${mesVenda}) já está encerrado, então o título reservado continua em ${brl(antes)} ` +
+            `e a diferença entra como custo pós-venda no período aberto.${linhas ? ` Linhas: ${linhas}.` : ""}`,
+        });
+        filled.push(
+          `mês da venda (${mesVenda}) já encerrado: o título reservado segue em ${brl(antes)} e a diferença de ${brl(diff)} foi lançada como custo pós-venda (prejuízo) no período aberto`,
+        );
+        if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
+        if (itens.length) filled.push(`linhas: ${linhas}`);
+        warnings.push(
+          `São dois títulos a pagar ao despachante: ${brl(antes)} (reservado na venda) + ${brl(diff)} (diferença). Juntos dão os ${brl(alvo)} do orçamento.`,
+        );
+        revalidatePath(`/vendas/${venda.id}`);
+        revalidatePath("/financeiro/a-pagar");
+        return { filled, warnings };
+      }
       if (reservado.status !== "PAGO") {
         // Título e competência mudam JUNTOS (equação patrimonial segue
-        // fechada). Vale mesmo com o mês da venda fechado: o valor real da
-        // transferência é da venda, e a diferença é prejuízo daquela venda.
+        // fechada). Com o mês da venda ABERTO isso não move nada de lugar: o
+        // ajuste cai na mesma competência que já estava lá.
         await prisma.$transaction([
           prisma.payable.update({
             where: { id: reservado.id },
@@ -1195,9 +1245,13 @@ async function applyTransferQuote(input: {
               : `título "Transferência DETRAN" da venda já está em ${brl(alvo)} (reservado na venda: ${brl(reservadoNaVenda)}) — fornecedor, vencimento e observação atualizados`,
         );
         if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
+        // Só sobra (diff < 0) chega aqui com o mês fechado: reduzir o título é
+        // o certo — não se paga o que não se deve —, mas a sobra volta ao
+        // resultado de um mês já encerrado, cujo fechamento não é refeito. A
+        // tela de Lucro/Prejuízo mostra essa diferença no bloco de conferência.
         if (mesFechado && diff !== 0) {
           warnings.push(
-            `O mês da venda (${mesVenda}) já estava fechado: o resultado daquele mês muda em ${brl(-diff)} com este ajuste (o fechamento registrado não é refeito).`,
+            `O mês da venda (${mesVenda}) já estava fechado: a sobra de ${brl(-diff)} volta ao resultado daquele mês, e o fechamento registrado não é refeito — a diferença aparece no bloco de conferência da tela de Lucro/Prejuízo.`,
           );
         }
         if (itens.length) filled.push(`linhas: ${linhas}`);
