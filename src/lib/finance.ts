@@ -1125,7 +1125,7 @@ async function vehicleSale(input: {
   // branco para preencher à mão, então o registro é recusado.
   const docs = await prisma.vehicle.findUniqueOrThrow({
     where: { id: input.vehicleId },
-    select: { chassi: true, renavam: true },
+    select: { chassi: true, renavam: true, zeroKm: true },
   });
   const faltando = missingVehicleDocs(docs);
   if (faltando.length) throw new Error(missingVehicleDocsError(faltando));

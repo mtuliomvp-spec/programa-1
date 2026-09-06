@@ -33,6 +33,8 @@ type Vehicle = {
   // Documentos do veículo: se faltarem, o formulário os pede (obrigatórios).
   chassi?: string | null;
   renavam?: string | null;
+  /** 0 km ainda não emplacado: não tem placa nem RENAVAM (o chassi identifica). */
+  zeroKm?: boolean | null;
   // Consignado: o carro é de terceiro; há um valor acertado com o proprietário
   // (supplier), do qual se descontam quitação/débitos, apurado no fechamento.
   consigned?: boolean;
@@ -211,7 +213,12 @@ export default function SaleForm({
   const chassiParcial = isChassiPartial(selectedVehicle?.chassi)
     ? normalizeChassi(selectedVehicle?.chassi)
     : null;
-  const needsRenavam = Boolean(selectedVehicle) && !normalizeRenavam(selectedVehicle?.renavam);
+  // 0 km ainda não emplacado não tem RENAVAM (ele nasce no emplacamento) —
+  // então o formulário não o pede.
+  const needsRenavam =
+    Boolean(selectedVehicle) &&
+    !selectedVehicle?.zeroKm &&
+    !normalizeRenavam(selectedVehicle?.renavam);
   // Consignado: destino do valor a devolver ao proprietário (pagar ao dono vs
   // aportar no capital de um beneficiário). O valor em si vem do veículo.
   const isConsigned = Boolean(selectedVehicle?.consigned);

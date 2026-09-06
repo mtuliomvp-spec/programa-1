@@ -89,8 +89,10 @@ export default async function NovaVendaPage({
         plate: true,
         salePrice: true,
         // Documentos obrigatórios na venda: o formulário pede o que faltar.
+        // 0 km ainda não emplacado não tem RENAVAM — o formulário não pede.
         chassi: true,
         renavam: true,
+        zeroKm: true,
         consigned: true,
         ownerRefundAmount: true,
         payoffAmount: true,

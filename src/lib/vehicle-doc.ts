@@ -60,13 +60,19 @@ export function renavamLooksOdd(value: string | null | undefined): boolean {
 /**
  * Quais documentos faltam no veículo. Usado para pedir só o que falta no
  * formulário de venda e para travar o registro da venda.
+ *
+ * Veículo 0 km ainda não emplacado NÃO tem RENAVAM: ele nasce no
+ * emplacamento, depois da nota fiscal. Exigi-lo travaria a venda de um carro
+ * novo por um número que ninguém tem ainda. O chassi continua obrigatório —
+ * é ele que identifica o carro, e a nota fiscal já o traz.
  */
 export function missingVehicleDocs(vehicle: {
   chassi?: string | null;
   renavam?: string | null;
+  zeroKm?: boolean | null;
 }): string[] {
   const faltando: string[] = [];
-  if (!normalizeRenavam(vehicle.renavam)) faltando.push("o RENAVAM");
+  if (!vehicle.zeroKm && !normalizeRenavam(vehicle.renavam)) faltando.push("o RENAVAM");
   // Parcial conta como faltando: o chassi mascarado da consulta por placa não
   // serve para contrato nem para identificar o carro.
   if (isChassiPartial(vehicle.chassi)) {
