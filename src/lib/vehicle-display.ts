@@ -81,6 +81,20 @@ export function displayName(...parts: (string | null | undefined)[]): string {
 }
 
 /**
+ * A placa como o usuário a lê. Veículo 0 km ainda não emplacado guarda no
+ * lugar da placa um marcador técnico ("0KM-<final do chassi>") que nunca deve
+ * aparecer na tela — nesse caso o que identifica o carro é o chassi.
+ */
+export function placaExibicao(v: {
+  plate?: string | null;
+  chassi?: string | null;
+  zeroKm?: boolean | null;
+}): string {
+  if (!v.zeroKm) return v.plate || "";
+  return v.chassi ? `0 km · chassi ${v.chassi}` : "0 km (sem placa)";
+}
+
+/**
  * Versão como aparece na linha de baixo do anúncio: só o que ela acrescenta
  * a marca + modelo. Null quando a versão não acrescenta nada (ex.: modelo
  * "Polo Track MA", versão "MA").
