@@ -55,6 +55,95 @@ export async function getClosedMonths() {
   return prisma.monthlyClosing.findMany({ orderBy: [{ year: "desc" }, { month: "desc" }] });
 }
 
+export type ProfitReconciliation = {
+  /** Resultado do PERÍODO ABERTO — o número da tela Lucro/Prejuízo. */
+  aberto: number;
+  /** Lucro ACUMULADO — o número do painel (equação patrimonial). */
+  acumulado: number;
+  /** acumulado − aberto. Zero: as duas telas mostram o mesmo número. */
+  diff: number;
+  /** Meses encerrados cujo resultado mudou DEPOIS do fechamento. */
+  mesesAlterados: { year: number; month: number; registrado: number; atual: number; diff: number }[];
+  /** Resultado de meses antigos que nunca foram encerrados. */
+  semFechamento: number;
+  /** Lançamentos com data posterior ao mês corrente (fora da janela da tela). */
+  futuros: number;
+};
+
+/**
+ * Por que o painel e a tela de Lucro/Prejuízo mostram números diferentes.
+ *
+ * São dois recortes distintos e os dois estão certos:
+ *  - a TELA mostra o resultado do período ABERTO (o que ainda não foi ao
+ *    capital pelo fechamento mensal);
+ *  - o PAINEL mostra o lucro ACUMULADO da equação patrimonial, que é o
+ *    histórico inteiro menos o que cada fechamento já transferiu ao capital.
+ *
+ * Enquanto cada fechamento guardar exatamente o resultado do seu mês, os dois
+ * são o mesmo número. Eles se separam quando um mês JÁ ENCERRADO muda depois
+ * do fechamento (ex.: o orçamento do despachante ajusta a transferência de uma
+ * venda antiga — o resultado daquele mês muda, o fechamento registrado não é
+ * refeito), ou quando existe mês antigo que nunca foi encerrado.
+ *
+ * Nada disso é inconsistência: o farol compara a equação patrimonial com o
+ * Lucro/Prejuízo do HISTÓRICO INTEIRO, e esses dois continuam batendo — por
+ * isso ele fica verde. Esta função mostra, item a item, de onde vem a
+ * diferença entre as duas telas.
+ */
+export async function getProfitReconciliation(): Promise<ProfitReconciliation> {
+  const [pl, closings] = await Promise.all([
+    getProfitLossStatement(LIFETIME_MONTHS),
+    getClosedMonths(),
+  ]);
+
+  // Mesma janela que a tela de Lucro/Prejuízo usa no "Aberto".
+  const now = new Date();
+  const scopeEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  const scopeStart = closings.length
+    ? monthBounds(closings[0].year, closings[0].month).end
+    : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 11, 1));
+
+  const chave = (year: number, month: number) => `${year}-${month}`;
+  const registrado = new Map(closings.map((c) => [chave(c.year, c.month), c.result]));
+
+  let aberto = 0;
+  let futuros = 0;
+  let semFechamento = 0;
+  const atualPorMes = new Map<string, number>();
+  for (const e of pl.entries) {
+    if (e.kind === "FECHAMENTO") continue; // a contrapartida do fechamento entra abaixo
+    if (e.date >= scopeEnd) {
+      futuros += e.value;
+      continue;
+    }
+    if (e.date >= scopeStart) {
+      aberto += e.value;
+      continue;
+    }
+    const k = chave(e.date.getUTCFullYear(), e.date.getUTCMonth() + 1);
+    if (registrado.has(k)) atualPorMes.set(k, (atualPorMes.get(k) ?? 0) + e.value);
+    else semFechamento += e.value;
+  }
+
+  const mesesAlterados = closings
+    .map((c) => {
+      const atual = round2(atualPorMes.get(chave(c.year, c.month)) ?? 0);
+      return { year: c.year, month: c.month, registrado: round2(c.result), atual, diff: round2(atual - c.result) };
+    })
+    .filter((m) => Math.abs(m.diff) > 0.005)
+    .sort((a, b) => a.year - b.year || a.month - b.month);
+
+  const acumulado = round2(pl.lucroLiquido);
+  return {
+    aberto: round2(aberto),
+    acumulado,
+    diff: round2(acumulado - aberto),
+    mesesAlterados,
+    semFechamento: round2(semFechamento),
+    futuros: round2(futuros),
+  };
+}
+
 /**
  * Primeiro mês COM movimento no resultado (início do exercício). O fechamento
  * nunca começa antes dele — meses anteriores ao início do sistema não existem

@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { getProfitLossStatement } from "@/lib/reports";
-import { getClosedMonths, monthBounds, monthLabelBR } from "@/lib/monthly-closing";
+import { getClosedMonths, getProfitReconciliation, monthBounds, monthLabelBR } from "@/lib/monthly-closing";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -61,6 +62,9 @@ export default async function LucroPrejuizoPage({
   }
 
   const s = await getProfitLossStatement(12, { start: scopeStart, end: scopeEnd, excludeFechamento });
+  // Só no período aberto: é ali que o número desta tela pode diferir do lucro
+  // acumulado que o painel mostra.
+  const reconc = selected ? null : await getProfitReconciliation();
 
   const lucro = s.lucroLiquido >= 0;
   const margem = s.receitaTotal > 0 ? (s.lucroLiquido / s.receitaTotal) * 100 : 0;
@@ -184,6 +188,51 @@ export default async function LucroPrejuizoPage({
           <Row label={lucro ? "( = ) Lucro líquido" : "( = ) Prejuízo líquido"} value={s.lucroLiquido} kind="final" />
         </div>
       </Card>
+
+      {/*
+        O painel mostra o lucro ACUMULADO (equação patrimonial) e esta tela, o
+        resultado do período ABERTO. Enquanto cada fechamento guardar o
+        resultado do seu mês, os dois números são iguais. Quando um mês já
+        encerrado muda depois do fechamento (ou sobra mês antigo sem encerrar),
+        eles se separam — e o farol continua verde, porque ele compara a
+        equação com o Lucro/Prejuízo do histórico inteiro, e esses dois seguem
+        batendo. Este bloco só aparece quando há diferença, e diz de onde vem.
+      */}
+      {reconc && Math.abs(reconc.diff) > 0.01 ? (
+        <Card className="mb-4 border-2 border-amber-200">
+          <CardHeader
+            title="Por que o painel mostra outro número"
+            description="Esta tela é do período aberto; o painel mostra o lucro acumulado da equação patrimonial"
+          />
+          <div className="divide-y divide-slate-100">
+            <Row label="Resultado do período aberto (esta tela)" value={reconc.aberto} kind="total" />
+            {reconc.mesesAlterados.map((m) => (
+              <Row
+                key={`${m.year}-${m.month}`}
+                label={`${monthLabelBR(m.year, m.month)} mudou depois de encerrado: fechamento registrou ${formatCurrency(m.registrado)}, hoje o mês soma ${formatCurrency(m.atual)}`}
+                value={m.diff}
+                kind="sub"
+              />
+            ))}
+            {reconc.semFechamento !== 0 ? (
+              <Row label="Meses antigos que nunca foram encerrados" value={reconc.semFechamento} kind="sub" />
+            ) : null}
+            {reconc.futuros !== 0 ? (
+              <Row label="Lançamentos com data à frente do mês atual" value={reconc.futuros} kind="sub" />
+            ) : null}
+            <Row label="( = ) Lucro acumulado (painel / equação patrimonial)" value={reconc.acumulado} kind="final" />
+          </div>
+          <p className="px-5 py-3 text-xs text-slate-500">
+            Os dois números estão certos — são recortes diferentes, e por isso o farol continua verde: ele
+            compara a equação patrimonial com o Lucro/Prejuízo do histórico inteiro, que seguem batendo. Para
+            fazer o mês encerrado refletir o novo valor, reabra e feche o mês de novo em{" "}
+            <Link href="/financeiro/fechamento" className="font-medium text-blue-700 hover:underline">
+              Fechamento Mensal
+            </Link>{" "}
+            — o resultado vai ao capital pelo valor corrigido e as duas telas voltam a mostrar o mesmo número.
+          </p>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader
