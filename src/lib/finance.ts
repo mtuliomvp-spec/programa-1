@@ -3260,7 +3260,11 @@ export async function createCashEntry(input: {
         data: {
           description: input.description,
           documentNumber: input.documentNumber || null,
+          // O enum da receita avulsa é sempre OUTROS — é assim que o
+          // Lucro/Prejuízo a reconhece como "outra receita". O que o usuário
+          // escolhe no formulário é o RÓTULO, guardado ao lado.
           category: "OUTROS",
+          categoryLabel: input.categoryLabel || null,
           amount: input.amount,
           dueDate: input.date,
           receivedDate: input.date,

@@ -29,6 +29,7 @@ export default function CashEntryForm({
   beneficiaries,
   customers,
   categories,
+  incomeCategories,
   defaultDate,
   lockedDate = false,
   preselectedAccountId,
@@ -39,7 +40,10 @@ export default function CashEntryForm({
   parts: Part[];
   beneficiaries: Beneficiary[];
   customers: Customer[];
+  /** Categorias de DESPESA (saída). */
   categories: string[];
+  /** Categorias de RECEITA (entrada). */
+  incomeCategories: string[];
   defaultDate: string;
   lockedDate?: boolean;
   preselectedAccountId?: string;
@@ -339,6 +343,29 @@ export default function CashEntryForm({
         ) : null}
 
         {kind === "entrada" ? (
+          peca ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Categoria: <strong>Venda de peças</strong> — definida pelo próprio movimento de
+              estoque.
+            </p>
+          ) : (
+            <Field label="Categoria" required>
+              {/*
+                Só o RÓTULO: o motor da receita avulsa continua sendo "Outros"
+                (é o que o Lucro/Prejuízo lê como outra receita). A categoria
+                aqui serve para o usuário classificar e filtrar a entrada.
+              */}
+              <CategoryInput
+                key={amountKey}
+                name="categoryLabel"
+                options={incomeCategories}
+                defaultValue="Outros"
+              />
+            </Field>
+          )
+        ) : null}
+
+        {kind === "entrada" ? (
           <Field label={isSinal ? "Cliente que está dando o sinal" : "Cliente (opcional)"}>
             <SearchSelect
               name="customerId"
@@ -425,7 +452,14 @@ export default function CashEntryForm({
               </p>
             ) : (
               <Field label="Categoria" required>
-                <CategoryInput name="categoryLabel" options={categories} defaultValue="Outros" />
+                {/* key: o CategoryInput guarda o texto em estado próprio, que
+                    form.reset() não limpa — remonta a cada lançamento. */}
+                <CategoryInput
+                  key={amountKey}
+                  name="categoryLabel"
+                  options={categories}
+                  defaultValue="Outros"
+                />
               </Field>
             )}
             <Field label={flow === "CAPITAL" ? "Fornecedor (opcional)" : "Fornecedor"} required={flow !== "CAPITAL"}>

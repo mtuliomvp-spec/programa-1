@@ -15,7 +15,7 @@ import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
-import { resolveDespesaCategory } from "@/lib/categories";
+import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
 const schema = z.object({
@@ -60,7 +60,7 @@ export async function createCashEntryAction(
     return { error: e instanceof Error ? e.message : "Mês fechado." };
   }
 
-  const label = d.kind === "saida" ? (d.categoryLabel || "").trim() : "";
+  const label = (d.categoryLabel || "").trim();
   const isCapital = d.structuralKey === "CAPITAL";
   // Compra/venda de peça do almoxarifado: a categoria é do próprio movimento
   // (Compra de peças), então o formulário não pede categoria neste caso.
@@ -77,9 +77,14 @@ export async function createCashEntryAction(
     if (!supplierName && !isCapital) {
       return { error: "Informe o fornecedor do lançamento." };
     }
-  } else if (isCapital && !d.capitalBeneficiaryId) {
-    // Entrada no Capital = aporte: precisa do beneficiário.
-    return { error: "Escolha o beneficiário do capital (aporte)." };
+  } else {
+    if (isCapital && !d.capitalBeneficiaryId) {
+      // Entrada no Capital = aporte: precisa do beneficiário.
+      return { error: "Escolha o beneficiário do capital (aporte)." };
+    }
+    // Entrada também é classificada (venda de peça do almoxarifado tem a
+    // categoria do próprio movimento, como na saída).
+    if (!label && !isPeca) return { error: "Informe a categoria do lançamento." };
   }
 
   // -------------------------------------------------------------------------
@@ -143,8 +148,15 @@ export async function createCashEntryAction(
     return { ok: true };
   }
 
-  // Resolve a categoria da saída (rótulo canônico + enum); cria custom se nova.
-  const cat = d.kind === "saida" && label ? await resolveDespesaCategory(label) : null;
+  // Resolve a categoria (rótulo canônico; cria custom se nova). Na SAÍDA o
+  // enum da categoria vale — é ele que classifica a despesa. Na ENTRADA fica
+  // só o rótulo: o enum da receita avulsa continua "OUTROS", que é o que o
+  // Lucro/Prejuízo lê como outra receita. Escolher "Venda de veículo" aqui,
+  // por exemplo, tiraria o dinheiro do resultado (caixa sobe, lucro não) e
+  // derrubaria o farol — a classificação é do usuário, o motor não muda.
+  const catDespesa = label && d.kind === "saida" ? await resolveDespesaCategory(label) : null;
+  const catReceita = label && d.kind === "entrada" ? await resolveReceitaCategory(label) : null;
+  const categoryLabel = catDespesa?.label ?? catReceita?.label ?? null;
 
   // Fornecedor: reaproveita ou cadastra pelo nome (ex.: o banco da tarifa).
   // Também no Capital — pode-se pagar a um fornecedor por conta do beneficiário.
@@ -157,8 +169,8 @@ export async function createCashEntryAction(
     amount: d.amount,
     date: parseDateInput(d.date),
     accountId: d.accountId,
-    category: d.kind === "saida" ? cat?.category ?? "OUTROS" : undefined,
-    categoryLabel: cat?.label ?? null,
+    category: d.kind === "saida" ? catDespesa?.category ?? "OUTROS" : undefined,
+    categoryLabel,
     documentNumber: d.documentNumber?.trim() || null,
     structuralKey: d.structuralKey,
     supplierId,

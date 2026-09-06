@@ -59,7 +59,7 @@ export default async function LivroCaixaPage({
   const canCriar = await userCan("financeiro", "criar");
   const canFixDate = await userCan("financeiro", "corrigirdata");
 
-  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, parts, categoryOptions, beneficiaries, customers, health] =
+  const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, parts, categoryOptions, incomeCategoryOptions, beneficiaries, customers, health] =
     await Promise.all([
       prisma.payable.aggregate({
         where: { status: "PAGO", paymentDate: { lt: monthStart }, ...accountWhere },
@@ -108,6 +108,7 @@ export default async function LivroCaixaPage({
         select: { id: true, code: true, name: true, quantity: true, costPrice: true },
       }),
       listCategoryNames("DESPESA"),
+      listCategoryNames("RECEITA"),
       prisma.capitalBeneficiary.findMany({
         where: { active: true },
         orderBy: { name: "asc" },
@@ -371,6 +372,7 @@ export default async function LivroCaixaPage({
               beneficiaries={beneficiariesWithStatus}
               customers={customers}
               categories={categoryOptions}
+              incomeCategories={incomeCategoryOptions}
               defaultDate={toDateInputValue(cashboxWorkDate ?? new Date())}
               lockedDate={!!cashboxWorkDate}
               preselectedAccountId={accountFilter || undefined}
