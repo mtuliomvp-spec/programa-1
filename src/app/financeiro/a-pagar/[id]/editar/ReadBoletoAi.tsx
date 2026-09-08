@@ -2,7 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
@@ -37,6 +37,10 @@ export default function ReadBoletoAi({
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReadBoletoResult | null>(null);
+  // Senha de abertura do PDF (boleto de concessionária costuma pedir o
+  // CPF/CNPJ do titular). Fica só nesta tela — o que é guardado é o arquivo já
+  // decifrado, não a senha.
+  const [senha, setSenha] = useState("");
   const [applied, setApplied] = useState<string | null>(null);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [applying, startApply] = useTransition();
@@ -53,6 +57,7 @@ export default function ReadBoletoAi({
       const fd = new FormData();
       fd.set("payableId", payableId);
       fd.set("file", prepared);
+      if (senha) fd.set("senha", senha);
       const res = await readPayableBoletoAction(fd);
       setResult(res);
       // O anexo já entrou mesmo quando a leitura falha — atualiza o slot.
@@ -117,6 +122,29 @@ export default function ReadBoletoAi({
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           ⚠️ {result.error}
         </p>
+      ) : null}
+
+      {result?.senhaNecessaria ? (
+        <div className="mt-2 rounded-lg border border-slate-300 bg-white p-3">
+          <label className="block text-xs font-medium text-slate-600">
+            Senha do documento
+            <Input
+              type="password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              placeholder="Ex.: CPF/CNPJ do titular, só números"
+              className="mt-1 max-w-xs"
+              autoComplete="off"
+            />
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            O arquivo continua escolhido acima. Digite a senha e clique de novo em “Ler e anexar” —
+            o boleto é guardado já aberto, sem senha, e abre depois como qualquer outro.
+          </p>
+          <Button type="button" onClick={handleRead} disabled={busy || !senha} className="mt-2">
+            {busy ? "Abrindo…" : "Abrir e ler com a senha"}
+          </Button>
+        </div>
       ) : null}
 
       {result && result.boletos.length > 0 ? (

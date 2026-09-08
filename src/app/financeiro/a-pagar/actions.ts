@@ -2218,6 +2218,12 @@ export type ReadBoletoResult = {
   /** O arquivo foi anexado como BOLETO mesmo que a leitura falhe. */
   attached: boolean;
   boletos: BoletoLido[];
+  /**
+   * O PDF pede senha de abertura (boleto de concessionária costuma pedir o
+   * CPF/CNPJ do titular). Nada foi anexado ainda: a tela pede a senha e manda
+   * o mesmo arquivo de novo com ela.
+   */
+  senhaNecessaria?: boolean;
   /** Vazio = o valor pode ser aplicado; com texto = por que não pode. */
   amountLocked?: string;
   /** Idem para o vencimento (título de recorrência manda na data). */
@@ -2296,8 +2302,35 @@ export async function readPayableBoletoAction(formData: FormData): Promise<ReadB
     return { ok: false, ...vazio, error: "Título já pago. Reverta antes de mexer nele." };
   }
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "application/octet-stream";
+
+  // PDF com senha de abertura: sem a senha não dá para ler NEM para guardar
+  // um arquivo que ninguém consegue abrir depois. Com a senha, o que é
+  // anexado é a versão decifrada — o boleto abre como qualquer outro.
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: "Este boleto está protegido por senha. Digite a senha do documento para o sistema abrir, ler e anexar.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
   await prisma.payableAttachment.deleteMany({ where: { payableId, kind: "BOLETO" } });
   await prisma.payableAttachment.create({
     data: {
@@ -2486,6 +2519,8 @@ export type ReadReceiptResult = {
   error?: string;
   /** O arquivo foi anexado como COMPROVANTE mesmo que a leitura falhe. */
   attached: boolean;
+  /** O PDF pede senha de abertura: a tela pede a senha e reenvia o arquivo. */
+  senhaNecessaria?: boolean;
   /** O que a IA leu, para a tela mostrar. */
   valor?: number | null;
   data?: string | null;
@@ -2543,8 +2578,34 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
   });
   if (!payable) return { ok: false, ...vazio, error: "Título não encontrado." };
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "application/octet-stream";
+
+  // Mesma regra do boleto: comprovante em PDF com senha é decifrado antes de
+  // ser lido e guardado.
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema abrir, ler e anexar.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
   await prisma.payableAttachment.deleteMany({ where: { payableId, kind: "COMPROVANTE" } });
   await prisma.payableAttachment.create({
     data: {

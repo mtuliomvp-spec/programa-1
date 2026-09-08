@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import { readPayableReceiptAction, type ReadReceiptResult } from "./actions";
@@ -43,6 +43,8 @@ export default function ReadReceiptAi({
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<ReadReceiptResult | null>(null);
+  /** Senha de abertura do PDF, quando o banco protege o comprovante. */
+  const [senha, setSenha] = useState("");
 
   async function handleRead() {
     const file = fileRef.current?.files?.[0];
@@ -54,12 +56,15 @@ export default function ReadReceiptAi({
       const fd = new FormData();
       fd.set("payableId", payableId);
       fd.set("file", prepared);
+      if (senha) fd.set("senha", senha);
       const res = await readPayableReceiptAction(fd);
       setResult(res);
       if (res.attached) router.refresh();
+      // Faltando a senha, o arquivo TEM de continuar escolhido: é ele que será
+      // reenviado junto da senha.
+      if (!res.senhaNecessaria && fileRef.current) fileRef.current.value = "";
     } finally {
       setBusy(false);
-      if (fileRef.current) fileRef.current.value = "";
     }
   }
 
@@ -96,6 +101,29 @@ export default function ReadReceiptAi({
         <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
           ⚠️ {result.error}
         </p>
+      ) : null}
+
+      {result?.senhaNecessaria ? (
+        <div className="mt-2 rounded-lg border border-slate-300 bg-white p-3">
+          <label className="block text-xs font-medium text-slate-600">
+            Senha do documento
+            <Input
+              type="password"
+              value={senha}
+              onChange={(e) => setSenha(e.target.value)}
+              placeholder="Ex.: CPF/CNPJ do titular, só números"
+              className="mt-1 max-w-xs"
+              autoComplete="off"
+            />
+          </label>
+          <p className="mt-1 text-xs text-slate-500">
+            O arquivo continua escolhido acima. Digite a senha e clique de novo — o comprovante é
+            guardado já aberto, sem senha.
+          </p>
+          <Button type="button" onClick={handleRead} disabled={busy || !senha} className="mt-2">
+            {busy ? "Abrindo…" : "Abrir e ler com a senha"}
+          </Button>
+        </div>
       ) : null}
 
       {result?.ok && result.enfileirado ? (
