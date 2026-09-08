@@ -10,7 +10,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
-import { parseDateInput } from "@/lib/format";
+import { parseDateInput, formatRequestNumber } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
 import { STRUCTURAL_KEY_VALUES, isStructuralKey, type StructuralKey } from "@/lib/structural-flows";
 import { getNeutralAccountId } from "@/lib/accounts";
@@ -758,6 +758,61 @@ const ORIGIN_SELECT = {
   purchaseRequestId: true,
 } as const;
 
+/** Como ORIGIN_SELECT, mais o que o aviso precisa para dizer ONDE excluir. */
+const ORIGIN_SELECT_DETALHE = {
+  ...ORIGIN_SELECT,
+  orderNumber: true,
+  description: true,
+  purchaseRequest: { select: { id: true, seq: true, year: true } },
+  sale: { select: { id: true } },
+} as const;
+
+/**
+ * Por que este título não pode ser excluído no Contas a pagar, em português e
+ * com o caminho da origem. Título com origem é ESPELHO de outra coisa (compra,
+ * venda, peça, consórcio, funcionário): apagar só o espelho deixaria a origem
+ * apontando para o nada, então a exclusão se faz lá.
+ */
+function motivoDaRecusa(p: {
+  status: string;
+  partId: string | null;
+  consortiumId: string | null;
+  employeeId: string | null;
+  saleId: string | null;
+  purchaseRequestId: string | null;
+  purchaseRequest: { id: string; seq: number; year: number } | null;
+  sale: { id: string } | null;
+}): { texto: string; href: string | null } | null {
+  if (p.status === "PAGO") {
+    return { texto: "está pago — reverta a baixa antes de excluir", href: null };
+  }
+  if (p.purchaseRequestId) {
+    const num = p.purchaseRequest
+      ? formatRequestNumber(p.purchaseRequest.seq, p.purchaseRequest.year)
+      : null;
+    return {
+      texto: `nasceu da solicitação de compra${num ? ` ${num}` : ""} — exclua a solicitação e o título sai junto`,
+      href: p.purchaseRequest ? `/compras/${p.purchaseRequest.id}` : "/compras",
+    };
+  }
+  if (p.saleId) {
+    return {
+      texto: "foi gerado por uma venda (comissão, indicação, transferência) — cancele ou ajuste a venda",
+      href: p.sale ? `/vendas/${p.sale.id}` : "/vendas",
+    };
+  }
+  if (p.partId) {
+    return { texto: "é a compra de uma peça — desfaça pela ficha da peça", href: "/pecas" };
+  }
+  if (p.consortiumId) {
+    return { texto: "é a parcela de um consórcio — desfaça pela ficha do consórcio", href: "/consorcios" };
+  }
+  if (p.employeeId) {
+    return { texto: "é o salário de um funcionário — desfaça pela folha de pagamento", href: "/folha" };
+  }
+  return null;
+}
+
 function originBlockReason(p: {
   status: string;
   vehicleId: string | null;
@@ -1155,7 +1210,17 @@ export async function splitSameTotalAction(
   redirect(rt.startsWith("/financeiro/") ? rt : "/financeiro/a-pagar");
 }
 
-export type DeletePayablesResult = { ok: boolean; deleted: number; skipped: number; error?: string };
+/** Um título que a exclusão recusou, com o motivo e o caminho da origem. */
+export type SkippedPayable = { titulo: string; motivo: string; href: string | null };
+
+export type DeletePayablesResult = {
+  ok: boolean;
+  deleted: number;
+  skipped: number;
+  /** Por que cada um foi recusado — a tela lista com o link da origem. */
+  skippedDetails?: SkippedPayable[];
+  error?: string;
+};
 
 /**
  * Exclui um ou vários títulos manuais e NÃO pagos. Títulos pagos ou vindos de
@@ -1174,12 +1239,24 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   // linhas levava centenas de idas ao banco (a checagem é só em memória).
   const rows = await prisma.payable.findMany({
     where: { id: { in: ids } },
-    select: { id: true, dueDate: true, ...ORIGIN_SELECT },
+    select: { id: true, dueDate: true, ...ORIGIN_SELECT_DETALHE },
   });
   const okRows = rows.filter((p) => !originBlockReason(p));
   const okIds = okRows.map((p) => p.id);
   const deleted = okIds.length;
   const skipped = ids.length - deleted;
+  // Cada recusa com nome e caminho: "0 excluído(s) · 1 ignorado(s)" sozinho
+  // deixa o usuário sem saber o que fazer com o título que sobrou.
+  const skippedDetails = rows
+    .filter((p) => originBlockReason(p))
+    .map((p) => {
+      const motivo = motivoDaRecusa(p);
+      return {
+        titulo: `nº ${String(p.orderNumber).padStart(4, "0")} — ${p.description}`,
+        motivo: motivo?.texto ?? "tem origem em outra operação",
+        href: motivo?.href ?? null,
+      };
+    });
 
   if (okIds.length) {
     // Título de RECORRÊNCIA: o dia do vencimento vira "pulado" na recorrência,
@@ -1214,7 +1291,7 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
   revalidatePath("/");
-  return { ok: deleted > 0, deleted, skipped };
+  return { ok: deleted > 0, deleted, skipped, skippedDetails };
 }
 
 export type ImportReceiptsResult = {

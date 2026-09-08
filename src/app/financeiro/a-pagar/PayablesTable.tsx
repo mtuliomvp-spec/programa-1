@@ -11,6 +11,7 @@ import {
   payWithSubstitutionAction,
   deletePayablesAction,
   correctPaymentDateAction,
+  type SkippedPayable,
 } from "./actions";
 import FixDateButton from "@/components/FixDateButton";
 import { addPayablesToComboAction } from "../combos/actions";
@@ -112,6 +113,8 @@ export default function PayablesTable({
   const [comboId, setComboId] = useState(openCombos[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  // Títulos que a exclusão recusou, com o motivo e o caminho da origem.
+  const [recusados, setRecusados] = useState<SkippedPayable[]>([]);
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
   const [addingCombo, startAddCombo] = useTransition();
@@ -227,18 +230,15 @@ export default function PayablesTable({
       return;
     }
     setMsg(null);
+    setRecusados([]);
     startRemove(async () => {
       const res = await deletePayablesAction(ids);
       if (res.error) {
         setMsg(res.error);
         return;
       }
-      setMsg(
-        `${res.deleted} excluído(s)` +
-          (res.skipped > 0
-            ? ` · ${res.skipped} ignorado(s) — título pago (reverta antes) ou de outra operação (venda, peça, consórcio, funcionário, compra)`
-            : ""),
-      );
+      setMsg(`${res.deleted} excluído(s)` + (res.skipped > 0 ? ` · ${res.skipped} não pôde(m) ser excluído(s):` : ""));
+      setRecusados(res.skippedDetails ?? []);
       setSelected(new Set());
     });
   }
@@ -629,6 +629,28 @@ export default function PayablesTable({
         </div>
       ) : null}
       {msg && selected.size === 0 ? <p className="px-5 py-2 text-sm text-slate-600">{msg}</p> : null}
+      {/*
+        Recusa da exclusão com nome e caminho: título com origem é espelho de
+        outra coisa (compra, venda, peça...), e apagar só o espelho deixaria a
+        origem apontando para o nada — então a exclusão se faz lá.
+      */}
+      {recusados.length > 0 ? (
+        <ul className="mx-5 mb-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          {recusados.map((r, i) => (
+            <li key={i}>
+              <strong>{r.titulo}</strong>: {r.motivo}
+              {r.href ? (
+                <>
+                  {" — "}
+                  <Link href={r.href} className="font-medium underline">
+                    abrir a origem
+                  </Link>
+                </>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : null}
     </>
   );
 }
