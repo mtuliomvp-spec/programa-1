@@ -243,6 +243,11 @@ export default async function AccountStatementPage({
             <LinkButton href="/financeiro/contas" variant="secondary">
               ← Contas
             </LinkButton>
+            {canContas && !account.structural ? (
+              <LinkButton href={`/financeiro/contas/${account.id}/editar`} variant="secondary">
+                ✏️ Editar conta
+              </LinkButton>
+            ) : null}
             <PrintButton title={`Conta ${account.name}`} />
           </div>
         }

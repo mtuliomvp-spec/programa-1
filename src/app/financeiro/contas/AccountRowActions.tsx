@@ -1,6 +1,7 @@
 "use client";
 
 import { useTransition } from "react";
+import Link from "next/link";
 import { setDefaultAccountAction, toggleAccountAction } from "./actions";
 
 export default function AccountRowActions({
@@ -32,6 +33,9 @@ export default function AccountRowActions({
 
   return (
     <div className="flex flex-col items-end gap-1 text-sm font-medium">
+      <Link href={`/financeiro/contas/${id}/editar`} className="text-blue-700 hover:underline">
+        Editar
+      </Link>
       {active && !isDefault ? (
         <button
           type="button"

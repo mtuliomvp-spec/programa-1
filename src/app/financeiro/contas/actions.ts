@@ -177,6 +177,129 @@ export async function createAccountAction(
 }
 
 /**
+ * Edita os dados de uma conta já cadastrada. Nome, banco, agência, número e
+ * tipo eram pedidos só no cadastro e depois ficavam congelados — uma agência
+ * digitada errada não tinha conserto, e agora ela decide se o comprovante
+ * reconhece sozinho a conta debitada.
+ *
+ * As travas são as mesmas que o resto do sistema já respeita:
+ *  - Banco Neutro é conta do sistema: não se edita (nem o nome, que é a chave
+ *    pela qual o farol e a troca a encontram).
+ *  - SALDO INICIAL só muda enquanto a conta não tem movimento: ele entra no
+ *    Lucro/Prejuízo (na data de criação da conta) e na equação patrimonial, e
+ *    mexer nele com histórico reescreve o resultado de meses já apurados.
+ *  - Conta de APLICAÇÃO não vira conta comum (e vice-versa): o saldo dela é
+ *    rateado entre os sócios; trocar isso deixaria a razão do capital órfã.
+ *  - Sair de FINANCEIRA só sem venda financiada apontando para ela.
+ */
+export async function updateAccountAction(
+  _prev: ContaFormState,
+  formData: FormData,
+): Promise<ContaFormState> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const id = String(formData.get("id") || "").trim();
+  if (!id) return { error: "Conta inválida." };
+  const parsed = accountSchema.safeParse(Object.fromEntries(formData.entries()));
+  if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const data = parsed.data;
+
+  const conta = await prisma.financialAccount.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      structural: true,
+      isInvestment: true,
+      initialBalance: true,
+      isDefault: true,
+      createdAt: true,
+      _count: { select: { payables: true, receivables: true, financedSales: true, allocations: true } },
+    },
+  });
+  if (!conta) return { error: "Conta não encontrada." };
+  if (conta.structural) {
+    return {
+      error:
+        "O Banco Neutro é uma conta do próprio sistema (conta de compensação) — os dados dela não são editáveis.",
+    };
+  }
+
+  const nome = data.name.trim();
+  if (nome.toLowerCase() === NEUTRAL_ACCOUNT_NAME.toLowerCase()) {
+    return { error: '"Banco Neutro" é o nome da conta de compensação do sistema. Escolha outro nome.' };
+  }
+
+  // Movimento = qualquer título baixado nesta conta ou transferência que a
+  // envolva. É o que impede mexer no saldo inicial.
+  const transferencias = await prisma.accountTransfer.count({
+    where: { OR: [{ fromId: id }, { toId: id }] },
+  });
+  const temMovimento =
+    conta._count.payables > 0 || conta._count.receivables > 0 || transferencias > 0;
+
+  const novoSaldo = conta.isInvestment ? 0 : data.initialBalance;
+  const saldoMudou = Math.abs(novoSaldo - conta.initialBalance) > 0.005;
+  if (saldoMudou && temMovimento) {
+    return {
+      error:
+        "Esta conta já tem lançamentos: o saldo inicial não pode mais mudar (ele já entrou no Lucro/Prejuízo e na equação patrimonial). Ajuste por um lançamento no movimento de caixa.",
+    };
+  }
+  // Sem movimento, mas o mês em que a conta nasceu pode já estar encerrado —
+  // o saldo inicial entra no resultado naquela data.
+  if (saldoMudou) {
+    try {
+      await assertMonthOpen(conta.createdAt);
+    } catch {
+      return {
+        error: `O mês em que esta conta foi cadastrada (${monthLabelBR(conta.createdAt.getUTCFullYear(), conta.createdAt.getUTCMonth() + 1)}) já está encerrado — o saldo inicial não pode mais mudar.`,
+      };
+    }
+  }
+
+  if (Boolean(data.isInvestment) !== conta.isInvestment) {
+    return {
+      error: conta.isInvestment
+        ? "Conta de Aplicação não vira conta comum: o saldo dela é rateado entre os sócios. Zere a aplicação e cadastre outra conta."
+        : "Conta comum não vira conta de Aplicação. Cadastre uma conta de Aplicação e transfira o dinheiro para ela.",
+    };
+  }
+
+  if (conta.type === "FINANCEIRA" && data.type !== "FINANCEIRA" && conta._count.financedSales > 0) {
+    return {
+      error:
+        "Há vendas financiadas apontando para esta conta — ela precisa continuar do tipo Financeira.",
+    };
+  }
+
+  await prisma.financialAccount.update({
+    where: { id },
+    data: {
+      name: nome,
+      type: data.type,
+      bankName: data.bankName?.trim() || null,
+      agency: data.agency?.trim() || null,
+      accountNumber: data.accountNumber?.trim() || null,
+      initialBalance: novoSaldo,
+      investmentMaturity:
+        conta.isInvestment && data.investmentMaturity ? parseDateInput(data.investmentMaturity) : null,
+      returnTaxPercent: data.type === "FINANCEIRA" && !conta.isInvestment ? data.returnTaxPercent : 0,
+      ownerBeneficiaryId: data.ownerBeneficiaryId || null,
+    },
+  });
+
+  revalidatePath("/financeiro/contas");
+  revalidatePath(`/financeiro/contas/${id}`);
+  revalidatePath("/financeiro/livro-caixa");
+  return {};
+}
+
+/**
  * Define/troca o titular verdadeiro de uma conta já cadastrada (sócio dono da
  * conta, que opera como se fosse da MVP). Nulo = conta da própria empresa.
  * Informativo — não altera saldos nem a equação patrimonial.
