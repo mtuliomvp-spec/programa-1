@@ -32,6 +32,12 @@ export type PayableRow = {
   vehicleLabel: string | null;
   dueDate: string; // ISO
   amount: number;
+  /**
+   * Desconto por pontualidade do boleto ainda VÁLIDO na data do caixa: valor
+   * do abatimento, prazo real (já empurrado para o dia útil) e quanto sai
+   * pagando dentro dele. Null quando não há ou já passou.
+   */
+  discount: { amount: number; until: string; net: number } | null;
   effective: "PENDENTE" | "PAGO" | "ATRASADO";
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
@@ -130,7 +136,10 @@ export default function PayablesTable({
   const allSelected = payableRows.length > 0 && payableRows.every((r) => selected.has(r.id));
 
   const selectedRows = useMemo(() => rows.filter((r) => selected.has(r.id)), [rows, selected]);
-  const selectedTotal = selectedRows.reduce((s, r) => s + r.amount, 0);
+  // Total do lote com o desconto do boleto já considerado: é esse valor que vai
+  // sair da conta, então é ele que o usuário precisa ver antes de confirmar.
+  const selectedTotal = selectedRows.reduce((s, r) => s + (r.discount?.net ?? r.amount), 0);
+  const selectedDiscount = selectedRows.reduce((s, r) => s + (r.discount?.amount ?? 0), 0);
 
   // "Pagar com substituição": só quando TODOS os selecionados são retiradas de
   // capital do MESMO sócio e esse sócio tem capital aplicado (substitutionData).
@@ -336,7 +345,17 @@ export default function PayablesTable({
                   {p.vehicleLabel || "-"}
                 </Td>
                 <Td className="whitespace-nowrap">{formatDate(p.dueDate)}</Td>
-                <Td className="whitespace-nowrap tabular-nums">{formatCurrency(p.amount)}</Td>
+                <Td className="whitespace-nowrap tabular-nums">
+                  {formatCurrency(p.amount)}
+                  {p.discount ? (
+                    <span
+                      className="mt-0.5 block text-[11px] font-medium text-emerald-700"
+                      title={`O boleto dá ${formatCurrency(p.discount.amount)} de desconto até ${formatDate(p.discount.until)}. Pagando até lá, a baixa usa o valor com desconto.`}
+                    >
+                      💰 {formatCurrency(p.discount.net)} até {formatDate(p.discount.until)}
+                    </span>
+                  ) : null}
+                </Td>
                 <Td>
                   <Badge tone={statusTone[p.effective]}>{statusLabel[p.effective]}</Badge>
                   {p.accountName ? (
@@ -435,6 +454,11 @@ export default function PayablesTable({
                 {selected.size} {selected.size === 1 ? "título" : "títulos"} ·{" "}
                 <span className="text-rose-600">{formatCurrency(selectedTotal)}</span>
               </p>
+              {selectedDiscount > 0 ? (
+                <p className="text-[11px] font-medium text-emerald-700">
+                  💰 já com {formatCurrency(selectedDiscount)} de desconto do boleto
+                </p>
+              ) : null}
             </div>
             {accounts.length > 0 ? (
               <>

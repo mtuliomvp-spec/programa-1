@@ -20,7 +20,8 @@ import {
   AJUSTE_QUITACAO_DESC,
   type VehicleDebtItem,
 } from "@/lib/vehicle-debts";
-import { parseDateInput } from "@/lib/format";
+import { parseDateInput, formatDate } from "@/lib/format";
+import { dentroDoPrazo, prazoEfetivo } from "@/lib/banking-days";
 import type {
   CategoriaCustoVeiculo,
   CategoriaPagar,
@@ -2137,11 +2138,55 @@ export async function syncPurchaseRequestStatus(purchaseRequestId: string) {
 export const markPayablePaid = (...a: Parameters<typeof payablePaid>) =>
   timed("baixa: pagar título", () => payablePaid(...a));
 
+/**
+ * Desconto por pontualidade a conceder NA BAIXA, quando o título tem a condição
+ * do boleto ("desconto de R$ X até o vencimento") e o pagamento cabe no prazo.
+ *
+ * O prazo do boleto não morre no sábado: vencimento em fim de semana ou feriado
+ * é pagável, com o mesmo desconto, no primeiro dia útil seguinte — por isso a
+ * comparação usa `dentroDoPrazo`, e não a data crua do boleto.
+ *
+ * Devolve null quando não há desconto, quando o prazo já passou ou quando o
+ * desconto não faz sentido (≥ o valor do título). O desconto NÃO é um ganho:
+ * é uma despesa menor — o título passa a valer o líquido e é isso que sai do
+ * caixa, mantendo equação e resultado alinhados.
+ */
+async function descontoNaBaixa(
+  id: string,
+  paymentDate: Date,
+): Promise<{ novoValor: number; notes: string } | null> {
+  const p = await prisma.payable.findUnique({
+    where: { id },
+    select: { amount: true, status: true, notes: true, discountAmount: true, discountUntil: true },
+  });
+  if (!p || p.status === "PAGO") return null;
+  const desconto = p.discountAmount ?? 0;
+  if (desconto <= 0 || desconto >= p.amount) return null;
+  if (!dentroDoPrazo(paymentDate, p.discountUntil)) return null;
+  const limite = p.discountUntil!;
+  const prazo = prazoEfetivo(limite)!;
+  const esticou = prazo.getTime() !== Date.UTC(limite.getUTCFullYear(), limite.getUTCMonth(), limite.getUTCDate());
+  const novoValor = Math.round((p.amount - desconto) * 100) / 100;
+  const aviso =
+    `Desconto de ${brl(desconto)} concedido na baixa: pago dentro do prazo do boleto (até ${formatDate(limite)}` +
+    (esticou ? `, que caiu em dia sem expediente bancário — prazo válido até ${formatDate(prazo)}` : "") +
+    `). Valor cheio do boleto: ${brl(p.amount)}.`;
+  return { novoValor, notes: withNotes(p.notes || "", aviso) };
+}
+
 async function payablePaid(id: string, paymentDate: Date, accountId?: string | null) {
   const account = accountId ?? (await getDefaultAccountId());
+  const desconto = await descontoNaBaixa(id, paymentDate);
   const updated = await prisma.payable.update({
     where: { id },
-    data: { status: "PAGO", paymentDate, accountId: account },
+    data: {
+      status: "PAGO",
+      paymentDate,
+      accountId: account,
+      ...(desconto
+        ? { amount: desconto.novoValor, notes: desconto.notes, discountAmount: null, discountUntil: null }
+        : {}),
+    },
   });
   await syncPayableCapital(id);
   // Fatura de cartão: a baixa lança as retiradas dos itens CAPITAL.

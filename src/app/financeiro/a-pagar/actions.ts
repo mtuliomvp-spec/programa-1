@@ -2144,6 +2144,10 @@ export type BoletoLido = {
   dueDate: string | null;
   descricao: string | null;
   cedente: string | null;
+  /** Abatimento por pontualidade impresso no boleto (reais). */
+  desconto: number | null;
+  /** Data limite do desconto (yyyy-mm-dd) — "até o vencimento" vira a data dele. */
+  descontoAte: string | null;
 };
 
 export type ReadBoletoResult = {
@@ -2259,11 +2263,20 @@ export async function readPayableBoletoAction(formData: FormData): Promise<ReadB
         valor != null && b.tipo !== "MULTA" && b.valorSemDesconto && b.valorSemDesconto > valor
           ? round2(b.valorSemDesconto)
           : valor;
+      const dueDate = b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null;
+      // Desconto por pontualidade do próprio boleto (condomínio, mensalidade).
+      // Só vale com um limite de data: sem prazo não há como saber se ainda
+      // está valendo. "Até o vencimento" cai no vencimento lido.
+      const desconto = b.desconto && b.desconto > 0 ? round2(b.desconto) : null;
+      const descontoAte =
+        b.descontoAte && /^\d{4}-\d{2}-\d{2}$/.test(b.descontoAte) ? b.descontoAte : dueDate;
       return {
         amount,
-        dueDate: b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null,
+        dueDate,
         descricao: b.descricao,
         cedente: b.cedente,
+        desconto: desconto != null && descontoAte ? desconto : null,
+        descontoAte: desconto != null && descontoAte ? descontoAte : null,
       };
     });
     // Linha digitável: vai direto para o título (é só uma ajuda para pagar, não
@@ -2304,6 +2317,8 @@ export async function applyBoletoToPayableAction(input: {
   payableId: string;
   amount?: number | null;
   dueDate?: string | null;
+  desconto?: number | null;
+  descontoAte?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
@@ -2345,7 +2360,17 @@ export async function applyBoletoToPayableAction(input: {
     input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) && !locks.dueDateLocked
       ? parseDateInput(input.dueDate)
       : null;
-  if (amount == null && dueDate == null) {
+  // O desconto acompanha o valor: ele abate do valor cheio na baixa dentro do
+  // prazo, então não faz sentido guardá-lo sem o valor que ele abate.
+  const descontoAte =
+    input.descontoAte && /^\d{4}-\d{2}-\d{2}$/.test(input.descontoAte)
+      ? parseDateInput(input.descontoAte)
+      : null;
+  const desconto =
+    input.desconto != null && input.desconto > 0 && descontoAte && !locks.amountLocked
+      ? round2(input.desconto)
+      : null;
+  if (amount == null && dueDate == null && desconto == null) {
     return { ok: false, error: locks.amountLocked || locks.dueDateLocked || "Nada a aplicar." };
   }
 
@@ -2370,6 +2395,18 @@ export async function applyBoletoToPayableAction(input: {
     structuralKey: flow,
     vehicleId: current.vehicleId,
     capitalBeneficiaryId: current.capitalBeneficiaryId,
+  });
+
+  // Desconto por pontualidade: fica guardado no título (o valor continua sendo
+  // o cheio) e é aplicado na BAIXA, se o pagamento couber no prazo. Ler um
+  // boleto sem desconto limpa o que estava lá — é o boleto que manda.
+  const valorFinal = amount ?? current.amount;
+  await prisma.payable.update({
+    where: { id: current.id },
+    data: {
+      discountAmount: desconto != null && desconto < valorFinal ? desconto : null,
+      discountUntil: desconto != null && desconto < valorFinal ? descontoAte : null,
+    },
   });
 
   revalidatePath("/financeiro/a-pagar");
