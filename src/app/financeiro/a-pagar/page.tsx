@@ -80,6 +80,7 @@ export default async function ContasAPagarPage({
           cardInvoice: true,
           discountAmount: true,
           discountUntil: true,
+          referencePeriod: true,
           pendingPaymentDate: true,
           pendingPaymentAmount: true,
           supplierId: true,
@@ -219,6 +220,7 @@ export default async function ContasAPagarPage({
     beneficiaryName: p.beneficiaryUser?.name ?? p.capitalBeneficiary?.name ?? null,
     capitalBeneficiaryName: p.capitalBeneficiary?.name ?? null,
     vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : null,
+    referencePeriod: p.referencePeriod,
     dueDate: p.dueDate.toISOString(),
     amount: p.amount,
     // Desconto por pontualidade do boleto: o prazo real é a data impressa

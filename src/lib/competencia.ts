@@ -66,3 +66,63 @@ export function normalizarCompetencia(
 
   return texto.slice(0, MAX).trim() || null;
 }
+
+/**
+ * Competência que é um MÊS ("08/2026") — a das contas de consumo, que andam de
+ * mês em mês. É a forma que a recorrência precisa entender para numerar sozinha
+ * as ocorrências seguintes; texto livre (um período, um exercício) não serve
+ * aqui e volta `null`.
+ *
+ * Aceita como a pessoa escreve: 08/2026, 8/2026, 08-2026, 2026-08, ago/2026.
+ */
+const MESES_PT = [
+  "jan", "fev", "mar", "abr", "mai", "jun",
+  "jul", "ago", "set", "out", "nov", "dez",
+];
+
+export function parseCompetenciaMes(raw: string | null | undefined): { ano: number; mes: number } | null {
+  const texto = normalizarCompetencia(raw);
+  if (!texto) return null;
+  const limpo = texto
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+
+  const numerico = limpo.match(/^(\d{1,2})\s*[/-]\s*(\d{4})$/);
+  if (numerico) {
+    const mes = Number(numerico[1]);
+    if (mes >= 1 && mes <= 12) return { ano: Number(numerico[2]), mes };
+    return null;
+  }
+  const iso = limpo.match(/^(\d{4})\s*[/-]\s*(\d{1,2})$/);
+  if (iso) {
+    const mes = Number(iso[2]);
+    if (mes >= 1 && mes <= 12) return { ano: Number(iso[1]), mes };
+    return null;
+  }
+  // "ago/2026", "agosto de 2026", "setembro/2026"
+  const porNome = limpo.match(/^([a-z]{3,9})\.?\s*(?:de\s*)?[/-]?\s*(\d{4})$/);
+  if (porNome) {
+    const idx = MESES_PT.findIndex((m) => porNome[1].startsWith(m));
+    if (idx >= 0) return { ano: Number(porNome[2]), mes: idx + 1 };
+  }
+  return null;
+}
+
+/** {ano, mes} → "08/2026", que é como a competência aparece nas telas. */
+export function formatCompetenciaMes(ano: number, mes: number): string {
+  return `${String(mes).padStart(2, "0")}/${ano}`;
+}
+
+/**
+ * A competência `meses` à frente da primeira ("08/2026" + 1 → "09/2026").
+ * Devolve `null` quando a primeira não é um mês — aí não há o que numerar.
+ */
+export function competenciaMaisMeses(primeira: string | null | undefined, meses: number): string | null {
+  const base = parseCompetenciaMes(primeira);
+  if (!base) return null;
+  const idx = base.ano * 12 + (base.mes - 1) + Math.round(meses);
+  if (idx < 0) return null;
+  return formatCompetenciaMes(Math.floor(idx / 12), (idx % 12) + 1);
+}

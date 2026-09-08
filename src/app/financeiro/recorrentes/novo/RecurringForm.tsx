@@ -21,6 +21,7 @@ export type RecurringInitial = {
   dayOfMonth: number;
   intervalDays: number | null;
   anticipateToBusinessDay: boolean;
+  firstReference: string | null;
   cardInvoice: boolean;
   categoryLabel: string | null;
   supplierName: string;
@@ -118,10 +119,32 @@ export default function RecurringForm({
         />
         <p className="mt-1 text-xs text-slate-400">
           Dica: escreva <code>{"{competencia}"}</code> na descrição e cada título sai com o mês de
-          competência (o mês anterior ao vencimento) — ex.: &quot;DAS — competência{" "}
-          {"{competencia}"}&quot; vira &quot;DAS — competência 05/2026&quot; no vencimento de junho.
+          competência — a informada abaixo ou, sem ela, o mês anterior ao vencimento. Ex.: &quot;DAS
+          — competência {"{competencia}"}&quot; vira &quot;DAS — competência 05/2026&quot; no
+          vencimento de junho.
         </p>
       </Field>
+
+      {/* Conta de consumo (luz, água, telefone) cobra um mês anterior ao
+          vencimento e nem sempre chega no dia combinado. Declarada a
+          competência da primeira, o sistema numera as seguintes sozinho e cada
+          título nasce sabendo a que mês se refere — o vencimento fica livre
+          para ser corrigido pelo boleto que chegou. Só no mensal: "a cada N
+          dias" pode ter duas parcelas no mesmo mês. */}
+      {periodicidade === "MENSAL" ? (
+      <Field label="Competência da 1ª ocorrência (opcional)">
+        <Input
+          name="firstReference"
+          defaultValue={initial?.firstReference ?? ""}
+          placeholder="Ex: 08/2026"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Para contas de consumo: o mês a que a <strong>primeira</strong> conta se refere (a luz de
+          agosto vence em setembro). As seguintes o sistema numera sozinho — 09/2026, 10/2026… A
+          competência aparece no título e na Ordem de Pagamento.
+        </p>
+      </Field>
+      ) : null}
 
       {kind === "PAGAR" && !isCapital ? (
         <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700">

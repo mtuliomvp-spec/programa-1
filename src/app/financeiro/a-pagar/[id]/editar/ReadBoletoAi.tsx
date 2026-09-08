@@ -168,7 +168,7 @@ export default function ReadBoletoAi({
           </p>
           {result.boletos.map((b, i) => {
             const podeValor = b.amount != null && !result.amountLocked;
-            const podeVenc = Boolean(b.dueDate) && !result.dueDateLocked;
+            const podeVenc = Boolean(b.dueDate);
             const mudaValor = b.amount != null && Math.abs(b.amount - amountAtual) > 0.005;
             return (
               <div key={i} className="rounded-lg border border-slate-200 bg-white p-3">
@@ -223,9 +223,6 @@ export default function ReadBoletoAi({
                 ) : null}
                 {result.amountLocked ? (
                   <p className="mt-1 text-xs text-slate-500">🔒 {result.amountLocked}</p>
-                ) : null}
-                {result.dueDateLocked && b.dueDate ? (
-                  <p className="mt-1 text-xs text-slate-500">🔒 {result.dueDateLocked}</p>
                 ) : null}
               </div>
             );

@@ -334,11 +334,10 @@ export async function updateReceivableAction(
   if (current.saleId || current.partSaleId) {
     return { error: "Este título vem de uma venda. Ajuste na venda de origem." };
   }
-  // Recorrente PODE ser editado (é como se ajusta o valor do mês), mas o
-  // VENCIMENTO fica com a recorrência: o gerador não duplica olhando o dia de
-  // vencimento dos títulos já criados — mudar a data aqui liberaria o dia
-  // original e faria nascer um título repetido.
-  const dueDate = current.recurringId ? current.dueDate : parseDateInput(d.dueDate);
+  // Recorrente é editável inclusive no VENCIMENTO: a geração reconhece a
+  // parcela pela ocorrência gravada no título (`recurringPeriod`), não pela
+  // data, então corrigir a data não faz a parcela nascer de novo.
+  const dueDate = parseDateInput(d.dueDate);
 
   const label = (d.categoryLabel || "").trim();
   if (!label) return { error: "Informe a categoria." };

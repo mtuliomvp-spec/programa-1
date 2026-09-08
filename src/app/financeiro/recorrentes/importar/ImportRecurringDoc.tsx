@@ -59,6 +59,9 @@ export default function ImportRecurringDoc({
         dayOfMonth: p.dayOfMonth,
         intervalDays: p.intervalDays,
         anticipateToBusinessDay: p.anticipateToBusinessDay,
+        // A leitura do carnê não traz a competência — quem quiser numera as
+        // parcelas informando a primeira no formulário.
+        firstReference: null,
         cardInvoice: false,
         categoryLabel: "Despesa operacional",
         supplierName: p.supplierName,

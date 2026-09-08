@@ -1178,6 +1178,12 @@ model Payable {
   beneficiaryUser      User?               @relation("PayableBeneficiary", fields: [beneficiaryUserId], references: [id], onDelete: SetNull)
   recurringId          String?
   recurring            RecurringEntry?     @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  // OCORRÊNCIA da recorrência que gerou este título: "2026-09" no mensal,
+  // "2026-09-15" no "a cada N dias". É a identidade da parcela — a geração
+  // pergunta por ela, não pela data. Por isso o vencimento pode ser corrigido
+  // (a conta de luz que chegou com outra data) sem o título renascer, e mudar o
+  // dia da recorrência não cria um segundo título do mesmo mês.
+  recurringPeriod      String?
   // Solicitação de compra que gerou este título (espelho da aprovação).
   purchaseRequestId    String?
   purchaseRequest      PurchaseRequest?    @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
@@ -1312,6 +1318,11 @@ model Receivable {
   totalInstallments    Int?
   recurringId          String?
   recurring            RecurringEntry?     @relation(fields: [recurringId], references: [id], onDelete: SetNull)
+  // Ocorrência da recorrência (mesma ideia do Payable.recurringPeriod).
+  recurringPeriod      String?
+  // Competência/referência do que o título cobra ("08/2026"). Informativa: a
+  // receita continua entrando pelo regime de caixa, na data do recebimento.
+  referencePeriod      String?
   reconciledAt         DateTime?
   bankRef              String?
   costCenterId         String?
@@ -1618,6 +1629,11 @@ model RecurringEntry {
   supplier                Supplier?           @relation(fields: [supplierId], references: [id])
   customerId              String?
   customer                Customer?           @relation(fields: [customerId], references: [id])
+  // Competência/referência da PRIMEIRA ocorrência ("08/2026"). Conta de consumo
+  // se refere a um mês anterior ao vencimento (a luz de agosto vence em
+  // setembro) — informada aqui, cada título gerado sai com a sua, contada mês a
+  // mês a partir desta. Vazio = os títulos nascem sem competência.
+  firstReference          String?
   active                  Boolean             @default(true)
   startDate               DateTime            @default(now())
   endDate                 DateTime?
