@@ -162,9 +162,24 @@ export default function BooksHealthChecks({ health }: { health: BooksHealth }) {
         ) : null}
       </div>
 
-      {!health.allOk ? (
+      {/*
+        O que TRAVA o sistema é `blockingOk` (saldos reais e Lucro/Prejuízo). O
+        Banco Neutro fora de zero deixa o farol vermelho mas NÃO bloqueia — é
+        conta de compensação, e sair de zero é justamente o estado em que falta
+        lançar a outra ponta. Dizer "bloqueado" aí atrapalhava: o usuário achava
+        que não podia fazer o acerto que fecha o lançamento.
+      */}
+      {!health.blockingOk ? (
         <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
           🔒 Novos lançamentos estão <strong>bloqueados</strong> até os saldos convergirem.
+        </div>
+      ) : !health.allOk ? (
+        <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          ⚖️ O <strong>Banco Neutro</strong> está em{" "}
+          <strong>{formatCurrency(check1.bancoNeutro)}</strong> e precisa voltar a zero — falta a
+          outra ponta do lançamento. Os lançamentos <strong>continuam liberados</strong>: encerre o
+          acerto em <strong>Contas e caixas → Transferir entre contas</strong> — o formulário já
+          diz a direção e quanto falta — ou lançando o par no movimento de caixa.
         </div>
       ) : null}
     </div>

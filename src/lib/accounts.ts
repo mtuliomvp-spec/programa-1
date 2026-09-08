@@ -85,6 +85,44 @@ export async function ensureNeutralAccount(): Promise<string> {
 export const getNeutralAccountId = ensureNeutralAccount;
 
 /**
+ * Saldo do Banco Neutro. Ele deveria viver em ZERO (cada operação interna lança
+ * o par que o anula), mas sai de zero quando uma ponta fica sozinha — a baixa
+ * que estava sem conta e foi jogada nele pela correção do Check 1, por exemplo.
+ * Fora de zero, o Neutro é uma DÍVIDA de acerto: negativo, faltou de onde o
+ * dinheiro saiu; positivo, faltou para onde ele foi.
+ *
+ * Mesma conta do farol (`getAccountsWithBalances`), calculada aqui sozinha
+ * porque quem pergunta — a transferência de acerto — só precisa dela.
+ */
+export async function getNeutralBalance(): Promise<{ id: string; name: string; balance: number }> {
+  const id = await ensureNeutralAccount();
+  const [account, paid, received, transfers] = await Promise.all([
+    prisma.financialAccount.findUniqueOrThrow({
+      where: { id },
+      select: { name: true, initialBalance: true },
+    }),
+    prisma.payable.aggregate({ where: { status: "PAGO", accountId: id }, _sum: { amount: true } }),
+    prisma.receivable.aggregate({
+      where: { status: "RECEBIDO", accountId: id },
+      _sum: { amount: true },
+    }),
+    prisma.accountTransfer.findMany({
+      where: { OR: [{ fromId: id }, { toId: id }] },
+      select: { fromId: true, amount: true },
+    }),
+  ]);
+  const entrou = transfers.filter((t) => t.fromId !== id).reduce((s, t) => s + t.amount, 0);
+  const saiu = transfers.filter((t) => t.fromId === id).reduce((s, t) => s + t.amount, 0);
+  const balance =
+    account.initialBalance +
+    (received._sum.amount ?? 0) -
+    (paid._sum.amount ?? 0) +
+    entrou -
+    saiu;
+  return { id, name: account.name, balance: Math.round(balance * 100) / 100 };
+}
+
+/**
  * Rótulo da conta nos seletores: o Banco Neutro sai marcado como conta de
  * compensação para ninguém pagar a conta de luz nele achando que é banco.
  */
