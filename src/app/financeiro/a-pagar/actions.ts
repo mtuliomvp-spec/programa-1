@@ -1301,7 +1301,17 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
           { status: { not: "PAGO" } },
         ],
       },
-      select: { id: true, orderNumber: true, description: true, status: true, dueDate: true, amount: true },
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        status: true,
+        dueDate: true,
+        amount: true,
+        supplier: { select: { name: true } },
+        beneficiaryUser: { select: { name: true } },
+        capitalBeneficiary: { select: { name: true } },
+      },
       take: 5,
     });
 
@@ -1376,7 +1386,16 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
       const dataPagamento = new Date(dateMs);
       const accountId = await contaDoComprovante(r);
       const { avisos } = conferirComprovante(
-        { amount: target.amount, dueDate: target.dueDate, description: target.description },
+        {
+          amount: target.amount,
+          dueDate: target.dueDate,
+          description: target.description,
+          partes: [
+            target.supplier?.name,
+            target.beneficiaryUser?.name,
+            target.capitalBeneficiary?.name,
+          ],
+        },
         { valor: r.valor, data: dataPagamento, beneficiario: r.beneficiario },
       );
       if (!accountId) {
@@ -2506,6 +2525,8 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
       dueDate: true,
       description: true,
       supplier: { select: { name: true } },
+      beneficiaryUser: { select: { name: true } },
+      capitalBeneficiary: { select: { name: true } },
     },
   });
   if (!payable) return { ok: false, ...vazio, error: "Título não encontrado." };
@@ -2562,7 +2583,14 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
     ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
     : null;
   const { avisos } = conferirComprovante(
-    { ...payable, supplierName: payable.supplier?.name ?? null },
+    {
+      ...payable,
+      partes: [
+        payable.supplier?.name,
+        payable.beneficiaryUser?.name,
+        payable.capitalBeneficiary?.name,
+      ],
+    },
     { valor: lido.valor, data: dataPagamento, beneficiario: lido.beneficiario },
   );
   if (!accountId) {
