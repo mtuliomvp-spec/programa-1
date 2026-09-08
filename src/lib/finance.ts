@@ -2183,6 +2183,12 @@ async function payablePaid(id: string, paymentDate: Date, accountId?: string | n
       status: "PAGO",
       paymentDate,
       accountId: account,
+      // Baixado por qualquer caminho, sai da fila de espera do caixa — senão o
+      // pré-lançamento continuaria pedindo um ok para um título já pago.
+      pendingPaymentDate: null,
+      pendingPaymentAmount: null,
+      pendingPaymentAccountId: null,
+      pendingPaymentNote: null,
       ...(desconto
         ? { amount: desconto.novoValor, notes: desconto.notes, discountAmount: null, discountUntil: null }
         : {}),

@@ -7,7 +7,8 @@ import { NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
-import { assertCan } from "@/lib/guards";
+import { assertCan, assertCanAny } from "@/lib/guards";
+import { markPayablePaid } from "@/lib/finance";
 import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 
@@ -406,4 +407,82 @@ export async function fixUnattributedBaixasAction(): Promise<{ error?: string; f
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/");
   return { fixed: rec.count + pay.count };
+}
+
+// ---------------------------------------------------------------------------
+// Fila de espera do caixa: pré-lançamentos aguardando o ok para debitar
+// ---------------------------------------------------------------------------
+
+export type ConfirmQueueResult = { ok: boolean; error?: string; paid?: number };
+
+/**
+ * Dá o OK num pré-lançamento: o dinheiro já saiu do banco (o comprovante está
+ * anexado) e agora a baixa acontece de verdade, no caixa do dia aberto. O
+ * valor é o do COMPROVANTE — pago com desconto, juros ou multa, vale o que o
+ * banco debitou — e a divergência vai para a observação do título.
+ */
+export async function confirmQueuedPaymentsAction(
+  ids: string[],
+  accountByPayable: Record<string, string> = {},
+): Promise<ConfirmQueueResult> {
+  if (!ids.length) return { ok: false, error: "Selecione ao menos um pré-lançamento." };
+  try {
+    await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
+  }
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  const { prepararBaixaDaFila, desenfileirarPagamento } = await import("@/lib/payment-queue");
+  let paid = 0;
+  for (const id of ids) {
+    const p = await prisma.payable.findUnique({
+      where: { id },
+      select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
+    });
+    if (!p || p.status === "PAGO" || !p.pendingPaymentDate) continue;
+    const accountId = accountByPayable[id] || p.pendingPaymentAccountId;
+    if (!accountId) {
+      return {
+        ok: false,
+        paid,
+        error: "Escolha a conta debitada dos pré-lançamentos que estão sem conta identificada.",
+      };
+    }
+    await prepararBaixaDaFila(id, date);
+    await markPayablePaid(id, date, accountId);
+    await desenfileirarPagamento(id);
+    paid += 1;
+  }
+
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/fluxo-caixa");
+  revalidatePath("/");
+  return { ok: true, paid };
+}
+
+/** Tira o título da fila sem baixar nada (comprovante trocado, engano...). */
+export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["financeiro", "pagar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const { desenfileirarPagamento } = await import("@/lib/payment-queue");
+  await desenfileirarPagamento(id);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: true };
 }

@@ -38,6 +38,11 @@ export type PayableRow = {
    * pagando dentro dele. Null quando não há ou já passou.
    */
   discount: { amount: number; until: string; net: number } | null;
+  /**
+   * Pré-lançado na fila do caixa: o comprovante já chegou (o dinheiro saiu do
+   * banco) e a baixa espera o movimento alcançar o dia, em Contas e caixas.
+   */
+  queued: { date: string; amount: number } | null;
   effective: "PENDENTE" | "PAGO" | "ATRASADO";
   status: "PENDENTE" | "PAGO" | "ATRASADO";
   accountName: string | null;
@@ -358,6 +363,14 @@ export default function PayablesTable({
                 </Td>
                 <Td>
                   <Badge tone={statusTone[p.effective]}>{statusLabel[p.effective]}</Badge>
+                  {p.queued ? (
+                    <p
+                      className="mt-0.5 text-[11px] font-medium text-amber-700"
+                      title="O comprovante já foi conferido. A baixa acontece em Contas e caixas, com o caixa aberto neste dia."
+                    >
+                      ⏳ pré-lançado · {formatCurrency(p.queued.amount)} em {formatDate(p.queued.date)}
+                    </p>
+                  ) : null}
                   {p.accountName ? (
                     <p className="mt-0.5 text-[11px] text-slate-400">{p.accountName}</p>
                   ) : null}

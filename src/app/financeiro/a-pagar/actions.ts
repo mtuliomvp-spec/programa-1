@@ -1301,7 +1301,7 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
           { status: { not: "PAGO" } },
         ],
       },
-      select: { id: true, orderNumber: true, description: true, status: true, dueDate: true },
+      select: { id: true, orderNumber: true, description: true, status: true, dueDate: true, amount: true },
       take: 5,
     });
 
@@ -1364,15 +1364,48 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
       },
     });
     usedPayables.add(target.id);
+
+    // Título ainda EM ABERTO: o dinheiro já saiu do banco, então ele entra na
+    // FILA DE ESPERA do caixa com o que o comprovante diz — data, valor e conta
+    // debitada. A baixa acontece com um ok quando o caixa daquele dia é aberto.
+    let filaLabel = "";
+    if (target.status !== "PAGO" && dateMs) {
+      const { contaDoComprovante, conferirComprovante, enfileirarPagamento } = await import(
+        "@/lib/payment-queue"
+      );
+      const dataPagamento = new Date(dateMs);
+      const accountId = await contaDoComprovante(r);
+      const { avisos } = conferirComprovante(
+        { amount: target.amount, dueDate: target.dueDate, description: target.description },
+        { valor: r.valor, data: dataPagamento, beneficiario: r.beneficiario },
+      );
+      if (!accountId) {
+        avisos.push(
+          r.contaDebitada
+            ? `conta debitada "${r.contaDebitada}" não bate com nenhuma conta cadastrada — escolha a conta ao confirmar`
+            : "conta debitada não identificada no comprovante — escolha a conta ao confirmar",
+        );
+      }
+      await enfileirarPagamento({
+        payableId: target.id,
+        data: dataPagamento,
+        valor: r.valor,
+        accountId,
+        nota: avisos.join(" · ") || null,
+      });
+      filaLabel = " (em aberto — pré-lançado na fila do caixa)";
+    } else if (target.status !== "PAGO") {
+      filaLabel = " (título em aberto — falta dar baixa)";
+    }
+
     attached.push({
-      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}${
-        target.status !== "PAGO" ? " (título em aberto — falta dar baixa)" : ""
-      }`,
+      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}${filaLabel}`,
       receipt: label,
     });
   }
 
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/contas");
   return { ok: attached.length > 0, attached, unmatched };
 }
 
@@ -2413,6 +2446,154 @@ export async function applyBoletoToPayableAction(input: {
   revalidatePath(`/financeiro/a-pagar/${current.id}/editar`);
   revalidatePath(`/financeiro/a-pagar/${current.id}/ordem`);
   return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Comprovante do título: conferir com o boleto e pôr na fila do caixa
+// ---------------------------------------------------------------------------
+
+export type ReadReceiptResult = {
+  ok: boolean;
+  error?: string;
+  /** O arquivo foi anexado como COMPROVANTE mesmo que a leitura falhe. */
+  attached: boolean;
+  /** O que a IA leu, para a tela mostrar. */
+  valor?: number | null;
+  data?: string | null;
+  contaLida?: string | null;
+  beneficiario?: string | null;
+  /** Conta cadastrada reconhecida (vazio = o usuário escolhe no ok). */
+  accountName?: string | null;
+  /** Divergências encontradas na conferência. */
+  avisos?: string[];
+  /** O título entrou na fila de espera do caixa? */
+  enfileirado?: boolean;
+};
+
+/**
+ * Anexa o COMPROVANTE do título, lê com a IA, confere com o boleto (valor,
+ * data e conta debitada) e põe o título na FILA DE ESPERA do caixa: quando o
+ * movimento do dia do pagamento for aberto, ele aparece pré-lançado esperando
+ * só um ok para debitar de verdade.
+ */
+export async function readPayableReceiptAction(formData: FormData): Promise<ReadReceiptResult> {
+  const vazio = { attached: false };
+  try {
+    await assertCanAny([
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, ...vazio, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const payableId = String(formData.get("payableId") || "").trim();
+  const file = formData.get("file");
+  if (!payableId) return { ok: false, ...vazio, error: "Título inválido." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, ...vazio, error: "Selecione o arquivo do comprovante." };
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { ok: false, ...vazio, error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const payable = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: {
+      id: true,
+      status: true,
+      amount: true,
+      dueDate: true,
+      description: true,
+      supplier: { select: { name: true } },
+    },
+  });
+  if (!payable) return { ok: false, ...vazio, error: "Título não encontrado." };
+
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+  await prisma.payableAttachment.deleteMany({ where: { payableId, kind: "COMPROVANTE" } });
+  await prisma.payableAttachment.create({
+    data: {
+      payableId,
+      kind: "COMPROVANTE",
+      description: KIND_DEFAULT_DESC.COMPROVANTE,
+      filename: file.name || "comprovante",
+      mimeType,
+      size: buffer.byteLength,
+      data: buffer,
+    },
+  });
+  revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);
+  revalidatePath(`/financeiro/a-pagar/${payableId}/ordem`);
+
+  // Título JÁ PAGO: o comprovante é só o arquivo do que já foi baixado — não
+  // há o que enfileirar.
+  if (payable.status === "PAGO") {
+    return { ok: true, attached: true, enfileirado: false };
+  }
+
+  let lido;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    const todos = await extractPaymentReceipts(buffer.toString("base64"), mimeType);
+    lido = todos[0] ?? null;
+  } catch (e) {
+    return {
+      ok: false,
+      attached: true,
+      error: `${e instanceof Error ? e.message : "Não foi possível ler o comprovante."} O arquivo ficou anexado — dê a baixa à mão.`,
+    };
+  }
+  if (!lido || lido.valor == null || lido.valor <= 0 || !lido.data || !/^\d{4}-\d{2}-\d{2}$/.test(lido.data)) {
+    return {
+      ok: false,
+      attached: true,
+      error: "Não consegui ler valor e data do comprovante — ele ficou anexado, mas a baixa terá de ser manual.",
+      valor: lido?.valor ?? null,
+      data: lido?.data ?? null,
+    };
+  }
+
+  const { contaDoComprovante, conferirComprovante, enfileirarPagamento } = await import("@/lib/payment-queue");
+  const dataPagamento = parseDateInput(lido.data);
+  const accountId = await contaDoComprovante(lido);
+  const conta = accountId
+    ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
+    : null;
+  const { avisos } = conferirComprovante(
+    { ...payable, supplierName: payable.supplier?.name ?? null },
+    { valor: lido.valor, data: dataPagamento, beneficiario: lido.beneficiario },
+  );
+  if (!accountId) {
+    avisos.push(
+      lido.contaDebitada
+        ? `conta debitada "${lido.contaDebitada}" não bate com nenhuma conta cadastrada — escolha a conta ao confirmar`
+        : "conta debitada não identificada no comprovante — escolha a conta ao confirmar",
+    );
+  }
+
+  await enfileirarPagamento({
+    payableId,
+    data: dataPagamento,
+    valor: lido.valor,
+    accountId,
+    nota: avisos.join(" · ") || null,
+  });
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/contas");
+  return {
+    ok: true,
+    attached: true,
+    enfileirado: true,
+    valor: lido.valor,
+    data: lido.data,
+    contaLida: lido.contaDebitada ?? null,
+    beneficiario: lido.beneficiario ?? null,
+    accountName: conta?.name ?? null,
+    avisos,
+  };
 }
 
 // ---------------------------------------------------------------------------

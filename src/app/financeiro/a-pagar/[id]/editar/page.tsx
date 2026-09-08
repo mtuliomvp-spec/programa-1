@@ -10,8 +10,10 @@ import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 import PayableDocSlots from "./PayableDocSlots";
 import ReadBoletoAi from "./ReadBoletoAi";
+import ReadReceiptAi from "./ReadReceiptAi";
 import ReturnNfe from "./ReturnNfe";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
+import { getCashboxState } from "@/lib/cashbox";
 
 export const dynamic = "force-dynamic";
 // A importação de fatura em PDF chama a IA e pode levar minutos.
@@ -45,6 +47,11 @@ export default async function EditarPayablePage({
   const { returnTo } = await searchParams;
   // Destino seguro de retorno (só caminhos internos do financeiro).
   const safeReturn = returnTo && returnTo.startsWith("/financeiro/") ? returnTo : "/financeiro/a-pagar";
+
+  // Data do caixa aberto: o aviso do comprovante diz se o pagamento entra na
+  // fila (o caixa ainda não chegou no dia) ou já pode ser confirmado.
+  const cashbox = await getCashboxState();
+  const cashboxWorkDate = cashbox.open && cashbox.session ? cashbox.session.workDate : null;
 
   const payable = await prisma.payable.findUnique({
     where: { id },
@@ -230,6 +237,16 @@ export default async function EditarPayablePage({
               amountAtual={payable.amount}
               dueDateAtual={payable.dueDate.toISOString()}
             />
+            {/* Comprovante: confere com o título e põe na fila do caixa. Só
+                enquanto o título não está pago — depois é só arquivo. */}
+            {/* A tela de edição já recusa título pago, então aqui ele nunca é. */}
+            {(
+              <ReadReceiptAi
+                payableId={payable.id}
+                amountAtual={payable.amount}
+                cashboxDate={cashboxWorkDate ? cashboxWorkDate.toISOString() : null}
+              />
+            )}
             {/* Devolução ao fornecedor: abate a NF devolvida da ordem. Só faz
                 sentido em compra com fornecedor (não em comissão/devolução). */}
             {payable.supplierId ? <ReturnNfe payableId={payable.id} /> : null}

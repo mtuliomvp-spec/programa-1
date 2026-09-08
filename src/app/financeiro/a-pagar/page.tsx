@@ -80,6 +80,8 @@ export default async function ContasAPagarPage({
           cardInvoice: true,
           discountAmount: true,
           discountUntil: true,
+          pendingPaymentDate: true,
+          pendingPaymentAmount: true,
           supplierId: true,
           supplier: { select: { id: true, name: true } },
           vehicleId: true,
@@ -230,6 +232,10 @@ export default async function ContasAPagarPage({
             net: Math.round((p.amount - p.discountAmount) * 100) / 100,
           }
         : null,
+    // Pré-lançado: o comprovante já chegou e o pagamento espera o caixa do dia.
+    queued: p.pendingPaymentDate
+      ? { date: p.pendingPaymentDate.toISOString(), amount: p.pendingPaymentAmount ?? p.amount }
+      : null,
     effective: p.effective,
     status: p.status,
     accountName: p.account?.name ?? null,
