@@ -20,6 +20,8 @@ type Payable = {
   documentNumber: string | null;
   /** Linha digitável do boleto/fatura (sai na Ordem de Pagamento). */
   barcode: string | null;
+  /** Competência/referência do que o título cobra ("08/2026"). */
+  referencePeriod: string | null;
   amount: number;
   dueDate: string;
   supplierId: string | null;
@@ -83,6 +85,19 @@ export default function EditPayableForm({
           <Input name="documentNumber" defaultValue={payable.documentNumber || ""} placeholder="Ex: NF 12345" />
         </Field>
       </div>
+
+      <Field label="Competência / referência">
+        <Input
+          name="referencePeriod"
+          defaultValue={payable.referencePeriod || ""}
+          placeholder="Ex: 08/2026, Setembro/2026"
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          O período a que o gasto se refere — o mês de consumo da conta de luz, a mensalidade de
+          setembro. Ao ler o boleto, o sistema preenche sozinho. É informativo: a despesa continua
+          entrando no resultado pelo caixa, na data do pagamento.
+        </p>
+      </Field>
 
       <Field label="Linha digitável (código de barras do boleto/fatura)">
         <Input

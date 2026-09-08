@@ -72,10 +72,18 @@ export default function ReadBoletoAi({
     dueDate: string | null,
     desconto: number | null,
     descontoAte: string | null,
+    referencia: string | null,
   ) {
     setApplyError(null);
     startApply(async () => {
-      const res = await applyBoletoToPayableAction({ payableId, amount, dueDate, desconto, descontoAte });
+      const res = await applyBoletoToPayableAction({
+        payableId,
+        amount,
+        dueDate,
+        desconto,
+        descontoAte,
+        referencia,
+      });
       if (!res.ok) {
         setApplyError(res.error || "Não foi possível aplicar.");
         return;
@@ -84,6 +92,7 @@ export default function ReadBoletoAi({
         amount != null ? `valor ${formatCurrency(amount)}` : null,
         dueDate ? `vencimento ${dataBr(dueDate)}` : null,
         desconto != null ? `desconto de ${formatCurrency(desconto)} até ${descontoAte ? dataBr(descontoAte) : "o vencimento"}` : null,
+        referencia ? `competência ${referencia}` : null,
       ].filter(Boolean);
       setApplied(`Aplicado ao título: ${partes.join(" · ")}.`);
       // O formulário acima guarda o valor em estado próprio (máscara de moeda):
@@ -96,7 +105,8 @@ export default function ReadBoletoAi({
     <div className="mb-1 rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
       <p className="text-sm font-semibold text-slate-800">🤖 Ler o boleto com IA</p>
       <p className="mt-0.5 text-xs text-slate-500">
-        Anexe o boleto (PDF ou foto) e a IA lê o valor e o vencimento para você conferir — o arquivo
+        Anexe o boleto (PDF ou foto) e a IA lê o valor, o vencimento e a competência (o mês a que a
+        conta se refere) para você conferir — o arquivo
         já fica guardado no slot do boleto. Serve para o plano de saúde, as guias de imposto e
         qualquer outro boleto que chegue.
       </p>
@@ -171,6 +181,11 @@ export default function ReadBoletoAi({
                     {[b.descricao, b.cedente].filter(Boolean).join(" — ")}
                   </p>
                 ) : null}
+                {b.referencia ? (
+                  <p className="mt-0.5 text-xs text-slate-600">
+                    🗓️ Competência/referência: <strong>{b.referencia}</strong>
+                  </p>
+                ) : null}
                 {b.desconto != null && b.amount != null ? (
                   <p className="mt-1 text-xs font-medium text-emerald-700">
                     💰 Desconto de {formatCurrency(b.desconto)} pagando até{" "}
@@ -183,7 +198,10 @@ export default function ReadBoletoAi({
                 {podeValor && !mudaValor ? (
                   <p className="mt-1 text-xs text-emerald-700">✓ Bate com o valor do título.</p>
                 ) : null}
-                {podeValor || podeVenc ? (
+                {/* A competência sozinha já dá o que aplicar: ela não é valor
+                    nem data de caixa, então passa mesmo nos títulos em que o
+                    valor e o vencimento estão travados. */}
+                {podeValor || podeVenc || b.referencia ? (
                   <div className="mt-2 flex flex-wrap gap-2">
                     <Button
                       type="button"
@@ -195,6 +213,7 @@ export default function ReadBoletoAi({
                           podeVenc ? b.dueDate : null,
                           podeValor ? b.desconto : null,
                           podeValor ? b.descontoAte : null,
+                          b.referencia,
                         )
                       }
                     >

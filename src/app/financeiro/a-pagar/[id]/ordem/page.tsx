@@ -144,6 +144,10 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     ["Categoria", catLabel],
   ];
   if (payable.documentNumber) tituloRows.push(["Nº do documento", payable.documentNumber]);
+  // Competência: a que período o gasto se refere (a conta de luz de agosto que
+  // vence em setembro). Fica logo abaixo do documento porque é o que diferencia
+  // dois boletos do mesmo fornecedor pagos no mesmo mês.
+  if (payable.referencePeriod) tituloRows.push(["Competência/referência", payable.referencePeriod]);
   if (payable.vehicle) tituloRows.push(["Veículo", `${payable.vehicle.brand} ${payable.vehicle.model} (${payable.vehicle.plate})`]);
   if (payable.costCenter?.name) tituloRows.push(["Centro de custo", payable.costCenter.name]);
   if (payable.capitalBeneficiary?.name) tituloRows.push(["Beneficiário do capital", payable.capitalBeneficiary.name]);
