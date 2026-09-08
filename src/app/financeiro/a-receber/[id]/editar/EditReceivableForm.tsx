@@ -5,7 +5,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
-import { formatDate, toDateInputValue } from "@/lib/format";
+import { toDateInputValue } from "@/lib/format";
 import { updateReceivableAction, type EditReceivableState } from "../../actions";
 
 type Option = { id: string; name: string };
@@ -64,30 +64,20 @@ export default function EditReceivableForm({
         <Field label="Valor (R$)" required>
           <MoneyInput name="amount" defaultValue={receivable.amount} required />
         </Field>
-        {receivable.fromRecurring ? (
-          <Field label="Vencimento">
-            {/* Travado: o gerador de recorrências não repete um vencimento que já
-                tem título — mudar a data aqui faria nascer um título duplicado.
-                O valor segue no hidden só para o formulário ficar completo; a
-                action ignora e mantém a data atual. */}
-            <input type="hidden" name="dueDate" value={toDateInputValue(new Date(receivable.dueDate))} />
-            <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-              {formatDate(receivable.dueDate)}
-            </div>
+        <Field label="Vencimento" required>
+          <Input
+            name="dueDate"
+            type="date"
+            required
+            defaultValue={toDateInputValue(new Date(receivable.dueDate))}
+          />
+          {receivable.fromRecurring ? (
             <p className="mt-1 text-xs text-slate-400">
-              A data vem da recorrência. Para mudá-la, ajuste o lançamento em Recorrentes.
+              Pode corrigir: a recorrência reconhece a parcela pela competência, não pela data.
+              Mudar aqui vale só para este título; para mudar de vez, ajuste em Recorrentes.
             </p>
-          </Field>
-        ) : (
-          <Field label="Vencimento" required>
-            <Input
-              name="dueDate"
-              type="date"
-              required
-              defaultValue={toDateInputValue(new Date(receivable.dueDate))}
-            />
-          </Field>
-        )}
+          ) : null}
+        </Field>
       </div>
 
       <Field label="Cliente">

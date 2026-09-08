@@ -9,6 +9,7 @@ import { ensureRecurringGenerated } from "@/lib/recurring";
 import { resolveSupplierByName } from "@/lib/finance";
 import { assertCan } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
+import { formatCompetenciaMes, parseCompetenciaMes } from "@/lib/competencia";
 import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 
@@ -25,6 +26,8 @@ const recurringSchema = z.object({
   intervalDays: z.coerce.number().int().min(1).max(365).optional(),
   // Antecipa o vencimento para o último dia útil (fim de semana/feriado).
   anticipateToBusinessDay: z.coerce.boolean().optional(),
+  // Competência da PRIMEIRA ocorrência ("08/2026"): as seguintes andam sozinhas.
+  firstReference: z.string().optional(),
   categoryLabel: z.string().optional(),
   supplierName: z.string().optional(),
   customerId: z.string().optional(),
@@ -33,6 +36,23 @@ const recurringSchema = z.object({
   endDate: z.string().optional(),
   notes: z.string().optional(),
 });
+
+/**
+ * Competência da primeira ocorrência: precisa ser um MÊS para o sistema numerar
+ * as seguintes (09/2026, 10/2026...). Vazio é válido — a recorrência segue sem
+ * competência, como sempre foi.
+ */
+function primeiraCompetencia(raw: string | undefined): { valor: string | null } | { erro: string } {
+  const texto = (raw || "").trim();
+  if (!texto) return { valor: null };
+  const mes = parseCompetenciaMes(texto);
+  if (!mes) {
+    return {
+      erro: 'Informe a competência como mês/ano — ex.: 08/2026 (também vale "ago/2026"). É a partir dela que o sistema numera as competências seguintes.',
+    };
+  }
+  return { valor: formatCompetenciaMes(mes.ano, mes.mes) };
+}
 
 export type RecurringFormState = { error?: string };
 
@@ -67,6 +87,8 @@ export async function createRecurringAction(
   if (isCapital && !data.capitalBeneficiaryId) {
     return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
   }
+  const competencia = primeiraCompetencia(data.firstReference);
+  if ("erro" in competencia) return { error: competencia.erro };
 
   const label = (data.categoryLabel || "").trim();
   if (!isCapital && !label) {
@@ -114,6 +136,7 @@ export async function createRecurringAction(
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
+        firstReference: competencia.valor,
         cardInvoice: isCard,
         categoryPagar,
         categoryReceber,
@@ -173,6 +196,8 @@ export async function updateRecurringAction(
   if (isCapital && !data.capitalBeneficiaryId) {
     return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
   }
+  const competencia = primeiraCompetencia(data.firstReference);
+  if ("erro" in competencia) return { error: competencia.erro };
 
   const label = (data.categoryLabel || "").trim();
   if (!isCapital && !label) {
@@ -221,6 +246,7 @@ export async function updateRecurringAction(
         dayOfMonth: data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
+        firstReference: competencia.valor,
         cardInvoice: isCard,
         categoryPagar,
         categoryReceber,

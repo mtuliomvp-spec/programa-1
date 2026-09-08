@@ -7,7 +7,7 @@ import SupplierSelect from "@/components/SupplierSelect";
 import CategoryInput from "@/components/CategoryInput";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
-import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
+import { formatCurrency, toDateInputValue } from "@/lib/format";
 import { updatePayableAction, type EditPayableState } from "../../actions";
 
 type Supplier = { id: string; name: string };
@@ -37,7 +37,8 @@ type Payable = {
    * pagamento) — a diferença vira custo (acréscimo) ou ganho (desconto) do
    * veículo. Vale para consignado e veículo próprio. */
   repasseDebito: boolean;
-  /** Gerado por recorrência: o vencimento vem dela e não pode mudar aqui. */
+  /** Gerado por recorrência: o vencimento é editável (a parcela é reconhecida
+   * pela competência), e a nota explica que a mudança vale só para este mês. */
   fromRecurring: boolean;
 };
 
@@ -136,23 +137,16 @@ export default function EditPayableForm({
             ) : null}
           </Field>
         )}
-        {payable.fromRecurring ? (
-          <Field label="Vencimento">
-            {/* Travado: mudar a data de um título recorrente faria o gerador
-                criar outro título para o dia original. */}
-            <input type="hidden" name="dueDate" value={toDateInputValue(new Date(payable.dueDate))} />
-            <div className="flex h-11 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-              {formatDate(payable.dueDate)}
-            </div>
+        <Field label="Vencimento" required>
+          <Input name="dueDate" type="date" required defaultValue={toDateInputValue(new Date(payable.dueDate))} />
+          {payable.fromRecurring ? (
             <p className="mt-1 text-xs text-slate-400">
-              A data vem da recorrência. Para mudá-la, ajuste o lançamento em Recorrentes.
+              Pode corrigir à vontade: a recorrência reconhece a parcela pela competência, não pela
+              data — é o caso da conta de consumo que chega com vencimento diferente do combinado.
+              Mudar aqui vale só para este título; para mudar de vez, ajuste em Recorrentes.
             </p>
-          </Field>
-        ) : (
-          <Field label="Vencimento" required>
-            <Input name="dueDate" type="date" required defaultValue={toDateInputValue(new Date(payable.dueDate))} />
-          </Field>
-        )}
+          ) : null}
+        </Field>
       </div>
 
       {payable.repasseDebito ? (

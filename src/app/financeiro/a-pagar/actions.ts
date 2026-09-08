@@ -963,10 +963,10 @@ export async function updatePayableAction(
     barcode: normalizeBarcodeLine(d.barcode),
     referencePeriod: normalizarCompetencia(d.referencePeriod),
     amount,
-    // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
-    // que já tem título — mudar a data aqui liberaria o dia original e faria
-    // nascer um título duplicado.
-    dueDate: current.recurringId ? current.dueDate : parseDateInput(d.dueDate),
+    // Título de recorrência também tem vencimento livre: a geração reconhece a
+    // parcela pela OCORRÊNCIA gravada nele (`recurringPeriod`), não pela data.
+    // É o caso da conta de consumo que chega com data diferente da combinada.
+    dueDate: parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
     notes: d.notes?.trim() || null,
     structuralKey: flow,
@@ -1244,7 +1244,7 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
   // linhas levava centenas de idas ao banco (a checagem é só em memória).
   const rows = await prisma.payable.findMany({
     where: { id: { in: ids } },
-    select: { id: true, dueDate: true, ...ORIGIN_SELECT_DETALHE },
+    select: { id: true, dueDate: true, recurringPeriod: true, ...ORIGIN_SELECT_DETALHE },
   });
   const okRows = rows.filter((p) => !originBlockReason(p));
   const okIds = okRows.map((p) => p.id);
@@ -1269,9 +1269,13 @@ export async function deletePayablesAction(ids: string[]): Promise<DeletePayable
     const skipByRecurring = new Map<string, string[]>();
     for (const p of okRows) {
       if (p.recurringId) {
-        const key = p.dueDate.toISOString().slice(0, 10);
+        // A OCORRÊNCIA é o que identifica a parcela; a data entra junto para os
+        // títulos antigos, que nasceram antes de a ocorrência existir.
+        const keys = [p.recurringPeriod, p.dueDate.toISOString().slice(0, 10)].filter(
+          (k): k is string => !!k,
+        );
         const list = skipByRecurring.get(p.recurringId) ?? [];
-        if (!list.includes(key)) list.push(key);
+        for (const key of keys) if (!list.includes(key)) list.push(key);
         skipByRecurring.set(p.recurringId, list);
       }
     }
@@ -2314,8 +2318,6 @@ export type ReadBoletoResult = {
   senhaNecessaria?: boolean;
   /** Vazio = o valor pode ser aplicado; com texto = por que não pode. */
   amountLocked?: string;
-  /** Idem para o vencimento (título de recorrência manda na data). */
-  dueDateLocked?: string;
 };
 
 /**
@@ -2328,8 +2330,7 @@ function boletoLocks(p: {
   category: CategoriaPagar;
   description: string;
   saleId: string | null;
-  recurringId: string | null;
-}): { amountLocked?: string; dueDateLocked?: string } {
+}): { amountLocked?: string } {
   const repasseDebito =
     isVehiclePurchase(p.category) &&
     !p.saleId &&
@@ -2340,10 +2341,10 @@ function boletoLocks(p: {
     : isVehiclePurchase(p.category) && !repasseDebito
       ? "O valor da compra do veículo vem da ficha dele — altere no Estoque."
       : undefined;
-  const dueDateLocked = p.recurringId
-    ? "O vencimento vem da recorrência — mudar aqui faria nascer um título repetido."
-    : undefined;
-  return { amountLocked, dueDateLocked };
+  // O vencimento não tem mais trava: nem o da recorrência (a ocorrência é
+  // reconhecida pela competência, não pela data), que é justamente o caso do
+  // boleto de consumo que chega com outra data.
+  return { amountLocked };
 }
 
 /**
@@ -2545,7 +2546,7 @@ export async function applyBoletoToPayableAction(input: {
   const amount =
     input.amount != null && input.amount > 0 && !locks.amountLocked ? round2(input.amount) : null;
   const dueDate =
-    input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate) && !locks.dueDateLocked
+    input.dueDate && /^\d{4}-\d{2}-\d{2}$/.test(input.dueDate)
       ? parseDateInput(input.dueDate)
       : null;
   // O desconto acompanha o valor: ele abate do valor cheio na baixa dentro do
@@ -2563,7 +2564,7 @@ export async function applyBoletoToPayableAction(input: {
   // e vencimento vêm de outro lugar.
   const referencia = normalizarCompetencia(input.referencia, input.dueDate);
   if (amount == null && dueDate == null && desconto == null && referencia == null) {
-    return { ok: false, error: locks.amountLocked || locks.dueDateLocked || "Nada a aplicar." };
+    return { ok: false, error: locks.amountLocked || "Nada a aplicar." };
   }
 
   const flow = current.vehicleId

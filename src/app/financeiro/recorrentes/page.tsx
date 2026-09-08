@@ -149,6 +149,11 @@ export default async function RecorrentesPage({
                     {e.anticipateToBusinessDay ? (
                       <span className="block text-xs font-normal text-slate-400">antecipa p/ dia útil</span>
                     ) : null}
+                    {e.firstReference ? (
+                      <span className="block text-xs font-normal text-slate-400">
+                        1ª competência {e.firstReference}
+                      </span>
+                    ) : null}
                   </Td>
                   <Td className="text-right tabular-nums">{formatCurrency(e.amount)}</Td>
                   <Td>

@@ -31,6 +31,8 @@ export type PayableRow = {
   /** Nome do sócio do capital, quando o título é de beneficiário do capital. */
   capitalBeneficiaryName: string | null;
   vehicleLabel: string | null;
+  /** Competência/referência ("08/2026"): a que período o gasto se refere. */
+  referencePeriod: string | null;
   dueDate: string; // ISO
   amount: number;
   /**
@@ -339,6 +341,16 @@ export default function PayablesTable({
                       🧺 {p.combo.status === "SOLICITADO" ? "Pagamento solicitado" : "Em combo"}
                       {p.combo.userName ? ` · ${p.combo.userName}` : ""}
                     </Link>
+                  ) : null}
+                  {/* Competência: é o que distingue duas contas do mesmo
+                      fornecedor na lista (a luz de agosto e a de setembro). */}
+                  {p.referencePeriod ? (
+                    <span
+                      className="mt-0.5 block text-[11px] font-normal text-slate-500"
+                      title="Competência/referência: o período a que este gasto se refere"
+                    >
+                      🗓️ ref. {p.referencePeriod}
+                    </span>
                   ) : null}
                   <p className="mt-0.5 text-[11px] font-normal text-slate-500 2xl:hidden">
                     {[p.categoryLabel, p.supplierName, p.vehicleLabel].filter(Boolean).join(" · ")}
