@@ -98,6 +98,10 @@ export async function contaDoComprovante(r: ContaDoComprovante): Promise<string 
  * "condomínio" sem serem a mesma — quem identifica é o nome próprio.
  */
 const PALAVRAS_GENERICAS = new Set([
+  // Conectivos que sobram nos nomes ("dos Reis", "de Souza").
+  "dos",
+  "das",
+  "com",
   "ltda",
   "me",
   "epp",
@@ -164,6 +168,43 @@ export function beneficiarioBate(
   return doComprovante.some((w) => doTitulo.has(w));
 }
 
+/** CPF/CNPJ comparável: só dígitos, e só quando completo (11 ou 14). */
+function documentoKey(v: string | null | undefined): string | null {
+  const d = digitos(v);
+  return d.length === 11 || d.length === 14 ? d : null;
+}
+
+/**
+ * O beneficiário do comprovante confere com o do título?
+ *
+ * O CPF/CNPJ manda: em Pix a chave costuma SER o documento do favorecido, e
+ * documento igual encerra a conferência mesmo que os nomes estejam escritos de
+ * formas diferentes ("Jose F Reis Jr" × "Jose Faustino dos Reis Jr").
+ * Documento diferente é a acusação mais forte que existe aqui. Sem documento
+ * dos dois lados, cai na comparação por nome.
+ */
+export function beneficiarioConfere(
+  comprovante: { nome?: string | null; documento?: string | null },
+  titulo: {
+    partes: { nome?: string | null; documento?: string | null }[];
+    descricao?: string | null;
+  },
+): { bate: boolean | null; porDocumento: boolean } {
+  const doc = documentoKey(comprovante.documento);
+  const docsDoTitulo = titulo.partes.map((p) => documentoKey(p.documento)).filter(Boolean) as string[];
+  if (doc && docsDoTitulo.length > 0) {
+    return { bate: docsDoTitulo.includes(doc), porDocumento: true };
+  }
+  return {
+    bate: beneficiarioBate(
+      comprovante.nome,
+      titulo.partes.map((p) => p.nome),
+      titulo.descricao,
+    ),
+    porDocumento: false,
+  };
+}
+
 export type ConferenciaComprovante = {
   /** Diferença entre o comprovante e o título (positiva = pagou mais). */
   diferenca: number;
@@ -181,10 +222,16 @@ export function conferirComprovante(
     amount: number;
     dueDate: Date;
     description: string;
-    /** Nomes ligados ao título (fornecedor, beneficiário, sócio do capital). */
-    partes?: (string | null | undefined)[];
+    /** Quem está ligado ao título (fornecedor, beneficiário, sócio do capital). */
+    partes?: { nome?: string | null; documento?: string | null }[];
   },
-  comprovante: { valor: number; data: Date; beneficiario?: string | null },
+  comprovante: {
+    valor: number;
+    data: Date;
+    beneficiario?: string | null;
+    documentoBeneficiario?: string | null;
+    formaPagamento?: string | null;
+  },
 ): ConferenciaComprovante {
   const avisos: string[] = [];
   const diferenca = round2(comprovante.valor - titulo.amount);
@@ -204,10 +251,15 @@ export function conferirComprovante(
   // Beneficiário: o dinheiro foi para quem devia? Só avisa quando dá para
   // afirmar que NÃO bate — nome ilegível ou título sem parte cadastrada fica
   // em silêncio em vez de gerar alarme falso.
-  const bate = beneficiarioBate(comprovante.beneficiario, titulo.partes ?? [], titulo.description);
+  const { bate, porDocumento } = beneficiarioConfere(
+    { nome: comprovante.beneficiario, documento: comprovante.documentoBeneficiario },
+    { partes: titulo.partes ?? [], descricao: titulo.description },
+  );
   if (bate === false) {
     avisos.push(
-      `pago a "${comprovante.beneficiario}", que não bate com o beneficiário do título — confira se o comprovante é deste título`,
+      porDocumento
+        ? `pago a "${comprovante.beneficiario ?? "outro favorecido"}" (CPF/CNPJ ${comprovante.documentoBeneficiario}), que não é o do beneficiário do título — confira se o comprovante é deste título`
+        : `pago a "${comprovante.beneficiario}", que não bate com o beneficiário do título — confira se o comprovante é deste título`,
     );
   }
   return { diferenca, avisos };

@@ -1308,8 +1308,8 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
         status: true,
         dueDate: true,
         amount: true,
-        supplier: { select: { name: true } },
-        beneficiaryUser: { select: { name: true } },
+        supplier: { select: { name: true, document: true } },
+        beneficiaryUser: { select: { name: true, document: true } },
         capitalBeneficiary: { select: { name: true } },
       },
       take: 5,
@@ -1391,12 +1391,22 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
           dueDate: target.dueDate,
           description: target.description,
           partes: [
-            target.supplier?.name,
-            target.beneficiaryUser?.name,
-            target.capitalBeneficiary?.name,
-          ],
+            target.supplier,
+            target.beneficiaryUser,
+            target.capitalBeneficiary
+              ? { name: target.capitalBeneficiary.name, document: null }
+              : null,
+          ]
+            .filter(Boolean)
+            .map((p) => ({ nome: p!.name, documento: p!.document })),
         },
-        { valor: r.valor, data: dataPagamento, beneficiario: r.beneficiario },
+        {
+          valor: r.valor,
+          data: dataPagamento,
+          beneficiario: r.beneficiario,
+          documentoBeneficiario: r.documentoBeneficiario,
+          formaPagamento: r.formaPagamento,
+        },
       );
       if (!accountId) {
         avisos.push(
@@ -2481,6 +2491,8 @@ export type ReadReceiptResult = {
   data?: string | null;
   contaLida?: string | null;
   beneficiario?: string | null;
+  /** PIX, TED, DOC, TRANSFERENCIA, BOLETO… como o dinheiro saiu. */
+  formaPagamento?: string | null;
   /** Conta cadastrada reconhecida (vazio = o usuário escolhe no ok). */
   accountName?: string | null;
   /** Divergências encontradas na conferência. */
@@ -2524,8 +2536,8 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
       amount: true,
       dueDate: true,
       description: true,
-      supplier: { select: { name: true } },
-      beneficiaryUser: { select: { name: true } },
+      supplier: { select: { name: true, document: true } },
+      beneficiaryUser: { select: { name: true, document: true } },
       capitalBeneficiary: { select: { name: true } },
     },
   });
@@ -2586,12 +2598,21 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
     {
       ...payable,
       partes: [
-        payable.supplier?.name,
-        payable.beneficiaryUser?.name,
-        payable.capitalBeneficiary?.name,
-      ],
+        payable.supplier,
+        payable.beneficiaryUser,
+        // O sócio do capital não tem documento no cadastro — entra só pelo nome.
+        payable.capitalBeneficiary ? { name: payable.capitalBeneficiary.name, document: null } : null,
+      ]
+        .filter(Boolean)
+        .map((p) => ({ nome: p!.name, documento: p!.document })),
     },
-    { valor: lido.valor, data: dataPagamento, beneficiario: lido.beneficiario },
+    {
+      valor: lido.valor,
+      data: dataPagamento,
+      beneficiario: lido.beneficiario,
+      documentoBeneficiario: lido.documentoBeneficiario,
+      formaPagamento: lido.formaPagamento,
+    },
   );
   if (!accountId) {
     avisos.push(
@@ -2619,6 +2640,7 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
     data: lido.data,
     contaLida: lido.contaDebitada ?? null,
     beneficiario: lido.beneficiario ?? null,
+    formaPagamento: lido.formaPagamento ?? null,
     accountName: conta?.name ?? null,
     avisos,
   };

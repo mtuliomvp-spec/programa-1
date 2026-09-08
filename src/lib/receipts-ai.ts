@@ -26,8 +26,13 @@ const receiptSchema = z.object({
   agencia: z.string().nullable().optional(),
   conta: z.string().nullable().optional(),
   contaDebitada: z.string().nullable().optional(),
-  // A QUEM se pagou — serve para conferir com o cedente do boleto.
+  // A QUEM se pagou — serve para conferir com o fornecedor do título.
   beneficiario: z.string().nullable().optional(),
+  // CPF/CNPJ (ou chave Pix que seja CPF/CNPJ) de quem RECEBEU: confere com o
+  // documento do fornecedor de forma muito mais segura que o nome.
+  documentoBeneficiario: z.string().nullable().optional(),
+  // Como o dinheiro saiu: PIX, TED, DOC, TRANSFERENCIA, BOLETO ou OUTRO.
+  formaPagamento: z.string().nullable().optional(),
 });
 
 const receiptsSchema = z.object({ comprovantes: z.array(receiptSchema) });
@@ -54,6 +59,8 @@ const RECEIPTS_JSON_SCHEMA = {
           "conta",
           "contaDebitada",
           "beneficiario",
+          "documentoBeneficiario",
+          "formaPagamento",
         ],
         properties: {
           pagina: { type: "integer", description: "número da página no PDF, começando em 1" },
@@ -84,7 +91,18 @@ const RECEIPTS_JSON_SCHEMA = {
           },
           beneficiario: {
             type: ["string", "null"],
-            description: "nome de QUEM RECEBEU o pagamento (cedente/favorecido), como impresso",
+            description:
+              "nome de QUEM RECEBEU o pagamento (favorecido/recebedor/cedente), como impresso. Em Pix é o bloco 'Recebedor'",
+          },
+          documentoBeneficiario: {
+            type: ["string", "null"],
+            description:
+              "CPF/CNPJ de QUEM RECEBEU, só dígitos e SOMENTE quando completo (o mascarado com asteriscos vai null). Chave Pix que seja um CPF/CNPJ vale como documento",
+          },
+          formaPagamento: {
+            type: ["string", "null"],
+            description:
+              "como o dinheiro saiu: exatamente PIX, TED, DOC, TRANSFERENCIA (entre contas do mesmo banco), BOLETO ou OUTRO",
           },
         },
       },
@@ -93,16 +111,21 @@ const RECEIPTS_JSON_SCHEMA = {
 } as const;
 
 const SYSTEM_PROMPT =
-  "Você lê um PDF com COMPROVANTES DE PAGAMENTO bancários (normalmente um comprovante por página; " +
+  "Você lê COMPROVANTES DE PAGAMENTO bancários de qualquer tipo — boleto, Pix, TED, DOC e " +
+  "transferência entre contas (normalmente um comprovante por página; " +
   "uma página pode ter mais de um). Para CADA comprovante, devolva: a página em que ele está, o " +
   "VALOR TOTAL pago (número, ponto decimal), a DATA do pagamento (AAAA-MM-DD) e uma descrição curta " +
   "(convênio, beneficiário ou tributo — ex.: 'SEFAZ MA - IPVA', 'Pagamento de título — Fulano'). " +
   "Devolva também DE ONDE saiu o dinheiro (banco, agência e conta DEBITADAS — o pagador, nunca o " +
-  "favorecido) e QUEM RECEBEU (beneficiário/favorecido/cedente). " +
+  "favorecido), QUEM RECEBEU (beneficiário/favorecido/recebedor/cedente) com o CPF/CNPJ dele, e a " +
+  "FORMA (Pix, TED, DOC, transferência, boleto). " +
   "Regras: 1) O valor é o total efetivamente pago no comprovante. 2) CONTA DEBITADA é a do PAGADOR: " +
-  "num comprovante aparecem as duas (quem pagou e quem recebeu) — não troque uma pela outra. " +
-  "Agência e conta só com os dígitos, sem o dígito verificador. 3) Não invente: campo ilegível vai " +
-  "null. 4) Páginas que não são comprovantes (capa, índice) ficam de fora. 5) Responda somente com o JSON pedido.";
+  "todo comprovante mostra os dois lados (quem pagou e quem recebeu) — em Pix e TED eles vêm em " +
+  "blocos 'Pagador' e 'Recebedor'/'Favorecido'. Não troque um pelo outro. Agência e conta só com os " +
+  "dígitos, sem o dígito verificador. 3) DOCUMENTO DO BENEFICIÁRIO: o CPF/CNPJ de quem recebeu, só " +
+  "quando estiver COMPLETO — o mascarado ('***.721.943-**') vai null. Chave Pix que seja um CPF/CNPJ " +
+  "conta como documento. 4) Não invente: campo ilegível vai null. 5) Páginas que não são " +
+  "comprovantes (capa, índice) ficam de fora. 6) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];
