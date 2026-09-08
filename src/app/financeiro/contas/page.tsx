@@ -11,6 +11,7 @@ import ReportToolbar from "@/components/ReportToolbar";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
 import { userCan } from "@/lib/guards";
 import CashboxCard from "./CashboxCard";
+import PaymentQueueCard from "./PaymentQueueCard";
 import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
 import AccountRowActions from "./AccountRowActions";
@@ -123,6 +124,12 @@ export default async function ContasPage({
   }));
 
   const canContas = await userCan("financeiro", "contas");
+  const canPagar = await userCan("financeiro", "pagar");
+  // Fila de espera: pagamentos cujo comprovante já chegou e que esperavam o
+  // movimento alcançar o dia. Com o caixa aberto neste dia, eles podem ser
+  // confirmados aqui mesmo.
+  const { pagamentosNaFila } = await import("@/lib/payment-queue");
+  const fila = await pagamentosNaFila(cashbox.open && cashbox.session ? cashbox.session.workDate : null);
   const active = accounts.filter((a) => a.active);
   // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
   // "Aplicar" da própria conta). Vale para o formulário e para o atalho.
@@ -213,6 +220,14 @@ export default async function ContasPage({
           pendingAdvances={pendingAdvances}
         />
         <BooksHealthChecks health={health} />
+        <PaymentQueueCard
+          rows={fila}
+          accounts={accounts
+            .filter((a) => a.active && !a.isInvestment)
+            .map((a) => ({ id: a.id, name: a.name }))}
+          workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
+          canPagar={canPagar}
+        />
       </div>
 
       <div

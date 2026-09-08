@@ -229,6 +229,8 @@ model FinancialAccount {
   ownerBeneficiary    CapitalBeneficiary?    @relation("AccountOwner", fields: [ownerBeneficiaryId], references: [id])
   notes               String?
   payables            Payable[]
+  // Títulos pré-lançados nesta conta, esperando o caixa do dia do comprovante.
+  pendingPayments     Payable[]              @relation("PendingPayment")
   receivables         Receivable[]
   transfersOut        AccountTransfer[]      @relation("TransferFrom")
   transfersIn         AccountTransfer[]      @relation("TransferTo")
@@ -1138,6 +1140,17 @@ model Payable {
   // o título é reduzido para o valor com desconto.
   discountAmount       Float?
   discountUntil        DateTime?
+  // FILA DE ESPERA do caixa: o comprovante do banco já chegou (o dinheiro saiu),
+  // mas o movimento de caixa ainda não alcançou o dia do pagamento. O título
+  // fica PRÉ-LANÇADO com o que o comprovante diz — data, valor e conta
+  // debitada — e a baixa de verdade acontece com um ok quando o caixa daquele
+  // dia é aberto. `pendingPaymentNote` guarda o que a conferência achou
+  // (divergência de valor, conta não identificada...).
+  pendingPaymentDate      DateTime?
+  pendingPaymentAmount    Float?
+  pendingPaymentAccountId String?
+  pendingPaymentAccount   FinancialAccount? @relation("PendingPayment", fields: [pendingPaymentAccountId], references: [id], onDelete: SetNull)
+  pendingPaymentNote      String?
   amount               Float
   dueDate              DateTime
   paymentDate          DateTime?

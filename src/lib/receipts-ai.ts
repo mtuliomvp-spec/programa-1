@@ -19,6 +19,15 @@ const receiptSchema = z.object({
   valor: z.number().nullable(),
   data: z.string().nullable(),
   descricao: z.string().nullable(),
+  // De ONDE saiu o dinheiro: é isso que diz em qual conta financeira a baixa
+  // tem de entrar. O banco imprime de um jeito diferente em cada comprovante,
+  // então vêm os três campos separados e o texto cru como estava.
+  banco: z.string().nullable().optional(),
+  agencia: z.string().nullable().optional(),
+  conta: z.string().nullable().optional(),
+  contaDebitada: z.string().nullable().optional(),
+  // A QUEM se pagou — serve para conferir com o cedente do boleto.
+  beneficiario: z.string().nullable().optional(),
 });
 
 const receiptsSchema = z.object({ comprovantes: z.array(receiptSchema) });
@@ -35,7 +44,17 @@ const RECEIPTS_JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["pagina", "valor", "data", "descricao"],
+        required: [
+          "pagina",
+          "valor",
+          "data",
+          "descricao",
+          "banco",
+          "agencia",
+          "conta",
+          "contaDebitada",
+          "beneficiario",
+        ],
         properties: {
           pagina: { type: "integer", description: "número da página no PDF, começando em 1" },
           valor: {
@@ -46,6 +65,26 @@ const RECEIPTS_JSON_SCHEMA = {
           descricao: {
             type: ["string", "null"],
             description: "resumo curto do que foi pago (convênio/beneficiário/tributo)",
+          },
+          banco: {
+            type: ["string", "null"],
+            description: "nome ou número do banco DE ONDE SAIU o dinheiro (conta debitada/pagador), ex. 'Bradesco', '237'",
+          },
+          agencia: {
+            type: ["string", "null"],
+            description: "agência da conta debitada, só dígitos (sem o dígito verificador)",
+          },
+          conta: {
+            type: ["string", "null"],
+            description: "número da conta debitada, só dígitos (sem o dígito verificador)",
+          },
+          contaDebitada: {
+            type: ["string", "null"],
+            description: "a identificação da conta debitada como está impressa, ex. 'Bradesco Ag 1639-x C/C 205986-x'",
+          },
+          beneficiario: {
+            type: ["string", "null"],
+            description: "nome de QUEM RECEBEU o pagamento (cedente/favorecido), como impresso",
           },
         },
       },
@@ -58,10 +97,24 @@ const SYSTEM_PROMPT =
   "uma página pode ter mais de um). Para CADA comprovante, devolva: a página em que ele está, o " +
   "VALOR TOTAL pago (número, ponto decimal), a DATA do pagamento (AAAA-MM-DD) e uma descrição curta " +
   "(convênio, beneficiário ou tributo — ex.: 'SEFAZ MA - IPVA', 'Pagamento de título — Fulano'). " +
-  "Regras: 1) O valor é o total efetivamente pago no comprovante. 2) Não invente: campo ilegível vai " +
-  "null. 3) Páginas que não são comprovantes (capa, índice) ficam de fora. 4) Responda somente com o JSON pedido.";
+  "Devolva também DE ONDE saiu o dinheiro (banco, agência e conta DEBITADAS — o pagador, nunca o " +
+  "favorecido) e QUEM RECEBEU (beneficiário/favorecido/cedente). " +
+  "Regras: 1) O valor é o total efetivamente pago no comprovante. 2) CONTA DEBITADA é a do PAGADOR: " +
+  "num comprovante aparecem as duas (quem pagou e quem recebeu) — não troque uma pela outra. " +
+  "Agência e conta só com os dígitos, sem o dígito verificador. 3) Não invente: campo ilegível vai " +
+  "null. 4) Páginas que não são comprovantes (capa, índice) ficam de fora. 5) Responda somente com o JSON pedido.";
 
-export async function extractPaymentReceipts(base64: string): Promise<ComprovanteExtraido[]> {
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
+type ImageMediaType = (typeof IMAGE_TYPES)[number];
+
+/**
+ * @param mimeType do arquivo. O lote do banco vem em PDF, mas o comprovante
+ * avulso do título costuma ser uma FOTO da tela do aplicativo.
+ */
+export async function extractPaymentReceipts(
+  base64: string,
+  mimeType = "application/pdf",
+): Promise<ComprovanteExtraido[]> {
   const config = await getParecerConfig();
   if (!config.configured || !config.apiKey) {
     throw new Error("A IA ainda não está configurada. Cadastre a chave em Parâmetros › Parecer IA.");
@@ -69,6 +122,14 @@ export async function extractPaymentReceipts(base64: string): Promise<Comprovant
   if (config.provider !== "ANTHROPIC") {
     throw new Error("A leitura de comprovantes requer o provedor Anthropic (Parâmetros › Parecer IA).");
   }
+
+  const isPdf = mimeType === "application/pdf";
+  if (!isPdf && !(IMAGE_TYPES as readonly string[]).includes(mimeType)) {
+    throw new Error("Formato não suportado para leitura automática. Anexe o comprovante em PDF, JPG, PNG ou WEBP.");
+  }
+  const fileBlock: Anthropic.Beta.BetaContentBlockParam = isPdf
+    ? { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } }
+    : { type: "image", source: { type: "base64", media_type: mimeType as ImageMediaType, data: base64 } };
 
   const client = new Anthropic({ apiKey: config.apiKey, maxRetries: 4 });
 
@@ -88,8 +149,8 @@ export async function extractPaymentReceipts(base64: string): Promise<Comprovant
         {
           role: "user",
           content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } },
-            { type: "text", text: "Liste os comprovantes de pagamento deste PDF." },
+            fileBlock,
+            { type: "text", text: "Liste os comprovantes de pagamento deste arquivo." },
           ],
         },
       ],
