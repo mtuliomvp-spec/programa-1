@@ -7,6 +7,16 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import { readPayableReceiptAction, type ReadReceiptResult } from "./actions";
 
+/** Como o banco chama a operação, do jeito que se lê ("Pix", "TED"…). */
+function formaLabel(forma: string): string {
+  const v = forma.trim().toUpperCase();
+  if (v === "PIX") return "Pix";
+  if (v === "TED" || v === "DOC") return v;
+  if (v === "TRANSFERENCIA") return "Transferência";
+  if (v === "BOLETO") return "Boleto";
+  return forma;
+}
+
 /** yyyy-mm-dd (do comprovante) → dd/mm/aaaa, sem passar pelo fuso do navegador. */
 function dataBr(iso: string): string {
   const [a, m, d] = iso.split("-");
@@ -60,8 +70,8 @@ export default function ReadReceiptAi({
     <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
       <p className="text-sm font-semibold text-slate-800">🧾 Conferir o comprovante e pré-lançar</p>
       <p className="mt-0.5 text-xs text-slate-500">
-        Anexe o comprovante do banco: a IA lê valor, data e a <strong>conta debitada</strong>, confere
-        com este título e deixa o pagamento na fila do caixa. Quando o movimento do dia do pagamento
+        Anexe o comprovante do banco — boleto, Pix, TED, DOC ou transferência: a IA lê valor, data e a{" "}
+        <strong>conta debitada</strong>, confere com este título e deixa o pagamento na fila do caixa. Quando o movimento do dia do pagamento
         for aberto, ele aparece pré-lançado em Contas e caixas esperando só um ok para debitar.
       </p>
 
@@ -91,7 +101,8 @@ export default function ReadReceiptAi({
       {result?.ok && result.enfileirado ? (
         <div className="mt-3 rounded-lg border border-emerald-300 bg-white p-3">
           <p className="text-sm font-medium text-slate-800">
-            ✓ {result.valor != null ? formatCurrency(result.valor) : "valor"} pago em{" "}
+            ✓ {result.formaPagamento ? `${formaLabel(result.formaPagamento)} de ` : ""}
+            {result.valor != null ? formatCurrency(result.valor) : "valor"} pago em{" "}
             {result.data ? dataBr(result.data) : "—"}
             {result.accountName ? ` · debitado em ${result.accountName}` : ""}
           </p>
