@@ -3,14 +3,14 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
-import { NEUTRAL_ACCOUNT_NAME } from "@/lib/accounts";
+import { NEUTRAL_ACCOUNT_NAME, getNeutralBalance } from "@/lib/accounts";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate, openCashbox, closeCashbox } from "@/lib/cashbox";
 import { getSessionUser } from "@/lib/auth";
 import { assertCan, assertCanAny } from "@/lib/guards";
 import { markPayablePaid } from "@/lib/finance";
 import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
-import { parseDateInput } from "@/lib/format";
+import { parseDateInput, formatCurrency } from "@/lib/format";
 
 export type ContaFormState = { error?: string };
 
@@ -464,13 +464,44 @@ export async function createTransferAction(
         "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).",
     };
   }
-  // O Banco Neutro só é movimentado pelas operações internas (que sempre lançam
-  // o par que o zera). Uma transferência manual o tiraria de zero.
+  // O Banco Neutro é conta de COMPENSAÇÃO: vive em zero porque cada operação
+  // interna lança o par que o anula. Quando ele sai de zero (uma baixa que
+  // ficou sem conta e foi jogada nele, por exemplo), o acerto é exatamente uma
+  // transferência — o dinheiro sai da conta de verdade que bancou aquilo e
+  // entra no Neutro, encerrando o lançamento contábil. Por isso a transferência
+  // com o Neutro é permitida SÓ NA DIREÇÃO QUE O APROXIMA DE ZERO e no máximo
+  // até zerá-lo: passar do ponto o tiraria de zero para o outro lado, que é o
+  // que deixaria o farol vermelho. Pode ser em várias parcelas.
   const estruturais = await prisma.financialAccount.findMany({
     where: { id: { in: [data.fromId, data.toId] }, structural: true },
     select: { id: true },
   });
-  if (estruturais.length > 0) return { error: STRUCTURAL_BLOCK };
+  if (estruturais.length > 0) {
+    const neutro = await getNeutralBalance();
+    const falta = Math.round(Math.abs(neutro.balance) * 100) / 100;
+    if (falta <= 0.005) {
+      return {
+        error:
+          "O Banco Neutro já está zerado. Ele é conta de compensação: só entra numa transferência para acertar um saldo fora de zero.",
+      };
+    }
+    const paraONeutro = data.toId === neutro.id;
+    // Negativo pede crédito (dinheiro ENTRA no Neutro); positivo pede débito.
+    const direcaoCerta = neutro.balance < 0 ? paraONeutro : !paraONeutro;
+    if (!direcaoCerta) {
+      return {
+        error:
+          neutro.balance < 0
+            ? `O Banco Neutro está em ${formatCurrency(neutro.balance)}: para zerá-lo o dinheiro precisa ENTRAR nele — escolha-o como destino.`
+            : `O Banco Neutro está em ${formatCurrency(neutro.balance)}: para zerá-lo o dinheiro precisa SAIR dele — escolha-o como origem.`,
+      };
+    }
+    if (data.amount > falta + 0.005) {
+      return {
+        error: `O Banco Neutro está em ${formatCurrency(neutro.balance)}: esta transferência pode ser de no máximo ${formatCurrency(falta)} (o que falta para zerá-lo). Acima disso ele sairia de zero para o outro lado.`,
+      };
+    }
+  }
   // A transferência segue a data de trabalho do caixa aberto (como as baixas).
   const date = await getCashboxWorkDate();
   try {

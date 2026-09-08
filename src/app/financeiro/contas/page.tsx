@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
-import { getAccountsWithBalances, ensureNeutralAccount } from "@/lib/accounts";
+import { getAccountsWithBalances, ensureNeutralAccount, accountPickerName } from "@/lib/accounts";
 import { getBooksHealth } from "@/lib/books-health";
 import { getCashboxState } from "@/lib/cashbox";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -133,9 +133,16 @@ export default async function ContasPage({
   const active = accounts.filter((a) => a.active);
   // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
   // "Aplicar" da própria conta). Vale para o formulário e para o atalho.
-  // Transferência entre contas: fora as de Aplicação e as estruturais (o Banco
-  // Neutro só é movimentado pelas operações internas, que sempre o zeram).
-  const transferiveis = active.filter((a) => !a.isInvestment && !a.structural);
+  // Transferência entre contas: fora as de Aplicação (movimentam pelo "Aplicar"
+  // da própria conta). O Banco Neutro ENTRA na lista, sempre por último e
+  // marcado como compensação: quando ele está fora de zero, a transferência é
+  // justamente como se encerra o lançamento — o dinheiro sai da conta de
+  // verdade que bancou aquilo e entra nele. O servidor só aceita na direção que
+  // o aproxima de zero.
+  const transferiveis = active
+    .filter((a) => !a.isInvestment)
+    .sort((a, b) => Number(a.structural) - Number(b.structural));
+  const neutro = accounts.find((a) => a.structural) ?? null;
   const podeTransferir = canContas && transferiveis.length >= 2;
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
@@ -336,7 +343,15 @@ export default async function ContasPage({
                   <CardHeader title="Transferir entre contas" />
                   <div className="p-5">
                     <TransferForm
-                      accounts={transferiveis.map((a) => ({ id: a.id, name: a.name }))}
+                      accounts={transferiveis.map((a) => ({
+                        id: a.id,
+                        name: accountPickerName(a.name, a.structural),
+                      }))}
+                      neutro={
+                        neutro && Math.abs(neutro.balance) > 0.005
+                          ? { id: neutro.id, balance: neutro.balance }
+                          : null
+                      }
                       cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
                     />
                   </div>

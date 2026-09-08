@@ -355,11 +355,8 @@ export default async function LivroCaixaPage({
       <div className={`mb-4 ${canCriar ? "" : "hidden"}`}>
         {health.blockingOk ? (
           <>
-            {!health.allOk ? (
-              <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 print:hidden">
-                ⚖️ O Banco Neutro está fora de zero. Lance o par (débito e crédito) pelo Banco Neutro para zerá-lo novamente.
-              </div>
-            ) : null}
+            {/* O aviso do Banco Neutro fora de zero (com o valor que falta e o
+                caminho do acerto) já vem do próprio farol, logo acima. */}
             <CashEntryForm
               accounts={accounts
                 .filter((a) => a.active && !a.isInvestment)
