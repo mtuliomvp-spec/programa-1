@@ -38,6 +38,10 @@ const boletoSchema = z.object({
   // desconto legal da MULTA: aqui é uma condição do próprio boleto.
   desconto: z.number().nullable().optional(),
   descontoAte: z.string().nullable().optional(),
+  // Competência/referência do que o boleto cobra: o MÊS DE CONSUMO da conta de
+  // luz, a mensalidade de setembro, a parcela do exercício. Não confundir com
+  // o vencimento — a conta de agosto vence em setembro.
+  referencia: z.string().nullable().optional(),
 });
 
 export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
@@ -73,6 +77,7 @@ const BOLETO_ITEM_SCHEMA = {
     "linhaDigitavel",
     "desconto",
     "descontoAte",
+    "referencia",
   ],
   properties: {
     valor: {
@@ -110,6 +115,11 @@ const BOLETO_ITEM_SCHEMA = {
       type: ["string", "null"],
       description:
         "data limite do desconto em yyyy-mm-dd. Quando o texto diz 'até o vencimento', repita a data de vencimento. null quando não há desconto",
+    },
+    referencia: {
+      type: ["string", "null"],
+      description:
+        "competência/referência do que o boleto cobra, como impressa: mês de consumo da conta de luz/água/telefone ('AGO/2026'), mês da mensalidade ('Setembro/2026'), exercício do IPVA ('2026') ou o período ('01/08/2026 a 31/08/2026'). NÃO é o vencimento. null quando o documento não traz",
     },
   },
 } as const;
@@ -151,10 +161,14 @@ const SYSTEM_PROMPT =
   "Não confunda com MULTA e MORA, que são acréscimos por atraso, nem com o desconto legal de " +
   "20% da multa de trânsito (esse continua em VALOR/VALORSEMDESCONTO). Sem condição de desconto " +
   "impressa, os dois campos vão null. " +
-  "6) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
+  "6) REFERÊNCIA: a competência do que está sendo cobrado — o mês de CONSUMO na conta de luz, água " +
+  "ou telefone ('Referente a AGO/2026'), o mês da mensalidade, o exercício do IPVA. Copie como está " +
+  "impresso. Cuidado: NÃO é o vencimento (a conta de agosto vence em setembro) nem a data de emissão. " +
+  "Sem referência impressa, vai null. " +
+  "7) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
   "48 em guia de concessionária/órgão). É o que o usuário copia para pagar — transcreva sem trocar dígito. " +
-  "7) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "8) Responda somente com o JSON pedido.";
+  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "9) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];

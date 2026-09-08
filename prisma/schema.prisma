@@ -1133,6 +1133,11 @@ model Payable {
   // Linha digitável do código de barras (boleto/fatura): sai na Ordem de
   // Pagamento com botão de copiar, para colar no leitor do banco.
   barcode              String?
+  // Competência/referência do que o título cobra ("08/2026" na conta de luz,
+  // "Setembro/2026" na mensalidade). Vem da leitura do boleto e é INFORMATIVA:
+  // a despesa continua entrando no resultado pelo regime de caixa, na data do
+  // pagamento — isto só diz a que período o gasto se refere.
+  referencePeriod      String?
   // Desconto por pontualidade do boleto ("desconto de R$ X até o vencimento",
   // comum em condomínio e mensalidade). `discountAmount` é o abatimento e
   // `discountUntil` a data limite impressa; o prazo REAL é essa data empurrada

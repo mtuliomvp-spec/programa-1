@@ -3220,6 +3220,8 @@ export async function updateManualPayable(input: {
   documentNumber?: string | null;
   /** Linha digitável do boleto/fatura (Ordem de Pagamento). */
   barcode?: string | null;
+  /** Competência/referência do que o título cobra ("08/2026") — informativa. */
+  referencePeriod?: string | null;
   amount: number;
   dueDate: Date;
   supplierId?: string | null;
@@ -3251,6 +3253,9 @@ export async function updateManualPayable(input: {
         // Só mexe quando o chamador informa: outras rotinas (aplicar boleto,
         // ajustes) atualizam o título sem tocar na linha digitável já guardada.
         ...(input.barcode !== undefined ? { barcode: input.barcode } : {}),
+        // Idem para a competência: quem não informa (aplicar boleto, ajustes)
+        // não apaga a que já está guardada.
+        ...(input.referencePeriod !== undefined ? { referencePeriod: input.referencePeriod } : {}),
         amount: input.amount,
         dueDate: input.dueDate,
         supplierId: input.supplierId || null,

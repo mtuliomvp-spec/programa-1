@@ -18,6 +18,7 @@ import { resolveDespesaCategory } from "@/lib/categories";
 import { parseDebtItems, AJUSTE_DEBITOS_DESC, AJUSTE_QUITACAO_DESC } from "@/lib/vehicle-debts";
 import { appliedOf, freeCapitalOf } from "@/lib/investments";
 import { linhaDigitavelValida, normalizeBarcodeLine } from "@/lib/barcode-line";
+import { normalizarCompetencia } from "@/lib/competencia";
 import type { CategoriaPagar } from "@prisma/client";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
@@ -840,6 +841,9 @@ const updatePayableSchema = z.object({
   documentNumber: z.string().optional(),
   // Linha digitável do boleto/fatura (para copiar na Ordem de Pagamento).
   barcode: z.string().optional(),
+  // Competência/referência do que o título cobra ("08/2026"): informativa — a
+  // despesa continua entrando pelo caixa, na data do pagamento.
+  referencePeriod: z.string().optional(),
   amount: z.coerce.number().min(0.01, "Informe um valor válido"),
   dueDate: z.string().min(1),
   supplierId: z.string().optional(),
@@ -957,6 +961,7 @@ export async function updatePayableAction(
     // Digitada errada (não parece linha digitável), o campo é limpo em vez de
     // guardar algo que não dá para pagar.
     barcode: normalizeBarcodeLine(d.barcode),
+    referencePeriod: normalizarCompetencia(d.referencePeriod),
     amount,
     // Título de recorrência: o vencimento vem dela. O gerador não repete um dia
     // que já tem título — mudar a data aqui liberaria o dia original e faria
@@ -2287,6 +2292,12 @@ export type BoletoLido = {
   desconto: number | null;
   /** Data limite do desconto (yyyy-mm-dd) — "até o vencimento" vira a data dele. */
   descontoAte: string | null;
+  /**
+   * Competência/referência impressa no boleto ("AGO/2026", "Setembro/2026"):
+   * a que período o gasto se refere. Não é o vencimento e não muda o regime de
+   * caixa — só identifica o que está sendo pago.
+   */
+  referencia: string | null;
 };
 
 export type ReadBoletoResult = {
@@ -2449,6 +2460,9 @@ export async function readPayableBoletoAction(formData: FormData): Promise<ReadB
         cedente: b.cedente,
         desconto: desconto != null && descontoAte ? desconto : null,
         descontoAte: desconto != null && descontoAte ? descontoAte : null,
+        // A referência é texto livre do boleto: chega arrumada e sem o
+        // vencimento disfarçado de competência.
+        referencia: normalizarCompetencia(b.referencia, dueDate),
       };
     });
     // Linha digitável: vai direto para o título (é só uma ajuda para pagar, não
@@ -2491,6 +2505,8 @@ export async function applyBoletoToPayableAction(input: {
   dueDate?: string | null;
   desconto?: number | null;
   descontoAte?: string | null;
+  /** Competência/referência lida do boleto ("AGO/2026"). */
+  referencia?: string | null;
 }): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
@@ -2542,7 +2558,11 @@ export async function applyBoletoToPayableAction(input: {
     input.desconto != null && input.desconto > 0 && descontoAte && !locks.amountLocked
       ? round2(input.desconto)
       : null;
-  if (amount == null && dueDate == null && desconto == null) {
+  // A competência não tem trava: ela não é dinheiro nem data de caixa, é o
+  // período a que o gasto se refere. Vale até na compra do veículo, cujo valor
+  // e vencimento vêm de outro lugar.
+  const referencia = normalizarCompetencia(input.referencia, input.dueDate);
+  if (amount == null && dueDate == null && desconto == null && referencia == null) {
     return { ok: false, error: locks.amountLocked || locks.dueDateLocked || "Nada a aplicar." };
   }
 
@@ -2578,6 +2598,10 @@ export async function applyBoletoToPayableAction(input: {
     data: {
       discountAmount: desconto != null && desconto < valorFinal ? desconto : null,
       discountUntil: desconto != null && desconto < valorFinal ? descontoAte : null,
+      // Competência: ao contrário do desconto, o que o boleto não trouxer NÃO
+      // apaga o que já está no título — a referência pode ter sido digitada à
+      // mão justamente porque a IA não achou onde ela estava impressa.
+      ...(referencia ? { referencePeriod: referencia } : {}),
     },
   });
 
