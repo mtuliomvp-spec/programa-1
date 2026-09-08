@@ -62,10 +62,15 @@ export default function ReadBoletoAi({
     }
   }
 
-  function aplicar(amount: number | null, dueDate: string | null) {
+  function aplicar(
+    amount: number | null,
+    dueDate: string | null,
+    desconto: number | null,
+    descontoAte: string | null,
+  ) {
     setApplyError(null);
     startApply(async () => {
-      const res = await applyBoletoToPayableAction({ payableId, amount, dueDate });
+      const res = await applyBoletoToPayableAction({ payableId, amount, dueDate, desconto, descontoAte });
       if (!res.ok) {
         setApplyError(res.error || "Não foi possível aplicar.");
         return;
@@ -73,6 +78,7 @@ export default function ReadBoletoAi({
       const partes = [
         amount != null ? `valor ${formatCurrency(amount)}` : null,
         dueDate ? `vencimento ${dataBr(dueDate)}` : null,
+        desconto != null ? `desconto de ${formatCurrency(desconto)} até ${descontoAte ? dataBr(descontoAte) : "o vencimento"}` : null,
       ].filter(Boolean);
       setApplied(`Aplicado ao título: ${partes.join(" · ")}.`);
       // O formulário acima guarda o valor em estado próprio (máscara de moeda):
@@ -137,6 +143,15 @@ export default function ReadBoletoAi({
                     {[b.descricao, b.cedente].filter(Boolean).join(" — ")}
                   </p>
                 ) : null}
+                {b.desconto != null && b.amount != null ? (
+                  <p className="mt-1 text-xs font-medium text-emerald-700">
+                    💰 Desconto de {formatCurrency(b.desconto)} pagando até{" "}
+                    {b.descontoAte ? dataBr(b.descontoAte) : "o vencimento"} — sai por{" "}
+                    {formatCurrency(b.amount - b.desconto)}. O título fica com o valor cheio e o
+                    desconto é aplicado na baixa, se o pagamento couber no prazo (que passa para o
+                    dia útil seguinte quando cai em fim de semana ou feriado).
+                  </p>
+                ) : null}
                 {podeValor && !mudaValor ? (
                   <p className="mt-1 text-xs text-emerald-700">✓ Bate com o valor do título.</p>
                 ) : null}
@@ -146,7 +161,14 @@ export default function ReadBoletoAi({
                       type="button"
                       variant="secondary"
                       disabled={applying}
-                      onClick={() => aplicar(podeValor ? b.amount : null, podeVenc ? b.dueDate : null)}
+                      onClick={() =>
+                        aplicar(
+                          podeValor ? b.amount : null,
+                          podeVenc ? b.dueDate : null,
+                          podeValor ? b.desconto : null,
+                          podeValor ? b.descontoAte : null,
+                        )
+                      }
                     >
                       {applying ? "Aplicando…" : "Aplicar a este título"}
                     </Button>

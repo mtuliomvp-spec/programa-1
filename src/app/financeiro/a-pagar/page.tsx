@@ -6,6 +6,7 @@ import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { capitalStatusByBeneficiary, freeCapitalOf } from "@/lib/investments";
 import { getCashboxState } from "@/lib/cashbox";
+import { dentroDoPrazo, prazoEfetivo } from "@/lib/banking-days";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { matchesPainelBucket, painelBucketOf, painelBucketTexto } from "@/lib/painel-buckets";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
@@ -77,6 +78,8 @@ export default async function ContasAPagarPage({
           capitalBeneficiaryId: true,
           beneficiaryUserId: true,
           cardInvoice: true,
+          discountAmount: true,
+          discountUntil: true,
           supplierId: true,
           supplier: { select: { id: true, name: true } },
           vehicleId: true,
@@ -200,6 +203,10 @@ export default async function ContasAPagarPage({
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);
   const totalAtrasado = withStatus.filter((p) => p.effective === "ATRASADO").reduce((s, p) => s + p.amount, 0);
 
+  // Data que decide se o desconto ainda vale: a do caixa aberto (é nela que a
+  // baixa vai acontecer); sem caixa aberto, hoje.
+  const hojeCaixa = cashbox.open && cashbox.session ? cashbox.session.workDate : new Date();
+
   const mappedRows: PayableRow[] = filtered.map((p) => ({
     id: p.id,
     orderNumber: p.orderNumber,
@@ -212,6 +219,17 @@ export default async function ContasAPagarPage({
     vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : null,
     dueDate: p.dueDate.toISOString(),
     amount: p.amount,
+    // Desconto por pontualidade do boleto: o prazo real é a data impressa
+    // empurrada para o primeiro dia útil (fim de semana/feriado não encurtam
+    // o prazo). Só aparece na lista enquanto ainda estiver valendo.
+    discount:
+      p.discountAmount && p.discountAmount > 0 && p.discountUntil && dentroDoPrazo(hojeCaixa, p.discountUntil)
+        ? {
+            amount: p.discountAmount,
+            until: prazoEfetivo(p.discountUntil)!.toISOString(),
+            net: Math.round((p.amount - p.discountAmount) * 100) / 100,
+          }
+        : null,
     effective: p.effective,
     status: p.status,
     accountName: p.account?.name ?? null,

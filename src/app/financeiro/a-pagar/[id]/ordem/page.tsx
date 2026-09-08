@@ -5,6 +5,7 @@ import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
+import { dentroDoPrazo, prazoEfetivo } from "@/lib/banking-days";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import { userCan } from "@/lib/guards";
@@ -179,6 +180,29 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   // pagamento; na tela, num bloco próprio com botão de copiar.
   if (payable.barcode) pagamentoRows.push(["Linha digitável", formatBarcodeLine(payable.barcode)]);
 
+  // Desconto por pontualidade do boleto ainda válido: a ordem tem de mandar
+  // pagar o líquido, senão o financeiro paga o cheio e perde o desconto. O
+  // prazo já vem empurrado para o primeiro dia útil.
+  const descontoValido =
+    payable.status !== "PAGO" &&
+    payable.discountAmount != null &&
+    payable.discountAmount > 0 &&
+    payable.discountAmount < payable.amount &&
+    payable.discountUntil != null &&
+    dentroDoPrazo(new Date(), payable.discountUntil)
+      ? {
+          valor: payable.discountAmount,
+          prazo: prazoEfetivo(payable.discountUntil)!,
+          liquido: Math.round((payable.amount - payable.discountAmount) * 100) / 100,
+        }
+      : null;
+  if (descontoValido) {
+    pagamentoRows.push([
+      "Desconto do boleto",
+      `${formatCurrency(descontoValido.valor)} pagando até ${formatDate(descontoValido.prazo)}`,
+    ]);
+  }
+
   const sections: OrdemPdfData["sections"] = [
     { title: "Dados do título", rows: tituloRows },
     { title: beneTitle, rows: fornecedorRows },
@@ -195,8 +219,8 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     title: "ORDEM DE PAGAMENTO",
     number: orderNo,
     generatedAt,
-    valorLabel: "Valor a pagar",
-    valor: formatCurrency(payable.amount),
+    valorLabel: descontoValido ? `Valor a pagar até ${formatDate(descontoValido.prazo)}` : "Valor a pagar",
+    valor: formatCurrency(descontoValido ? descontoValido.liquido : payable.amount),
     sections,
     qrDataUrl,
     verifyUrl,
@@ -230,9 +254,20 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
         </Section>
 
         <div className="mb-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
-          <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">Valor a pagar</span>
-          <span className="text-2xl font-black text-slate-900">{formatCurrency(payable.amount)}</span>
+          <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+            {descontoValido ? `Valor a pagar até ${formatDate(descontoValido.prazo)}` : "Valor a pagar"}
+          </span>
+          <span className="text-2xl font-black text-slate-900">
+            {formatCurrency(descontoValido ? descontoValido.liquido : payable.amount)}
+          </span>
         </div>
+        {descontoValido ? (
+          <p className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800">
+            💰 O boleto dá <strong>{formatCurrency(descontoValido.valor)}</strong> de desconto por
+            pontualidade. Valor cheio: {formatCurrency(payable.amount)} — depois de{" "}
+            {formatDate(descontoValido.prazo)} é esse que vale.
+          </p>
+        ) : null}
 
         <Section title={beneTitle}>
           {fornecedorRows.map(([label, value]) => (

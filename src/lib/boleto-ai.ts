@@ -33,6 +33,11 @@ const boletoSchema = z.object({
   cedente: z.string().nullable(),
   // Linha digitável: vai para o título e sai na Ordem de Pagamento (copiar/colar).
   linhaDigitavel: z.string().nullable().optional(),
+  // Desconto por pontualidade impresso no boleto ("Desconto de R$ 150,00 até o
+  // vencimento") — comum em condomínio, mensalidade e associação. Diferente do
+  // desconto legal da MULTA: aqui é uma condição do próprio boleto.
+  desconto: z.number().nullable().optional(),
+  descontoAte: z.string().nullable().optional(),
 });
 
 export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
@@ -58,7 +63,17 @@ function normalizeTipo(raw: string | null): BoletoTipo | null {
 const BOLETO_ITEM_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["valor", "valorSemDesconto", "vencimento", "tipo", "descricao", "cedente", "linhaDigitavel"],
+  required: [
+    "valor",
+    "valorSemDesconto",
+    "vencimento",
+    "tipo",
+    "descricao",
+    "cedente",
+    "linhaDigitavel",
+    "desconto",
+    "descontoAte",
+  ],
   properties: {
     valor: {
       type: ["number", "null"],
@@ -85,6 +100,16 @@ const BOLETO_ITEM_SCHEMA = {
       type: ["string", "null"],
       description:
         "linha digitável do código de barras, como impressa (com pontos e espaços); null se não constar",
+    },
+    desconto: {
+      type: ["number", "null"],
+      description:
+        "abatimento em REAIS que o boleto concede por pagar dentro do prazo, quando impresso em texto (ex.: 'Desconto de R$ 150,00 até o vencimento' → 150). Percentual: converta para reais sobre o valor. null quando o boleto não oferece desconto",
+    },
+    descontoAte: {
+      type: ["string", "null"],
+      description:
+        "data limite do desconto em yyyy-mm-dd. Quando o texto diz 'até o vencimento', repita a data de vencimento. null quando não há desconto",
     },
   },
 } as const;
@@ -119,10 +144,17 @@ const SYSTEM_PROMPT =
   "devolva UM ITEM POR BOLETO DISTINTO, cada um com o seu valor e vencimento. Não some valores de " +
   "boletos diferentes e não repita o mesmo boleto (a 2ª via / o canhoto do MESMO documento, com " +
   "mesmo valor e vencimento, conta uma vez só). " +
-  "5) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
+  "5) DESCONTO: muitos boletos (condomínio, mensalidade, associação) trazem em texto uma condição " +
+  "de pontualidade — 'Desconto de R$ 150,00 até o vencimento', 'Desconto de 10% até o dia 10'. " +
+  "Quando houver, DESCONTO é o abatimento em reais (converta o percentual sobre o valor) e " +
+  "DESCONTOATE é a data limite (yyyy-mm-dd; 'até o vencimento' = a data de vencimento). " +
+  "Não confunda com MULTA e MORA, que são acréscimos por atraso, nem com o desconto legal de " +
+  "20% da multa de trânsito (esse continua em VALOR/VALORSEMDESCONTO). Sem condição de desconto " +
+  "impressa, os dois campos vão null. " +
+  "6) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
   "48 em guia de concessionária/órgão). É o que o usuário copia para pagar — transcreva sem trocar dígito. " +
-  "6) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "7) Responda somente com o JSON pedido.";
+  "7) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "8) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];
