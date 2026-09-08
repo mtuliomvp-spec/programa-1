@@ -10,7 +10,7 @@ import CardInvoiceItems from "./CardInvoiceItems";
 import ImportFaturaPdf from "./ImportFaturaPdf";
 import PayableDocSlots from "./PayableDocSlots";
 import ReadBoletoAi from "./ReadBoletoAi";
-import ReadReceiptAi from "./ReadReceiptAi";
+import ReadReceiptAi from "../../ReadReceiptAi";
 import ReturnNfe from "./ReturnNfe";
 import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
 import { getCashboxState } from "@/lib/cashbox";

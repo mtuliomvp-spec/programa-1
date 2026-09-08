@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
-import { readPayableReceiptAction, type ReadReceiptResult } from "../../actions";
+import { readPayableReceiptAction, type ReadReceiptResult } from "./actions";
 
 /** yyyy-mm-dd (do comprovante) → dd/mm/aaaa, sem passar pelo fuso do navegador. */
 function dataBr(iso: string): string {

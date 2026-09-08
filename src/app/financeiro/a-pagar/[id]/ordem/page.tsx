@@ -6,11 +6,13 @@ import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { dentroDoPrazo, prazoEfetivo } from "@/lib/banking-days";
+import { getCashboxState } from "@/lib/cashbox";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import { userCan } from "@/lib/guards";
 import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
 import SetSupplierForm from "./SetSupplierForm";
+import ReadReceiptAi from "../../ReadReceiptAi";
 import PayableAttachments from "./PayableAttachments";
 import CopyBarcode from "./CopyBarcode";
 import { formatBarcodeLine } from "@/lib/barcode-line";
@@ -82,6 +84,11 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
   if (!payable) notFound();
 
   const canManage = await userCan("financeiro", "criar");
+  // Data do caixa aberto: o aviso do comprovante diz se o pagamento entra na
+  // fila (o caixa ainda não chegou no dia) ou já pode ser confirmado.
+  const cashboxState = await getCashboxState();
+  const cashboxWorkDate =
+    cashboxState.open && cashboxState.session ? cashboxState.session.workDate : null;
   const requestAttachments = payable.purchaseRequest?.attachments ?? [];
 
   const company = await getCompany();
@@ -307,6 +314,21 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
         ) : null}
 
         <Section title="Anexos (NF, comprovantes)">
+          {/*
+            É nesta tela que se paga: copia-se a linha digitável, paga-se no
+            aplicativo do banco e volta-se com o comprovante na mão. Anexá-lo
+            aqui mesmo — conferido e pré-lançado — evita a viagem até a tela de
+            edição só para isso. Título já pago não tem o que pré-lançar.
+          */}
+          {canManage && payable.status !== "PAGO" ? (
+            <div className="mb-3 print:hidden">
+              <ReadReceiptAi
+                payableId={payable.id}
+                amountAtual={payable.amount}
+                cashboxDate={cashboxWorkDate ? cashboxWorkDate.toISOString() : null}
+              />
+            </div>
+          ) : null}
           <PayableAttachments
             payableId={payable.id}
             attachments={payable.attachments}
