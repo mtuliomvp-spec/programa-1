@@ -31,6 +31,9 @@ const nextConfig: NextConfig = {
     NEXT_PUBLIC_APP_VERSION: versao,
     NEXT_PUBLIC_APP_BUILD_DATE: data,
   },
+  // mupdf é WebAssembly: precisa ser resolvido pelo require nativo do Node, e
+  // não empacotado. É ele que abre o boleto protegido por senha.
+  serverExternalPackages: ["mupdf"],
   experimental: {
     // Permite restaurar backups grandes (upload do JSON via Server Action).
     serverActions: { bodySizeLimit: "25mb" },
