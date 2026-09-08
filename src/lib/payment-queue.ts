@@ -92,6 +92,78 @@ export async function contaDoComprovante(r: ContaDoComprovante): Promise<string 
   return null;
 }
 
+/**
+ * Palavras que não identificam ninguém: forma societária, conectivo e termo
+ * genérico de ramo. Duas empresas diferentes compartilham "comércio" ou
+ * "condomínio" sem serem a mesma — quem identifica é o nome próprio.
+ */
+const PALAVRAS_GENERICAS = new Set([
+  "ltda",
+  "me",
+  "epp",
+  "eireli",
+  "cia",
+  "sociedade",
+  "empresa",
+  "comercio",
+  "comercial",
+  "servico",
+  "servicos",
+  "distribuidora",
+  "industria",
+  "condominio",
+  "edificio",
+  "banco",
+  "brasil",
+  "nacional",
+  "veiculos",
+  "automoveis",
+  "transportes",
+  "pagamento",
+  "pagamentos",
+  "titulo",
+  "boleto",
+]);
+
+/**
+ * Palavras que identificam um nome: 3+ letras/dígitos e não genéricas. Três
+ * caracteres porque muito fornecedor é sigla ("PMZ", "L.F."), e é justamente a
+ * sigla que identifica.
+ */
+function palavrasFortes(nome: string | null | undefined): string[] {
+  return (nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 3 && !PALAVRAS_GENERICAS.has(w));
+}
+
+/**
+ * O beneficiário do comprovante é quem devia receber? Basta UMA palavra forte
+ * em comum ("Bahrein" em "Condomínio Edifício Bahrein" × "MJr Cond. Bahrein
+ * apt 701"): o objetivo é avisar quando o dinheiro claramente foi para outro,
+ * não implicar com a forma como o banco escreve o nome.
+ *
+ * Só as PARTES CADASTRADAS (fornecedor, beneficiário, sócio) autorizam a
+ * acusação: título sem ninguém no cadastro devolve `null` — silêncio —, porque
+ * uma descrição como "Taxa 09/2026" não é nome de gente. A descrição entra só
+ * para CONFIRMAR o encontro, nunca para negá-lo. `null` também quando o
+ * comprovante não trouxe o nome legível.
+ */
+export function beneficiarioBate(
+  beneficiario: string | null | undefined,
+  partesDoTitulo: (string | null | undefined)[],
+  descricaoDoTitulo?: string | null,
+): boolean | null {
+  const doComprovante = palavrasFortes(beneficiario);
+  if (doComprovante.length === 0) return null;
+  const nomeadas = new Set(partesDoTitulo.flatMap((p) => palavrasFortes(p)));
+  if (nomeadas.size === 0) return null;
+  const doTitulo = new Set([...nomeadas, ...palavrasFortes(descricaoDoTitulo)]);
+  return doComprovante.some((w) => doTitulo.has(w));
+}
+
 export type ConferenciaComprovante = {
   /** Diferença entre o comprovante e o título (positiva = pagou mais). */
   diferenca: number;
@@ -105,7 +177,13 @@ export type ConferenciaComprovante = {
  * usuário ver a diferença antes de dar o ok.
  */
 export function conferirComprovante(
-  titulo: { amount: number; dueDate: Date; description: string; supplierName?: string | null },
+  titulo: {
+    amount: number;
+    dueDate: Date;
+    description: string;
+    /** Nomes ligados ao título (fornecedor, beneficiário, sócio do capital). */
+    partes?: (string | null | undefined)[];
+  },
   comprovante: { valor: number; data: Date; beneficiario?: string | null },
 ): ConferenciaComprovante {
   const avisos: string[] = [];
@@ -123,6 +201,15 @@ export function conferirComprovante(
       86400000,
   );
   if (atraso > 0) avisos.push(`pago ${atraso} dia(s) depois do vencimento (${formatDate(titulo.dueDate)})`);
+  // Beneficiário: o dinheiro foi para quem devia? Só avisa quando dá para
+  // afirmar que NÃO bate — nome ilegível ou título sem parte cadastrada fica
+  // em silêncio em vez de gerar alarme falso.
+  const bate = beneficiarioBate(comprovante.beneficiario, titulo.partes ?? [], titulo.description);
+  if (bate === false) {
+    avisos.push(
+      `pago a "${comprovante.beneficiario}", que não bate com o beneficiário do título — confira se o comprovante é deste título`,
+    );
+  }
   return { diferenca, avisos };
 }
 
