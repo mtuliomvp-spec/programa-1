@@ -317,34 +317,37 @@ export type PagamentoNaFila = {
   note: string | null;
 };
 
-/**
- * Pré-lançamentos que o caixa deste dia já pode confirmar: tudo o que foi pago
- * ATÉ a data de trabalho. Pagamento de dia anterior que ficou para trás
- * continua aparecendo — não some por ter perdido o dia.
- */
-export async function pagamentosNaFila(workDate: Date | null): Promise<PagamentoNaFila[]> {
-  if (!workDate) return [];
-  const fim = new Date(
-    Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 23, 59, 59),
-  );
-  const rows = await prisma.payable.findMany({
-    where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fim } },
-    orderBy: { pendingPaymentDate: "asc" },
-    select: {
-      id: true,
-      orderNumber: true,
-      description: true,
-      amount: true,
-      dueDate: true,
-      pendingPaymentDate: true,
-      pendingPaymentAmount: true,
-      pendingPaymentNote: true,
-      pendingPaymentAccountId: true,
-      pendingPaymentAccount: { select: { name: true } },
-      supplier: { select: { name: true } },
-    },
-  });
-  return rows.map((p) => ({
+/** Campos do pré-lançamento que as duas listas (deste caixa e adiante) mostram. */
+const FILA_SELECT = {
+  id: true,
+  orderNumber: true,
+  description: true,
+  amount: true,
+  dueDate: true,
+  pendingPaymentDate: true,
+  pendingPaymentAmount: true,
+  pendingPaymentNote: true,
+  pendingPaymentAccountId: true,
+  pendingPaymentAccount: { select: { name: true } },
+  supplier: { select: { name: true } },
+} as const;
+
+type FilaRow = {
+  id: string;
+  orderNumber: number;
+  description: string;
+  amount: number;
+  dueDate: Date;
+  pendingPaymentDate: Date | null;
+  pendingPaymentAmount: number | null;
+  pendingPaymentNote: string | null;
+  pendingPaymentAccountId: string | null;
+  pendingPaymentAccount: { name: string } | null;
+  supplier: { name: string } | null;
+};
+
+function toPagamento(p: FilaRow): PagamentoNaFila {
+  return {
     id: p.id,
     orderNumber: p.orderNumber,
     description: p.description,
@@ -356,7 +359,76 @@ export async function pagamentosNaFila(workDate: Date | null): Promise<Pagamento
     accountId: p.pendingPaymentAccountId,
     accountName: p.pendingPaymentAccount?.name ?? null,
     note: p.pendingPaymentNote,
-  }));
+  };
+}
+
+/** Fim do dia (23:59:59 UTC) da data de trabalho. */
+function fimDoDia(d: Date): Date {
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59));
+}
+
+/** Um dia à frente do movimento, com o que já saiu do banco naquele dia. */
+export type DiaAdiante = {
+  /** ISO da data do pagamento (o dia do comprovante). */
+  date: string;
+  total: number;
+  pagamentos: PagamentoNaFila[];
+};
+
+/**
+ * Pagamentos já feitos em dias À FRENTE do movimento aberto.
+ *
+ * O caixa está no dia 08 e a conta foi paga hoje, dia 09: o dinheiro já saiu do
+ * banco, mas o pré-lançamento só pode ser confirmado quando o movimento chegar
+ * no dia 09 (todo lançamento tem a data do caixa aberto). Sem esta lista, esse
+ * dinheiro ficava invisível em Contas e caixas — a tela mostrava o saldo de
+ * ontem sem dizer que R$ 3.018,06 já tinham saído hoje.
+ *
+ * É só informação: nada aqui pode ser confirmado, porque o movimento daquele
+ * dia ainda não foi aberto. Ao abrir, os mesmos pagamentos aparecem na fila de
+ * sempre, com o ok para debitar.
+ *
+ * Sem caixa aberto, mostra tudo o que está pré-lançado.
+ */
+export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdiante[]> {
+  const rows = await prisma.payable.findMany({
+    where: {
+      status: { not: "PAGO" },
+      pendingPaymentDate: workDate ? { gt: fimDoDia(workDate) } : { not: null },
+    },
+    orderBy: { pendingPaymentDate: "asc" },
+    select: FILA_SELECT,
+  });
+
+  const porDia = new Map<string, PagamentoNaFila[]>();
+  for (const row of rows) {
+    const dia = row.pendingPaymentDate!.toISOString().slice(0, 10);
+    const lista = porDia.get(dia) ?? [];
+    lista.push(toPagamento(row));
+    porDia.set(dia, lista);
+  }
+  return [...porDia.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([dia, pagamentos]) => ({
+      date: `${dia}T12:00:00.000Z`,
+      total: round2(pagamentos.reduce((s, p) => s + p.amount, 0)),
+      pagamentos,
+    }));
+}
+
+/**
+ * Pré-lançamentos que o caixa deste dia já pode confirmar: tudo o que foi pago
+ * ATÉ a data de trabalho. Pagamento de dia anterior que ficou para trás
+ * continua aparecendo — não some por ter perdido o dia.
+ */
+export async function pagamentosNaFila(workDate: Date | null): Promise<PagamentoNaFila[]> {
+  if (!workDate) return [];
+  const rows = await prisma.payable.findMany({
+    where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fimDoDia(workDate) } },
+    orderBy: { pendingPaymentDate: "asc" },
+    select: FILA_SELECT,
+  });
+  return rows.map(toPagamento);
 }
 
 /** Quantos pré-lançamentos esperam o caixa deste dia (para o aviso na tela). */
