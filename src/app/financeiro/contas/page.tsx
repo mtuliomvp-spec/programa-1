@@ -129,14 +129,19 @@ export default async function ContasPage({
   // Fila de espera: pagamentos cujo comprovante já chegou e que esperavam o
   // movimento alcançar o dia. Com o caixa aberto neste dia, eles podem ser
   // confirmados aqui mesmo.
-  const { pagamentosNaFila, pagamentosAdiante } = await import("@/lib/payment-queue");
+  const { pagamentosNaFila, pagamentosAdiante, debitosPrelancados } = await import(
+    "@/lib/payment-queue"
+  );
   const workDate = cashbox.open && cashbox.session ? cashbox.session.workDate : null;
   // Pagos em dias À FRENTE do movimento (pagou hoje, o caixa ainda está em
   // ontem): o dinheiro já saiu do banco, então a tela mostra o total por dia —
   // ele só não pode ser confirmado antes de o movimento chegar lá.
-  const [fila, adiante] = await Promise.all([
+  // Quanto cada conta ainda vai perder para os pré-lançamentos: o saldo de hoje
+  // é o do sistema, mas o banco já debitou. O card mostra os dois.
+  const [fila, adiante, prelancado] = await Promise.all([
     pagamentosNaFila(workDate),
     pagamentosAdiante(workDate),
+    debitosPrelancados(),
   ]);
   const active = accounts.filter((a) => a.active);
   // Transferir exige duas contas correntes ativas (aplicação movimenta pelo
@@ -155,6 +160,12 @@ export default async function ContasPage({
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
+  // Total pré-lançado: entra o que ainda não tem conta identificada — ele vai
+  // sair de alguma conta, então pesa no total mesmo sem pesar em nenhum card.
+  const totalPrelancado =
+    Math.round(
+      ([...prelancado.porConta.values()].reduce((s, v) => s + v, 0) + prelancado.semConta) * 100,
+    ) / 100;
   // Busca livre filtra só os cards de conta exibidos (os totais acima seguem
   // considerando todas as contas).
   const accountRows = accounts.filter((a) =>
@@ -197,6 +208,24 @@ export default async function ContasPage({
             <p className={`text-lg font-bold ${a.balance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {formatCurrency(a.balance)}
             </p>
+            {/* Saldo previsto: o de hoje menos o que já saiu do banco e espera
+                o ok do caixa. Discreto de propósito — o saldo que manda na
+                contabilidade continua sendo o de cima. */}
+            {(prelancado.porConta.get(a.id) ?? 0) > 0.005 ? (
+              <p
+                className="mt-0.5 text-[11px] leading-tight text-slate-500"
+                title={`Já saiu do banco e espera o ok do caixa: ${formatCurrency(prelancado.porConta.get(a.id)!)}. O saldo acima só muda quando a baixa for confirmada.`}
+              >
+                −{formatCurrency(prelancado.porConta.get(a.id)!)} pré-lançado
+                <span
+                  className={`block font-semibold ${
+                    a.balance - prelancado.porConta.get(a.id)! < 0 ? "text-rose-500" : "text-slate-600"
+                  }`}
+                >
+                  previsto {formatCurrency(a.balance - prelancado.porConta.get(a.id)!)}
+                </span>
+              </p>
+            ) : null}
           </div>
           {/* data-no-pdf: os botões de ação ficam fora do PDF de saldos. */}
           <div data-no-pdf className="flex items-center gap-4">
@@ -277,6 +306,11 @@ export default async function ContasPage({
           label="Saldo total"
           value={formatCurrency(totalBalance)}
           tone={totalBalance >= 0 ? "positive" : "negative"}
+          hint={
+            totalPrelancado > 0.005
+              ? `previsto ${formatCurrency(totalBalance - totalPrelancado)} — ${formatCurrency(totalPrelancado)} já saíram do banco e esperam o ok do caixa`
+              : undefined
+          }
         />
         <StatCard label="Contas ativas" value={String(active.length)} />
         <StatCard

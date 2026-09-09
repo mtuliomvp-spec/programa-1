@@ -522,6 +522,59 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
 }
 
 /**
+ * Quanto cada conta ainda vai perder para os pré-lançamentos — o dinheiro que
+ * já saiu do banco e espera o ok do caixa.
+ *
+ * O saldo das contas só muda na BAIXA, então enquanto o movimento não alcança
+ * o dia do pagamento a conta mostra um saldo que o banco já não tem. Este é o
+ * desconto que falta aplicar, para a tela poder mostrar, discreto, o saldo
+ * previsto ao lado do saldo de hoje.
+ *
+ * O valor é o que a BAIXA vai debitar: no título avulso, o do comprovante (é
+ * ele que passa a valer); no combo, a soma dos títulos (o borderô é pago pelo
+ * valor deles, e a diferença do comprovante fica no aviso, para ser corrigida
+ * antes do ok).
+ */
+export async function debitosPrelancados(): Promise<{
+  /** accountId → total a debitar. */
+  porConta: Map<string, number>;
+  /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
+  semConta: number;
+}> {
+  const [titulos, combos] = await Promise.all([
+    prisma.payable.findMany({
+      where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
+      select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
+    }),
+    prisma.paymentCombo.findMany({
+      where: {
+        status: { notIn: ["PAGO", "CANCELADO"] },
+        pendingPaymentDate: { not: null },
+      },
+      select: {
+        pendingPaymentAccountId: true,
+        payables: { where: { status: { not: "PAGO" } }, select: { amount: true } },
+      },
+    }),
+  ]);
+
+  const porConta = new Map<string, number>();
+  let semConta = 0;
+  const somar = (accountId: string | null, valor: number) => {
+    if (!accountId) {
+      semConta = round2(semConta + valor);
+      return;
+    }
+    porConta.set(accountId, round2((porConta.get(accountId) ?? 0) + valor));
+  };
+  for (const t of titulos) somar(t.pendingPaymentAccountId, t.pendingPaymentAmount ?? t.amount);
+  for (const c of combos) {
+    somar(c.pendingPaymentAccountId, round2(c.payables.reduce((s, p) => s + p.amount, 0)));
+  }
+  return { porConta, semConta };
+}
+
+/**
  * Pré-lançamentos que o caixa deste dia já pode confirmar: tudo o que foi pago
  * ATÉ a data de trabalho. Pagamento de dia anterior que ficou para trás
  * continua aparecendo — não some por ter perdido o dia.
