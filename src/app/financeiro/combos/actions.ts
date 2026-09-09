@@ -246,7 +246,18 @@ export async function payComboAction(comboId: string, accountId: string): Promis
 
   await prisma.paymentCombo.update({
     where: { id: comboId },
-    data: { status: "PAGO", paidAt: date, accountId, capitalAbatement: abate },
+    data: {
+      status: "PAGO",
+      paidAt: date,
+      accountId,
+      capitalAbatement: abate,
+      // Pago é pago: se o combo estava pré-lançado (comprovante já lido), a
+      // linha da fila do caixa sai junto — senão ficaria órfã pedindo um ok.
+      pendingPaymentDate: null,
+      pendingPaymentAmount: null,
+      pendingPaymentAccountId: null,
+      pendingPaymentNote: null,
+    },
   });
   revalidate(comboId);
   return { ok: true };
@@ -341,6 +352,237 @@ export async function cancelComboAction(comboId: string): Promise<Result> {
     prisma.payable.updateMany({ where: { paymentComboId: comboId }, data: { paymentComboId: null } }),
     prisma.paymentCombo.update({ where: { id: comboId }, data: { status: "CANCELADO" } }),
   ]);
+  revalidate(comboId);
+  return { ok: true };
+}
+
+// ---------------------------------------------------------------------------
+// Comprovante do combo: conferir o borderô e pré-lançar
+// ---------------------------------------------------------------------------
+
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export type ReadComboReceiptResult = {
+  ok: boolean;
+  error?: string;
+  /** O arquivo foi anexado ao combo mesmo que a leitura falhe. */
+  attached: boolean;
+  /** O PDF pede senha de abertura: a tela pede a senha e reenvia o arquivo. */
+  senhaNecessaria?: boolean;
+  valor?: number | null;
+  data?: string | null;
+  contaLida?: string | null;
+  beneficiario?: string | null;
+  formaPagamento?: string | null;
+  accountName?: string | null;
+  /** O combo entrou na fila de espera do caixa. */
+  enfileirado?: boolean;
+  avisos?: string[];
+};
+
+/**
+ * Lê o COMPROVANTE do pagamento de um combo (borderô) e põe o combo inteiro na
+ * fila de espera do caixa.
+ *
+ * O combo é pago de uma vez só, então o comprovante é UM para todos os títulos
+ * dele: anexá-lo a um título qualquer escondia isso, e não havia como
+ * pré-lançar o borderô — ele ficava fora do que a tela de Contas e caixas
+ * mostra como já pago. Aqui o arquivo fica no combo e a fila recebe uma linha
+ * só; o ok, quando o movimento chegar no dia, baixa todos os títulos juntos
+ * pelo mesmo caminho do botão "Pagar combo".
+ */
+export async function readComboReceiptAction(formData: FormData): Promise<ReadComboReceiptResult> {
+  const vazio = { attached: false };
+  try {
+    await assertCanAny([
+      ["combos", "criar"],
+      ["combos", "aprovar"],
+      ["financeiro", "pagar"],
+    ]);
+  } catch (e) {
+    return { ok: false, ...vazio, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const comboId = String(formData.get("comboId") || "").trim();
+  const file = formData.get("file");
+  if (!comboId) return { ok: false, ...vazio, error: "Combo inválido." };
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, ...vazio, error: "Selecione o arquivo do comprovante." };
+  }
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return { ok: false, ...vazio, error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const combo = await prisma.paymentCombo.findUnique({
+    where: { id: comboId },
+    select: {
+      id: true,
+      name: true,
+      status: true,
+      user: { select: { name: true, document: true } },
+      payables: { where: { status: { not: "PAGO" } }, select: { amount: true, dueDate: true } },
+    },
+  });
+  if (!combo) return { ok: false, ...vazio, error: "Combo não encontrado." };
+  if (combo.status === "CANCELADO") {
+    return { ok: false, ...vazio, error: "Combo cancelado — não há o que pré-lançar." };
+  }
+
+  let buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+
+  // Mesma regra do título: comprovante em PDF com senha é decifrado antes de
+  // ser lido e guardado (o que fica anexado abre sem senha depois).
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema abrir, ler e anexar.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        ...vazio,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
+  // Um comprovante por combo (como o slot do título): reler substitui.
+  await prisma.comboAttachment.deleteMany({ where: { comboId, kind: "COMPROVANTE" } });
+  await prisma.comboAttachment.create({
+    data: {
+      comboId,
+      kind: "COMPROVANTE",
+      description: "Comprovante de pagamento",
+      filename: file.name || "comprovante",
+      mimeType,
+      size: buffer.byteLength,
+      data: buffer,
+    },
+  });
+  revalidate(comboId);
+
+  // Combo já pago: o comprovante é só o arquivo do que já foi baixado.
+  if (combo.status === "PAGO") return { ok: true, attached: true, enfileirado: false };
+
+  let lido;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    const todos = await extractPaymentReceipts(buffer.toString("base64"), mimeType);
+    lido = todos[0] ?? null;
+  } catch (e) {
+    return {
+      ok: false,
+      attached: true,
+      error: `${e instanceof Error ? e.message : "Não foi possível ler o comprovante."} O arquivo ficou anexado — pague o combo à mão.`,
+    };
+  }
+  if (!lido || lido.valor == null || lido.valor <= 0 || !lido.data || !/^\d{4}-\d{2}-\d{2}$/.test(lido.data)) {
+    return {
+      ok: false,
+      attached: true,
+      error: "Não consegui ler valor e data do comprovante — ele ficou anexado, mas o pagamento terá de ser manual.",
+      valor: lido?.valor ?? null,
+      data: lido?.data ?? null,
+    };
+  }
+
+  const { contaDoComprovante, conferirComprovante, enfileirarCombo } = await import("@/lib/payment-queue");
+  const { parseDateInput } = await import("@/lib/format");
+  const dataPagamento = parseDateInput(lido.data);
+  const accountId = await contaDoComprovante(lido);
+  const conta = accountId
+    ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
+    : null;
+
+  const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
+  // Vencimento da conferência: o mais antigo do combo — é o que diz se atrasou.
+  const vencimento = combo.payables.reduce<Date>(
+    (menor, p) => (p.dueDate < menor ? p.dueDate : menor),
+    combo.payables[0]?.dueDate ?? dataPagamento,
+  );
+  const { avisos } = conferirComprovante(
+    {
+      amount: total,
+      dueDate: vencimento,
+      description: `Combo ${combo.name}`,
+      rotulo: "combo",
+      // Quem recebe o borderô é quem o montou.
+      partes: combo.user ? [{ nome: combo.user.name, documento: combo.user.document }] : [],
+    },
+    {
+      valor: lido.valor,
+      data: dataPagamento,
+      beneficiario: lido.beneficiario,
+      documentoBeneficiario: lido.documentoBeneficiario,
+      formaPagamento: lido.formaPagamento,
+    },
+  );
+  if (!accountId) {
+    avisos.push(
+      lido.contaDebitada
+        ? `conta debitada "${lido.contaDebitada}" não bate com nenhuma conta cadastrada — escolha a conta ao confirmar`
+        : "conta debitada não identificada no comprovante — escolha a conta ao confirmar",
+    );
+  }
+
+  // O comprovante prova que o borderô saiu do banco: um combo ainda ABERTO é
+  // fechado aqui (mesmo efeito de "Solicitar pagamento"), senão o ok da fila
+  // esbarraria em "solicite o pagamento antes de pagá-lo".
+  if (combo.status === "ABERTO") {
+    await prisma.paymentCombo.update({
+      where: { id: comboId },
+      data: { status: "SOLICITADO", requestedAt: new Date() },
+    });
+    avisos.push("o combo estava aberto e foi fechado para pagamento");
+  }
+
+  await enfileirarCombo({
+    comboId,
+    data: dataPagamento,
+    valor: lido.valor,
+    accountId,
+    nota: avisos.join(" · ") || null,
+  });
+
+  revalidate(comboId);
+  return {
+    ok: true,
+    attached: true,
+    enfileirado: true,
+    valor: lido.valor,
+    data: lido.data,
+    contaLida: lido.contaDebitada ?? null,
+    beneficiario: lido.beneficiario ?? null,
+    formaPagamento: lido.formaPagamento ?? null,
+    accountName: conta?.name ?? null,
+    avisos,
+  };
+}
+
+/** Tira o comprovante do combo (e o combo da fila, se estava pré-lançado). */
+export async function removeComboReceiptAction(comboId: string): Promise<Result> {
+  try {
+    await assertCanAny([
+      ["combos", "criar"],
+      ["combos", "aprovar"],
+      ["financeiro", "pagar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const { desenfileirarCombo } = await import("@/lib/payment-queue");
+  await prisma.comboAttachment.deleteMany({ where: { comboId, kind: "COMPROVANTE" } });
+  await desenfileirarCombo(comboId);
   revalidate(comboId);
   return { ok: true };
 }

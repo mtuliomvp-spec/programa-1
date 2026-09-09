@@ -243,7 +243,7 @@ export default async function EditarPayablePage({
             {/* A tela de edição já recusa título pago, então aqui ele nunca é. */}
             {(
               <ReadReceiptAi
-                payableId={payable.id}
+                alvo={{ tipo: "titulo", id: payable.id }}
                 amountAtual={payable.amount}
                 cashboxDate={cashboxWorkDate ? cashboxWorkDate.toISOString() : null}
               />

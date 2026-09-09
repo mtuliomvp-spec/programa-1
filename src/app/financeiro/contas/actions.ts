@@ -594,14 +594,44 @@ export async function confirmQueuedPaymentsAction(
     return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
   }
 
-  const { prepararBaixaDaFila, desenfileirarPagamento } = await import("@/lib/payment-queue");
+  const { prepararBaixaDaFila, desenfileirarPagamento, desenfileirarCombo } = await import(
+    "@/lib/payment-queue"
+  );
+  const { payComboAction } = await import("@/app/financeiro/combos/actions");
   let paid = 0;
   for (const id of ids) {
     const p = await prisma.payable.findUnique({
       where: { id },
       select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
     });
-    if (!p || p.status === "PAGO" || !p.pendingPaymentDate) continue;
+    // A fila mistura títulos avulsos e COMBOS: o id que não é de título é de
+    // combo (ids são cuid, não se cruzam). O combo é pago de uma vez só, pelo
+    // mesmo caminho do botão "Pagar combo" — os títulos dele saem juntos.
+    if (!p) {
+      const combo = await prisma.paymentCombo.findUnique({
+        where: { id },
+        select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
+      });
+      if (!combo || !combo.pendingPaymentDate) continue;
+      if (combo.status === "PAGO" || combo.status === "CANCELADO") {
+        await desenfileirarCombo(id);
+        continue;
+      }
+      const accountId = accountByPayable[id] || combo.pendingPaymentAccountId;
+      if (!accountId) {
+        return {
+          ok: false,
+          paid,
+          error: "Escolha a conta debitada dos pré-lançamentos que estão sem conta identificada.",
+        };
+      }
+      const r = await payComboAction(id, accountId);
+      if (!r.ok) return { ok: false, paid, error: r.error || "Não foi possível pagar o combo." };
+      await desenfileirarCombo(id);
+      paid += 1;
+      continue;
+    }
+    if (p.status === "PAGO" || !p.pendingPaymentDate) continue;
     const accountId = accountByPayable[id] || p.pendingPaymentAccountId;
     if (!accountId) {
       return {
@@ -634,9 +664,13 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  const { desenfileirarPagamento } = await import("@/lib/payment-queue");
-  await desenfileirarPagamento(id);
+  const { desenfileirarPagamento, desenfileirarCombo } = await import("@/lib/payment-queue");
+  // Mesmo id-de-título-ou-combo do confirmar: o que não é título é combo.
+  const ehTitulo = await prisma.payable.count({ where: { id } });
+  if (ehTitulo) await desenfileirarPagamento(id);
+  else await desenfileirarCombo(id);
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/combos");
   return { ok: true };
 }
