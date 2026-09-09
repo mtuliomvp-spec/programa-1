@@ -224,6 +224,8 @@ export function conferirComprovante(
     description: string;
     /** Quem está ligado ao título (fornecedor, beneficiário, sócio do capital). */
     partes?: { nome?: string | null; documento?: string | null }[];
+    /** Como chamar o que está sendo pago nos avisos ("título" ou "combo"). */
+    rotulo?: string;
   },
   comprovante: {
     valor: number;
@@ -234,12 +236,13 @@ export function conferirComprovante(
   },
 ): ConferenciaComprovante {
   const avisos: string[] = [];
+  const rotulo = titulo.rotulo || "título";
   const diferenca = round2(comprovante.valor - titulo.amount);
   if (Math.abs(diferenca) > 0.005) {
     avisos.push(
       diferenca > 0
-        ? `título ${formatCurrency(titulo.amount)} · comprovante ${formatCurrency(comprovante.valor)} (${formatCurrency(diferenca)} a mais — juros/multa?)`
-        : `título ${formatCurrency(titulo.amount)} · comprovante ${formatCurrency(comprovante.valor)} (${formatCurrency(-diferenca)} a menos — desconto?)`,
+        ? `${rotulo} ${formatCurrency(titulo.amount)} · comprovante ${formatCurrency(comprovante.valor)} (${formatCurrency(diferenca)} a mais — juros/multa?)`
+        : `${rotulo} ${formatCurrency(titulo.amount)} · comprovante ${formatCurrency(comprovante.valor)} (${formatCurrency(-diferenca)} a menos — desconto?)`,
     );
   }
   const atraso = Math.round(
@@ -287,6 +290,38 @@ export async function enfileirarPagamento(input: {
   });
 }
 
+/** Põe o COMBO na fila: o borderô inteiro espera o movimento chegar no dia. */
+export async function enfileirarCombo(input: {
+  comboId: string;
+  data: Date;
+  valor: number;
+  accountId: string | null;
+  nota: string | null;
+}) {
+  await prisma.paymentCombo.update({
+    where: { id: input.comboId },
+    data: {
+      pendingPaymentDate: input.data,
+      pendingPaymentAmount: round2(input.valor),
+      pendingPaymentAccountId: input.accountId,
+      pendingPaymentNote: input.nota,
+    },
+  });
+}
+
+/** Tira o combo da fila (sem baixar nada). */
+export async function desenfileirarCombo(comboId: string) {
+  await prisma.paymentCombo.update({
+    where: { id: comboId },
+    data: {
+      pendingPaymentDate: null,
+      pendingPaymentAmount: null,
+      pendingPaymentAccountId: null,
+      pendingPaymentNote: null,
+    },
+  });
+}
+
 /** Tira o título da fila (sem baixar nada). */
 export async function desenfileirarPagamento(payableId: string) {
   await prisma.payable.update({
@@ -302,12 +337,21 @@ export async function desenfileirarPagamento(payableId: string) {
 
 export type PagamentoNaFila = {
   id: string;
+  /**
+   * Título avulso ou COMBO (borderô). O combo é pago de uma vez só: ele entra
+   * na fila como UMA linha, e o ok baixa todos os títulos dele juntos.
+   */
+  kind: "titulo" | "combo";
   orderNumber: number;
   description: string;
   supplierName: string | null;
+  /** Quantos títulos o combo carrega (1 no título avulso). */
+  titulos: number;
+  /** Para onde a linha aponta na tela (ordem de pagamento ou borderô). */
+  href: string;
   /** Valor que saiu do banco (o do comprovante). */
   amount: number;
-  /** Valor registrado no título, quando diferente do comprovante. */
+  /** Valor registrado no título/combo, quando diferente do comprovante. */
   tituloAmount: number;
   dueDate: string;
   /** Data do comprovante. */
@@ -349,9 +393,12 @@ type FilaRow = {
 function toPagamento(p: FilaRow): PagamentoNaFila {
   return {
     id: p.id,
+    kind: "titulo",
     orderNumber: p.orderNumber,
     description: p.description,
     supplierName: p.supplier?.name ?? null,
+    titulos: 1,
+    href: `/financeiro/a-pagar/${p.id}/ordem`,
     amount: p.pendingPaymentAmount ?? p.amount,
     tituloAmount: p.amount,
     dueDate: p.dueDate.toISOString(),
@@ -359,6 +406,59 @@ function toPagamento(p: FilaRow): PagamentoNaFila {
     accountId: p.pendingPaymentAccountId,
     accountName: p.pendingPaymentAccount?.name ?? null,
     note: p.pendingPaymentNote,
+  };
+}
+
+/** Campos do combo pré-lançado que as listas mostram. */
+const COMBO_SELECT = {
+  id: true,
+  name: true,
+  pendingPaymentDate: true,
+  pendingPaymentAmount: true,
+  pendingPaymentNote: true,
+  pendingPaymentAccountId: true,
+  pendingPaymentAccount: { select: { name: true } },
+  user: { select: { name: true } },
+  payables: {
+    where: { status: { not: "PAGO" as const } },
+    select: { amount: true, dueDate: true },
+  },
+} as const;
+
+type ComboRow = {
+  id: string;
+  name: string;
+  pendingPaymentDate: Date | null;
+  pendingPaymentAmount: number | null;
+  pendingPaymentNote: string | null;
+  pendingPaymentAccountId: string | null;
+  pendingPaymentAccount: { name: string } | null;
+  user: { name: string } | null;
+  payables: { amount: number; dueDate: Date }[];
+};
+
+function comboToPagamento(c: ComboRow): PagamentoNaFila {
+  const total = round2(c.payables.reduce((s, p) => s + p.amount, 0));
+  // Vencimento da linha: o mais antigo do combo — é o que diz se atrasou.
+  const vencimento = c.payables.reduce<Date | null>(
+    (menor, p) => (!menor || p.dueDate < menor ? p.dueDate : menor),
+    null,
+  );
+  return {
+    id: c.id,
+    kind: "combo",
+    orderNumber: 0,
+    description: `Combo ${c.name}`,
+    supplierName: c.user ? `montado por ${c.user.name}` : null,
+    titulos: c.payables.length,
+    href: `/financeiro/combos/${c.id}`,
+    amount: c.pendingPaymentAmount ?? total,
+    tituloAmount: total,
+    dueDate: (vencimento ?? c.pendingPaymentDate ?? new Date()).toISOString(),
+    paidAt: c.pendingPaymentDate!.toISOString(),
+    accountId: c.pendingPaymentAccountId,
+    accountName: c.pendingPaymentAccount?.name ?? null,
+    note: c.pendingPaymentNote,
   };
 }
 
@@ -391,20 +491,25 @@ export type DiaAdiante = {
  * Sem caixa aberto, mostra tudo o que está pré-lançado.
  */
 export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdiante[]> {
-  const rows = await prisma.payable.findMany({
-    where: {
-      status: { not: "PAGO" },
-      pendingPaymentDate: workDate ? { gt: fimDoDia(workDate) } : { not: null },
-    },
-    orderBy: { pendingPaymentDate: "asc" },
-    select: FILA_SELECT,
-  });
+  const quando = workDate ? { gt: fimDoDia(workDate) } : { not: null };
+  const [rows, combos] = await Promise.all([
+    prisma.payable.findMany({
+      where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
+      orderBy: { pendingPaymentDate: "asc" },
+      select: FILA_SELECT,
+    }),
+    prisma.paymentCombo.findMany({
+      where: { status: { notIn: ["PAGO", "CANCELADO"] }, pendingPaymentDate: quando },
+      orderBy: { pendingPaymentDate: "asc" },
+      select: COMBO_SELECT,
+    }),
+  ]);
 
   const porDia = new Map<string, PagamentoNaFila[]>();
-  for (const row of rows) {
-    const dia = row.pendingPaymentDate!.toISOString().slice(0, 10);
+  for (const p of [...rows.map(toPagamento), ...combos.map(comboToPagamento)]) {
+    const dia = p.paidAt.slice(0, 10);
     const lista = porDia.get(dia) ?? [];
-    lista.push(toPagamento(row));
+    lista.push(p);
     porDia.set(dia, lista);
   }
   return [...porDia.entries()]
@@ -423,12 +528,22 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
  */
 export async function pagamentosNaFila(workDate: Date | null): Promise<PagamentoNaFila[]> {
   if (!workDate) return [];
-  const rows = await prisma.payable.findMany({
-    where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fimDoDia(workDate) } },
-    orderBy: { pendingPaymentDate: "asc" },
-    select: FILA_SELECT,
-  });
-  return rows.map(toPagamento);
+  const quando = { not: null, lte: fimDoDia(workDate) } as const;
+  const [rows, combos] = await Promise.all([
+    prisma.payable.findMany({
+      where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
+      orderBy: { pendingPaymentDate: "asc" },
+      select: FILA_SELECT,
+    }),
+    prisma.paymentCombo.findMany({
+      where: { status: { notIn: ["PAGO", "CANCELADO"] }, pendingPaymentDate: quando },
+      orderBy: { pendingPaymentDate: "asc" },
+      select: COMBO_SELECT,
+    }),
+  ]);
+  return [...rows.map(toPagamento), ...combos.map(comboToPagamento)].sort((a, b) =>
+    a.paidAt.localeCompare(b.paidAt),
+  );
 }
 
 /** Quantos pré-lançamentos esperam o caixa deste dia (para o aviso na tela). */
@@ -437,9 +552,18 @@ export async function contarPagamentosNaFila(workDate: Date | null): Promise<num
   const fim = new Date(
     Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 23, 59, 59),
   );
-  return prisma.payable.count({
-    where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fim } },
-  });
+  const [titulos, combos] = await Promise.all([
+    prisma.payable.count({
+      where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fim } },
+    }),
+    prisma.paymentCombo.count({
+      where: {
+        status: { notIn: ["PAGO", "CANCELADO"] },
+        pendingPaymentDate: { not: null, lte: fim },
+      },
+    }),
+  ]);
+  return titulos + combos;
 }
 
 /**

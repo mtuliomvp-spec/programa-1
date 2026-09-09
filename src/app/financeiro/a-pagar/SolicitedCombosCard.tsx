@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 import { payComboAction } from "../combos/actions";
 
 type Account = { id: string; name: string };
@@ -14,6 +14,11 @@ export type SolicitedCombo = {
   userName: string | null;
   count: number;
   total: number;
+  /**
+   * Pré-lançado: o comprovante do borderô já chegou (o dinheiro saiu do banco)
+   * e a baixa espera o movimento do caixa alcançar o dia, em Contas e caixas.
+   */
+  queued: { date: string; amount: number } | null;
 };
 
 /**
@@ -78,6 +83,14 @@ export default function SolicitedCombosCard({
                 {c.userName ? `Solicitado por ${c.userName} · ` : ""}
                 {c.count} {c.count === 1 ? "título" : "títulos"}
               </p>
+              {c.queued ? (
+                <p
+                  className="mt-0.5 text-xs font-medium text-amber-700"
+                  title="O comprovante já chegou. A baixa é confirmada em Contas e caixas, quando o movimento alcançar o dia do pagamento."
+                >
+                  ⏳ pré-lançado · {formatCurrency(c.queued.amount)} em {formatDate(c.queued.date)}
+                </p>
+              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <p className="text-base font-bold text-slate-900">{formatCurrency(c.total)}</p>

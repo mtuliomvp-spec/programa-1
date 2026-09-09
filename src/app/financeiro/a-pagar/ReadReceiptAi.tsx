@@ -6,6 +6,7 @@ import { Button, Input } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import { readPayableReceiptAction, type ReadReceiptResult } from "./actions";
+import { readComboReceiptAction } from "@/app/financeiro/combos/actions";
 
 /** Como o banco chama a operação, do jeito que se lê ("Pix", "TED"…). */
 function formaLabel(forma: string): string {
@@ -25,20 +26,25 @@ function dataBr(iso: string): string {
 
 /**
  * Lê o COMPROVANTE do pagamento: confere valor, data e a CONTA DEBITADA com o
- * título e põe o pagamento na fila de espera do caixa. Quando o movimento do
- * dia do pagamento for aberto, ele aparece pré-lançado em "Contas e caixas",
- * esperando só um ok para debitar de verdade.
+ * que está sendo pago e põe o pagamento na fila de espera do caixa. Quando o
+ * movimento do dia do pagamento for aberto, ele aparece pré-lançado em
+ * "Contas e caixas", esperando só um ok para debitar de verdade.
+ *
+ * Serve para o título avulso e para o COMBO (borderô), que é pago de uma vez
+ * só: lá o comprovante vale por todos os títulos e a fila recebe uma linha só.
  */
 export default function ReadReceiptAi({
-  payableId,
+  alvo,
   amountAtual,
   cashboxDate,
 }: {
-  payableId: string;
+  /** O que está sendo pago: um título do Contas a pagar ou um combo inteiro. */
+  alvo: { tipo: "titulo" | "combo"; id: string };
   amountAtual: number;
   /** Data do caixa aberto, para o aviso dizer se vai esperar ou já dá para dar o ok. */
   cashboxDate: string | null;
 }) {
+  const ehCombo = alvo.tipo === "combo";
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
@@ -54,10 +60,10 @@ export default function ReadReceiptAi({
     try {
       const prepared = await resizeImageToJpeg(file);
       const fd = new FormData();
-      fd.set("payableId", payableId);
+      fd.set(ehCombo ? "comboId" : "payableId", alvo.id);
       fd.set("file", prepared);
       if (senha) fd.set("senha", senha);
-      const res = await readPayableReceiptAction(fd);
+      const res = ehCombo ? await readComboReceiptAction(fd) : await readPayableReceiptAction(fd);
       setResult(res);
       if (res.attached) router.refresh();
       // Faltando a senha, o arquivo TEM de continuar escolhido: é ele que será
@@ -76,8 +82,10 @@ export default function ReadReceiptAi({
       <p className="text-sm font-semibold text-slate-800">🧾 Conferir o comprovante e pré-lançar</p>
       <p className="mt-0.5 text-xs text-slate-500">
         Anexe o comprovante do banco — boleto, Pix, TED, DOC ou transferência: a IA lê valor, data e a{" "}
-        <strong>conta debitada</strong>, confere com este título e deixa o pagamento na fila do caixa. Quando o movimento do dia do pagamento
-        for aberto, ele aparece pré-lançado em Contas e caixas esperando só um ok para debitar.
+        <strong>conta debitada</strong>, confere com {ehCombo ? "o total do combo" : "este título"} e deixa o pagamento
+        na fila do caixa. Quando o movimento do dia do pagamento for aberto, ele aparece pré-lançado
+        em Contas e caixas esperando só um ok para debitar
+        {ehCombo ? " todos os títulos do combo de uma vez" : ""}.
       </p>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -142,8 +150,8 @@ export default function ReadReceiptAi({
           ) : null}
           {result.valor != null && Math.abs(result.valor - amountAtual) > 0.005 ? (
             <p className="mt-1 text-xs font-medium text-amber-700">
-              ⚠ O título está em {formatCurrency(amountAtual)} — a baixa vai sair pelo valor do
-              comprovante, que é o que saiu do banco.
+              ⚠ {ehCombo ? "O combo soma" : "O título está em"} {formatCurrency(amountAtual)} — a
+              baixa vai sair pelo valor do comprovante, que é o que saiu do banco.
             </p>
           ) : null}
           {result.avisos?.length ? (
@@ -163,7 +171,8 @@ export default function ReadReceiptAi({
 
       {result?.ok && result.enfileirado === false ? (
         <p className="mt-3 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600">
-          Comprovante anexado. Este título já está pago — não há o que pré-lançar.
+          Comprovante anexado. {ehCombo ? "Este combo" : "Este título"} já está pago — não há o que
+          pré-lançar.
         </p>
       ) : null}
     </div>

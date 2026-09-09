@@ -237,6 +237,8 @@ model FinancialAccount {
   financedSales       Sale[]                 @relation("SaleFinancer")
   allocations         InvestmentAllocation[]
   paymentCombos       PaymentCombo[]
+  // Combos pré-lançados que vão debitar desta conta quando o caixa chegar no dia.
+  pendingCombos       PaymentCombo[]      @relation("ComboPendingPayment")
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
@@ -1269,10 +1271,42 @@ model PaymentCombo {
   accountId        String?
   account          FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)
   payables         Payable[]
+  // PRÉ-LANÇAMENTO do combo: o comprovante do borderô já chegou (o dinheiro
+  // saiu do banco), mas o movimento do caixa ainda não alcançou o dia do
+  // pagamento. Mesma ideia do título avulso — a diferença é que aqui a baixa é
+  // do combo inteiro, de uma vez, como ele é pago.
+  pendingPaymentDate      DateTime?
+  pendingPaymentAmount    Float?
+  pendingPaymentAccountId String?
+  pendingPaymentAccount   FinancialAccount? @relation("ComboPendingPayment", fields: [pendingPaymentAccountId], references: [id], onDelete: SetNull)
+  pendingPaymentNote      String?
+  attachments      ComboAttachment[]
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
 
   @@map("payment_combos")
+}
+
+/**
+ * Arquivo anexado ao combo — hoje, o COMPROVANTE do pagamento do borderô.
+ * O combo é pago de uma vez só, então o comprovante é um só para todos os
+ * títulos dele; ficar preso a um título qualquer esconderia isso.
+ */
+model ComboAttachment {
+  id          String       @id @default(cuid())
+  comboId     String
+  combo       PaymentCombo @relation(fields: [comboId], references: [id], onDelete: Cascade)
+  /// COMPROVANTE (um por combo) ou OUTRO.
+  kind        String       @default("COMPROVANTE")
+  description String
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime     @default(now())
+
+  @@index([comboId])
+  @@map("combo_attachments")
 }
 
 // Arquivo anexado a um título de contas a pagar (nota fiscal, comprovante…).

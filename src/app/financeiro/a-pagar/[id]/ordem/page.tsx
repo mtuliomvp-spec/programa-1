@@ -327,7 +327,7 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
           {canManage && payable.status !== "PAGO" ? (
             <div className="mb-3 print:hidden">
               <ReadReceiptAi
-                payableId={payable.id}
+                alvo={{ tipo: "titulo", id: payable.id }}
                 amountAtual={payable.amount}
                 cashboxDate={cashboxWorkDate ? cashboxWorkDate.toISOString() : null}
               />

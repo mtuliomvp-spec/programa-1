@@ -91,14 +91,23 @@ export default function PaymentQueueCard({
               />
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-slate-900">
-                  <Link href={`/financeiro/a-pagar/${r.id}/ordem`} className="text-blue-700 hover:underline">
-                    {String(r.orderNumber).padStart(4, "0")} · {r.description}
+                  <Link href={r.href} className="text-blue-700 hover:underline">
+                    {r.kind === "combo"
+                      ? `🧺 ${r.description} · ${r.titulos} título${r.titulos === 1 ? "" : "s"}`
+                      : `${String(r.orderNumber).padStart(4, "0")} · ${r.description}`}
                   </Link>
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
                   {r.supplierName ? `${r.supplierName} · ` : ""}
-                  comprovante de {formatDate(r.paidAt)} · vencia em {formatDate(r.dueDate)}
+                  comprovante de {formatDate(r.paidAt)} ·{" "}
+                  {r.kind === "combo" ? "mais antigo vencia em " : "vencia em "}
+                  {formatDate(r.dueDate)}
                 </p>
+                {r.kind === "combo" ? (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    O ok baixa os {r.titulos} títulos do combo de uma vez.
+                  </p>
+                ) : null}
                 {r.note ? (
                   <p className="mt-1 text-xs font-medium text-amber-700">⚠ {r.note}</p>
                 ) : null}
@@ -127,7 +136,9 @@ export default function PaymentQueueCard({
               <div className="text-right">
                 <p className="font-semibold tabular-nums text-rose-600">{formatCurrency(r.amount)}</p>
                 {Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
-                  <p className="text-[11px] text-slate-400">título {formatCurrency(r.tituloAmount)}</p>
+                  <p className="text-[11px] text-slate-400">
+                    {r.kind === "combo" ? "combo" : "título"} {formatCurrency(r.tituloAmount)}
+                  </p>
                 ) : null}
                 <button
                   type="button"

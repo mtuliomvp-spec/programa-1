@@ -94,7 +94,18 @@ export default async function ContasAPagarPage({
           account: { select: { name: true } },
           beneficiaryUser: { select: { id: true, name: true } },
           capitalBeneficiary: { select: { id: true, name: true } },
-          paymentCombo: { select: { id: true, name: true, status: true, user: { select: { name: true } } } },
+          paymentCombo: {
+            select: {
+              id: true,
+              name: true,
+              status: true,
+              user: { select: { name: true } },
+              // Pré-lançado: o comprovante do borderô já chegou e o combo
+              // espera o movimento do caixa alcançar o dia do pagamento.
+              pendingPaymentDate: true,
+              pendingPaymentAmount: true,
+            },
+          },
           _count: { select: { attachments: true } },
           purchaseRequest: { select: { _count: { select: { attachments: true } } } },
         },
@@ -129,6 +140,12 @@ export default async function ContasAPagarPage({
       userName: combo.user?.name ?? null,
       count: 0,
       total: 0,
+      queued: combo.pendingPaymentDate
+        ? {
+            date: combo.pendingPaymentDate.toISOString(),
+            amount: combo.pendingPaymentAmount ?? 0,
+          }
+        : null,
     };
     entry.count += 1;
     entry.total = Math.round((entry.total + p.amount) * 100) / 100;

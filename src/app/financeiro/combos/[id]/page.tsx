@@ -13,6 +13,8 @@ import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
 import PayFullToggle from "./PayFullToggle";
 import PayoutMethodPicker from "./PayoutMethodPicker";
+import ComboReceipt from "./ComboReceipt";
+import ReadReceiptAi from "../../a-pagar/ReadReceiptAi";
 
 export const dynamic = "force-dynamic";
 
@@ -42,9 +44,17 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
     include: {
       user: { select: { name: true, document: true, phone: true, email: true, bankName: true, bankAgency: true, bankAccount: true, bankAccountType: true, pixKey: true, pixKeyType: true } },
       account: { select: { name: true } },
+      pendingPaymentAccount: { select: { name: true } },
       payables: {
         orderBy: { dueDate: "asc" },
         include: { supplier: { select: { name: true } }, beneficiaryUser: { select: { name: true } } },
+      },
+      // Só os METADADOS: os BYTES do comprovante iriam inteiros para o
+      // navegador. O arquivo é servido por /financeiro/combos/anexos/[id].
+      attachments: {
+        where: { kind: "COMPROVANTE" },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, filename: true, size: true, createdAt: true },
       },
     },
   });
@@ -99,6 +109,10 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   // Títulos disponíveis para adicionar (enquanto o combo não foi pago):
   // pendentes/atrasados, não pagos e ainda sem combo.
   const comboEditavel = combo.status === "ABERTO" || combo.status === "SOLICITADO";
+  // Comprovante do borderô: quem monta ou quem paga pode anexar, enquanto o
+  // combo não estiver cancelado (no pago, o arquivo fica como documento).
+  const comprovante = combo.attachments[0] ?? null;
+  const podeComprovante = (canManage || canPagar) && combo.status !== "CANCELADO";
   const available =
     comboEditavel
       ? (
@@ -299,6 +313,48 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             </p>
           ) : null}
         </main>
+
+        {/*
+          Comprovante do BORDERÔ: o combo é pago de uma vez só, então o
+          comprovante é um só para todos os títulos. Lido aqui, o combo entra na
+          fila de espera do caixa como uma linha só — e aparece em Contas e
+          caixas junto com os títulos avulsos já pagos.
+        */}
+        {podeComprovante ? (
+          <section className="print:hidden mt-4 border-t border-slate-200 pt-4">
+            {comprovante ? (
+              <>
+                <p className="text-sm font-semibold text-slate-800">🧾 Comprovante do combo</p>
+                <p className="mt-0.5 text-xs text-slate-500">
+                  {combo.pendingPaymentDate
+                    ? `Pré-lançado: pago em ${formatDate(combo.pendingPaymentDate)}${
+                        combo.pendingPaymentAccount?.name ? ` · debita em ${combo.pendingPaymentAccount.name}` : ""
+                      }. O ok para debitar fica em Contas e caixas, quando o movimento chegar nesse dia.`
+                    : "Anexado ao combo."}
+                </p>
+                {combo.pendingPaymentNote ? (
+                  <p className="mt-1 text-xs font-medium text-amber-700">⚠ {combo.pendingPaymentNote}</p>
+                ) : null}
+                <ComboReceipt
+                  comboId={combo.id}
+                  anexo={{
+                    id: comprovante.id,
+                    filename: comprovante.filename,
+                    size: comprovante.size,
+                    createdAt: comprovante.createdAt.toISOString(),
+                  }}
+                  podeRemover={canManage || canPagar}
+                />
+              </>
+            ) : (
+              <ReadReceiptAi
+                alvo={{ tipo: "combo", id: combo.id }}
+                amountAtual={total}
+                cashboxDate={cashbox.open && cashbox.session ? cashbox.session.workDate.toISOString() : null}
+              />
+            )}
+          </section>
+        ) : null}
 
         <ComboActions
           comboId={combo.id}

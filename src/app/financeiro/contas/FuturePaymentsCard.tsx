@@ -75,17 +75,17 @@ export default function FuturePaymentsCard({
                     <li key={p.id} className="flex flex-wrap items-start gap-3 px-5 py-2.5">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium text-slate-900">
-                          <Link
-                            href={`/financeiro/a-pagar/${p.id}/ordem`}
-                            className="text-blue-700 hover:underline"
-                          >
-                            {String(p.orderNumber).padStart(4, "0")} · {p.description}
+                          <Link href={p.href} className="text-blue-700 hover:underline">
+                            {p.kind === "combo"
+                              ? `🧺 ${p.description} · ${p.titulos} título${p.titulos === 1 ? "" : "s"}`
+                              : `${String(p.orderNumber).padStart(4, "0")} · ${p.description}`}
                           </Link>
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
                           {p.supplierName ? `${p.supplierName} · ` : ""}
                           {p.accountName ? `debita em ${p.accountName}` : "conta a escolher no ok"}
-                          {" · vencia em "}
+                          {" · "}
+                          {p.kind === "combo" ? "mais antigo vencia em " : "vencia em "}
                           {formatDate(p.dueDate)}
                         </p>
                         {p.note ? (
@@ -98,7 +98,7 @@ export default function FuturePaymentsCard({
                         </p>
                         {Math.abs(p.amount - p.tituloAmount) > 0.005 ? (
                           <p className="text-[11px] text-slate-400">
-                            título {formatCurrency(p.tituloAmount)}
+                            {p.kind === "combo" ? "combo" : "título"} {formatCurrency(p.tituloAmount)}
                           </p>
                         ) : null}
                       </div>
