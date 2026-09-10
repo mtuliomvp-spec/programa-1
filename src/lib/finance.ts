@@ -828,8 +828,12 @@ export async function addPartStockWithPayable(input: {
         ? `${textoUsuario} (${input.quantity} un.)`
         : `${textoUsuario} — ${part.name} (${input.quantity} un.)`
       : `Reposição de estoque: ${part.name} (${input.quantity} un.)`;
+    // O id do título volta para quem chamou: é ele que o movimento de caixa
+    // põe na fila quando a compra é lançada em dia que o caixa ainda não
+    // alcançou (o estoque entra agora, o pagamento espera o ok).
+    let payableId: string | null = null;
     if (totalCost > 0) {
-      await tx.payable.create({
+      const titulo = await tx.payable.create({
         data: {
           description: descricao,
           documentNumber: input.documentNumber || null,
@@ -846,9 +850,10 @@ export async function addPartStockWithPayable(input: {
           costCenterId: pecasCenterId,
         },
       });
+      payableId = titulo.id;
     }
 
-    return part;
+    return { part, payableId };
   });
 }
 
@@ -1933,9 +1938,17 @@ export async function registerPartSale(input: {
   /** Conta em que o dinheiro entra — obrigatória na venda à vista. */
   accountId?: string | null;
   notes?: string | null;
+  /**
+   * Venda à vista PRÉ-LANÇADA: o dinheiro já entrou no banco, mas o movimento
+   * de caixa ainda não alcançou o dia. O título nasce PENDENTE e quem chamou o
+   * põe na fila — a baixa sai com o ok, no caixa daquele dia.
+   */
+  pending?: boolean;
 }) {
   const contaRecebimento =
-    input.paymentMethod === "A_VISTA" ? input.accountId || (await getDefaultAccountId()) : null;
+    input.paymentMethod === "A_VISTA" && !input.pending
+      ? input.accountId || (await getDefaultAccountId())
+      : null;
   const pecasCenterId = await structuralCenterId("PECAS");
   return prisma.$transaction(async (tx) => {
     const part = await tx.part.findUniqueOrThrow({ where: { id: input.partId } });
@@ -1994,11 +2007,17 @@ export async function registerPartSale(input: {
         category: "VENDA_PECA",
         amount: totalAmount,
         dueDate: input.saleDate,
-        receivedDate: input.saleDate,
-        status: "RECEBIDO",
         customerId: input.customerId || null,
         partSaleId: partSale.id,
-        accountId: contaRecebimento,
+        // Pré-lançada: fica PENDENTE esperando o caixa do dia — a conta e a
+        // data do recebimento entram na baixa, com o ok.
+        ...(input.pending
+          ? { status: "PENDENTE" as const }
+          : {
+              receivedDate: input.saleDate,
+              status: "RECEBIDO" as const,
+              accountId: contaRecebimento,
+            }),
       });
     } else {
       receivablesData.push({
@@ -2016,7 +2035,16 @@ export async function registerPartSale(input: {
       data: receivablesData.map((r) => ({ ...r, costCenterId: pecasCenterId })),
     });
 
-    return partSale;
+    // Só a venda pré-lançada precisa do id de volta (é ela que vai para a fila
+    // do caixa); nas demais o título não é manipulado por quem chamou.
+    const pendente = input.pending
+      ? await tx.receivable.findFirst({
+          where: { partSaleId: partSale.id },
+          select: { id: true },
+        })
+      : null;
+
+    return { ...partSale, receivableId: pendente?.id ?? null };
   });
 }
 
@@ -3303,6 +3331,13 @@ export async function createCashEntry(input: {
   customerId?: string | null;
   capitalBeneficiaryId?: string | null;
   notes?: string | null;
+  /**
+   * PRÉ-LANÇAMENTO: o dinheiro já passou pelo banco, mas o movimento de caixa
+   * ainda não alcançou o dia. O título nasce PENDENTE — sem conta e sem data de
+   * baixa — e quem chamou o põe na fila do caixa; o capital do beneficiário
+   * (aporte/retirada) também só se move na baixa, como em qualquer título.
+   */
+  pending?: boolean;
 }) {
   if (input.kind === "entrada") {
     const centerId = input.vehicleId
@@ -3323,9 +3358,9 @@ export async function createCashEntry(input: {
           categoryLabel: input.categoryLabel || null,
           amount: input.amount,
           dueDate: input.date,
-          receivedDate: input.date,
-          status: "RECEBIDO",
-          accountId: input.accountId,
+          ...(input.pending
+            ? { status: "PENDENTE" as const }
+            : { receivedDate: input.date, status: "RECEBIDO" as const, accountId: input.accountId }),
           costCenterId: centerId,
           vehicleId: input.vehicleId || null,
           customerId: input.customerId || null,
@@ -3336,8 +3371,9 @@ export async function createCashEntry(input: {
       });
       // Aporte de capital: registra a movimentação do beneficiário. As
       // observações do lançamento entram na descrição (a tabela do capital
-      // mostra a descrição), para não se perderem.
-      if (input.capitalBeneficiaryId) {
+      // mostra a descrição), para não se perderem. No pré-lançamento o aporte
+      // fica para a baixa (syncReceivableCapital), como em qualquer título.
+      if (input.capitalBeneficiaryId && !input.pending) {
         await tx.capitalTransaction.create({
           data: {
             beneficiaryId: input.capitalBeneficiaryId,
@@ -3360,9 +3396,9 @@ export async function createCashEntry(input: {
     documentNumber: input.documentNumber || null,
     amount: input.amount,
     dueDate: input.date,
-    paid: true,
-    paymentDate: input.date,
-    accountId: input.accountId,
+    paid: !input.pending,
+    ...(input.pending ? {} : { paymentDate: input.date }),
+    accountId: input.pending ? null : input.accountId,
     supplierId: input.supplierId || null,
     vehicleId: input.vehicleId || null,
     capitalBeneficiaryId: input.capitalBeneficiaryId || null,

@@ -11,7 +11,7 @@ import {
 } from "@/lib/finance";
 import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen, assertCashDateIsWorkDate } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxState } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
@@ -37,7 +37,41 @@ const schema = z.object({
   notes: z.string().optional(),
 });
 
-export type CashEntryState = { error?: string; ok?: boolean };
+export type CashEntryState = {
+  error?: string;
+  ok?: boolean;
+  /** O lançamento foi para a FILA do caixa (data fora do movimento aberto). */
+  preLancado?: boolean;
+  /** Data (dd/mm/aaaa) em que ele espera o caixa. */
+  quando?: string;
+};
+
+/** Comprovante anexado ao lançamento (opcional): 15 MB, como no resto. */
+const MAX_ANEXO = 15 * 1024 * 1024;
+
+async function anexarComprovante(
+  file: unknown,
+  alvo: { payableId?: string | null; receivableId?: string | null },
+) {
+  if (!(file instanceof File) || file.size === 0) return;
+  if (file.size > MAX_ANEXO) return;
+  const data = Buffer.from(await file.arrayBuffer());
+  const comum = {
+    kind: "COMPROVANTE",
+    description: "Comprovante de pagamento",
+    filename: file.name || "comprovante",
+    mimeType: file.type || "application/octet-stream",
+    size: data.byteLength,
+    data,
+  };
+  if (alvo.payableId) {
+    await prisma.payableAttachment.create({ data: { payableId: alvo.payableId, ...comum } });
+  } else if (alvo.receivableId) {
+    await prisma.receivableAttachment.create({
+      data: { receivableId: alvo.receivableId, ...comum, description: "Comprovante do recebimento" },
+    });
+  }
+}
 
 export async function createCashEntryAction(
   _prev: CashEntryState,
@@ -46,19 +80,42 @@ export async function createCashEntryAction(
   try {
     await assertCan("financeiro", "criar");
     await assertBooksBalanced();
-    await assertCashboxOpen();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const d = parsed.data;
+  const dataLancamento = parseDateInput(d.date);
   try {
-    await assertCashDateIsWorkDate(parseDateInput(d.date));
-    await assertMonthOpen(parseDateInput(d.date));
+    await assertMonthOpen(dataLancamento);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Mês fechado." };
   }
+
+  /*
+   * Data fora do movimento aberto = PRÉ-LANÇAMENTO.
+   *
+   * Todo lançamento tem a data do caixa aberto — é a trava que mantém caixa e
+   * extrato conversando. Mas o dinheiro não espera o caixa: paga-se um boleto
+   * hoje com o movimento ainda no dia 08. Antes isso era um erro ("ajuste a
+   * data ou abra o caixa"); agora o lançamento nasce PENDENTE e vai para a
+   * fila, igual ao título a pagar com comprovante — quando o movimento chegar
+   * naquele dia, ele aparece pronto em Contas e caixas para o ok.
+   */
+  const { session } = await getCashboxState();
+  const workDate = session && !session.closedAt ? session.workDate : null;
+  const preLancar =
+    !workDate || workDate.toISOString().slice(0, 10) !== dataLancamento.toISOString().slice(0, 10);
+  if (!preLancar) {
+    try {
+      await assertCashboxOpen();
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Caixa fechado." };
+    }
+  }
+  const quando = dataLancamento.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  const filaOk = { ok: true, preLancado: preLancar, quando } as const;
 
   const label = (d.categoryLabel || "").trim();
   const isCapital = d.structuralKey === "CAPITAL";
@@ -106,33 +163,59 @@ export async function createCashEntryAction(
     const unitario = d.amount / quantidade;
 
     try {
+      // O ESTOQUE se move agora nos dois casos (a peça entrou ou saiu de
+      // verdade); o que espera o caixa, no pré-lançamento, é só o dinheiro.
       if (d.kind === "saida") {
-        await addPartStockWithPayable({
+        const { payableId } = await addPartStockWithPayable({
           partId,
           quantity: quantidade,
           costPrice: unitario,
           supplierId: supplierName ? await resolveSupplierByName(supplierName) : null,
-          alreadyPaid: true,
+          alreadyPaid: !preLancar,
           accountId: d.accountId,
-          date: parseDateInput(d.date),
+          dueDate: dataLancamento,
+          date: dataLancamento,
           description: d.description,
           documentNumber: d.documentNumber?.trim() || null,
           notes: d.notes || null,
         });
+        await anexarComprovante(formData.get("file"), { payableId });
+        if (preLancar && payableId) {
+          const { enfileirarPagamento } = await import("@/lib/payment-queue");
+          await enfileirarPagamento({
+            payableId,
+            data: dataLancamento,
+            valor: d.amount,
+            accountId: d.accountId,
+            nota: null,
+          });
+        }
       } else {
         if (peca.quantity < quantidade) {
           return { error: `Estoque insuficiente de "${peca.name}". Disponível: ${peca.quantity}.` };
         }
-        await registerPartSale({
+        const venda = await registerPartSale({
           partId,
           customerId: d.customerId || null,
           quantity: quantidade,
           unitPrice: unitario,
-          saleDate: parseDateInput(d.date),
+          saleDate: dataLancamento,
           paymentMethod: "A_VISTA",
           accountId: d.accountId,
           notes: d.notes || d.description || null,
+          pending: preLancar,
         });
+        await anexarComprovante(formData.get("file"), { receivableId: venda.receivableId });
+        if (preLancar && venda.receivableId) {
+          const { enfileirarRecebimento } = await import("@/lib/payment-queue");
+          await enfileirarRecebimento({
+            receivableId: venda.receivableId,
+            data: dataLancamento,
+            valor: d.amount,
+            accountId: d.accountId,
+            nota: null,
+          });
+        }
       }
     } catch (e) {
       return { error: e instanceof Error ? e.message : "Não foi possível lançar a peça." };
@@ -145,7 +228,7 @@ export async function createCashEntryAction(
     revalidatePath("/financeiro/a-pagar");
     revalidatePath("/financeiro/a-receber");
     revalidatePath("/");
-    return { ok: true };
+    return filaOk;
   }
 
   // Resolve a categoria (rótulo canônico; cria custom se nova). Na SAÍDA o
@@ -163,11 +246,11 @@ export async function createCashEntryAction(
   const supplierId =
     d.kind === "saida" && supplierName ? await resolveSupplierByName(supplierName) : null;
 
-  await createCashEntry({
+  const criado = await createCashEntry({
     kind: d.kind,
     description: d.description,
     amount: d.amount,
-    date: parseDateInput(d.date),
+    date: dataLancamento,
     accountId: d.accountId,
     category: d.kind === "saida" ? catDespesa?.category ?? "OUTROS" : undefined,
     categoryLabel,
@@ -178,7 +261,36 @@ export async function createCashEntryAction(
     customerId: d.kind === "entrada" ? d.customerId || null : null,
     capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
+    pending: preLancar,
   });
+
+  await anexarComprovante(
+    formData.get("file"),
+    d.kind === "saida" ? { payableId: criado.id } : { receivableId: criado.id },
+  );
+
+  // Pré-lançado: entra na fila do caixa daquele dia, esperando o ok — é o
+  // mesmo lugar em que caem os títulos pagos antes de o movimento chegar.
+  if (preLancar) {
+    const { enfileirarPagamento, enfileirarRecebimento } = await import("@/lib/payment-queue");
+    if (d.kind === "saida") {
+      await enfileirarPagamento({
+        payableId: criado.id,
+        data: dataLancamento,
+        valor: d.amount,
+        accountId: d.accountId,
+        nota: null,
+      });
+    } else {
+      await enfileirarRecebimento({
+        receivableId: criado.id,
+        data: dataLancamento,
+        valor: d.amount,
+        accountId: d.accountId,
+        nota: null,
+      });
+    }
+  }
 
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/contas");
@@ -187,7 +299,7 @@ export async function createCashEntryAction(
   revalidatePath("/estoque");
   revalidatePath("/capital");
   revalidatePath("/");
-  return { ok: true };
+  return filaOk;
 }
 
 export async function deleteCashEntryAction(kind: "entrada" | "saida", id: string) {
