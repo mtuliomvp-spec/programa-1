@@ -10,8 +10,14 @@ import SupplierInput from "@/components/SupplierInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import NewCustomerInline from "@/components/NewCustomerInline";
 import SearchSelect from "@/components/SearchSelect";
+import { resizeImageToJpeg } from "@/lib/image-resize";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
-import { createCashEntryAction, type CashEntryState } from "./actions";
+import {
+  createCashEntryAction,
+  lerComprovanteCaixaAction,
+  type CashEntryState,
+  type LeituraComprovante,
+} from "./actions";
 
 type Account = { id: string; name: string };
 type Vehicle = { id: string; label: string; capitalName?: string | null };
@@ -69,6 +75,14 @@ export default function CashEntryForm({
   // Data do lançamento: fora da data do caixa aberto ele vira pré-lançamento.
   const [date, setDate] = useState(defaultDate);
   const preLancar = !cashboxDate || cashboxDate !== date;
+  // Conta e valor viram controlados porque a leitura do comprovante os preenche.
+  const [accountId, setAccountId] = useState(preselectedAccountId || accounts[0]?.id || "");
+  const [amountSeed, setAmountSeed] = useState<number | null>(null);
+  // Leitura do comprovante pela IA (valor, data, conta, quem recebeu).
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [lendo, setLendo] = useState(false);
+  const [leitura, setLeitura] = useState<LeituraComprovante | null>(null);
+  const [senha, setSenha] = useState("");
   const lastAutoDesc = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -91,6 +105,39 @@ export default function CashEntryForm({
     lastAutoDesc.current = auto;
   }, [isSinal, vehicleId, vehicles]);
 
+  /**
+   * Comprovante anexado: a IA lê e o formulário se preenche sozinho — valor,
+   * data, conta debitada e quem recebeu. A DESCRIÇÃO vem só como sugestão e o
+   * FLUXO não é adivinhado: o comprovante diz o que o banco fez, não a que
+   * obra da loja aquilo pertence.
+   */
+  async function lerComprovante() {
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    setLeitura(null);
+    setLendo(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", await resizeImageToJpeg(file));
+      if (senha) fd.set("senha", senha);
+      const r = await lerComprovanteCaixaAction(fd);
+      setLeitura(r);
+      if (!r.ok) return;
+      if (r.valor != null && r.valor > 0) {
+        setAmount(r.valor);
+        setAmountSeed(r.valor);
+        setAmountKey((k) => k + 1);
+      }
+      if (r.data) setDate(r.data);
+      // A conta lida é a DEBITADA: só vale quando o dinheiro saiu.
+      if (r.accountId && kind === "saida") setAccountId(r.accountId);
+      if (r.beneficiario && kind === "saida") setSupplierName(r.beneficiario);
+      if (r.descricao) setDescription(r.descricao);
+    } finally {
+      setLendo(false);
+    }
+  }
+
   const [state, formAction, pending] = useActionState(
     async (prev: CashEntryState, formData: FormData) => {
       const result = await createCashEntryAction(prev, formData);
@@ -110,6 +157,9 @@ export default function CashEntryForm({
         setDescription("");
         setCustomerId("");
         setNewCustomer(false);
+        setAmountSeed(null);
+        setLeitura(null);
+        setSenha("");
         lastAutoDesc.current = "";
       }
       return result;
@@ -197,6 +247,60 @@ export default function CashEntryForm({
           </label>
         </div>
 
+        {/* O comprovante do banco fica anexado ao lançamento — é a prova de
+            que o dinheiro passou, principalmente no pré-lançamento — e, ao ser
+            anexado, a IA já preenche o que dá para preencher. */}
+        <Field label="Comprovante (opcional)">
+          <input
+            ref={fileRef}
+            type="file"
+            name="file"
+            accept="image/*,application/pdf,.pdf"
+            onChange={() => {
+              setSenha("");
+              void lerComprovante();
+            }}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
+          />
+          {lendo ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Lendo o comprovante — costuma levar alguns segundos…
+            </p>
+          ) : null}
+          {leitura?.ok ? (
+            <p className="mt-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+              ✓ Li o comprovante: {leitura.valor != null ? formatCurrency(leitura.valor) : "valor"}
+              {leitura.data ? ` em ${formatDate(leitura.data)}` : ""}
+              {leitura.beneficiario ? ` · pago a ${leitura.beneficiario}` : ""}. Confira a{" "}
+              <strong>descrição</strong> e escolha o <strong>fluxo</strong> — o resto já está
+              preenchido.
+            </p>
+          ) : null}
+          {leitura && !leitura.ok ? (
+            <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              ⚠️ {leitura.error} O arquivo continua anexado: dá para preencher à mão e lançar.
+            </p>
+          ) : null}
+          {leitura?.senhaNecessaria ? (
+            <div className="mt-2 flex flex-wrap items-end gap-2">
+              <label className="text-xs font-medium text-slate-600">
+                Senha do documento
+                <Input
+                  type="password"
+                  value={senha}
+                  onChange={(e) => setSenha(e.target.value)}
+                  placeholder="Ex.: CPF/CNPJ do titular"
+                  className="mt-1 max-w-xs"
+                  autoComplete="off"
+                />
+              </label>
+              <Button type="button" onClick={lerComprovante} disabled={lendo || !senha}>
+                {lendo ? "Abrindo…" : "Ler com a senha"}
+              </Button>
+            </div>
+          ) : null}
+        </Field>
+
         <Field label="Descrição" required>
           <Input
             name="description"
@@ -209,7 +313,15 @@ export default function CashEntryForm({
 
         <div className="grid grid-cols-2 gap-3">
           <Field label="Valor (R$)" required>
-            <MoneyInput key={amountKey} name="amount" required onValueChange={setAmount} />
+            {/* key: remonta com o valor lido do comprovante (o campo guarda o
+                texto formatado em estado próprio). */}
+            <MoneyInput
+              key={amountKey}
+              name="amount"
+              required
+              defaultValue={amountSeed}
+              onValueChange={setAmount}
+            />
           </Field>
           {/*
             A data é livre: fora do dia do caixa aberto o lançamento não é
@@ -243,13 +355,23 @@ export default function CashEntryForm({
         </Field>
 
         <Field label="Conta" required>
-          <Select name="accountId" defaultValue={preselectedAccountId || accounts[0]?.id} required>
+          <Select
+            name="accountId"
+            value={accountId}
+            onChange={(e) => setAccountId(e.target.value)}
+            required
+          >
             {accounts.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.name}
               </option>
             ))}
           </Select>
+          {leitura?.ok && leitura.accountName && kind === "saida" ? (
+            <p className="mt-1 text-xs text-slate-500">
+              Conta do comprovante: <strong>{leitura.accountName}</strong>
+            </p>
+          ) : null}
         </Field>
 
         <Field label="Fluxo (obra estrutural)">
@@ -516,17 +638,6 @@ export default function CashEntryForm({
 
         <Field label="Observações">
           <Textarea name="notes" rows={2} />
-        </Field>
-
-        {/* O comprovante do banco fica anexado ao lançamento — é a prova de
-            que o dinheiro passou, principalmente no pré-lançamento. */}
-        <Field label="Comprovante (opcional)">
-          <input
-            type="file"
-            name="file"
-            accept="image/*,application/pdf,.pdf"
-            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
-          />
         </Field>
 
         <Button type="submit" disabled={pending} className="w-full">

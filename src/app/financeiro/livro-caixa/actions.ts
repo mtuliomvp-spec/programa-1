@@ -73,6 +73,97 @@ async function anexarComprovante(
   }
 }
 
+export type LeituraComprovante = {
+  ok: boolean;
+  error?: string;
+  /** O PDF pede senha de abertura: a tela pede a senha e reenvia o arquivo. */
+  senhaNecessaria?: boolean;
+  /** Valor pago/recebido. */
+  valor?: number | null;
+  /** Data do comprovante (yyyy-mm-dd, para o campo de data). */
+  data?: string | null;
+  /** Conta cadastrada reconhecida como a DEBITADA (só serve na saída). */
+  accountId?: string | null;
+  accountName?: string | null;
+  /** Quem recebeu — vira o fornecedor sugerido. */
+  beneficiario?: string | null;
+  /** Descrição sugerida (o usuário ajusta). */
+  descricao?: string | null;
+  /** PIX, TED, DOC, TRANSFERENCIA, BOLETO… */
+  formaPagamento?: string | null;
+};
+
+/**
+ * Lê o COMPROVANTE anexado no formulário e devolve o que dá para preencher
+ * sozinho: valor, data, conta debitada, quem recebeu e uma descrição.
+ *
+ * Não grava nada — quem grava é o lançamento, quando o usuário confirmar. A
+ * descrição e o fluxo continuam com ele: o comprovante diz o que o banco fez,
+ * não a que obra da loja aquilo pertence.
+ */
+export async function lerComprovanteCaixaAction(formData: FormData): Promise<LeituraComprovante> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Anexe o comprovante." };
+  if (file.size > MAX_ANEXO) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+
+  let buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema ler.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
+  let lido;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não consegui ler este comprovante." };
+  }
+  if (!lido) {
+    return { ok: false, error: "Não achei um comprovante neste arquivo. Confira se é o documento certo." };
+  }
+
+  const { contaDoComprovante } = await import("@/lib/payment-queue");
+  const accountId = await contaDoComprovante(lido);
+  const conta = accountId
+    ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
+    : null;
+
+  return {
+    ok: true,
+    valor: lido.valor ?? null,
+    data: lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null,
+    accountId,
+    accountName: conta?.name ?? null,
+    beneficiario: lido.beneficiario ?? null,
+    descricao: (lido.descricao || lido.beneficiario || "").trim() || null,
+    formaPagamento: lido.formaPagamento ?? null,
+  };
+}
+
 export async function createCashEntryAction(
   _prev: CashEntryState,
   formData: FormData,
