@@ -48,6 +48,11 @@ const PRESETS: { key: string; label: string; permissions: string[] }[] = [
       "financeiro.corrigirdata",
       "financeiro.contas",
       "financeiro.conciliar",
+      // Os botões de arquivo do Contas a pagar: quem cuida do financeiro
+      // importa o lote do banco e as NFs do fornecedor no dia a dia.
+      "financeiro.importarcomprovantes",
+      "financeiro.importarnf",
+      "financeiro.contratolocacao",
       "compras.visualizar",
     ],
   },

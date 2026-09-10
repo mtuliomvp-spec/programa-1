@@ -394,16 +394,27 @@ export default async function ContasAPagarPage({
         title="Contas a pagar"
         description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}`}
         action={
-          <Can module="financeiro" action="criar">
-            <div className="flex flex-wrap gap-2">
+          /*
+            Cada botão de arquivo tem a sua permissão: importar o lote do
+            banco, importar NFs do fornecedor e gerar as parcelas do contrato
+            de locação são decisões separadas de "lançar uma conta".
+          */
+          <div className="flex flex-wrap gap-2">
+            <Can module="financeiro" action="importarcomprovantes">
               <ImportReceiptsButton />
+            </Can>
+            <Can module="financeiro" action="importarnf">
               <ImportDuplicatasButton />
+            </Can>
+            <Can module="financeiro" action="contratolocacao">
               <LinkButton href="/financeiro/a-pagar/contrato-locacao" variant="secondary">
                 🏠 Contrato de locação
               </LinkButton>
+            </Can>
+            <Can module="financeiro" action="criar">
               <LinkButton href="/financeiro/a-pagar/novo">+ Nova conta</LinkButton>
-            </div>
-          </Can>
+            </Can>
+          </div>
         }
       />
 

@@ -108,6 +108,12 @@ export const MODULES: ModuleConfig[] = [
       { acao: "corrigirdata", label: "Corrigir data de um pagamento/recebimento já feito" },
       { acao: "contas", label: "Gerenciar contas/transferências" },
       { acao: "conciliar", label: "Conciliação bancária" },
+      // Os três botões de ARQUIVO do Contas a pagar. Ficam fora do "lançar"
+      // porque cada um traz documento de fora e lança em lote: quem digita um
+      // título não necessariamente pode importar o lote do banco.
+      { acao: "importarcomprovantes", label: "Importar comprovantes (lote do banco)" },
+      { acao: "importarnf", label: "Importar NFs/duplicatas do fornecedor" },
+      { acao: "contratolocacao", label: "Contrato de locação (gerar as parcelas)" },
       { acao: "fechar", label: "Fechamento mensal (fechar mês)" },
       { acao: "reabrir", label: "Fechamento mensal (reabrir mês)" },
     ],
