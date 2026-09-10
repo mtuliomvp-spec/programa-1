@@ -3509,11 +3509,13 @@ export async function createManualReceivable(input: {
   customerId?: string | null;
   costCenterId?: string | null;
   structuralKey?: StructuralKey;
+  /** Sócio do capital: no fluxo CAPITAL, é dele o aporte gerado na baixa. */
+  capitalBeneficiaryId?: string | null;
   notes?: string | null;
   alreadyReceived: boolean;
 }) {
   const defaultAccountId = input.alreadyReceived ? await getDefaultAccountId() : null;
-  return prisma.receivable.create({
+  const criado = await prisma.receivable.create({
     data: {
       description: input.description,
       category: "OUTROS",
@@ -3522,6 +3524,7 @@ export async function createManualReceivable(input: {
       receivedDate: input.alreadyReceived ? input.dueDate : null,
       status: input.alreadyReceived ? "RECEBIDO" : "PENDENTE",
       customerId: input.customerId || null,
+      capitalBeneficiaryId: input.capitalBeneficiaryId || null,
       // Conta a receber manual não tem veículo — "Veículos" vira Administrativo.
       costCenterId:
         input.costCenterId ||
@@ -3530,6 +3533,13 @@ export async function createManualReceivable(input: {
       notes: input.notes || null,
     },
   });
+  // Nascendo já RECEBIDO, o título pula a baixa — e com ela o lançamento de
+  // capital do sócio. Sem isto, um aporte marcado como "já recebido" entrava
+  // no caixa sem entrar no capital de ninguém.
+  if (input.alreadyReceived && criado.capitalBeneficiaryId) {
+    await syncReceivableCapital(criado.id);
+  }
+  return criado;
 }
 
 /**

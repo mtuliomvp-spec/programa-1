@@ -594,20 +594,62 @@ export async function confirmQueuedPaymentsAction(
     return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
   }
 
-  const { prepararBaixaDaFila, desenfileirarPagamento, desenfileirarCombo } = await import(
-    "@/lib/payment-queue"
-  );
+  const {
+    prepararBaixaDaFila,
+    desenfileirarPagamento,
+    desenfileirarCombo,
+    desenfileirarRecebimento,
+  } = await import("@/lib/payment-queue");
   const { payComboAction } = await import("@/app/financeiro/combos/actions");
+  const { receiveReceivable } = await import("@/lib/finance");
   let paid = 0;
   for (const id of ids) {
     const p = await prisma.payable.findUnique({
       where: { id },
       select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
     });
-    // A fila mistura títulos avulsos e COMBOS: o id que não é de título é de
-    // combo (ids são cuid, não se cruzam). O combo é pago de uma vez só, pelo
-    // mesmo caminho do botão "Pagar combo" — os títulos dele saem juntos.
+    // A fila mistura títulos avulsos, COMBOS e RECEBIMENTOS: o id que não é de
+    // título a pagar é de um dos outros dois (ids são cuid, não se cruzam). O
+    // combo é pago de uma vez só, pelo mesmo caminho do botão "Pagar combo" —
+    // os títulos dele saem juntos.
     if (!p) {
+      const rec = await prisma.receivable.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          status: true,
+          amount: true,
+          pendingReceiptAccountId: true,
+          pendingReceiptAmount: true,
+          pendingReceiptDate: true,
+        },
+      });
+      if (rec) {
+        if (!rec.pendingReceiptDate) continue;
+        if (rec.status === "RECEBIDO") {
+          await desenfileirarRecebimento(id);
+          continue;
+        }
+        const accountId = accountByPayable[id] || rec.pendingReceiptAccountId;
+        if (!accountId) {
+          return {
+            ok: false,
+            paid,
+            error: "Escolha a conta creditada dos pré-lançamentos que estão sem conta identificada.",
+          };
+        }
+        // Recebeu menos que o título? `receiveReceivable` credita o que entrou
+        // e deixa o restante a receber — é o caminho do recebimento parcial.
+        await receiveReceivable(
+          id,
+          rec.pendingReceiptAmount ?? rec.amount,
+          date,
+          accountId,
+        );
+        await desenfileirarRecebimento(id);
+        paid += 1;
+        continue;
+      }
       const combo = await prisma.paymentCombo.findUnique({
         where: { id },
         select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
@@ -648,6 +690,7 @@ export async function confirmQueuedPaymentsAction(
 
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/");
@@ -664,13 +707,16 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  const { desenfileirarPagamento, desenfileirarCombo } = await import("@/lib/payment-queue");
-  // Mesmo id-de-título-ou-combo do confirmar: o que não é título é combo.
-  const ehTitulo = await prisma.payable.count({ where: { id } });
-  if (ehTitulo) await desenfileirarPagamento(id);
+  const { desenfileirarPagamento, desenfileirarCombo, desenfileirarRecebimento } = await import(
+    "@/lib/payment-queue"
+  );
+  // Mesmo id-de-título-combo-ou-recebimento do confirmar.
+  if (await prisma.payable.count({ where: { id } })) await desenfileirarPagamento(id);
+  else if (await prisma.receivable.count({ where: { id } })) await desenfileirarRecebimento(id);
   else await desenfileirarCombo(id);
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/combos");
   return { ok: true };
 }

@@ -228,6 +228,8 @@ const manualSchema = z.object({
   customerId: z.string().optional(),
   costCenterId: z.string().optional(),
   structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
+  // Fluxo CAPITAL: de quem é o aporte. Obrigatório nesse fluxo.
+  capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
   alreadyReceived: z.coerce.boolean().optional(),
 });
@@ -256,6 +258,13 @@ export async function createManualReceivableAction(
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
   }
 
+  // No fluxo Capital o título vira aporte do sócio na baixa: sem beneficiário,
+  // o dinheiro entraria no caixa sem entrar no capital de ninguém.
+  const isCapital = d.structuralKey === "CAPITAL";
+  if (isCapital && !d.capitalBeneficiaryId) {
+    return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
+  }
+
   await createManualReceivable({
     description: d.description,
     amount: d.amount,
@@ -263,6 +272,7 @@ export async function createManualReceivableAction(
     customerId: d.customerId || null,
     costCenterId: d.costCenterId || null,
     structuralKey: d.structuralKey,
+    capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
     notes: d.notes || null,
     alreadyReceived: Boolean(d.alreadyReceived),
   });
@@ -476,4 +486,214 @@ export async function deleteReceivablesAction(ids: string[]): Promise<DeleteRece
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/");
   return { ok: deleted > 0, deleted, skipped };
+}
+
+// ---------------------------------------------------------------------------
+// Informar o recebimento: pré-lançar o crédito e esperar o caixa chegar no dia
+// ---------------------------------------------------------------------------
+
+const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export type InformarRecebimentoResult = {
+  ok: boolean;
+  error?: string;
+  /** O arquivo foi anexado ao título (quando veio um). */
+  attached?: boolean;
+  /** O PDF pede senha de abertura: a tela pede a senha e reenvia o arquivo. */
+  senhaNecessaria?: boolean;
+  /** O título entrou na fila de espera do caixa. */
+  enfileirado?: boolean;
+  /** Divergências entre o que foi informado e o que o anexo diz. */
+  avisos?: string[];
+};
+
+const informarSchema = z.object({
+  receivableId: z.string().min(1),
+  date: z.string().min(1, "Informe a data em que o dinheiro entrou"),
+  amount: z.coerce.number().min(0.01, "Informe o valor que entrou"),
+  accountId: z.string().min(1, "Escolha a conta que recebeu o dinheiro"),
+});
+
+/**
+ * INFORMA que o dinheiro deste título já entrou na conta e põe o recebimento
+ * na fila de espera do caixa — o mesmo pré-lançamento dos pagamentos, do outro
+ * lado.
+ *
+ * Aqui a informação é digitada, não lida: do lado de quem recebe muitas vezes
+ * não existe comprovante — o cliente avisa por telefone, ou o valor simplesmente
+ * aparece no extrato. Por isso o que manda são a DATA, o VALOR e a CONTA
+ * creditada; o anexo (comprovante do depósito ou print do extrato) é opcional e
+ * serve de prova.
+ *
+ * Quando vem anexo, a IA o lê só para CONFERIR: valor e data diferentes do que
+ * foi digitado viram aviso — nada é sobrescrito, porque quem viu o extrato é
+ * quem está lançando.
+ *
+ * Recebeu menos que o título? O ok no caixa credita o que entrou e deixa o
+ * restante a receber (recebimento parcial).
+ */
+export async function informarRecebimentoAction(
+  formData: FormData,
+): Promise<InformarRecebimentoResult> {
+  try {
+    await assertCanAny([
+      ["financeiro", "receber"],
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const parsed = informarSchema.safeParse({
+    receivableId: formData.get("receivableId"),
+    date: formData.get("date"),
+    amount: formData.get("amount"),
+    accountId: formData.get("accountId"),
+  });
+  if (!parsed.success) {
+    return { ok: false, error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  }
+  const d = parsed.data;
+
+  const receivable = await prisma.receivable.findUnique({
+    where: { id: d.receivableId },
+    select: { id: true, status: true, amount: true, dueDate: true, description: true },
+  });
+  if (!receivable) return { ok: false, error: "Título não encontrado." };
+  if (receivable.status === "RECEBIDO") {
+    return { ok: false, error: "Título já recebido — não há o que pré-lançar." };
+  }
+  if (d.amount > receivable.amount + 0.005) {
+    return {
+      ok: false,
+      error: `O título é de ${formatCurrencyBR(receivable.amount)}: informe no máximo esse valor. Entrou mais? Corrija o valor do título antes.`,
+    };
+  }
+
+  const dataEntrada = parseDateInput(d.date);
+  const avisos: string[] = [];
+  let attached = false;
+
+  // Anexo opcional: comprovante do depósito ou print do extrato.
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+    }
+    let buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = file.type || "application/octet-stream";
+
+    const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+    const senha = String(formData.get("senha") || "");
+    if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+      if (!senha) {
+        return {
+          ok: false,
+          senhaNecessaria: true,
+          error: "Este arquivo está protegido por senha. Digite a senha do documento para o sistema abrir e anexar.",
+        };
+      }
+      try {
+        buffer = Buffer.from(await decifrarPdf(buffer, senha));
+      } catch (e) {
+        return {
+          ok: false,
+          senhaNecessaria: true,
+          error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+        };
+      }
+    }
+
+    await prisma.receivableAttachment.deleteMany({
+      where: { receivableId: d.receivableId, kind: "COMPROVANTE" },
+    });
+    await prisma.receivableAttachment.create({
+      data: {
+        receivableId: d.receivableId,
+        kind: "COMPROVANTE",
+        description: "Comprovante do recebimento",
+        filename: file.name || "comprovante",
+        mimeType,
+        size: buffer.byteLength,
+        data: buffer,
+      },
+    });
+    attached = true;
+
+    // A IA só CONFERE: o que vale é o que foi digitado por quem viu o extrato.
+    try {
+      const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+      const lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+      if (lido?.valor != null && Math.abs(lido.valor - d.amount) > 0.005) {
+        avisos.push(
+          `o anexo mostra ${formatCurrencyBR(lido.valor)} e você informou ${formatCurrencyBR(d.amount)}`,
+        );
+      }
+      if (lido?.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) && lido.data !== d.date) {
+        const [a, m, dia] = lido.data.split("-");
+        avisos.push(`o anexo é de ${dia}/${m}/${a} e você informou outra data`);
+      }
+    } catch {
+      // Leitura é um extra: falhou, o anexo fica guardado do mesmo jeito.
+    }
+  }
+
+  // Atraso em relação ao vencimento — a mesma leitura do lado do pagamento.
+  const atraso = Math.round(
+    (Date.UTC(dataEntrada.getUTCFullYear(), dataEntrada.getUTCMonth(), dataEntrada.getUTCDate()) -
+      Date.UTC(
+        receivable.dueDate.getUTCFullYear(),
+        receivable.dueDate.getUTCMonth(),
+        receivable.dueDate.getUTCDate(),
+      )) /
+      86400000,
+  );
+  if (atraso > 0) avisos.push(`recebido ${atraso} dia(s) depois do vencimento`);
+  if (d.amount < receivable.amount - 0.005) {
+    avisos.push(
+      `recebimento parcial: entrou ${formatCurrencyBR(d.amount)} de ${formatCurrencyBR(receivable.amount)} — o restante continua a receber`,
+    );
+  }
+
+  const { enfileirarRecebimento } = await import("@/lib/payment-queue");
+  await enfileirarRecebimento({
+    receivableId: d.receivableId,
+    data: dataEntrada,
+    valor: d.amount,
+    accountId: d.accountId,
+    nota: avisos.join(" · ") || null,
+  });
+
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath(`/financeiro/a-receber/${d.receivableId}/editar`);
+  revalidatePath("/financeiro/contas");
+  return { ok: true, attached, enfileirado: true, avisos };
+}
+
+/** Desfaz o "informar recebimento": tira da fila e apaga o anexo, se houver. */
+export async function desfazerRecebimentoInformadoAction(
+  receivableId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["financeiro", "receber"],
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const { desenfileirarRecebimento } = await import("@/lib/payment-queue");
+  await desenfileirarRecebimento(receivableId);
+  await prisma.receivableAttachment.deleteMany({ where: { receivableId, kind: "COMPROVANTE" } });
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath(`/financeiro/a-receber/${receivableId}/editar`);
+  revalidatePath("/financeiro/contas");
+  return { ok: true };
+}
+
+/** R$ 1.234,56 — só para as mensagens desta tela. */
+function formatCurrencyBR(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }

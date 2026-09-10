@@ -28,6 +28,11 @@ export type ReceivableRow = {
   hasVehicle: boolean;
   /** Data do recebimento (yyyy-mm-dd) quando já recebido, para corrigir. */
   receivedDateInput: string | null;
+  /**
+   * Entrada já informada: o dinheiro caiu na conta e o crédito espera o
+   * movimento do caixa alcançar o dia (Contas e caixas).
+   */
+  queued: { date: string; amount: number; proof: boolean } | null;
 };
 
 const statusTone = { PENDENTE: "warning", RECEBIDO: "success", ATRASADO: "danger" } as const;
@@ -198,6 +203,15 @@ export default function ReceivablesTable({
                 <Td className="whitespace-nowrap">{formatCurrency(r.amount)}</Td>
                 <Td>
                   <Badge tone={statusTone[r.effective]}>{statusLabel[r.effective]}</Badge>
+                  {r.queued ? (
+                    <p
+                      className="mt-0.5 text-[11px] font-medium text-amber-700"
+                      title="A entrada já foi informada. O crédito é confirmado em Contas e caixas, quando o movimento alcançar o dia."
+                    >
+                      ⏳ entrada informada · {formatCurrency(r.queued.amount)} em{" "}
+                      {formatDate(r.queued.date)}
+                    </p>
+                  ) : null}
                 </Td>
                 <Td>
                   <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 2xl:flex-nowrap">
@@ -225,6 +239,7 @@ export default function ReceivablesTable({
                       hasVehicle={r.hasVehicle}
                       canFixDate={canFixDate}
                       receivedDateInput={r.receivedDateInput}
+                      queued={r.queued}
                     />
                     {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>

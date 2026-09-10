@@ -160,8 +160,9 @@ export default async function ContasPage({
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
-  // Total pré-lançado: entra o que ainda não tem conta identificada — ele vai
-  // sair de alguma conta, então pesa no total mesmo sem pesar em nenhum card.
+  // Efeito total do pré-lançado (saídas negativas, entradas positivas). Entra
+  // também o que ainda não tem conta identificada: ele vai sair/entrar em
+  // alguma conta, então pesa no total mesmo sem pesar em nenhum card.
   const totalPrelancado =
     Math.round(
       ([...prelancado.porConta.values()].reduce((s, v) => s + v, 0) + prelancado.semConta) * 100,
@@ -208,21 +209,27 @@ export default async function ContasPage({
             <p className={`text-lg font-bold ${a.balance >= 0 ? "text-emerald-600" : "text-rose-600"}`}>
               {formatCurrency(a.balance)}
             </p>
-            {/* Saldo previsto: o de hoje menos o que já saiu do banco e espera
-                o ok do caixa. Discreto de propósito — o saldo que manda na
-                contabilidade continua sendo o de cima. */}
-            {(prelancado.porConta.get(a.id) ?? 0) > 0.005 ? (
+            {/* Saldo previsto: o de hoje mais o efeito do que já passou pelo
+                banco e espera o ok do caixa — pagamentos descem, recebimentos
+                sobem. Discreto de propósito: o saldo que manda na contabilidade
+                continua sendo o de cima. */}
+            {Math.abs(prelancado.porConta.get(a.id) ?? 0) > 0.005 ? (
               <p
                 className="mt-0.5 text-[11px] leading-tight text-slate-500"
-                title={`Já saiu do banco e espera o ok do caixa: ${formatCurrency(prelancado.porConta.get(a.id)!)}. O saldo acima só muda quando a baixa for confirmada.`}
+                title="Já passou pelo banco e espera o ok do caixa. O saldo acima só muda quando a baixa for confirmada."
               >
-                −{formatCurrency(prelancado.porConta.get(a.id)!)} pré-lançado
+                {(prelancado.porConta.get(a.id) ?? 0) < 0
+                  ? `−${formatCurrency(-(prelancado.porConta.get(a.id) ?? 0))}`
+                  : `+${formatCurrency(prelancado.porConta.get(a.id) ?? 0)}`}{" "}
+                pré-lançado
                 <span
                   className={`block font-semibold ${
-                    a.balance - prelancado.porConta.get(a.id)! < 0 ? "text-rose-500" : "text-slate-600"
+                    a.balance + (prelancado.porConta.get(a.id) ?? 0) < 0
+                      ? "text-rose-500"
+                      : "text-slate-600"
                   }`}
                 >
-                  previsto {formatCurrency(a.balance - prelancado.porConta.get(a.id)!)}
+                  previsto {formatCurrency(a.balance + (prelancado.porConta.get(a.id) ?? 0))}
                 </span>
               </p>
             ) : null}
@@ -307,8 +314,8 @@ export default async function ContasPage({
           value={formatCurrency(totalBalance)}
           tone={totalBalance >= 0 ? "positive" : "negative"}
           hint={
-            totalPrelancado > 0.005
-              ? `previsto ${formatCurrency(totalBalance - totalPrelancado)} — ${formatCurrency(totalPrelancado)} já saíram do banco e esperam o ok do caixa`
+            Math.abs(totalPrelancado) > 0.005
+              ? `previsto ${formatCurrency(totalBalance + totalPrelancado)} — ${formatCurrency(Math.abs(totalPrelancado))} ${totalPrelancado < 0 ? "já saíram do banco e esperam" : "já entraram e esperam"} o ok do caixa`
               : undefined
           }
         />

@@ -239,6 +239,8 @@ model FinancialAccount {
   paymentCombos       PaymentCombo[]
   // Combos pré-lançados que vão debitar desta conta quando o caixa chegar no dia.
   pendingCombos       PaymentCombo[]      @relation("ComboPendingPayment")
+  // Recebimentos pré-lançados que vão creditar esta conta no dia do movimento.
+  pendingReceipts     Receivable[]        @relation("ReceivablePendingReceipt")
   createdAt           DateTime               @default(now())
   updatedAt           DateTime               @updatedAt
 
@@ -1309,6 +1311,28 @@ model ComboAttachment {
   @@map("combo_attachments")
 }
 
+/**
+ * Arquivo anexado a um título de contas a RECEBER: o comprovante do depósito,
+ * o print do extrato — a prova de que o dinheiro entrou. Nem sempre existe (o
+ * cliente às vezes só avisa por telefone), por isso é opcional.
+ */
+model ReceivableAttachment {
+  id           String     @id @default(cuid())
+  receivableId String
+  receivable   Receivable @relation(fields: [receivableId], references: [id], onDelete: Cascade)
+  /// COMPROVANTE (um por título) ou OUTRO.
+  kind         String     @default("COMPROVANTE")
+  description  String
+  filename     String
+  mimeType     String
+  size         Int
+  data         Bytes
+  createdAt    DateTime   @default(now())
+
+  @@index([receivableId])
+  @@map("receivable_attachments")
+}
+
 // Arquivo anexado a um título de contas a pagar (nota fiscal, comprovante…).
 model PayableAttachment {
   id          String   @id @default(cuid())
@@ -1366,6 +1390,16 @@ model Receivable {
   capitalBeneficiary   CapitalBeneficiary? @relation(fields: [capitalBeneficiaryId], references: [id], onDelete: SetNull)
   accountId            String?
   account              FinancialAccount?   @relation(fields: [accountId], references: [id], onDelete: SetNull)
+  // PRÉ-LANÇAMENTO do recebimento: o dinheiro já caiu na conta (o cliente
+  // avisou, o extrato mostrou, o comprovante chegou), mas o movimento do caixa
+  // ainda não alcançou o dia. Espera o ok para creditar de verdade — mesma
+  // ideia do pré-lançamento do pagamento, do outro lado.
+  pendingReceiptDate      DateTime?
+  pendingReceiptAmount    Float?
+  pendingReceiptAccountId String?
+  pendingReceiptAccount   FinancialAccount? @relation("ReceivablePendingReceipt", fields: [pendingReceiptAccountId], references: [id], onDelete: SetNull)
+  pendingReceiptNote      String?
+  attachments          ReceivableAttachment[]
   notes                String?
   // Comprovante do depósito de um sinal/entrada antecipada: id do VehicleAttachment
   // (string pura, sem FK — servido por /anexos/[id]). Nulo quando não há anexo.
