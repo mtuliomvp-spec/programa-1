@@ -2991,3 +2991,199 @@ export async function applyReturnNfeAction(formData: FormData): Promise<Devoluca
     valorDepois: restante,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Pré-lançar EM LOTE: um comprovante só para vários títulos
+// ---------------------------------------------------------------------------
+
+export type PreLancarLoteResult = {
+  ok: boolean;
+  error?: string;
+  /** Quantos títulos entraram na fila. */
+  enfileirados?: number;
+  /** O arquivo foi anexado aos títulos. */
+  attached?: boolean;
+  /** O PDF pede senha de abertura: a tela pede a senha e reenvia o arquivo. */
+  senhaNecessaria?: boolean;
+  /** Divergências da conferência (valor, conta) — nada bloqueia. */
+  avisos?: string[];
+};
+
+/**
+ * Informa que VÁRIOS títulos foram pagos de uma vez e os põe na fila do caixa.
+ *
+ * Existe porque um boleto só costuma cobrir muitos títulos: a fatura mensal da
+ * comunicação de venda vem com uma linha por veículo, e o pagamento é um só.
+ * Pagar em lote a tela já fazia — o que faltava era poder informar isso ANTES
+ * de o movimento chegar no dia, como já se fazia com um título sozinho.
+ *
+ * Cada título entra na fila pelo SEU valor (com o desconto do boleto, quando
+ * ainda válido na data do pagamento): o comprovante é do total, e ratear seria
+ * inventar número. O comprovante fica anexado a todos eles — cada Ordem de
+ * Pagamento carrega a sua prova — e a conferência da IA, quando o arquivo é
+ * legível, só AVISA se o total ou a conta não baterem.
+ */
+export async function preLancarPagamentoEmLoteAction(
+  formData: FormData,
+): Promise<PreLancarLoteResult> {
+  try {
+    await assertCanAny([
+      ["financeiro", "pagar"],
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const ids = String(formData.get("ids") || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const dataTexto = String(formData.get("date") || "").trim();
+  const accountId = String(formData.get("accountId") || "").trim();
+  if (!ids.length) return { ok: false, error: "Selecione ao menos um título." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataTexto)) {
+    return { ok: false, error: "Informe a data em que o pagamento saiu do banco." };
+  }
+  if (!accountId) return { ok: false, error: "Escolha a conta debitada." };
+
+  const rows = await prisma.payable.findMany({
+    where: { id: { in: ids } },
+    select: {
+      id: true,
+      status: true,
+      description: true,
+      amount: true,
+      discountAmount: true,
+      discountUntil: true,
+      paymentComboId: true,
+    },
+  });
+  const pagaveis = rows.filter((p) => p.status !== "PAGO" && !p.paymentComboId);
+  if (!pagaveis.length) {
+    return {
+      ok: false,
+      error:
+        "Nenhum dos títulos selecionados pode ser pré-lançado: eles já estão pagos ou pertencem a um combo (o combo é pago de uma vez só, pelo borderô).",
+    };
+  }
+
+  const dataPagamento = parseDateInput(dataTexto);
+  const avisos: string[] = [];
+  const pulados = rows.length - pagaveis.length;
+  if (pulados > 0) {
+    avisos.push(`${pulados} título(s) ficaram de fora — já pagos ou em combo.`);
+  }
+
+  // Valor de cada título na baixa: o desconto do boleto vale se o pagamento
+  // couber no prazo (que já pula fim de semana e feriado).
+  const { dentroDoPrazo } = await import("@/lib/banking-days");
+  const valorDe = (p: (typeof pagaveis)[number]) =>
+    p.discountAmount != null &&
+    p.discountAmount > 0 &&
+    p.discountAmount < p.amount &&
+    p.discountUntil != null &&
+    dentroDoPrazo(dataPagamento, p.discountUntil)
+      ? round2(p.amount - p.discountAmount)
+      : p.amount;
+  const total = round2(pagaveis.reduce((s, p) => s + valorDe(p), 0));
+
+  // Comprovante (opcional): fica em todos os títulos e é conferido de leve.
+  let attached = false;
+  const file = formData.get("file");
+  if (file instanceof File && file.size > 0) {
+    if (file.size > MAX_ATTACHMENT_BYTES) {
+      return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+    }
+    let buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = file.type || "application/octet-stream";
+
+    const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+    const senha = String(formData.get("senha") || "");
+    if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+      if (!senha) {
+        return {
+          ok: false,
+          senhaNecessaria: true,
+          error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema abrir e anexar.",
+        };
+      }
+      try {
+        buffer = Buffer.from(await decifrarPdf(buffer, senha));
+      } catch (e) {
+        return {
+          ok: false,
+          senhaNecessaria: true,
+          error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+        };
+      }
+    }
+
+    for (const p of pagaveis) {
+      await prisma.payableAttachment.deleteMany({
+        where: { payableId: p.id, kind: "COMPROVANTE" },
+      });
+      await prisma.payableAttachment.create({
+        data: {
+          payableId: p.id,
+          kind: "COMPROVANTE",
+          description: KIND_DEFAULT_DESC.COMPROVANTE,
+          filename: file.name || "comprovante",
+          mimeType,
+          size: buffer.byteLength,
+          data: buffer,
+        },
+      });
+    }
+    attached = true;
+
+    // A leitura é só conferência: o que vale é o que foi informado por quem
+    // pagou. Falhar aqui não desfaz nada.
+    try {
+      const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+      const lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+      if (lido?.valor != null && Math.abs(lido.valor - total) > 0.005) {
+        avisos.push(
+          `o comprovante mostra ${formatCurrencyBR(lido.valor)} e os títulos somam ${formatCurrencyBR(total)}`,
+        );
+      }
+      if (lido?.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) && lido.data !== dataTexto) {
+        const [a, m, d] = lido.data.split("-");
+        avisos.push(`o comprovante é de ${d}/${m}/${a} e você informou outra data`);
+      }
+      const { contaDoComprovante } = await import("@/lib/payment-queue");
+      const contaLida = await contaDoComprovante(lido ?? {});
+      if (contaLida && contaLida !== accountId) {
+        const conta = await prisma.financialAccount.findUnique({
+          where: { id: contaLida },
+          select: { name: true },
+        });
+        if (conta) avisos.push(`o comprovante parece ser da conta "${conta.name}"`);
+      }
+    } catch {
+      // Comprovante ilegível (foto, PDF sem texto): fica anexado assim mesmo.
+    }
+  }
+
+  const { enfileirarPagamento } = await import("@/lib/payment-queue");
+  const nota = [`pago em lote com ${pagaveis.length} título(s)`, ...avisos].join(" · ");
+  for (const p of pagaveis) {
+    await enfileirarPagamento({
+      payableId: p.id,
+      data: dataPagamento,
+      valor: valorDe(p),
+      accountId,
+      nota,
+    });
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/contas");
+  return { ok: true, enfileirados: pagaveis.length, attached, avisos };
+}
+
+/** R$ 1.234,56 — só para as mensagens desta tela. */
+function formatCurrencyBR(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}

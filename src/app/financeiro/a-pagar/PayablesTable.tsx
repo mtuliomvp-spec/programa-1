@@ -17,6 +17,7 @@ import FixDateButton from "@/components/FixDateButton";
 import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
 import PartialPayButton from "./PartialPayButton";
+import PreLancarLote from "./PreLancarLote";
 
 type Account = { id: string; name: string };
 
@@ -120,6 +121,8 @@ export default function PayablesTable({
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
   const [addingCombo, startAddCombo] = useTransition();
+  // "Já paguei": pré-lançar o lote com um comprovante só.
+  const [showPre, setShowPre] = useState(false);
   // Pagar com substituição (retirada de capital aplicado).
   const [showSub, setShowSub] = useState(false);
   const [subAppAccountId, setSubAppAccountId] = useState("");
@@ -519,6 +522,17 @@ export default function PayablesTable({
                       ? "Pagar título"
                       : `Pagar ${selected.size} títulos`}
                 </button>
+                {canPagar ? (
+                  <button
+                    type="button"
+                    disabled={pending || removing}
+                    onClick={() => setShowPre((v) => !v)}
+                    className="h-9 rounded-lg border border-emerald-300 bg-white px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
+                    title="O dinheiro já saiu do banco: informe a data e anexe o comprovante (um só para todos)"
+                  >
+                    {showPre ? "Fechar" : "🧾 Já paguei"}
+                  </button>
+                ) : null}
                 {canPagar && canSubstitute ? (
                   <button
                     type="button"
@@ -583,6 +597,21 @@ export default function PayablesTable({
               Limpar
             </button>
           </div>
+
+          {showPre && canPagar && accounts.length > 0 ? (
+            <PreLancarLote
+              ids={[...selected]}
+              accountId={accountId}
+              accountName={accounts.find((a) => a.id === accountId)?.name ?? null}
+              total={selectedTotal}
+              cashboxDate={cashboxDate}
+              onDone={(mensagem) => {
+                setShowPre(false);
+                setSelected(new Set());
+                setMsg(mensagem);
+              }}
+            />
+          ) : null}
 
           {showSub && canSubstitute && subData ? (
             <div className="mt-3 rounded-lg border border-amber-300 bg-amber-50 p-3">
