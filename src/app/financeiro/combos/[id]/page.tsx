@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAction, userCan } from "@/lib/guards";
@@ -47,7 +48,16 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
       pendingPaymentAccount: { select: { name: true } },
       payables: {
         orderBy: { dueDate: "asc" },
-        include: { supplier: { select: { name: true } }, beneficiaryUser: { select: { name: true } } },
+        include: {
+          supplier: { select: { name: true } },
+          beneficiaryUser: { select: { name: true } },
+          // Só os METADADOS: os bytes iriam inteiros para o navegador. O
+          // arquivo é servido por /financeiro/a-pagar/anexos/[id].
+          attachments: {
+            orderBy: { createdAt: "asc" },
+            select: { id: true, kind: true, description: true, filename: true },
+          },
+        },
       },
       // Só os METADADOS: os BYTES do comprovante iriam inteiros para o
       // navegador. O arquivo é servido por /financeiro/combos/anexos/[id].
@@ -260,7 +270,37 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                 <tbody>
                   {comboPayables.map((p) => (
                     <Tr key={p.id}>
-                      <Td className="font-medium text-slate-900">{p.description}</Td>
+                      {/*
+                        Dentro do borderô o título sai da lista do Contas a
+                        pagar — e era por lá que se abria a ordem dele e os
+                        anexos (a comunicação de venda de um carro que não está
+                        no estoque só existe aqui). Então a descrição leva à
+                        Ordem de Pagamento e cada anexo abre direto.
+                      */}
+                      <Td className="font-medium text-slate-900">
+                        <Link
+                          href={`/financeiro/a-pagar/${p.id}/ordem`}
+                          className="text-blue-700 hover:underline print:text-slate-900 print:no-underline"
+                        >
+                          {p.description}
+                        </Link>
+                        {p.attachments.length ? (
+                          <span className="mt-0.5 block text-xs font-normal print:hidden">
+                            {p.attachments.map((a) => (
+                              <a
+                                key={a.id}
+                                href={`/financeiro/a-pagar/anexos/${a.id}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                title={a.filename}
+                                className="mr-2 text-slate-500 hover:text-blue-700 hover:underline"
+                              >
+                                📎 {a.description || a.filename}
+                              </a>
+                            ))}
+                          </span>
+                        ) : null}
+                      </Td>
                       <Td className="text-slate-600">{p.supplier?.name || p.beneficiaryUser?.name || "—"}</Td>
                       <Td className="whitespace-nowrap text-slate-600">{formatDate(p.dueDate)}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
