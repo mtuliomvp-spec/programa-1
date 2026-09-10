@@ -1321,10 +1321,7 @@ export type ImportReceiptsResult = {
  */
 export async function importPaymentReceiptsAction(base64: string): Promise<ImportReceiptsResult> {
   try {
-    await assertCanAny([
-      ["financeiro", "criar"],
-      ["financeiro", "editar"],
-    ]);
+    await assertCan("financeiro", "importarcomprovantes");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", attached: [], unmatched: [] };
   }
@@ -1552,7 +1549,7 @@ export type ReadDuplicatasResult = {
  */
 export async function readDuplicatasAction(base64: string): Promise<ReadDuplicatasResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "importarnf");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -1619,7 +1616,7 @@ export async function createDuplicatasAction(input: {
   duplicatas: unknown;
 }): Promise<ImportDuplicatasResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "importarnf");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", created: [], skipped: [] };
   }
@@ -1904,7 +1901,7 @@ function resumoDosItens(itens: { descricao: string; quantidade: number | null }[
  */
 export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "importarnf");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2031,7 +2028,7 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
  */
 export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNfeResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "importarnf");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", outcomes: [] };
   }

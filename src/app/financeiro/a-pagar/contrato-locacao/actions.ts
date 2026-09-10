@@ -26,7 +26,7 @@ export async function createRentContractAction(
   params: RentContractParams,
 ): Promise<RentContractResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "contratolocacao");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
