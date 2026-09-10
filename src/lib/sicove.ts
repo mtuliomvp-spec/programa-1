@@ -95,6 +95,56 @@ export type CobrancaLancada = {
   mensagem?: string;
 };
 
+/** O anexo se apresenta como comunicação de venda? (mesma leitura do selo do Estoque.) */
+const pareceComunicacao = (descricao?: string | null) => /comunica/i.test(descricao ?? "");
+
+/** O arquivo é um PDF? (pelo cabeçalho — o mime do upload não é confiável) */
+const ehPdf = (buffer: Buffer, mimeType?: string) =>
+  mimeType === "application/pdf" || buffer.subarray(0, 5).toString("latin1") === "%PDF-";
+
+/**
+ * POR QUE o arquivo não virou cobrança — em português, para a tela dizer.
+ *
+ * Antes este caminho era mudo: anexar um print em vez do PDF da prestadora
+ * guardava o documento, deixava o selo verde no Estoque e não lançava título
+ * nenhum, sem uma linha explicando. Quem só descobria isso na conferência da
+ * fatura do mês.
+ */
+export function motivoNaoReconhecido(buffer: Buffer, mimeType?: string): string {
+  if (!ehPdf(buffer, mimeType)) {
+    return (
+      "O arquivo é uma imagem, então a cobrança da comunicação de venda NÃO foi lançada — " +
+      "a foto não tem texto para o sistema ler. Anexe o PDF original da prestadora (ele lança " +
+      "o título sozinho) ou lance o título à mão em Contas a pagar."
+    );
+  }
+  let texto = "";
+  try {
+    texto = textoDoPdf(buffer).replace(/\s+/g, " ");
+  } catch {
+    texto = "";
+  }
+  if (/RELAT[ÓO]RIO DE DETALHAMENTO DE FATURA/i.test(texto)) {
+    return (
+      "Este PDF é a FATURA mensal da prestadora, não o comprovante de um serviço — nada foi " +
+      "cobrado por ele (seria cobrar duas vezes). Para conferir a fatura contra os títulos já " +
+      "lançados, use Financeiro › Comunicação de venda."
+    );
+  }
+  if (!texto) {
+    return (
+      "Não consegui ler o texto deste PDF (ele parece ser só imagem digitalizada), então a " +
+      "cobrança da comunicação de venda NÃO foi lançada. Anexe o PDF original da prestadora ou " +
+      "lance o título à mão em Contas a pagar."
+    );
+  }
+  return (
+    "Não reconheci este arquivo como comprovante de comunicação de venda, então a cobrança NÃO " +
+    "foi lançada. Confira se é o PDF original da prestadora — ou lance o título à mão em Contas " +
+    "a pagar."
+  );
+}
+
 /**
  * Lança a cobrança do comprovante recém-anexado. Silenciosa por natureza: se o
  * arquivo não for um comprovante, se a configuração estiver vazia ou se o
@@ -103,9 +153,20 @@ export type CobrancaLancada = {
 export async function lancarCobrancaSicove(input: {
   vehicleId: string;
   buffer: Buffer;
+  /** Mime do upload, para separar imagem de PDF na hora de explicar. */
+  mimeType?: string;
+  /** Descrição digitada no anexo: é ela que diz se o arquivo TENTA ser uma
+   *  comunicação de venda. Documento comum (contrato, NF) não recebe recado. */
+  descricao?: string | null;
 }): Promise<CobrancaLancada> {
   const comprovante = lerComprovanteSicove(input.buffer);
-  if (!comprovante) return { ok: false };
+  if (!comprovante) {
+    // Silêncio só para quem não se diz comunicação de venda: avisar em todo
+    // documento anexado ao carro viraria ruído.
+    return pareceComunicacao(input.descricao)
+      ? { ok: false, mensagem: motivoNaoReconhecido(input.buffer, input.mimeType) }
+      : { ok: false };
+  }
 
   const company = await prisma.companySettings.findFirst({
     select: {
