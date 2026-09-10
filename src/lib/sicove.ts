@@ -93,6 +93,12 @@ export type CobrancaLancada = {
   ok: boolean;
   /** Texto pronto para a tela: o que foi lançado, ou por que não foi. */
   mensagem?: string;
+  /** Título criado (para anexar o comprovante nele, no lançamento avulso). */
+  payableId?: string;
+  /** Veículo reconhecido pela placa do comprovante, quando existe no sistema. */
+  vehicleId?: string | null;
+  /** Placa lida no comprovante. */
+  placa?: string | null;
 };
 
 /** O anexo se apresenta como comunicação de venda? (mesma leitura do selo do Estoque.) */
@@ -151,7 +157,8 @@ export function motivoNaoReconhecido(buffer: Buffer, mimeType?: string): string 
  * serviço já tiver sido cobrado, não faz nada e não atrapalha o anexo.
  */
 export async function lancarCobrancaSicove(input: {
-  vehicleId: string;
+  /** Veículo da ficha. Vazio no lançamento avulso: aí a placa lida é quem busca. */
+  vehicleId?: string | null;
   buffer: Buffer;
   /** Mime do upload, para separar imagem de PDF na hora de explicar. */
   mimeType?: string;
@@ -187,20 +194,36 @@ export async function lancarCobrancaSicove(input: {
     };
   }
 
-  const vehicle = await prisma.vehicle.findUnique({
-    where: { id: input.vehicleId },
-    select: { id: true, plate: true, brand: true, model: true },
-  });
-  if (!vehicle) return { ok: false };
+  // Da FICHA vem o veículo; do lançamento avulso, a busca é pela placa lida —
+  // é assim que entra a comunicação de um carro que não está no estoque (a loja
+  // como agente da venda de terceiro, um carro vendido antes do sistema).
+  const vehicle = input.vehicleId
+    ? await prisma.vehicle.findUnique({
+        where: { id: input.vehicleId },
+        select: { id: true, plate: true, status: true },
+      })
+    : comprovante.placa
+      ? await prisma.vehicle.findFirst({
+          where: { plate: { contains: comprovante.placa, mode: "insensitive" } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true, plate: true, status: true },
+        })
+      : null;
+  if (input.vehicleId && !vehicle) return { ok: false };
 
   // Comprovante de outro carro: não lança no veículo errado.
-  const placaFicha = vehicle.plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
-  if (comprovante.placa && comprovante.placa !== placaFicha) {
+  const placaFicha = vehicle?.plate.replace(/[^A-Za-z0-9]/g, "").toUpperCase();
+  if (input.vehicleId && comprovante.placa && placaFicha && comprovante.placa !== placaFicha) {
     return {
       ok: false,
       mensagem: `Este comprovante é da placa ${comprovante.placa}, e a ficha é da ${placaFicha} — a cobrança não foi lançada.`,
     };
   }
+  const placa = comprovante.placa ?? placaFicha ?? null;
+  // O custo só entra no CARRO enquanto ele é da loja. Carro já vendido (ou que
+  // nem está no estoque — a loja foi só o agente da comunicação) tem a margem
+  // fechada: a cobrança entra como despesa ADMINISTRATIVA, sem vínculo.
+  const noEstoque = Boolean(vehicle && vehicle.status !== "VENDIDO");
 
   // Idempotência pelo número do registro: o mesmo serviço nunca é cobrado duas
   // vezes, mesmo que o arquivo seja anexado de novo. Sem número (formato
@@ -225,26 +248,37 @@ export async function lancarCobrancaSicove(input: {
   const supplierId = await resolveSupplierByName(fornecedor);
   const rotulo = comprovante.tipo === "CANCELAMENTO" ? "Cancelamento" : "Comunicação de venda";
 
-  await createManualPayable({
-    description: `${rotulo} (SICOVE) - placa ${vehicle.plate}`,
+  const titulo = await createManualPayable({
+    description: `${rotulo} (SICOVE) - placa ${placa ?? "sem placa"}`,
     category: "DESPESA_OPERACIONAL",
     categoryLabel: "Comunicação de venda",
     documentNumber: comprovante.numero,
     amount: valor,
     dueDate,
     supplierId,
-    // Vinculado ao veículo: o título vira custo daquele carro e entra na margem.
-    vehicleId: vehicle.id,
-    structuralKey: "VEICULOS",
-    notes: `Registro ${comprovante.numero} enviado em ${enviadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Cobrado na fatura mensal da prestadora.`,
+    // No estoque: vira custo daquele carro e entra na margem dele. Fora do
+    // estoque (vendido ou não cadastrado): despesa administrativa.
+    vehicleId: noEstoque ? vehicle!.id : null,
+    structuralKey: noEstoque ? "VEICULOS" : "ADMINISTRATIVO",
+    notes: `Registro ${comprovante.numero} enviado em ${enviadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Cobrado na fatura mensal da prestadora.${
+      noEstoque ? "" : " Veículo fora do estoque — lançado como despesa administrativa."
+    }`,
     alreadyPaid: false,
   });
 
   const brl = valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const venc = dueDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  const destino = noEstoque
+    ? "como custo deste veículo"
+    : vehicle
+      ? "como despesa administrativa (o veículo já foi vendido)"
+      : "como despesa administrativa (o veículo não está no estoque)";
   return {
     ok: true,
-    mensagem: `${rotulo} reconhecida: título de ${brl} lançado em Contas a pagar, vencendo em ${venc}, como custo deste veículo.`,
+    mensagem: `${rotulo} reconhecida: título de ${brl} lançado em Contas a pagar, vencendo em ${venc}, ${destino}.`,
+    payableId: titulo.id,
+    vehicleId: vehicle?.id ?? null,
+    placa,
   };
 }
 
