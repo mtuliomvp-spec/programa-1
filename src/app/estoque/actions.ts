@@ -1430,7 +1430,14 @@ export async function uploadVehicleAttachmentAction(
   if (kind === "DOCUMENTO" && !TRANSFER_QUOTE_RE.test(description)) {
     try {
       const { lancarCobrancaSicove } = await import("@/lib/sicove");
-      const cobranca = await lancarCobrancaSicove({ vehicleId, buffer });
+      const cobranca = await lancarCobrancaSicove({
+        vehicleId,
+        buffer,
+        mimeType,
+        // A descrição diz se o anexo TENTA ser uma comunicação de venda: só
+        // nesse caso o não-reconhecimento vira aviso na tela.
+        descricao: description,
+      });
       if (cobranca.mensagem) {
         if (cobranca.ok) read.filled = [...read.filled, cobranca.mensagem];
         else read.warnings = [...read.warnings, cobranca.mensagem];
