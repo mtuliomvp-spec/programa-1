@@ -278,6 +278,13 @@ export async function enfileirarPagamento(input: {
   valor: number;
   accountId: string | null;
   nota: string | null;
+  /**
+   * Marca do lote quando um boleto só cobre vários títulos — a mesma para
+   * todos eles, e as telas da fila os mostram numa linha só. Sem lote (o
+   * padrão) a marca é apagada: pré-lançar o título de novo, sozinho, o tira
+   * do grupo em que estava.
+   */
+  lote?: string | null;
 }) {
   await prisma.payable.update({
     where: { id: input.payableId },
@@ -286,6 +293,7 @@ export async function enfileirarPagamento(input: {
       pendingPaymentAmount: round2(input.valor),
       pendingPaymentAccountId: input.accountId,
       pendingPaymentNote: input.nota,
+      pendingPaymentBatch: input.lote ?? null,
     },
   });
 }
@@ -331,6 +339,7 @@ export async function desenfileirarPagamento(payableId: string) {
       pendingPaymentAmount: null,
       pendingPaymentAccountId: null,
       pendingPaymentNote: null,
+      pendingPaymentBatch: null,
     },
   });
 }
@@ -338,11 +347,12 @@ export async function desenfileirarPagamento(payableId: string) {
 export type PagamentoNaFila = {
   id: string;
   /**
-   * Título avulso, COMBO (borderô) ou RECEBIMENTO. O combo é pago de uma vez
-   * só: ele entra na fila como UMA linha, e o ok baixa todos os títulos dele
-   * juntos.
+   * Título avulso, COMBO (borderô), LOTE (um boleto só pago por vários títulos)
+   * ou RECEBIMENTO. Combo e lote entram na fila como UMA linha e o ok baixa
+   * todos os títulos deles juntos — a diferença é que o combo é um borderô
+   * montado antes, e o lote nasce do comprovante único no ato do pagamento.
    */
-  kind: "titulo" | "combo" | "recebimento";
+  kind: "titulo" | "combo" | "lote" | "recebimento";
   /**
    * Dinheiro que SAI (pagamento) ou que ENTRA (recebimento). É o que decide o
    * sinal na tela e o lado da baixa quando o ok é dado.
@@ -365,6 +375,11 @@ export type PagamentoNaFila = {
   accountId: string | null;
   accountName: string | null;
   note: string | null;
+  /**
+   * Títulos que a linha cobre, no LOTE: a tela mostra o total do boleto e abre
+   * nesta lista. Vazio em tudo o mais — no combo os títulos estão no borderô.
+   */
+  itens?: PagamentoNaFila[];
 };
 
 /** Campos do pré-lançamento que as duas listas (deste caixa e adiante) mostram. */
@@ -379,6 +394,7 @@ const FILA_SELECT = {
   pendingPaymentNote: true,
   pendingPaymentAccountId: true,
   pendingPaymentAccount: { select: { name: true } },
+  pendingPaymentBatch: true,
   supplier: { select: { name: true } },
 } as const;
 
@@ -393,6 +409,7 @@ type FilaRow = {
   pendingPaymentNote: string | null;
   pendingPaymentAccountId: string | null;
   pendingPaymentAccount: { name: string } | null;
+  pendingPaymentBatch: string | null;
   supplier: { name: string } | null;
 };
 
@@ -414,6 +431,67 @@ function toPagamento(p: FilaRow): PagamentoNaFila {
     accountName: p.pendingPaymentAccount?.name ?? null,
     note: p.pendingPaymentNote,
   };
+}
+
+/**
+ * Junta num LOTE os títulos pagos com o mesmo boleto.
+ *
+ * A fatura mensal da comunicação de venda cobra um veículo por linha e é paga
+ * de uma vez: listar as trinta linhas soltas esconde justamente o que importa,
+ * que é o valor do boleto. Então elas viram uma linha com o total, que abre
+ * nos títulos cobertos — e o ok baixa todos juntos, como no combo.
+ *
+ * Lote de um título só não é lote: volta a ser a linha normal dele (pode ter
+ * sobrado sozinho porque os outros já foram baixados).
+ */
+function agruparLotes(rows: FilaRow[]): PagamentoNaFila[] {
+  const grupos = new Map<string, FilaRow[]>();
+  const soltos: FilaRow[] = [];
+  for (const r of rows) {
+    if (!r.pendingPaymentBatch) {
+      soltos.push(r);
+      continue;
+    }
+    const lista = grupos.get(r.pendingPaymentBatch) ?? [];
+    lista.push(r);
+    grupos.set(r.pendingPaymentBatch, lista);
+  }
+
+  const linhas: PagamentoNaFila[] = soltos.map(toPagamento);
+  for (const [batch, titulos] of grupos) {
+    if (titulos.length === 1) {
+      linhas.push(toPagamento(titulos[0]));
+      continue;
+    }
+    // Ordem de leitura do boleto: pelo vencimento, e o nº da ordem desempata.
+    const itens = titulos
+      .map(toPagamento)
+      .sort((a, b) => a.dueDate.localeCompare(b.dueDate) || a.orderNumber - b.orderNumber);
+    const fornecedores = new Set(itens.map((i) => i.supplierName ?? ""));
+    linhas.push({
+      // O id do lote não é o de nenhum título: quem confirma expande a lista.
+      id: `lote:${batch}`,
+      kind: "lote",
+      direcao: "saida",
+      orderNumber: 0,
+      description: `Boleto pago em lote · ${itens.length} títulos`,
+      supplierName: fornecedores.size === 1 ? (itens[0].supplierName ?? null) : null,
+      titulos: itens.length,
+      href: itens[0].href,
+      amount: round2(itens.reduce((s, i) => s + i.amount, 0)),
+      tituloAmount: round2(itens.reduce((s, i) => s + i.tituloAmount, 0)),
+      // Vencimento da linha: o mais antigo do lote — é o que diz se atrasou.
+      dueDate: itens.reduce((menor, i) => (i.dueDate < menor ? i.dueDate : menor), itens[0].dueDate),
+      paidAt: itens[0].paidAt,
+      accountId: itens[0].accountId,
+      accountName: itens[0].accountName,
+      // A conferência do comprovante é do lote inteiro: a nota é a mesma em
+      // todos os títulos, então mostrar a do primeiro basta.
+      note: itens[0].note,
+      itens,
+    });
+  }
+  return linhas;
 }
 
 /** Campos do combo pré-lançado que as listas mostram. */
@@ -607,7 +685,7 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
 
   const porDia = new Map<string, PagamentoNaFila[]>();
   for (const p of [
-    ...rows.map(toPagamento),
+    ...agruparLotes(rows),
     ...combos.map(comboToPagamento),
     ...recebimentos.map(toRecebimento),
   ]) {
@@ -720,7 +798,7 @@ export async function pagamentosNaFila(workDate: Date | null): Promise<Pagamento
     }),
   ]);
   return [
-    ...rows.map(toPagamento),
+    ...agruparLotes(rows),
     ...combos.map(comboToPagamento),
     ...recebimentos.map(toRecebimento),
   ].sort((a, b) => a.paidAt.localeCompare(b.paidAt));

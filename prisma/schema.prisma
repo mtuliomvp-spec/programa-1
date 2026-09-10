@@ -1160,6 +1160,11 @@ model Payable {
   pendingPaymentAccountId String?
   pendingPaymentAccount   FinancialAccount? @relation("PendingPayment", fields: [pendingPaymentAccountId], references: [id], onDelete: SetNull)
   pendingPaymentNote      String?
+  // Títulos pré-lançados JUNTOS (um boleto só cobrindo vários títulos, como a
+  // fatura mensal da comunicação de venda) carregam a mesma marca do lote: é
+  // ela que faz as telas da fila mostrarem uma linha só, com o total do boleto,
+  // que abre nos títulos que ela cobre.
+  pendingPaymentBatch     String?
   amount               Float
   dueDate              DateTime
   paymentDate          DateTime?

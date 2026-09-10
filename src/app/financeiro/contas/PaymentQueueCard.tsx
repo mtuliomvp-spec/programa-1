@@ -8,6 +8,11 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { confirmQueuedPaymentsAction, dismissQueuedPaymentAction } from "./actions";
 import type { PagamentoNaFila } from "@/lib/payment-queue";
 
+/** Os ids de título que a linha carrega — o lote devolve todos os que cobre. */
+function idsDaLinha(r: PagamentoNaFila): string[] {
+  return r.kind === "lote" ? (r.itens ?? []).map((i) => i.id) : [r.id];
+}
+
 /**
  * Fila de espera do caixa: títulos cujo comprovante já chegou (o dinheiro saiu
  * do banco) e que esperavam o movimento alcançar o dia do pagamento. Agora que
@@ -33,6 +38,8 @@ export default function PaymentQueueCard({
   const [msg, setMsg] = useState<string | null>(null);
   const [pending, start] = useTransition();
   const [dismissing, startDismiss] = useTransition();
+  // Lote (um boleto só) aberto nos títulos que ele cobre.
+  const [loteAberto, setLoteAberto] = useState<string | null>(null);
 
   if (rows.length === 0) return null;
 
@@ -54,11 +61,19 @@ export default function PaymentQueueCard({
   }
 
   function confirmar() {
-    const ids = rows.filter((r) => selected.has(r.id)).map((r) => r.id);
+    // O lote é uma linha só na tela, mas a baixa é título a título: ele entra
+    // com todos os ids que cobre, e a conta escolhida à mão vale para todos.
+    const escolhidas = rows.filter((r) => selected.has(r.id));
+    const ids = escolhidas.flatMap(idsDaLinha);
     if (!ids.length) return;
+    const contasPorTitulo: Record<string, string> = {};
+    for (const r of escolhidas) {
+      if (!contas[r.id]) continue;
+      for (const id of idsDaLinha(r)) contasPorTitulo[id] = contas[r.id];
+    }
     setMsg(null);
     start(async () => {
-      const res = await confirmQueuedPaymentsAction(ids, contas);
+      const res = await confirmQueuedPaymentsAction(ids, contasPorTitulo);
       if (!res.ok) {
         setMsg(res.error || "Não foi possível confirmar.");
         router.refresh();
@@ -69,10 +84,15 @@ export default function PaymentQueueCard({
     });
   }
 
-  function descartar(id: string) {
-    if (!confirm("Tirar este pré-lançamento da fila? O anexo continua no título.")) return;
+  function descartar(r: PagamentoNaFila) {
+    const ids = idsDaLinha(r);
+    const pergunta =
+      ids.length > 1
+        ? `Tirar da fila os ${ids.length} títulos deste boleto? Os anexos continuam neles.`
+        : "Tirar este pré-lançamento da fila? O anexo continua no título.";
+    if (!confirm(pergunta)) return;
     startDismiss(async () => {
-      await dismissQueuedPaymentAction(id);
+      for (const id of ids) await dismissQueuedPaymentAction(id);
       router.refresh();
     });
   }
@@ -86,6 +106,8 @@ export default function PaymentQueueCard({
       <div className="divide-y divide-slate-100">
         {rows.map((r) => {
           const semConta = !r.accountId && !contas[r.id];
+          const lote = r.kind === "lote";
+          const abertoLote = loteAberto === r.id;
           return (
             <div key={r.id} className="flex flex-wrap items-start gap-3 px-5 py-3">
               <input
@@ -97,23 +119,60 @@ export default function PaymentQueueCard({
               />
               <div className="min-w-0 flex-1">
                 <p className="font-medium text-slate-900">
-                  <Link href={r.href} className="text-blue-700 hover:underline">
-                    {r.kind === "combo"
-                      ? `🧺 ${r.description} · ${r.titulos} título${r.titulos === 1 ? "" : "s"}`
-                      : `${r.direcao === "entrada" ? "💰 " : ""}${r.orderNumber ? `${String(r.orderNumber).padStart(4, "0")} · ` : ""}${r.description}`}
-                  </Link>
+                  {lote ? (
+                    // O lote não leva a lugar nenhum: ele ABRE nos títulos que
+                    // o boleto cobre, aqui mesmo.
+                    <button
+                      type="button"
+                      onClick={() => setLoteAberto(abertoLote ? null : r.id)}
+                      className="text-left text-blue-700 hover:underline"
+                      aria-expanded={abertoLote}
+                    >
+                      <span aria-hidden className="mr-1 text-slate-400">
+                        {abertoLote ? "▾" : "▸"}
+                      </span>
+                      🧾 {r.description}
+                    </button>
+                  ) : (
+                    <Link href={r.href} className="text-blue-700 hover:underline">
+                      {r.kind === "combo"
+                        ? `🧺 ${r.description} · ${r.titulos} título${r.titulos === 1 ? "" : "s"}`
+                        : `${r.direcao === "entrada" ? "💰 " : ""}${r.orderNumber ? `${String(r.orderNumber).padStart(4, "0")} · ` : ""}${r.description}`}
+                    </Link>
+                  )}
                 </p>
                 <p className="mt-0.5 text-xs text-slate-500">
                   {r.supplierName ? `${r.supplierName} · ` : ""}
                   {r.direcao === "entrada" ? "entrou em " : "comprovante de "}
                   {formatDate(r.paidAt)} ·{" "}
-                  {r.kind === "combo" ? "mais antigo vencia em " : "vencia em "}
+                  {r.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em "}
                   {formatDate(r.dueDate)}
                 </p>
                 {r.kind === "combo" ? (
                   <p className="mt-0.5 text-xs text-slate-500">
                     O ok baixa os {r.titulos} títulos do combo de uma vez.
                   </p>
+                ) : null}
+                {lote ? (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Um boleto só: o ok baixa os {r.titulos} títulos de uma vez.
+                  </p>
+                ) : null}
+                {lote && abertoLote ? (
+                  <ul className="mt-2 space-y-1 border-l-2 border-amber-200 pl-3">
+                    {(r.itens ?? []).map((i) => (
+                      <li key={i.id} className="flex flex-wrap items-baseline gap-2 text-xs">
+                        <Link href={i.href} className="min-w-0 flex-1 text-blue-700 hover:underline">
+                          {i.orderNumber ? `${String(i.orderNumber).padStart(4, "0")} · ` : ""}
+                          {i.description}
+                        </Link>
+                        <span className="text-slate-400">vencia em {formatDate(i.dueDate)}</span>
+                        <span className="font-medium tabular-nums text-rose-600">
+                          −{formatCurrency(i.amount)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
                 ) : null}
                 {r.direcao === "entrada" && Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
                   <p className="mt-0.5 text-xs text-slate-500">
@@ -148,14 +207,26 @@ export default function PaymentQueueCard({
                 )}
               </div>
               <div className="text-right">
-                <p
-                  className={`font-semibold tabular-nums ${
-                    r.direcao === "entrada" ? "text-emerald-600" : "text-rose-600"
-                  }`}
-                >
-                  {r.direcao === "entrada" ? "+" : "−"}
-                  {formatCurrency(r.amount)}
-                </p>
+                {lote ? (
+                  <button
+                    type="button"
+                    onClick={() => setLoteAberto(abertoLote ? null : r.id)}
+                    className="block w-full text-right font-semibold tabular-nums text-rose-600 hover:underline"
+                    aria-expanded={abertoLote}
+                    title="Ver os títulos deste boleto"
+                  >
+                    −{formatCurrency(r.amount)}
+                  </button>
+                ) : (
+                  <p
+                    className={`font-semibold tabular-nums ${
+                      r.direcao === "entrada" ? "text-emerald-600" : "text-rose-600"
+                    }`}
+                  >
+                    {r.direcao === "entrada" ? "+" : "−"}
+                    {formatCurrency(r.amount)}
+                  </p>
+                )}
                 {Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
                   <p className="text-[11px] text-slate-400">
                     {r.kind === "combo" ? "combo" : "título"} {formatCurrency(r.tituloAmount)}
@@ -163,7 +234,7 @@ export default function PaymentQueueCard({
                 ) : null}
                 <button
                   type="button"
-                  onClick={() => descartar(r.id)}
+                  onClick={() => descartar(r)}
                   disabled={dismissing}
                   className="mt-1 text-[11px] font-medium text-slate-400 hover:text-rose-600 hover:underline"
                 >

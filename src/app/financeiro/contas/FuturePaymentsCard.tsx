@@ -29,6 +29,8 @@ export default function FuturePaymentsCard({
 }) {
   // O primeiro dia já abre: normalmente é "hoje", o que a pessoa quer ver.
   const [aberto, setAberto] = useState<string | null>(dias[0]?.date ?? null);
+  // Lote (um boleto só) aberto nos títulos que ele cobre.
+  const [loteAberto, setLoteAberto] = useState<string | null>(null);
 
   if (dias.length === 0) return null;
 
@@ -85,46 +87,105 @@ export default function FuturePaymentsCard({
 
               {expandido ? (
                 <ul className="divide-y divide-slate-100 border-t border-sky-100 bg-white">
-                  {d.pagamentos.map((p) => (
-                    <li key={p.id} className="flex flex-wrap items-start gap-3 px-5 py-2.5">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-slate-900">
-                          <Link href={p.href} className="text-blue-700 hover:underline">
-                            {p.kind === "combo"
-                              ? `🧺 ${p.description} · ${p.titulos} título${p.titulos === 1 ? "" : "s"}`
-                              : `${p.direcao === "entrada" ? "💰 " : ""}${p.orderNumber ? `${String(p.orderNumber).padStart(4, "0")} · ` : ""}${p.description}`}
-                          </Link>
-                        </p>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {p.supplierName ? `${p.supplierName} · ` : ""}
-                          {p.accountName
-                            ? `${p.direcao === "entrada" ? "credita em" : "debita em"} ${p.accountName}`
-                            : "conta a escolher no ok"}
-                          {" · "}
-                          {p.kind === "combo" ? "mais antigo vencia em " : "vencia em "}
-                          {formatDate(p.dueDate)}
-                        </p>
-                        {p.note ? (
-                          <p className="mt-1 text-xs font-medium text-amber-700">⚠ {p.note}</p>
+                  {d.pagamentos.map((p) => {
+                    const lote = p.kind === "lote";
+                    const abertoLote = loteAberto === p.id;
+                    return (
+                      <li key={p.id} className="px-5 py-2.5">
+                        <div className="flex flex-wrap items-start gap-3">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-900">
+                              {lote ? (
+                                // O lote não leva a lugar nenhum: ele ABRE nos
+                                // títulos que o boleto cobre, aqui mesmo.
+                                <button
+                                  type="button"
+                                  onClick={() => setLoteAberto(abertoLote ? null : p.id)}
+                                  className="text-left text-blue-700 hover:underline"
+                                  aria-expanded={abertoLote}
+                                >
+                                  <span aria-hidden className="mr-1 text-slate-400">
+                                    {abertoLote ? "▾" : "▸"}
+                                  </span>
+                                  🧾 {p.description}
+                                </button>
+                              ) : (
+                                <Link href={p.href} className="text-blue-700 hover:underline">
+                                  {p.kind === "combo"
+                                    ? `🧺 ${p.description} · ${p.titulos} título${p.titulos === 1 ? "" : "s"}`
+                                    : `${p.direcao === "entrada" ? "💰 " : ""}${p.orderNumber ? `${String(p.orderNumber).padStart(4, "0")} · ` : ""}${p.description}`}
+                                </Link>
+                              )}
+                            </p>
+                            <p className="mt-0.5 text-xs text-slate-500">
+                              {p.supplierName ? `${p.supplierName} · ` : ""}
+                              {p.accountName
+                                ? `${p.direcao === "entrada" ? "credita em" : "debita em"} ${p.accountName}`
+                                : "conta a escolher no ok"}
+                              {" · "}
+                              {p.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em "}
+                              {formatDate(p.dueDate)}
+                            </p>
+                            {p.note ? (
+                              <p className="mt-1 text-xs font-medium text-amber-700">⚠ {p.note}</p>
+                            ) : null}
+                          </div>
+                          <div className="text-right">
+                            {lote ? (
+                              <button
+                                type="button"
+                                onClick={() => setLoteAberto(abertoLote ? null : p.id)}
+                                className="block w-full text-right text-sm font-semibold tabular-nums text-rose-600 hover:underline"
+                                aria-expanded={abertoLote}
+                                title="Ver os títulos deste boleto"
+                              >
+                                −{formatCurrency(p.amount)}
+                              </button>
+                            ) : (
+                              <p
+                                className={`text-sm font-semibold tabular-nums ${
+                                  p.direcao === "entrada" ? "text-emerald-600" : "text-rose-600"
+                                }`}
+                              >
+                                {p.direcao === "entrada" ? "+" : "−"}
+                                {formatCurrency(p.amount)}
+                              </p>
+                            )}
+                            {Math.abs(p.amount - p.tituloAmount) > 0.005 ? (
+                              <p className="text-[11px] text-slate-400">
+                                {p.kind === "combo" ? "combo" : "título"}{" "}
+                                {formatCurrency(p.tituloAmount)}
+                              </p>
+                            ) : null}
+                          </div>
+                        </div>
+
+                        {lote && abertoLote ? (
+                          <ul className="mt-2 space-y-1 border-l-2 border-sky-200 pl-3">
+                            {(p.itens ?? []).map((i) => (
+                              <li key={i.id} className="flex flex-wrap items-baseline gap-2 text-xs">
+                                <Link
+                                  href={i.href}
+                                  className="min-w-0 flex-1 text-blue-700 hover:underline"
+                                >
+                                  {i.orderNumber
+                                    ? `${String(i.orderNumber).padStart(4, "0")} · `
+                                    : ""}
+                                  {i.description}
+                                </Link>
+                                <span className="text-slate-400">
+                                  vencia em {formatDate(i.dueDate)}
+                                </span>
+                                <span className="tabular-nums font-medium text-rose-600">
+                                  −{formatCurrency(i.amount)}
+                                </span>
+                              </li>
+                            ))}
+                          </ul>
                         ) : null}
-                      </div>
-                      <div className="text-right">
-                        <p
-                          className={`text-sm font-semibold tabular-nums ${
-                            p.direcao === "entrada" ? "text-emerald-600" : "text-rose-600"
-                          }`}
-                        >
-                          {p.direcao === "entrada" ? "+" : "−"}
-                          {formatCurrency(p.amount)}
-                        </p>
-                        {Math.abs(p.amount - p.tituloAmount) > 0.005 ? (
-                          <p className="text-[11px] text-slate-400">
-                            {p.kind === "combo" ? "combo" : "título"} {formatCurrency(p.tituloAmount)}
-                          </p>
-                        ) : null}
-                      </div>
-                    </li>
-                  ))}
+                      </li>
+                    );
+                  })}
                 </ul>
               ) : null}
             </div>
