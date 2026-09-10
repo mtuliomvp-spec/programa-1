@@ -2,6 +2,7 @@ import { requireAction } from "@/lib/guards";
 import { getCompany } from "@/lib/company";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import FaturaConferencia from "./FaturaConferencia";
+import ComprovanteAvulso from "./ComprovanteAvulso";
 
 export const dynamic = "force-dynamic";
 
@@ -47,6 +48,22 @@ export default async function ConferenciaFaturaPage() {
         />
         <div className="p-5">
           <FaturaConferencia />
+        </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Comprovante de um carro fora do estoque"
+          description="Quando não há ficha para anexar: o veículo já foi vendido e saiu do estoque, ou a loja entrou só como agente da comunicação."
+        />
+        <div className="p-5">
+          <ComprovanteAvulso />
+          <p className="mt-2 text-xs text-slate-500">
+            Achando a placa em um carro <strong>em estoque</strong>, a cobrança entra como custo
+            dele, como sempre. Nos demais casos entra como <strong>despesa administrativa</strong>,
+            sem vínculo com carro nenhum. O comprovante fica anexado ao título — e à ficha do carro,
+            quando existe uma.
+          </p>
         </div>
       </Card>
 

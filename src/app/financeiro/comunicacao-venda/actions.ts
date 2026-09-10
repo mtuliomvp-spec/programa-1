@@ -227,3 +227,91 @@ export async function lancarFaltantesSicoveAction(
   revalidatePath("/financeiro/comunicacao-venda");
   return { ok: true, criados, avisos };
 }
+
+// ---------------------------------------------------------------------------
+// Comprovante avulso: lançar sem passar pela ficha do veículo
+// ---------------------------------------------------------------------------
+
+export type ComprovanteAvulsoResult = {
+  ok: boolean;
+  /** Texto pronto para a tela — o que foi lançado ou por que não foi. */
+  mensagem?: string;
+  /** Título criado, para a tela oferecer o link. */
+  payableId?: string;
+};
+
+/**
+ * Lança a cobrança de um comprovante do SICOVE SEM passar pela ficha do carro.
+ *
+ * É o caminho de quem não tem ficha para anexar: o veículo já foi vendido e
+ * saiu do estoque, ou nunca esteve nele (a loja entrou só como agente da
+ * comunicação). O sistema procura a placa lida: achando um carro EM ESTOQUE, o
+ * custo entra nele como sempre; nos demais casos entra como despesa
+ * ADMINISTRATIVA, sem vínculo com carro nenhum.
+ *
+ * O comprovante fica anexado ao próprio título — é onde ele faz falta na hora
+ * de conferir a fatura — e também na ficha do carro, quando existe uma.
+ */
+export async function lancarComprovanteAvulsoAction(
+  formData: FormData,
+): Promise<ComprovanteAvulsoResult> {
+  try {
+    await assertCan("financeiro", "criar");
+  } catch (e) {
+    return { ok: false, mensagem: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, mensagem: "Selecione o PDF do comprovante." };
+  }
+  if (file.size > 15 * 1024 * 1024) {
+    return { ok: false, mensagem: "Arquivo muito grande (máximo 15 MB)." };
+  }
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/pdf";
+
+  const { lancarCobrancaSicove, motivoNaoReconhecido } = await import("@/lib/sicove");
+  const cobranca = await lancarCobrancaSicove({
+    buffer,
+    mimeType,
+    // Aqui o arquivo SEMPRE se propõe a ser um comprovante: o aviso do que deu
+    // errado é o próprio conteúdo da tela.
+    descricao: "Comunicação de venda",
+  });
+  if (!cobranca.ok || !cobranca.payableId) {
+    return { ok: false, mensagem: cobranca.mensagem || motivoNaoReconhecido(buffer, mimeType) };
+  }
+
+  // O documento acompanha o título (e a ficha do carro, quando há uma).
+  await prisma.payableAttachment.create({
+    data: {
+      payableId: cobranca.payableId,
+      kind: "OUTRO",
+      description: "Comunicação de venda (SICOVE)",
+      filename: file.name || "comunicacao-de-venda.pdf",
+      mimeType,
+      size: buffer.byteLength,
+      data: buffer,
+    },
+  });
+  if (cobranca.vehicleId) {
+    await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId: cobranca.vehicleId,
+        kind: "DOCUMENTO",
+        description: "Comunicação de venda",
+        filename: file.name || "comunicacao-de-venda.pdf",
+        mimeType,
+        size: buffer.byteLength,
+        data: buffer,
+      },
+    });
+    revalidatePath(`/estoque/${cobranca.vehicleId}`);
+    revalidatePath("/estoque");
+  }
+
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/comunicacao-venda");
+  return { ok: true, mensagem: cobranca.mensagem, payableId: cobranca.payableId };
+}
