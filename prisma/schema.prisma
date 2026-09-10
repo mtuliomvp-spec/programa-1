@@ -1274,6 +1274,10 @@ model PaymentCombo {
   payFull          Boolean           @default(false)
   // Forma de recebimento escolhida pelo solicitante: "conta" | "pix".
   payoutMethod     String?
+  // Linha digitável do boleto que o borderô paga (quando ele nasce de uma
+  // fatura, como a da comunicação de venda). Guardada como impressa — com
+  // pontos e espaços —, igual à do título; a tela copia só os dígitos.
+  barcode          String?
   // Conta que pagou o combo (na baixa).
   accountId        String?
   account          FinancialAccount? @relation(fields: [accountId], references: [id], onDelete: SetNull)

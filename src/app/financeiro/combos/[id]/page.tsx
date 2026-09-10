@@ -9,6 +9,7 @@ import { freeCapitalOf } from "@/lib/investments";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
+import CopyBarcode from "@/components/CopyBarcode";
 import PrintButton from "@/components/PrintButton";
 import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
@@ -380,12 +381,19 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           (comunicação de venda), a observação traz a linha digitável do boleto
           e os dois PDFs ficam aqui — é onde quem paga vai procurá-los.
         */}
-        {combo.notes || documentos.length ? (
+        {combo.notes || combo.barcode || documentos.length ? (
           <section className="mt-4 border-t border-slate-200 pt-4">
-            {combo.notes ? (
+            {combo.notes || combo.barcode ? (
               <>
                 <p className="text-sm font-semibold text-slate-800">📄 Boleto do borderô</p>
-                <p className="mt-0.5 select-all text-xs text-slate-600">{combo.notes}</p>
+                {combo.notes ? (
+                  <p className="mt-0.5 text-xs text-slate-600">{combo.notes}</p>
+                ) : null}
+                {combo.barcode ? (
+                  <div className="mt-2">
+                    <CopyBarcode value={combo.barcode} />
+                  </div>
+                ) : null}
               </>
             ) : null}
             {documentos.length ? (

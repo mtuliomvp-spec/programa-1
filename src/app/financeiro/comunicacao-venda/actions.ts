@@ -593,9 +593,10 @@ export async function unificarFaturaSicoveAction(formData: FormData): Promise<Un
     );
   }
 
+  // A linha digitável tem campo próprio (é ela que se copia para pagar); a
+  // observação fica com o que se lê de relance.
   const observacao = [
     `Boleto ${brl(boleto.valor)}${boleto.vencimento ? ` · vence ${dia(boleto.vencimento)}` : ""}`,
-    `Linha digitável: ${boleto.linhaDigitavel}`,
     fatura.periodoInicio && fatura.periodoFim
       ? `Serviços de ${dia(fatura.periodoInicio)} a ${dia(fatura.periodoFim)}`
       : null,
@@ -609,12 +610,20 @@ export async function unificarFaturaSicoveAction(formData: FormData): Promise<Un
       await prisma.paymentCombo.create({
         // Sem `userId`: o borderô é da prestadora, não de um sócio — com dono
         // o pagamento abateria capital de quem não tem nada a ver com isto.
-        data: { name: nomeDoBordero(fatura.numero), notes: observacao, userId: null },
+        data: {
+          name: nomeDoBordero(fatura.numero),
+          notes: observacao,
+          barcode: boleto.linhaDigitavel,
+          userId: null,
+        },
         select: { id: true },
       })
     ).id;
   if (bordero) {
-    await prisma.paymentCombo.update({ where: { id: comboId }, data: { notes: observacao } });
+    await prisma.paymentCombo.update({
+      where: { id: comboId },
+      data: { notes: observacao, barcode: boleto.linhaDigitavel },
+    });
   }
 
   // 3) Os títulos entram no borderô e passam a valer pelo que o boleto diz:
