@@ -711,9 +711,69 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
     "@/lib/payment-queue"
   );
   // Mesmo id-de-título-combo-ou-recebimento do confirmar.
-  if (await prisma.payable.count({ where: { id } })) await desenfileirarPagamento(id);
-  else if (await prisma.receivable.count({ where: { id } })) await desenfileirarRecebimento(id);
-  else await desenfileirarCombo(id);
+  //
+  // AVULSO (nascido no movimento de caixa) é apagado em vez de voltar para a
+  // lista: ele só existia para ser pago naquele dia — tirado da fila viraria um
+  // título fantasma no Contas a pagar, que ninguém pediu. É a mesma regra da
+  // exclusão no Livro caixa: avulso some, título estorna.
+  // Só some o que NÃO tem origem: com veículo, peça, recorrência (ou qualquer
+  // outra operação por trás) o título continua existindo — a peça entrou no
+  // estoque, o custo caiu no carro, e isso não se desfaz tirando da fila.
+  const titulo = await prisma.payable.findUnique({
+    where: { id },
+    select: {
+      avulso: true,
+      status: true,
+      vehicleId: true,
+      partId: true,
+      recurringId: true,
+      consortiumId: true,
+      employeeId: true,
+      purchaseRequestId: true,
+    },
+  });
+  if (titulo) {
+    const semOrigem =
+      !titulo.vehicleId &&
+      !titulo.partId &&
+      !titulo.recurringId &&
+      !titulo.consortiumId &&
+      !titulo.employeeId &&
+      !titulo.purchaseRequestId;
+    if (titulo.avulso && titulo.status !== "PAGO" && semOrigem) {
+      await prisma.payable.delete({ where: { id } });
+    } else {
+      await desenfileirarPagamento(id);
+    }
+    revalidatePath("/financeiro/livro-caixa");
+  } else {
+    const recebimento = await prisma.receivable.findUnique({
+      where: { id },
+      select: {
+        avulso: true,
+        status: true,
+        saleId: true,
+        partSaleId: true,
+        recurringId: true,
+        installmentNumber: true,
+      },
+    });
+    if (recebimento) {
+      const semOrigem =
+        !recebimento.saleId &&
+        !recebimento.partSaleId &&
+        !recebimento.recurringId &&
+        recebimento.installmentNumber == null;
+      if (recebimento.avulso && recebimento.status !== "RECEBIDO" && semOrigem) {
+        await prisma.receivable.delete({ where: { id } });
+      } else {
+        await desenfileirarRecebimento(id);
+      }
+      revalidatePath("/financeiro/livro-caixa");
+    } else {
+      await desenfileirarCombo(id);
+    }
+  }
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");

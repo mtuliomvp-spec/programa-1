@@ -89,7 +89,11 @@ export default function PaymentQueueCard({
     const pergunta =
       ids.length > 1
         ? `Tirar da fila os ${ids.length} títulos deste boleto? Os anexos continuam neles.`
-        : "Tirar este pré-lançamento da fila? O anexo continua no título.";
+        : r.avulso
+          ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
+            // fila o apaga, em vez de deixar um título solto no a pagar.
+            "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
+          : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
     startDismiss(async () => {
       for (const id of ids) await dismissQueuedPaymentAction(id);

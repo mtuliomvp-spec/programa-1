@@ -33,6 +33,15 @@ const receiptSchema = z.object({
   documentoBeneficiario: z.string().nullable().optional(),
   // Como o dinheiro saiu: PIX, TED, DOC, TRANSFERENCIA, BOLETO ou OUTRO.
   formaPagamento: z.string().nullable().optional(),
+  // Para que lado o dinheiro andou na conta do titular do comprovante: SAIDA
+  // (pagamento, "Pix enviado") ou ENTRADA ("Pix recebido", depósito). Quem
+  // lança pelo movimento de caixa não precisa dizer de novo o que o papel diz.
+  sentido: z.string().nullable().optional(),
+  // Para ONDE o dinheiro foi (o recebedor) — é a conta creditada, que importa
+  // quando o comprovante é de dinheiro que ENTROU.
+  bancoDestino: z.string().nullable().optional(),
+  agenciaDestino: z.string().nullable().optional(),
+  contaDestino: z.string().nullable().optional(),
 });
 
 const receiptsSchema = z.object({ comprovantes: z.array(receiptSchema) });
@@ -61,6 +70,10 @@ const RECEIPTS_JSON_SCHEMA = {
           "beneficiario",
           "documentoBeneficiario",
           "formaPagamento",
+          "sentido",
+          "bancoDestino",
+          "agenciaDestino",
+          "contaDestino",
         ],
         properties: {
           pagina: { type: "integer", description: "número da página no PDF, começando em 1" },
@@ -104,6 +117,23 @@ const RECEIPTS_JSON_SCHEMA = {
             description:
               "como o dinheiro saiu: exatamente PIX, TED, DOC, TRANSFERENCIA (entre contas do mesmo banco), BOLETO ou OUTRO",
           },
+          sentido: {
+            type: ["string", "null"],
+            description:
+              "para que lado o dinheiro andou na conta do titular do comprovante: exatamente SAIDA (pagamento, 'Pix enviado', 'transferência enviada') ou ENTRADA ('Pix recebido', depósito, crédito recebido)",
+          },
+          bancoDestino: {
+            type: ["string", "null"],
+            description: "nome ou número do banco de QUEM RECEBEU (conta creditada)",
+          },
+          agenciaDestino: {
+            type: ["string", "null"],
+            description: "agência da conta creditada, só dígitos (sem o dígito verificador)",
+          },
+          contaDestino: {
+            type: ["string", "null"],
+            description: "número da conta creditada, só dígitos (sem o dígito verificador)",
+          },
         },
       },
     },
@@ -117,8 +147,10 @@ const SYSTEM_PROMPT =
   "VALOR TOTAL pago (número, ponto decimal), a DATA do pagamento (AAAA-MM-DD) e uma descrição curta " +
   "(convênio, beneficiário ou tributo — ex.: 'SEFAZ MA - IPVA', 'Pagamento de título — Fulano'). " +
   "Devolva também DE ONDE saiu o dinheiro (banco, agência e conta DEBITADAS — o pagador, nunca o " +
-  "favorecido), QUEM RECEBEU (beneficiário/favorecido/recebedor/cedente) com o CPF/CNPJ dele, e a " +
-  "FORMA (Pix, TED, DOC, transferência, boleto). " +
+  "favorecido), QUEM RECEBEU (beneficiário/favorecido/recebedor/cedente) com o CPF/CNPJ dele e a " +
+  "conta dele (banco/agência/conta DE DESTINO), a FORMA (Pix, TED, DOC, transferência, boleto) e o " +
+  "SENTIDO — SAIDA quando o comprovante é de pagamento/envio, ENTRADA quando é de recebimento " +
+  "('Pix recebido', depósito, crédito). " +
   "Regras: 1) O valor é o total efetivamente pago no comprovante. 2) CONTA DEBITADA é a do PAGADOR: " +
   "todo comprovante mostra os dois lados (quem pagou e quem recebeu) — em Pix e TED eles vêm em " +
   "blocos 'Pagador' e 'Recebedor'/'Favorecido'. Não troque um pelo outro. Agência e conta só com os " +
