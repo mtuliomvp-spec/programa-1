@@ -11,6 +11,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { matchesPainelBucket, painelBucketOf, painelBucketTexto } from "@/lib/painel-buckets";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import SearchSelect from "@/components/SearchSelect";
 import Can from "@/components/Can";
 import { userCan } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
@@ -430,38 +431,40 @@ export default async function ContasAPagarPage({
                 <option value="PAGO">Pago</option>
               </Select>
             </label>
+            {/* Listas longas (fornecedores, sócios, a frota inteira): digitar
+                quem se procura em vez de rolar o select. */}
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Fornecedor
-              <Select name="fornecedor" defaultValue={fornecedor || ""} className="mt-0.5 h-11 w-52">
-                <option value="">Todos os fornecedores</option>
-                {supplierOptions.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                  </option>
-                ))}
-              </Select>
+              <SearchSelect
+                name="fornecedor"
+                defaultValue={fornecedor || ""}
+                placeholder="Digite o fornecedor…"
+                emptyLabel="Todos os fornecedores"
+                className="mt-0.5 w-52"
+                options={supplierOptions.map((s) => ({ id: s.id, label: s.name }))}
+              />
             </label>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Beneficiário
-              <Select name="beneficiario" defaultValue={beneficiario || ""} className="mt-0.5 h-11 w-52">
-                <option value="">Todos os beneficiários</option>
-                {beneficiaryOptions.map((b) => (
-                  <option key={b.value} value={b.value}>
-                    {b.label}
-                  </option>
-                ))}
-              </Select>
+              <SearchSelect
+                name="beneficiario"
+                defaultValue={beneficiario || ""}
+                placeholder="Digite o beneficiário…"
+                emptyLabel="Todos os beneficiários"
+                className="mt-0.5 w-52"
+                options={beneficiaryOptions.map((b) => ({ id: b.value, label: b.label }))}
+              />
             </label>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Veículo
-              <Select name="veiculo" defaultValue={veiculo || ""} className="mt-0.5 h-11 w-52">
-                <option value="">Todos os veículos</option>
-                {vehicleOptions.map((v) => (
-                  <option key={v.id} value={v.id}>
-                    {v.label}
-                  </option>
-                ))}
-              </Select>
+              <SearchSelect
+                name="veiculo"
+                defaultValue={veiculo || ""}
+                placeholder="Digite o veículo ou a placa…"
+                emptyLabel="Todos os veículos"
+                className="mt-0.5 w-52"
+                options={vehicleOptions.map((v) => ({ id: v.id, label: v.label }))}
+              />
             </label>
           </>
         }

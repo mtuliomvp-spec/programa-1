@@ -5,7 +5,8 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { normalizeSearch } from "@/lib/search";
-import { Button, Input, Select } from "@/components/ui";
+import { Button, Input } from "@/components/ui";
+import SearchSelect from "@/components/SearchSelect";
 import { addPayablesToComboAction, removePayableFromComboAction } from "../actions";
 
 type Row = {
@@ -96,24 +97,34 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
             className="h-11 text-base"
           />
         </div>
-        <Select value={fornecedor} onChange={(e) => setFornecedor(e.target.value)} className="h-11 w-full sm:w-48">
-          <option value="">Todos os fornecedores</option>
-          {supplierOptions.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </Select>
-        <Select value={beneficiario} onChange={(e) => setBeneficiario(e.target.value)} className="h-11 w-full sm:w-48">
-          <option value="">Todos os beneficiários</option>
-          {beneficiaryOptions.map((b) => (
-            <option key={b} value={b}>{b}</option>
-          ))}
-        </Select>
-        <Select value={veiculo} onChange={(e) => setVeiculo(e.target.value)} className="h-11 w-full sm:w-52">
-          <option value="">Todos os veículos</option>
-          {vehicleOptions.map((v) => (
-            <option key={v} value={v}>{v}</option>
-          ))}
-        </Select>
+        {/* Listas longas: digitar quem se procura em vez de rolar o select. */}
+        <SearchSelect
+          name="filtroFornecedor"
+          value={fornecedor}
+          onChange={setFornecedor}
+          options={supplierOptions.map((s) => ({ id: s, label: s }))}
+          placeholder="Digite o fornecedor…"
+          emptyLabel="Todos os fornecedores"
+          className="w-full sm:w-48"
+        />
+        <SearchSelect
+          name="filtroBeneficiario"
+          value={beneficiario}
+          onChange={setBeneficiario}
+          options={beneficiaryOptions.map((b) => ({ id: b, label: b }))}
+          placeholder="Digite o beneficiário…"
+          emptyLabel="Todos os beneficiários"
+          className="w-full sm:w-48"
+        />
+        <SearchSelect
+          name="filtroVeiculo"
+          value={veiculo}
+          onChange={setVeiculo}
+          options={vehicleOptions.map((v) => ({ id: v, label: v }))}
+          placeholder="Digite o veículo ou a placa…"
+          emptyLabel="Todos os veículos"
+          className="w-full sm:w-52"
+        />
       </div>
       {shown.length === 0 ? (
         <p className="px-1 py-3 text-sm text-slate-500">Nenhum título encontrado para o filtro.</p>
