@@ -384,3 +384,65 @@ export function lerFaturaSicove(buffer: Buffer): FaturaSicove | null {
     total: Math.round(unicos.reduce((s, i) => s + i.valor, 0) * 100) / 100,
   };
 }
+
+// ---------------------------------------------------------------------------
+// O BOLETO da fatura
+// ---------------------------------------------------------------------------
+
+export type BoletoSicove = {
+  /** Linha digitável como impressa, para copiar e pagar. */
+  linhaDigitavel: string;
+  /** Só os 47 dígitos dela. */
+  digitos: string;
+  /** Valor do boleto, tirado da própria linha digitável. */
+  valor: number;
+  /** Vencimento pelo fator da linha digitável (null quando o boleto não tem). */
+  vencimento: Date | null;
+  /** "5320027720-97": é o que amarra o boleto ao relatório de detalhamento. */
+  numeroFatura: string | null;
+};
+
+/**
+ * Vencimento a partir do FATOR DE VENCIMENTO da linha digitável.
+ *
+ * O fator conta os dias desde 03/07/2000 (= 1000) e chegou a 9999 em
+ * 21/02/2025; no dia seguinte a FEBRABAN o reiniciou em 1000. Como aqui só se
+ * paga boleto vivo, vale o ciclo novo: 1000 = 22/02/2025.
+ */
+function vencimentoDoFator(fator: number): Date | null {
+  if (fator < 1000 || fator > 9999) return null; // 0000 = boleto sem vencimento
+  const base = Date.UTC(2025, 1, 22, 12, 0, 0);
+  return new Date(base + (fator - 1000) * 86400000);
+}
+
+/**
+ * Lê o BOLETO da fatura mensal — sem IA, como o resto daqui.
+ *
+ * O que importa está todo na linha digitável, que o PDF traz em texto: o valor
+ * (10 últimos dígitos) e o vencimento (os 4 antes deles). Os pontos entre os
+ * campos é que tornam o achado inequívoco no meio dos outros números da página.
+ */
+export function lerBoletoSicove(buffer: Buffer): BoletoSicove | null {
+  let texto: string;
+  try {
+    texto = textoDoPdf(buffer);
+  } catch {
+    return null;
+  }
+  const limpo = texto.replace(/\s+/g, " ");
+  const m = limpo.match(
+    /(\d{5})\.(\d{5}) ?(\d{5})\.(\d{6}) ?(\d{5})\.(\d{6}) ?(\d) ?(\d{14})/,
+  );
+  if (!m) return null;
+
+  const campo5 = m[8];
+  const fator = Number(campo5.slice(0, 4));
+  const valor = Number(campo5.slice(4)) / 100;
+  return {
+    linhaDigitavel: `${m[1]}.${m[2]} ${m[3]}.${m[4]} ${m[5]}.${m[6]} ${m[7]} ${m[8]}`,
+    digitos: `${m[1]}${m[2]}${m[3]}${m[4]}${m[5]}${m[6]}${m[7]}${m[8]}`,
+    valor: Math.round(valor * 100) / 100,
+    vencimento: vencimentoDoFator(fator),
+    numeroFatura: limpo.match(/Fatura\s*n[ºo°]?\s*([\d-]{8,})/i)?.[1] ?? null,
+  };
+}

@@ -52,9 +52,8 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
       // Só os METADADOS: os BYTES do comprovante iriam inteiros para o
       // navegador. O arquivo é servido por /financeiro/combos/anexos/[id].
       attachments: {
-        where: { kind: "COMPROVANTE" },
         orderBy: { createdAt: "desc" },
-        select: { id: true, filename: true, size: true, createdAt: true },
+        select: { id: true, kind: true, description: true, filename: true, size: true, createdAt: true },
       },
     },
   });
@@ -111,7 +110,15 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   const comboEditavel = combo.status === "ABERTO" || combo.status === "SOLICITADO";
   // Comprovante do borderô: quem monta ou quem paga pode anexar, enquanto o
   // combo não estiver cancelado (no pago, o arquivo fica como documento).
-  const comprovante = combo.attachments[0] ?? null;
+  // Borderô da FATURA (sem dono): quem recebe é o fornecedor dos títulos.
+  const semDono = !combo.userId;
+  const fornecedores = Array.from(
+    new Set(comboPayables.map((p) => p.supplier?.name).filter(Boolean) as string[]),
+  );
+  const comprovante = combo.attachments.find((a) => a.kind === "COMPROVANTE") ?? null;
+  // Os outros documentos do borderô: hoje, o boleto e o relatório de
+  // detalhamento da fatura que o unificou.
+  const documentos = combo.attachments.filter((a) => a.kind !== "COMPROVANTE");
   const podeComprovante = (canManage || canPagar) && combo.status !== "CANCELADO";
   const available =
     comboEditavel
@@ -174,6 +181,18 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
 
           <section className="mb-4">
             <h2 className="mb-1 border-b border-slate-200 pb-1 text-xs font-bold uppercase tracking-wide text-slate-500">Beneficiário</h2>
+            {semDono ? (
+              // Borderô SEM dono: nasceu de uma fatura, não do pedido de um
+              // sócio. Quem recebe é o fornecedor dos títulos, pelo boleto —
+              // não há dado bancário de usuário a cobrar nem forma a escolher.
+              <>
+                <Row label="Nome" value={fornecedores.join(" · ") || "—"} />
+                <p className="py-1.5 text-xs text-slate-500">
+                  Borderô da fatura: paga-se o boleto do fornecedor, não há repasse a sócio.
+                </p>
+              </>
+            ) : (
+              <>
             <Row label="Nome" value={bene?.name || "—"} />
             <Row label="CPF/CNPJ" value={bene?.document || "—"} />
             <Row label="Telefone" value={bene?.phone || "—"} />
@@ -219,6 +238,8 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                 hasConta={Boolean(bene?.bankName || bene?.bankAccount)}
               />
             ) : null}
+              </>
+            )}
           </section>
 
           <section className="mb-4">
@@ -313,6 +334,38 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             </p>
           ) : null}
         </main>
+
+        {/*
+          O que o borderô cobra e como pagá-lo: quando ele nasceu de uma fatura
+          (comunicação de venda), a observação traz a linha digitável do boleto
+          e os dois PDFs ficam aqui — é onde quem paga vai procurá-los.
+        */}
+        {combo.notes || documentos.length ? (
+          <section className="mt-4 border-t border-slate-200 pt-4">
+            {combo.notes ? (
+              <>
+                <p className="text-sm font-semibold text-slate-800">📄 Boleto do borderô</p>
+                <p className="mt-0.5 select-all text-xs text-slate-600">{combo.notes}</p>
+              </>
+            ) : null}
+            {documentos.length ? (
+              <ul className="mt-2 flex flex-wrap gap-3 text-sm print:hidden">
+                {documentos.map((d) => (
+                  <li key={d.id}>
+                    <a
+                      href={`/financeiro/combos/anexos/${d.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="font-medium text-blue-700 hover:underline"
+                    >
+                      {d.description || d.filename} →
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </section>
+        ) : null}
 
         {/*
           Comprovante do BORDERÔ: o combo é pago de uma vez só, então o
