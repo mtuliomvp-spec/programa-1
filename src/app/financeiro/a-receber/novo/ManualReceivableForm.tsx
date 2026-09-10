@@ -3,22 +3,30 @@
 import { useActionState, useState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
-import StructuralFlowSelect from "@/components/StructuralFlowSelect";
+import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createManualReceivableAction, type ManualReceivableState } from "../actions";
 import { toDateInputValue } from "@/lib/format";
 
 type Customer = { id: string; name: string };
 type CostCenter = { id: string; name: string };
+type Beneficiary = { id: string; name: string };
 
 export default function ManualReceivableForm({
   customers,
   costCenters,
+  beneficiaries,
 }: {
   customers: Customer[];
   costCenters: CostCenter[];
+  beneficiaries: Beneficiary[];
 }) {
   const [state, formAction, pending] = useActionState(createManualReceivableAction, {} as ManualReceivableState);
   const [alreadyReceived, setAlreadyReceived] = useState(false);
+  // Fluxo controlado: no CAPITAL o título vira aporte de um sócio na baixa, e
+  // é preciso dizer de quem — sem isso o dinheiro entrava no caixa sem entrar
+  // no capital de ninguém.
+  const [flow, setFlow] = useState("ADMINISTRATIVO");
+  const isCapital = flow === "CAPITAL";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -45,7 +53,31 @@ export default function ManualReceivableForm({
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
-        <StructuralFlowSelect allowVeiculos={false} />
+        <Field label="Fluxo (obra estrutural)">
+          {/* Sem veículo nesta tela: "Veículos" viraria Administrativo. */}
+          <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
+            {STRUCTURAL_FLOWS.filter((f) => f.key !== "VEICULOS").map((f) => (
+              <option key={f.key} value={f.key}>
+                {f.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {isCapital ? (
+          <Field label="Sócio (beneficiário do capital)" required>
+            <Select name="capitalBeneficiaryId" defaultValue="" required>
+              <option value="">Selecione o sócio</option>
+              {beneficiaries.map((b) => (
+                <option key={b.id} value={b.id}>
+                  {b.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              Ao receber, o valor entra como <strong>aporte</strong> deste sócio no Capital.
+            </p>
+          </Field>
+        ) : null}
         <Field label="Centro de custo (obra, imóvel...)">
           <Select name="costCenterId" defaultValue="">
             <option value="">Nenhum (usa o fluxo acima)</option>

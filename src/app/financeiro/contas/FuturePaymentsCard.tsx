@@ -33,15 +33,20 @@ export default function FuturePaymentsCard({
   if (dias.length === 0) return null;
 
   const total = dias.reduce((s, d) => s + d.total, 0);
+  const totalEntradas = dias.reduce((s, d) => s + d.totalEntradas, 0);
+  const partes = [
+    total > 0.005 ? `💸 ${formatCurrency(total)} já pago` : null,
+    totalEntradas > 0.005 ? `💰 ${formatCurrency(totalEntradas)} já recebido` : null,
+  ].filter(Boolean);
 
   return (
     <Card className="mb-4 border border-sky-200 bg-sky-50/40">
       <CardHeader
-        title={`💸 ${formatCurrency(total)} já pago${dias.length > 1 ? ` em ${dias.length} dias` : ""} à frente do movimento`}
+        title={`${partes.join(" · ")}${dias.length > 1 ? ` em ${dias.length} dias` : ""} à frente do movimento`}
         description={
           workDateLabel
-            ? `O dinheiro já saiu do banco, mas o movimento ainda está em ${workDateLabel}. Ao abrir o caixa desses dias, os pagamentos aparecem prontos para o ok.`
-            : "O dinheiro já saiu do banco. Abra o caixa do dia para confirmar a baixa."
+            ? `O dinheiro já passou pelo banco, mas o movimento ainda está em ${workDateLabel}. Ao abrir o caixa desses dias, os lançamentos aparecem prontos para o ok.`
+            : "O dinheiro já passou pelo banco. Abra o caixa do dia para confirmar a baixa."
         }
       />
       <div className="divide-y divide-sky-100">
@@ -61,11 +66,20 @@ export default function FuturePaymentsCard({
                   </span>
                   {formatDate(d.date)}
                   <span className="font-normal text-slate-500">
-                    · {d.pagamentos.length} pagamento{d.pagamentos.length > 1 ? "s" : ""}
+                    · {d.pagamentos.length} lançamento{d.pagamentos.length > 1 ? "s" : ""}
                   </span>
                 </span>
-                <span className="font-semibold tabular-nums text-rose-600">
-                  {formatCurrency(d.total)}
+                <span className="text-right">
+                  {d.total > 0.005 ? (
+                    <span className="block font-semibold tabular-nums text-rose-600">
+                      −{formatCurrency(d.total)}
+                    </span>
+                  ) : null}
+                  {d.totalEntradas > 0.005 ? (
+                    <span className="block font-semibold tabular-nums text-emerald-600">
+                      +{formatCurrency(d.totalEntradas)}
+                    </span>
+                  ) : null}
                 </span>
               </button>
 
@@ -78,12 +92,14 @@ export default function FuturePaymentsCard({
                           <Link href={p.href} className="text-blue-700 hover:underline">
                             {p.kind === "combo"
                               ? `🧺 ${p.description} · ${p.titulos} título${p.titulos === 1 ? "" : "s"}`
-                              : `${String(p.orderNumber).padStart(4, "0")} · ${p.description}`}
+                              : `${p.direcao === "entrada" ? "💰 " : ""}${p.orderNumber ? `${String(p.orderNumber).padStart(4, "0")} · ` : ""}${p.description}`}
                           </Link>
                         </p>
                         <p className="mt-0.5 text-xs text-slate-500">
                           {p.supplierName ? `${p.supplierName} · ` : ""}
-                          {p.accountName ? `debita em ${p.accountName}` : "conta a escolher no ok"}
+                          {p.accountName
+                            ? `${p.direcao === "entrada" ? "credita em" : "debita em"} ${p.accountName}`
+                            : "conta a escolher no ok"}
                           {" · "}
                           {p.kind === "combo" ? "mais antigo vencia em " : "vencia em "}
                           {formatDate(p.dueDate)}
@@ -93,7 +109,12 @@ export default function FuturePaymentsCard({
                         ) : null}
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-semibold tabular-nums text-rose-600">
+                        <p
+                          className={`text-sm font-semibold tabular-nums ${
+                            p.direcao === "entrada" ? "text-emerald-600" : "text-rose-600"
+                          }`}
+                        >
+                          {p.direcao === "entrada" ? "+" : "−"}
                           {formatCurrency(p.amount)}
                         </p>
                         {Math.abs(p.amount - p.tituloAmount) > 0.005 ? (

@@ -51,6 +51,10 @@ export default async function ContasAReceberPage({
           dueDate: true,
           status: true,
           receivedDate: true,
+          // Entrada já informada, esperando o movimento do caixa chegar no dia.
+          pendingReceiptDate: true,
+          pendingReceiptAmount: true,
+          _count: { select: { attachments: true } },
           saleId: true,
           partSaleId: true,
           recurringId: true,
@@ -118,6 +122,14 @@ export default async function ContasAReceberPage({
     // (o vencimento é que fica travado, na própria tela de edição).
     hasVehicle: Boolean(r.vehicleId ?? r.sale?.vehicleId),
     receivedDateInput: r.receivedDate ? toDateInputValue(r.receivedDate) : null,
+    // Entrada já informada: espera o movimento do caixa alcançar o dia.
+    queued: r.pendingReceiptDate
+      ? {
+          date: r.pendingReceiptDate.toISOString(),
+          amount: r.pendingReceiptAmount ?? r.amount,
+          proof: r._count.attachments > 0,
+        }
+      : null,
     editable: r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId,
     originHint:
       r.status === "RECEBIDO"

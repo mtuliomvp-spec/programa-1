@@ -338,10 +338,16 @@ export async function desenfileirarPagamento(payableId: string) {
 export type PagamentoNaFila = {
   id: string;
   /**
-   * Título avulso ou COMBO (borderô). O combo é pago de uma vez só: ele entra
-   * na fila como UMA linha, e o ok baixa todos os títulos dele juntos.
+   * Título avulso, COMBO (borderô) ou RECEBIMENTO. O combo é pago de uma vez
+   * só: ele entra na fila como UMA linha, e o ok baixa todos os títulos dele
+   * juntos.
    */
-  kind: "titulo" | "combo";
+  kind: "titulo" | "combo" | "recebimento";
+  /**
+   * Dinheiro que SAI (pagamento) ou que ENTRA (recebimento). É o que decide o
+   * sinal na tela e o lado da baixa quando o ok é dado.
+   */
+  direcao: "saida" | "entrada";
   orderNumber: number;
   description: string;
   supplierName: string | null;
@@ -394,6 +400,7 @@ function toPagamento(p: FilaRow): PagamentoNaFila {
   return {
     id: p.id,
     kind: "titulo",
+    direcao: "saida",
     orderNumber: p.orderNumber,
     description: p.description,
     supplierName: p.supplier?.name ?? null,
@@ -447,6 +454,7 @@ function comboToPagamento(c: ComboRow): PagamentoNaFila {
   return {
     id: c.id,
     kind: "combo",
+    direcao: "saida",
     orderNumber: 0,
     description: `Combo ${c.name}`,
     supplierName: c.user ? `montado por ${c.user.name}` : null,
@@ -462,6 +470,90 @@ function comboToPagamento(c: ComboRow): PagamentoNaFila {
   };
 }
 
+/** Campos do recebimento pré-lançado que as listas mostram. */
+const RECEBIMENTO_SELECT = {
+  id: true,
+  description: true,
+  amount: true,
+  dueDate: true,
+  pendingReceiptDate: true,
+  pendingReceiptAmount: true,
+  pendingReceiptNote: true,
+  pendingReceiptAccountId: true,
+  pendingReceiptAccount: { select: { name: true } },
+  customer: { select: { name: true } },
+} as const;
+
+type RecebimentoRow = {
+  id: string;
+  description: string;
+  amount: number;
+  dueDate: Date;
+  pendingReceiptDate: Date | null;
+  pendingReceiptAmount: number | null;
+  pendingReceiptNote: string | null;
+  pendingReceiptAccountId: string | null;
+  pendingReceiptAccount: { name: string } | null;
+  customer: { name: string } | null;
+};
+
+function toRecebimento(r: RecebimentoRow): PagamentoNaFila {
+  return {
+    id: r.id,
+    kind: "recebimento",
+    direcao: "entrada",
+    // Título a receber não tem número de ordem (só o a pagar tem): a linha
+    // aparece pela descrição.
+    orderNumber: 0,
+    description: r.description,
+    supplierName: r.customer?.name ?? null,
+    titulos: 1,
+    href: `/financeiro/a-receber/${r.id}/editar`,
+    amount: r.pendingReceiptAmount ?? r.amount,
+    tituloAmount: r.amount,
+    dueDate: r.dueDate.toISOString(),
+    paidAt: r.pendingReceiptDate!.toISOString(),
+    accountId: r.pendingReceiptAccountId,
+    accountName: r.pendingReceiptAccount?.name ?? null,
+    note: r.pendingReceiptNote,
+  };
+}
+
+/**
+ * Põe o RECEBIMENTO na fila: o dinheiro já caiu na conta (o cliente avisou, o
+ * extrato mostrou, o comprovante chegou) e espera o movimento alcançar o dia.
+ */
+export async function enfileirarRecebimento(input: {
+  receivableId: string;
+  data: Date;
+  valor: number;
+  accountId: string;
+  nota: string | null;
+}) {
+  await prisma.receivable.update({
+    where: { id: input.receivableId },
+    data: {
+      pendingReceiptDate: input.data,
+      pendingReceiptAmount: round2(input.valor),
+      pendingReceiptAccountId: input.accountId,
+      pendingReceiptNote: input.nota,
+    },
+  });
+}
+
+/** Tira o recebimento da fila (sem creditar nada). */
+export async function desenfileirarRecebimento(receivableId: string) {
+  await prisma.receivable.update({
+    where: { id: receivableId },
+    data: {
+      pendingReceiptDate: null,
+      pendingReceiptAmount: null,
+      pendingReceiptAccountId: null,
+      pendingReceiptNote: null,
+    },
+  });
+}
+
 /** Fim do dia (23:59:59 UTC) da data de trabalho. */
 function fimDoDia(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59));
@@ -469,9 +561,12 @@ function fimDoDia(d: Date): Date {
 
 /** Um dia à frente do movimento, com o que já saiu do banco naquele dia. */
 export type DiaAdiante = {
-  /** ISO da data do pagamento (o dia do comprovante). */
+  /** ISO da data do pagamento/recebimento. */
   date: string;
+  /** Quanto SAIU neste dia (pagamentos e combos). */
   total: number;
+  /** Quanto ENTROU neste dia (recebimentos informados). */
+  totalEntradas: number;
   pagamentos: PagamentoNaFila[];
 };
 
@@ -492,7 +587,7 @@ export type DiaAdiante = {
  */
 export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdiante[]> {
   const quando = workDate ? { gt: fimDoDia(workDate) } : { not: null };
-  const [rows, combos] = await Promise.all([
+  const [rows, combos, recebimentos] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
       orderBy: { pendingPaymentDate: "asc" },
@@ -503,10 +598,19 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
       orderBy: { pendingPaymentDate: "asc" },
       select: COMBO_SELECT,
     }),
+    prisma.receivable.findMany({
+      where: { status: { not: "RECEBIDO" }, pendingReceiptDate: quando },
+      orderBy: { pendingReceiptDate: "asc" },
+      select: RECEBIMENTO_SELECT,
+    }),
   ]);
 
   const porDia = new Map<string, PagamentoNaFila[]>();
-  for (const p of [...rows.map(toPagamento), ...combos.map(comboToPagamento)]) {
+  for (const p of [
+    ...rows.map(toPagamento),
+    ...combos.map(comboToPagamento),
+    ...recebimentos.map(toRecebimento),
+  ]) {
     const dia = p.paidAt.slice(0, 10);
     const lista = porDia.get(dia) ?? [];
     lista.push(p);
@@ -516,7 +620,14 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([dia, pagamentos]) => ({
       date: `${dia}T12:00:00.000Z`,
-      total: round2(pagamentos.reduce((s, p) => s + p.amount, 0)),
+      // Saídas e entradas contadas em separado: somar tudo num número só
+      // esconderia os dois lados do dia.
+      total: round2(
+        pagamentos.filter((p) => p.direcao === "saida").reduce((s, p) => s + p.amount, 0),
+      ),
+      totalEntradas: round2(
+        pagamentos.filter((p) => p.direcao === "entrada").reduce((s, p) => s + p.amount, 0),
+      ),
       pagamentos,
     }));
 }
@@ -536,12 +647,12 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
  * antes do ok).
  */
 export async function debitosPrelancados(): Promise<{
-  /** accountId → total a debitar. */
+  /** accountId → saldo do pré-lançado: negativo debita, positivo credita. */
   porConta: Map<string, number>;
   /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
   semConta: number;
 }> {
-  const [titulos, combos] = await Promise.all([
+  const [titulos, combos, recebimentos] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
       select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
@@ -556,6 +667,10 @@ export async function debitosPrelancados(): Promise<{
         payables: { where: { status: { not: "PAGO" } }, select: { amount: true } },
       },
     }),
+    prisma.receivable.findMany({
+      where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null } },
+      select: { amount: true, pendingReceiptAmount: true, pendingReceiptAccountId: true },
+    }),
   ]);
 
   const porConta = new Map<string, number>();
@@ -567,9 +682,14 @@ export async function debitosPrelancados(): Promise<{
     }
     porConta.set(accountId, round2((porConta.get(accountId) ?? 0) + valor));
   };
-  for (const t of titulos) somar(t.pendingPaymentAccountId, t.pendingPaymentAmount ?? t.amount);
+  // Saídas entram negativas e entradas positivas: o que a tela mostra é o
+  // efeito líquido no saldo da conta quando o caixa alcançar esses dias.
+  for (const t of titulos) somar(t.pendingPaymentAccountId, -(t.pendingPaymentAmount ?? t.amount));
   for (const c of combos) {
-    somar(c.pendingPaymentAccountId, round2(c.payables.reduce((s, p) => s + p.amount, 0)));
+    somar(c.pendingPaymentAccountId, -round2(c.payables.reduce((s, p) => s + p.amount, 0)));
+  }
+  for (const r of recebimentos) {
+    somar(r.pendingReceiptAccountId, r.pendingReceiptAmount ?? r.amount);
   }
   return { porConta, semConta };
 }
@@ -582,7 +702,7 @@ export async function debitosPrelancados(): Promise<{
 export async function pagamentosNaFila(workDate: Date | null): Promise<PagamentoNaFila[]> {
   if (!workDate) return [];
   const quando = { not: null, lte: fimDoDia(workDate) } as const;
-  const [rows, combos] = await Promise.all([
+  const [rows, combos, recebimentos] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
       orderBy: { pendingPaymentDate: "asc" },
@@ -593,10 +713,17 @@ export async function pagamentosNaFila(workDate: Date | null): Promise<Pagamento
       orderBy: { pendingPaymentDate: "asc" },
       select: COMBO_SELECT,
     }),
+    prisma.receivable.findMany({
+      where: { status: { not: "RECEBIDO" }, pendingReceiptDate: quando },
+      orderBy: { pendingReceiptDate: "asc" },
+      select: RECEBIMENTO_SELECT,
+    }),
   ]);
-  return [...rows.map(toPagamento), ...combos.map(comboToPagamento)].sort((a, b) =>
-    a.paidAt.localeCompare(b.paidAt),
-  );
+  return [
+    ...rows.map(toPagamento),
+    ...combos.map(comboToPagamento),
+    ...recebimentos.map(toRecebimento),
+  ].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
 }
 
 /** Quantos pré-lançamentos esperam o caixa deste dia (para o aviso na tela). */
@@ -605,7 +732,7 @@ export async function contarPagamentosNaFila(workDate: Date | null): Promise<num
   const fim = new Date(
     Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 23, 59, 59),
   );
-  const [titulos, combos] = await Promise.all([
+  const [titulos, combos, recebimentos] = await Promise.all([
     prisma.payable.count({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fim } },
     }),
@@ -615,8 +742,11 @@ export async function contarPagamentosNaFila(workDate: Date | null): Promise<num
         pendingPaymentDate: { not: null, lte: fim },
       },
     }),
+    prisma.receivable.count({
+      where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null, lte: fim } },
+    }),
   ]);
-  return titulos + combos;
+  return titulos + combos + recebimentos;
 }
 
 /**
