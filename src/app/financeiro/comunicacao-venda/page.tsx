@@ -53,16 +53,16 @@ export default async function ConferenciaFaturaPage() {
 
       <Card className="mt-4">
         <CardHeader
-          title="Comprovante de um carro fora do estoque"
-          description="Quando não há ficha para anexar: o veículo já foi vendido e saiu do estoque, ou a loja entrou só como agente da comunicação."
+          title="Comprovante de um carro sem ficha no sistema"
+          description="Quando não há onde anexar: o carro foi vendido antes da implantação, ou a loja entrou só como agente da comunicação."
         />
         <div className="p-5">
           <ComprovanteAvulso />
           <p className="mt-2 text-xs text-slate-500">
-            Achando a placa em um carro <strong>em estoque</strong>, a cobrança entra como custo
-            dele, como sempre. Nos demais casos entra como <strong>despesa administrativa</strong>,
-            sem vínculo com carro nenhum. O comprovante fica anexado ao título — e à ficha do carro,
-            quando existe uma.
+            Achando a placa em um carro cadastrado, a cobrança entra como <strong>custo dele</strong>{" "}
+            — pós-venda, se já vendido —, como sempre. Só quando a placa <strong>não existe no
+            sistema</strong> ela entra como despesa administrativa, sem vínculo com carro nenhum. O
+            comprovante fica anexado ao título e, quando há ficha, também nela.
           </p>
         </div>
       </Card>

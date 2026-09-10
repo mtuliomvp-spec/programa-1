@@ -220,10 +220,12 @@ export async function lancarCobrancaSicove(input: {
     };
   }
   const placa = comprovante.placa ?? placaFicha ?? null;
-  // O custo só entra no CARRO enquanto ele é da loja. Carro já vendido (ou que
-  // nem está no estoque — a loja foi só o agente da comunicação) tem a margem
-  // fechada: a cobrança entra como despesa ADMINISTRATIVA, sem vínculo.
-  const noEstoque = Boolean(vehicle && vehicle.status !== "VENDIDO");
+  // Tendo ficha, o custo é DAQUELE CARRO — inclusive já vendido, onde ele entra
+  // como custo pós-venda (a comunicação é um gasto daquela venda). Só a placa
+  // que o sistema não conhece vira despesa ADMINISTRATIVA: é o carro vendido
+  // antes da implantação, ou aquele em que a loja foi só o agente da
+  // comunicação — não há veículo a que atribuir o custo.
+  const temFicha = Boolean(vehicle);
 
   // Idempotência pelo número do registro: o mesmo serviço nunca é cobrado duas
   // vezes, mesmo que o arquivo seja anexado de novo. Sem número (formato
@@ -256,23 +258,23 @@ export async function lancarCobrancaSicove(input: {
     amount: valor,
     dueDate,
     supplierId,
-    // No estoque: vira custo daquele carro e entra na margem dele. Fora do
-    // estoque (vendido ou não cadastrado): despesa administrativa.
-    vehicleId: noEstoque ? vehicle!.id : null,
-    structuralKey: noEstoque ? "VEICULOS" : "ADMINISTRATIVO",
+    // Com ficha: custo daquele carro (pós-venda, se já vendido). Sem ficha:
+    // despesa administrativa, porque não há veículo a que atribuir.
+    vehicleId: temFicha ? vehicle!.id : null,
+    structuralKey: temFicha ? "VEICULOS" : "ADMINISTRATIVO",
     notes: `Registro ${comprovante.numero} enviado em ${enviadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Cobrado na fatura mensal da prestadora.${
-      noEstoque ? "" : " Veículo fora do estoque — lançado como despesa administrativa."
+      temFicha ? "" : " Veículo não cadastrado no sistema — lançado como despesa administrativa."
     }`,
     alreadyPaid: false,
   });
 
   const brl = valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   const venc = dueDate.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
-  const destino = noEstoque
-    ? "como custo deste veículo"
-    : vehicle
-      ? "como despesa administrativa (o veículo já foi vendido)"
-      : "como despesa administrativa (o veículo não está no estoque)";
+  const destino = !temFicha
+    ? "como despesa administrativa (a placa não está cadastrada no sistema)"
+    : vehicle!.status === "VENDIDO"
+      ? "como custo pós-venda deste veículo"
+      : "como custo deste veículo";
   return {
     ok: true,
     mensagem: `${rotulo} reconhecida: título de ${brl} lançado em Contas a pagar, vencendo em ${venc}, ${destino}.`,

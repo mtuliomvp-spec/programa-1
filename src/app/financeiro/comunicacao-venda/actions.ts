@@ -243,11 +243,11 @@ export type ComprovanteAvulsoResult = {
 /**
  * Lança a cobrança de um comprovante do SICOVE SEM passar pela ficha do carro.
  *
- * É o caminho de quem não tem ficha para anexar: o veículo já foi vendido e
- * saiu do estoque, ou nunca esteve nele (a loja entrou só como agente da
- * comunicação). O sistema procura a placa lida: achando um carro EM ESTOQUE, o
- * custo entra nele como sempre; nos demais casos entra como despesa
- * ADMINISTRATIVA, sem vínculo com carro nenhum.
+ * É o caminho de quem não tem ficha para anexar: o carro foi vendido antes da
+ * implantação do sistema, ou nunca esteve nele (a loja entrou só como agente da
+ * comunicação). O sistema procura a placa lida: achando o carro, o custo entra
+ * nele como sempre (pós-venda, se já vendido); só a placa desconhecida vira
+ * despesa ADMINISTRATIVA, sem vínculo com carro nenhum.
  *
  * O comprovante fica anexado ao próprio título — é onde ele faz falta na hora
  * de conferir a fatura — e também na ficha do carro, quando existe uma.
