@@ -371,7 +371,7 @@ export default async function LivroCaixaPage({
               categories={categoryOptions}
               incomeCategories={incomeCategoryOptions}
               defaultDate={toDateInputValue(cashboxWorkDate ?? new Date())}
-              lockedDate={!!cashboxWorkDate}
+              cashboxDate={cashboxWorkDate ? toDateInputValue(cashboxWorkDate) : null}
               preselectedAccountId={accountFilter || undefined}
             />
           </>

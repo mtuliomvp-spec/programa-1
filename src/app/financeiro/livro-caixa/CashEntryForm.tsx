@@ -31,7 +31,7 @@ export default function CashEntryForm({
   categories,
   incomeCategories,
   defaultDate,
-  lockedDate = false,
+  cashboxDate = null,
   preselectedAccountId,
 }: {
   accounts: Account[];
@@ -45,7 +45,8 @@ export default function CashEntryForm({
   /** Categorias de RECEITA (entrada). */
   incomeCategories: string[];
   defaultDate: string;
-  lockedDate?: boolean;
+  /** Data de trabalho do caixa aberto (yyyy-mm-dd); null = nenhum aberto. */
+  cashboxDate?: string | null;
   preselectedAccountId?: string;
 }) {
   const [open, setOpen] = useState(false);
@@ -65,6 +66,9 @@ export default function CashEntryForm({
   const [customerList, setCustomerList] = useState(customers);
   const [customerId, setCustomerId] = useState("");
   const [newCustomer, setNewCustomer] = useState(false);
+  // Data do lançamento: fora da data do caixa aberto ele vira pré-lançamento.
+  const [date, setDate] = useState(defaultDate);
+  const preLancar = !cashboxDate || cashboxDate !== date;
   const lastAutoDesc = useRef("");
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -92,6 +96,7 @@ export default function CashEntryForm({
       const result = await createCashEntryAction(prev, formData);
       if (result.ok) {
         formRef.current?.reset();
+        setDate(defaultDate);
         setKind("saida");
         setFlow("ADMINISTRATIVO");
         setSupplierName("");
@@ -148,7 +153,9 @@ export default function CashEntryForm({
       ) : null}
       {state.ok ? (
         <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-          Lançamento registrado. Pode adicionar outro.
+          {state.preLancado
+            ? `Pré-lançado em ${state.quando}: espera o movimento desse dia para o ok em Contas e caixas. Pode adicionar outro.`
+            : "Lançamento registrado. Pode adicionar outro."}
         </p>
       ) : null}
 
@@ -204,21 +211,32 @@ export default function CashEntryForm({
           <Field label="Valor (R$)" required>
             <MoneyInput key={amountKey} name="amount" required onValueChange={setAmount} />
           </Field>
-          {lockedDate ? (
-            <Field label="Data">
-              {/* Travada na data do caixa aberto: o valor enviado é fixo. */}
-              <input type="hidden" name="date" value={defaultDate} />
-              <div className="flex h-10 items-center rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm text-slate-600">
-                {formatDate(defaultDate)}
-                <span className="ml-2 text-xs text-slate-400">(caixa aberto)</span>
-              </div>
-            </Field>
-          ) : (
-            <Field label="Data" required>
-              <Input name="date" type="date" defaultValue={defaultDate} required />
-            </Field>
-          )}
+          {/*
+            A data é livre: fora do dia do caixa aberto o lançamento não é
+            recusado — ele nasce pré-lançado e espera o movimento chegar
+            naquele dia, igual ao título a pagar com comprovante.
+          */}
+          <Field label="Data" required>
+            <Input
+              name="date"
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              required
+            />
+          </Field>
         </div>
+
+        {preLancar ? (
+          <p className="rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+            ⏳ {cashboxDate
+              ? `O movimento aberto é de ${formatDate(cashboxDate)}.`
+              : "Nenhum caixa aberto agora."}{" "}
+            Este lançamento vai ficar <strong>pré-lançado</strong> em {formatDate(date)}: o dinheiro
+            já passou pelo banco, e a baixa sai com um ok em Contas e caixas quando o movimento
+            desse dia for aberto.
+          </p>
+        ) : null}
 
         <Field label="Nº do documento (opcional)">
           <Input name="documentNumber" placeholder="Ex.: NF 12345 / recibo" />
@@ -500,8 +518,23 @@ export default function CashEntryForm({
           <Textarea name="notes" rows={2} />
         </Field>
 
+        {/* O comprovante do banco fica anexado ao lançamento — é a prova de
+            que o dinheiro passou, principalmente no pré-lançamento. */}
+        <Field label="Comprovante (opcional)">
+          <input
+            type="file"
+            name="file"
+            accept="image/*,application/pdf,.pdf"
+            className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
+          />
+        </Field>
+
         <Button type="submit" disabled={pending} className="w-full">
-          {pending ? "Lançando..." : "Lançar no caixa"}
+          {pending
+            ? "Lançando..."
+            : preLancar
+              ? `Pré-lançar em ${formatDate(date)}`
+              : "Lançar no caixa"}
         </Button>
       </form>
     </div>
