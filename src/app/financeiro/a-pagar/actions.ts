@@ -1,5 +1,6 @@
 "use server";
 
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -3167,7 +3168,10 @@ export async function preLancarPagamentoEmLoteAction(
   }
 
   const { enfileirarPagamento } = await import("@/lib/payment-queue");
-  const nota = [`pago em lote com ${pagaveis.length} título(s)`, ...avisos].join(" · ");
+  // A marca do lote é o que faz a fila do caixa mostrar os títulos numa linha
+  // só, com o total do boleto. Título sozinho não vira lote.
+  const lote = pagaveis.length > 1 ? `lote_${randomUUID()}` : null;
+  const nota = avisos.length ? avisos.join(" · ") : null;
   for (const p of pagaveis) {
     await enfileirarPagamento({
       payableId: p.id,
@@ -3175,6 +3179,7 @@ export async function preLancarPagamentoEmLoteAction(
       valor: valorDe(p),
       accountId,
       nota,
+      lote,
     });
   }
 
