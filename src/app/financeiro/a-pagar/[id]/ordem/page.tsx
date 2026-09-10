@@ -14,7 +14,7 @@ import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
 import SetSupplierForm from "./SetSupplierForm";
 import ReadReceiptAi from "../../ReadReceiptAi";
 import PayableAttachments from "./PayableAttachments";
-import CopyBarcode from "./CopyBarcode";
+import CopyBarcode from "@/components/CopyBarcode";
 import { formatBarcodeLine } from "@/lib/barcode-line";
 
 export const dynamic = "force-dynamic";

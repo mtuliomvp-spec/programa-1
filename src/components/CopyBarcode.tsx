@@ -4,9 +4,12 @@ import { useState } from "react";
 import { barcodeDigits, formatBarcodeLine } from "@/lib/barcode-line";
 
 /**
- * Linha digitável do boleto/fatura na Ordem de Pagamento, pronta para copiar e
- * colar no leitor do banco. Copia SÓ OS DÍGITOS (é o que o aplicativo do banco
- * aceita); o que aparece na tela fica formatado para conferência.
+ * Linha digitável do boleto, pronta para copiar e colar no leitor do banco.
+ * Copia SÓ OS DÍGITOS (é o que o aplicativo do banco aceita); o que aparece na
+ * tela fica formatado para conferência.
+ *
+ * Serve à Ordem de Pagamento do título e ao BORDERÔ — que também paga um
+ * boleto quando nasce de uma fatura (comunicação de venda).
  */
 export default function CopyBarcode({ value }: { value: string }) {
   const [copiado, setCopiado] = useState(false);
