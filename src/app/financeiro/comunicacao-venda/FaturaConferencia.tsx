@@ -306,7 +306,14 @@ export default function FaturaConferencia() {
                     <Td className="tabular-nums">{brl(l.valorFatura)}</Td>
                     <Td>
                       {l.situacao === "LANCADO" ? (
-                        <Badge tone="success">lançado</Badge>
+                        <>
+                          <Badge tone="success">lançado</Badge>
+                          {l.porPlaca ? (
+                            <span className="block text-xs text-slate-500">
+                              achado pela placa — o nº do registro entra nele ao unificar
+                            </span>
+                          ) : null}
+                        </>
                       ) : l.situacao === "FALTA" ? (
                         <Badge tone="warning">falta lançar</Badge>
                       ) : (
@@ -314,6 +321,7 @@ export default function FaturaConferencia() {
                           <Badge tone="danger">valor diferente</Badge>
                           <span className="block text-xs text-slate-500">
                             lançado: {brl(l.valorLancado ?? 0)}
+                            {l.porPlaca ? " (título achado pela placa)" : ""}
                           </span>
                         </>
                       )}
@@ -338,6 +346,16 @@ export default function FaturaConferencia() {
                   <li key={s.id}>
                     · {s.descricao} — {brl(s.valor)}
                     {s.numero ? ` (${s.numero})` : ""}
+                    {s.duplicado ? (
+                      <span className="block pl-3 text-xs font-medium text-rose-700">
+                        ⚠ a placa dele está na fatura e já tem título com o nº do registro: são dois
+                        títulos para o mesmo serviço.{" "}
+                        <Link href="/financeiro/a-pagar" className="underline">
+                          abrir Contas a pagar
+                        </Link>{" "}
+                        e excluir o que sobrou.
+                      </span>
+                    ) : null}
                   </li>
                 ))}
               </ul>

@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { assertCan } from "@/lib/guards";
 import { createManualPayable, resolveSupplierByName } from "@/lib/finance";
 import { formatCompetenciaMes } from "@/lib/competencia";
+import { nameKey } from "@/lib/person-keys";
 import {
   lerBoletoSicove,
   lerFaturaSicove,
@@ -27,6 +28,13 @@ export type LinhaConferencia = {
   situacao: "LANCADO" | "FALTA" | "DIVERGENTE";
   /** Valor do título já lançado, quando houver. */
   valorLancado?: number;
+  /**
+   * O título foi achado pela PLACA, não pelo nº do registro: ele foi lançado
+   * por outro caminho (à mão, ou pelo comprovante antes desta tela existir) e
+   * ficou sem o número. Ao lançar/unificar, o número é gravado nele — é isso
+   * que impede o serviço de virar dois títulos.
+   */
+  porPlaca?: boolean;
   /** Veículo encontrado pela placa (quando existe). */
   veiculo?: { id: string; label: string } | null;
 };
@@ -52,7 +60,14 @@ export type ConferenciaFatura = {
   };
   linhas?: LinhaConferencia[];
   /** Títulos do SICOVE no período que a fatura NÃO cobrou. */
-  sobrando?: { id: string; descricao: string; numero: string | null; valor: number }[];
+  sobrando?: {
+    id: string;
+    descricao: string;
+    numero: string | null;
+    valor: number;
+    /** A placa dele está na fatura, cobrada em outro título: sobra duplicada. */
+    duplicado?: boolean;
+  }[];
   resumo?: { totalFatura: number; totalLancado: number; faltando: number; divergentes: number };
   /** Borderô que já unificou esta fatura (quando ela já foi unificada). */
   unificado?: { comboId: string; nome: string; titulos: number; status: string } | null;
@@ -62,6 +77,81 @@ const dia = (d: Date | null) =>
   d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : null;
 
 const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/**
+ * A prestadora cadastrada como fornecedor — SEM criar nada (a conferência não
+ * grava). Null quando ela ainda não virou fornecedor.
+ */
+async function prestadoraCadastrada(): Promise<string | null> {
+  const company = await prisma.companySettings.findFirst({ select: { sicoveFornecedor: true } });
+  const nome = (company?.sicoveFornecedor || "").trim();
+  if (!nome) return null;
+  const exato = await prisma.supplier.findFirst({
+    where: { name: { equals: nome, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (exato) return exato.id;
+  const chave = nameKey(nome);
+  if (!chave) return null;
+  const todos = await prisma.supplier.findMany({ select: { id: true, name: true } });
+  return todos.find((s) => nameKey(s.name) === chave)?.id ?? null;
+}
+
+type CandidatoSemRegistro = {
+  id: string;
+  description: string;
+  amount: number;
+  supplierId: string | null;
+  categoryLabel: string | null;
+};
+
+/**
+ * Títulos de comunicação de venda SEM o nº do registro — os que a conferência
+ * não conseguiria casar pelo número.
+ *
+ * Existem porque o serviço pode ter sido lançado por fora: à mão, ou pelo
+ * comprovante anexado antes de a tela de conferência existir. Sem olhar para
+ * eles, a fatura os dava como "falta lançar" e criava um segundo título para o
+ * mesmo serviço — o carro ficava cobrado duas vezes.
+ *
+ * O casamento é pela PLACA na descrição, e só vale para título que já se
+ * apresenta como comunicação de venda (fornecedor, categoria ou descrição):
+ * "Compra do veículo Fiat Strada (TCZ9A42)" também traz a placa e não pode ser
+ * confundido com a cobrança do SICOVE.
+ */
+async function candidatosSemRegistro(
+  placas: string[],
+  supplierId: string | null,
+): Promise<CandidatoSemRegistro[]> {
+  if (!placas.length) return [];
+  const rows = await prisma.payable.findMany({
+    where: {
+      status: { not: "PAGO" },
+      documentNumber: null,
+      OR: placas.map((p) => ({ description: { contains: p, mode: "insensitive" as const } })),
+    },
+    select: { id: true, description: true, amount: true, supplierId: true, categoryLabel: true },
+  });
+  return rows.filter(
+    (r) =>
+      (supplierId && r.supplierId === supplierId) ||
+      r.categoryLabel === "Comunicação de venda" ||
+      /comunica|sicove/i.test(r.description),
+  );
+}
+
+/** O candidato desta placa que ainda não foi usado por outra linha da fatura. */
+function acharPelaPlaca(
+  placa: string,
+  candidatos: CandidatoSemRegistro[],
+  usados: Set<string>,
+): CandidatoSemRegistro | null {
+  return (
+    candidatos.find(
+      (c) => !usados.has(c.id) && c.description.toUpperCase().includes(placa.toUpperCase()),
+    ) ?? null
+  );
+}
 
 /** Nome do borderô que unifica uma fatura — é ele que dá a idempotência. */
 const nomeDoBordero = (numeroFatura: string | null) =>
@@ -150,23 +240,32 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
   }
 
   const numeros = fatura.itens.map((i) => i.numero);
-  const [lancados, veiculos] = await Promise.all([
+  const placas = fatura.itens.map((i) => i.placa);
+  const supplierId = await prestadoraCadastrada();
+  const [lancados, veiculos, semRegistro] = await Promise.all([
     prisma.payable.findMany({
       where: { documentNumber: { in: numeros } },
       select: { id: true, documentNumber: true, amount: true },
     }),
     prisma.vehicle.findMany({
-      where: { plate: { in: fatura.itens.map((i) => i.placa) } },
+      where: { plate: { in: placas } },
       orderBy: { createdAt: "desc" },
       select: { id: true, plate: true, brand: true, model: true },
     }),
+    candidatosSemRegistro(placas, supplierId),
   ]);
   const porNumero = new Map(lancados.map((p) => [p.documentNumber, p]));
-  const porPlaca = new Map(veiculos.map((v) => [v.plate.toUpperCase(), v]));
+  const porPlacaVeiculo = new Map(veiculos.map((v) => [v.plate.toUpperCase(), v]));
 
+  // Casados pela placa (título lançado por fora, sem o nº do registro): a
+  // conferência só MOSTRA — o número é gravado na hora de lançar/unificar.
+  const usados = new Set<string>();
   const linhas: LinhaConferencia[] = fatura.itens.map((i) => {
-    const titulo = porNumero.get(i.numero);
-    const v = porPlaca.get(i.placa);
+    const porNum = porNumero.get(i.numero);
+    const adotado = porNum ? null : acharPelaPlaca(i.placa, semRegistro, usados);
+    if (adotado) usados.add(adotado.id);
+    const titulo = porNum ?? adotado;
+    const v = porPlacaVeiculo.get(i.placa);
     const situacao: LinhaConferencia["situacao"] = !titulo
       ? "FALTA"
       : Math.abs(titulo.amount - i.valor) > 0.005
@@ -180,6 +279,7 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
       valorFatura: i.valor,
       situacao,
       valorLancado: titulo?.amount,
+      porPlaca: Boolean(adotado),
       veiculo: v ? { id: v.id, label: `${v.brand} ${v.model} · ${v.plate}` } : null,
     };
   });
@@ -191,16 +291,43 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
     ? (
         await prisma.payable.findMany({
           where: {
-            categoryLabel: "Comunicação de venda",
+            AND: [
+              {
+                // Não só os rotulados "Comunicação de venda": o mesmo serviço
+                // lançado à mão pode ter ido para outra categoria, e é
+                // justamente esse que corre o risco de virar título duplicado.
+                OR: [
+                  { categoryLabel: "Comunicação de venda" },
+                  ...(supplierId ? [{ supplierId }] : []),
+                  { description: { contains: "SICOVE", mode: "insensitive" as const } },
+                ],
+              },
+              {
+                // Sem o `null` explícito o título SEM número ficava de fora:
+                // em SQL, `NULL NOT IN (...)` não é verdadeiro. Era justamente
+                // ele que sumia daqui — o lançado por fora, que duplica.
+                OR: [{ documentNumber: null }, { documentNumber: { notIn: numeros } }],
+              },
+            ],
             dueDate: {
               gte: new Date(Date.UTC(vencimento.getUTCFullYear(), vencimento.getUTCMonth(), 1)),
               lt: new Date(Date.UTC(vencimento.getUTCFullYear(), vencimento.getUTCMonth() + 1, 1)),
             },
-            documentNumber: { notIn: numeros },
           },
           select: { id: true, description: true, documentNumber: true, amount: true },
         })
-      ).map((p) => ({ id: p.id, descricao: p.description, numero: p.documentNumber, valor: p.amount }))
+      )
+        // O que foi casado pela placa não sobra: ele É o título do serviço.
+        .filter((p) => !usados.has(p.id))
+        .map((p) => ({
+          id: p.id,
+          descricao: p.description,
+          numero: p.documentNumber,
+          valor: p.amount,
+          // A placa está na fatura e já tem título com o nº do registro: são
+          // dois títulos para o mesmo serviço.
+          duplicado: placas.some((placa) => p.description.toUpperCase().includes(placa)),
+        }))
     : [];
 
   const totalLancado = linhas
@@ -266,10 +393,14 @@ export async function lancarFaltantesSicoveAction(
  * é relido da configuração pelo tipo do serviço — o que chega do navegador só
  * diz QUAL serviço lançar, nunca quanto. Já lançado (mesmo número de registro)
  * é pulado, então rodar duas vezes não duplica nada.
+ *
+ * Antes de criar, procura o serviço lançado por FORA (à mão, ou pelo
+ * comprovante), que não tem o nº do registro: achando pela placa, ele ADOTA o
+ * número em vez de nascer um segundo título para o mesmo serviço.
  */
 async function lancarItensDaFatura(
   itens: { numero: string; tipo: ServicoSicove; placa: string; enviadoEm: string | null }[],
-): Promise<{ criados: number; avisos: string[]; error?: string }> {
+): Promise<{ criados: number; avisos: string[]; adotados?: number; error?: string }> {
   const company = await prisma.companySettings.findFirst({
     select: {
       sicoveFornecedor: true,
@@ -285,6 +416,12 @@ async function lancarItensDaFatura(
   const supplierId = await resolveSupplierByName(fornecedor);
   const avisos: string[] = [];
   let criados = 0;
+  let adotados = 0;
+  const semRegistro = await candidatosSemRegistro(
+    itens.map((i) => i.placa),
+    supplierId,
+  );
+  const usados = new Set<string>();
 
   for (const item of itens) {
     const valor = item.tipo === "CANCELAMENTO" ? company?.sicoveCancelamento : company?.sicoveComunicado;
@@ -298,6 +435,24 @@ async function lancarItensDaFatura(
       select: { id: true },
     });
     if (existe) continue;
+
+    // O serviço já pode estar lançado sem o número (à mão, ou pelo
+    // comprovante): adotar é o que impede o título duplicado.
+    const antigo = acharPelaPlaca(item.placa, semRegistro, usados);
+    if (antigo) {
+      usados.add(antigo.id);
+      await prisma.payable.update({
+        where: { id: antigo.id },
+        data: { documentNumber: item.numero },
+      });
+      adotados += 1;
+      if (Math.abs(antigo.amount - valor) > 0.005) {
+        avisos.push(
+          `${item.placa}: o título que já existia está em ${brl(antigo.amount)} e a fatura cobra ${brl(valor)} — confira o valor.`,
+        );
+      }
+      continue;
+    }
 
     const veiculo = await prisma.vehicle.findFirst({
       where: { plate: item.placa },
@@ -325,7 +480,12 @@ async function lancarItensDaFatura(
     criados += 1;
   }
 
-  return { criados, avisos };
+  if (adotados > 0) {
+    avisos.push(
+      `${adotados} serviço(s) já tinham título lançado por fora — aproveitei o que existia e gravei o nº do registro neles (não criei título novo).`,
+    );
+  }
+  return { criados, avisos, adotados };
 }
 
 // ---------------------------------------------------------------------------
