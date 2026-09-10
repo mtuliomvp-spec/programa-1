@@ -2,10 +2,13 @@
 
 import { useRef, useState, useTransition } from "react";
 import { Badge, Button, Table, Td, Th, Thead, Tr } from "@/components/ui";
+import Link from "next/link";
 import {
   conferirFaturaSicoveAction,
   lancarFaltantesSicoveAction,
+  unificarFaturaSicoveAction,
   type ConferenciaFatura,
+  type UnificacaoFatura,
 } from "./actions";
 
 const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
@@ -17,30 +20,60 @@ const dataBr = (iso: string | null) => (iso ? iso.split("-").reverse().join("/")
  */
 export default function FaturaConferencia() {
   const fileRef = useRef<HTMLInputElement>(null);
+  const boletoRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<ConferenciaFatura | null>(null);
   const [lancando, startLancar] = useTransition();
   const [feito, setFeito] = useState<string | null>(null);
+  const [unindo, startUnir] = useTransition();
+  const [uniao, setUniao] = useState<UnificacaoFatura | null>(null);
 
-  async function conferir() {
+  /** `limpar` false = reconferência depois de gravar, que não apaga o retorno. */
+  async function conferir(limpar = true) {
     const file = fileRef.current?.files?.[0];
     if (!file) return;
     setRes(null);
-    setFeito(null);
+    if (limpar) {
+      setFeito(null);
+      setUniao(null);
+    }
     setBusy(true);
     try {
       const fd = new FormData();
       fd.set("file", file);
+      const boleto = boletoRef.current?.files?.[0];
+      if (boleto) fd.set("boleto", boleto);
       setRes(await conferirFaturaSicoveAction(fd));
     } finally {
       setBusy(false);
     }
   }
 
+  /**
+   * Unifica os títulos do mês num borderô só — o boleto. Os arquivos são
+   * reenviados porque é o servidor que relê os dois: o que vale é o que está
+   * no PDF, nunca o que a tela achou que leu.
+   */
+  function unificar() {
+    const file = fileRef.current?.files?.[0];
+    const boleto = boletoRef.current?.files?.[0];
+    if (!file || !boleto) return;
+    setUniao(null);
+    startUnir(async () => {
+      const fd = new FormData();
+      fd.set("file", file);
+      fd.set("boleto", boleto);
+      const r = await unificarFaturaSicoveAction(fd);
+      setUniao(r);
+      if (r.ok) await conferir(false);
+    });
+  }
+
   const faltantes = (res?.linhas ?? []).filter((l) => l.situacao === "FALTA");
 
   function lancar() {
     setFeito(null);
+    setUniao(null);
     startLancar(async () => {
       const r = await lancarFaltantesSicoveAction(
         faltantes.map((l) => ({
@@ -67,17 +100,33 @@ export default function FaturaConferencia() {
       <div className="rounded-xl border border-indigo-200 bg-indigo-50/50 p-4">
         <p className="text-sm font-semibold text-slate-800">📄 Fatura do mês</p>
         <p className="mt-0.5 text-xs text-slate-500">
-          Anexe o <strong>relatório de detalhamento da fatura</strong> (não o boleto). A leitura é
-          local e instantânea — nada é gravado até você mandar lançar.
+          Anexe os dois arquivos que a prestadora manda: o{" "}
+          <strong>relatório de detalhamento</strong> (um serviço por linha) e o{" "}
+          <strong>boleto</strong> (o valor único que se paga). A leitura é local e instantânea —
+          nada é gravado até você mandar lançar ou unificar.
         </p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <input
-            ref={fileRef}
-            type="file"
-            accept="application/pdf,.pdf"
-            className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
-          />
-          <Button type="button" onClick={conferir} disabled={busy || lancando}>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="block text-xs font-medium text-slate-600">
+            Relatório de detalhamento
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
+            />
+          </label>
+          <label className="block text-xs font-medium text-slate-600">
+            Boleto <span className="font-normal text-slate-400">(para unificar num pagamento só)</span>
+            <input
+              ref={boletoRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              className="mt-1 block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
+            />
+          </label>
+        </div>
+        <div className="mt-3">
+          <Button type="button" onClick={() => conferir()} disabled={busy || lancando || unindo}>
             {busy ? "Lendo…" : "Conferir fatura"}
           </Button>
         </div>
@@ -147,6 +196,86 @@ export default function FaturaConferencia() {
               </p>
             ) : null}
           </div>
+
+          {/*
+            O boleto: um valor só para os serviços todos. Com ele anexado, os
+            títulos do mês podem virar um borderô agora — sem esperar o
+            pagamento — e Contas a pagar passa a mostrar um pagamento único.
+          */}
+          {res.boleto ? (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 p-4">
+              <p className="text-sm font-semibold text-emerald-900">
+                🧾 Boleto de {brl(res.boleto.valor)}
+                {res.boleto.vencimento ? ` · vence ${res.boleto.vencimento}` : ""}
+              </p>
+              <p className="mt-0.5 select-all font-mono text-xs text-slate-600">
+                {res.boleto.linhaDigitavel}
+              </p>
+              {res.boleto.avisos.length ? (
+                <ul className="mt-2 list-inside list-disc text-xs text-amber-800">
+                  {res.boleto.avisos.map((a, i) => (
+                    <li key={i}>{a}</li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {res.unificado ? (
+                <p className="mt-3 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-900">
+                  ✓ Esta fatura já está unificada em{" "}
+                  <Link
+                    href={`/financeiro/combos/${res.unificado.comboId}`}
+                    className="font-medium text-blue-700 hover:underline"
+                  >
+                    {res.unificado.nome}
+                  </Link>{" "}
+                  · {res.unificado.titulos} título(s) ·{" "}
+                  {res.unificado.status === "SOLICITADO" ? "esperando pagamento" : res.unificado.status.toLowerCase()}
+                  .{" "}
+                  <button type="button" onClick={unificar} disabled={unindo} className="underline">
+                    {unindo ? "Atualizando…" : "Atualizar o borderô"}
+                  </button>
+                </p>
+              ) : (
+                <div className="mt-3 flex flex-wrap items-center gap-3">
+                  <Button type="button" onClick={unificar} disabled={unindo || lancando || busy}>
+                    {unindo
+                      ? "Unificando…"
+                      : faltantes.length
+                        ? `Lançar os que faltam e unificar num boleto só`
+                        : `Unificar os ${res.linhas?.length ?? 0} títulos num boleto só`}
+                  </Button>
+                  <span className="text-xs text-slate-600">
+                    Vira um borderô com os títulos do mês: cada carro continua com o seu custo, mas
+                    em Contas a pagar aparece um pagamento único, com os dois PDFs anexados.
+                  </span>
+                </div>
+              )}
+
+              {uniao && !uniao.ok ? (
+                <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  ⚠️ {uniao.error}
+                </p>
+              ) : null}
+              {uniao?.ok ? (
+                <p className="mt-2 rounded-lg border border-emerald-300 bg-white px-3 py-2 text-sm text-emerald-900">
+                  ✓ {uniao.titulos} título(s) unificados — {brl(uniao.total ?? 0)}
+                  {uniao.criados ? ` (${uniao.criados} lançado(s) agora)` : ""}.{" "}
+                  <Link
+                    href={`/financeiro/combos/${uniao.comboId}`}
+                    className="font-medium text-blue-700 hover:underline"
+                  >
+                    abrir o borderô →
+                  </Link>
+                  {uniao.avisos?.length ? ` · ${uniao.avisos.join(" · ")}` : ""}
+                </p>
+              ) : null}
+            </div>
+          ) : (
+            <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs text-slate-600">
+              Anexe também o <strong>boleto</strong> acima e confira de novo: com ele o sistema
+              unifica os títulos do mês num pagamento só, já agora — sem esperar o dia de pagar.
+            </p>
+          )}
 
           <div className="overflow-x-auto rounded-xl border border-slate-200">
             <Table>

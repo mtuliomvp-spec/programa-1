@@ -44,7 +44,7 @@ export default async function ConferenciaFaturaPage() {
       <Card>
         <CardHeader
           title="Conferir"
-          description="Todo mês, antes de pagar o boleto: a fatura tem que bater com os títulos do sistema."
+          description="Todo mês, quando a fatura e o boleto chegam: a fatura tem que bater com os títulos do sistema, e os dois juntos unificam o mês num pagamento só."
         />
         <div className="p-5">
           <FaturaConferencia />
@@ -83,6 +83,11 @@ export default async function ConferenciaFaturaPage() {
             <strong className="text-slate-900">Lancei algo que não veio na fatura?</strong> Título do
             mês que a prestadora não cobrou. Pode ser serviço que cai na fatura seguinte — ou
             lançamento a mais.
+          </li>
+          <li>
+            <strong className="text-slate-900">Como pago um boleto só?</strong> Anexando também o
+            boleto, um clique une os títulos do mês num borderô — cada carro continua com o seu
+            custo, mas Contas a pagar passa a mostrar um pagamento único, com os dois PDFs junto.
           </li>
           <li className="pt-1 text-xs text-slate-500">
             O valor de cada serviço lançado vem sempre dos Parâmetros, nunca do arquivo — a fatura

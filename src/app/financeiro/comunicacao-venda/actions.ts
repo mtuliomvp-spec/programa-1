@@ -4,7 +4,15 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { assertCan } from "@/lib/guards";
 import { createManualPayable, resolveSupplierByName } from "@/lib/finance";
-import { lerFaturaSicove, vencimentoDaFatura, type ServicoSicove } from "@/lib/sicove";
+import { formatCompetenciaMes } from "@/lib/competencia";
+import {
+  lerBoletoSicove,
+  lerFaturaSicove,
+  vencimentoDaFatura,
+  type BoletoSicove,
+  type FaturaSicove,
+  type ServicoSicove,
+} from "@/lib/sicove";
 
 const MAX_BYTES = 15 * 1024 * 1024;
 
@@ -33,14 +41,68 @@ export type ConferenciaFatura = {
     total: number;
     itens: number;
   };
+  /** O boleto anexado junto, quando houver: é ele que se paga. */
+  boleto?: {
+    valor: number;
+    vencimento: string | null;
+    linhaDigitavel: string;
+    numeroFatura: string | null;
+    /** Divergências entre o boleto e a fatura (não impedem nada sozinhas). */
+    avisos: string[];
+  };
   linhas?: LinhaConferencia[];
   /** Títulos do SICOVE no período que a fatura NÃO cobrou. */
   sobrando?: { id: string; descricao: string; numero: string | null; valor: number }[];
   resumo?: { totalFatura: number; totalLancado: number; faltando: number; divergentes: number };
+  /** Borderô que já unificou esta fatura (quando ela já foi unificada). */
+  unificado?: { comboId: string; nome: string; titulos: number; status: string } | null;
 };
 
 const dia = (d: Date | null) =>
   d ? d.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : null;
+
+const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+/** Nome do borderô que unifica uma fatura — é ele que dá a idempotência. */
+const nomeDoBordero = (numeroFatura: string | null) =>
+  `Fatura SICOVE ${numeroFatura ?? "sem número"}`;
+
+/**
+ * Confere o boleto contra a fatura detalhada: mesmo número, mesmo total, mesma
+ * data. Nada aqui bloqueia — a divergência é informação para quem vai pagar
+ * (juros de boleto reemitido, por exemplo, são legítimos).
+ */
+function conferirBoleto(
+  boleto: BoletoSicove,
+  fatura: FaturaSicove,
+): { valor: number; vencimento: string | null; numeroFatura: string | null; avisos: string[] } {
+  const avisos: string[] = [];
+  if (boleto.numeroFatura && fatura.numero && boleto.numeroFatura !== fatura.numero) {
+    avisos.push(
+      `o boleto é da fatura ${boleto.numeroFatura} e o relatório é da ${fatura.numero} — confira se os dois arquivos são do mesmo mês`,
+    );
+  }
+  if (Math.abs(boleto.valor - fatura.total) > 0.005) {
+    avisos.push(
+      `o boleto cobra ${brl(boleto.valor)} e os serviços da fatura somam ${brl(fatura.total)}`,
+    );
+  }
+  if (
+    boleto.vencimento &&
+    fatura.vencimento &&
+    boleto.vencimento.toISOString().slice(0, 10) !== fatura.vencimento.toISOString().slice(0, 10)
+  ) {
+    avisos.push(
+      `o boleto vence em ${dia(boleto.vencimento)} e a fatura diz ${dia(fatura.vencimento)}`,
+    );
+  }
+  return {
+    valor: boleto.valor,
+    vencimento: dia(boleto.vencimento),
+    numeroFatura: boleto.numeroFatura,
+    avisos,
+  };
+}
 
 /**
  * Confere a fatura mensal da prestadora contra o que o sistema registrou:
@@ -68,6 +130,23 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
   }
   if (fatura.itens.length === 0) {
     return { ok: false, error: "A fatura foi reconhecida, mas nenhum serviço foi lido nela." };
+  }
+
+  // O BOLETO é opcional na conferência: com ele, dá para unificar os títulos
+  // num borderô só — que é como o boleto vai ser pago.
+  const boletoFile = formData.get("boleto");
+  let boleto: ConferenciaFatura["boleto"];
+  if (boletoFile instanceof File && boletoFile.size > 0) {
+    if (boletoFile.size > MAX_BYTES) return { ok: false, error: "O boleto é grande demais (máximo 15 MB)." };
+    const lido = lerBoletoSicove(Buffer.from(await boletoFile.arrayBuffer()));
+    if (!lido) {
+      return {
+        ok: false,
+        error:
+          "Não achei a linha digitável neste PDF. Anexe o boleto da fatura — o arquivo com o código de barras.",
+      };
+    }
+    boleto = { ...conferirBoleto(lido, fatura), linhaDigitavel: lido.linhaDigitavel };
   }
 
   const numeros = fatura.itens.map((i) => i.numero);
@@ -128,8 +207,19 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
     .filter((l) => l.situacao !== "FALTA")
     .reduce((s, l) => s + (l.valorLancado ?? 0), 0);
 
+  // Esta fatura já virou borderô? O nome é a chave — unificar de novo só
+  // completa o que existe, nunca cria um segundo.
+  const bordero = await prisma.paymentCombo.findFirst({
+    where: { name: nomeDoBordero(fatura.numero), status: { not: "CANCELADO" } },
+    select: { id: true, name: true, status: true, _count: { select: { payables: true } } },
+  });
+
   return {
     ok: true,
+    boleto,
+    unificado: bordero
+      ? { comboId: bordero.id, nome: bordero.name, titulos: bordero._count.payables, status: bordero.status }
+      : null,
     fatura: {
       numero: fatura.numero,
       periodo:
@@ -153,11 +243,7 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
 
 export type LancamentoEmLote = { ok: boolean; error?: string; criados?: number; avisos?: string[] };
 
-/**
- * Lança os serviços que a fatura cobrou e o sistema não tinha. O valor NÃO vem
- * da tela: é relido da configuração pelo tipo do serviço — o que chega do
- * navegador só diz QUAL serviço lançar, nunca quanto.
- */
+/** Lança os serviços que a fatura cobrou e o sistema não tinha. */
 export async function lancarFaltantesSicoveAction(
   itens: { numero: string; tipo: ServicoSicove; placa: string; enviadoEm: string | null }[],
 ): Promise<LancamentoEmLote> {
@@ -167,7 +253,23 @@ export async function lancarFaltantesSicoveAction(
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   if (!itens.length) return { ok: false, error: "Nada a lançar." };
+  const r = await lancarItensDaFatura(itens);
+  if (r.error) return { ok: false, error: r.error };
 
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/comunicacao-venda");
+  return { ok: true, criados: r.criados, avisos: r.avisos };
+}
+
+/**
+ * Cria os títulos dos serviços que ainda não existem. O valor NÃO vem da tela:
+ * é relido da configuração pelo tipo do serviço — o que chega do navegador só
+ * diz QUAL serviço lançar, nunca quanto. Já lançado (mesmo número de registro)
+ * é pulado, então rodar duas vezes não duplica nada.
+ */
+async function lancarItensDaFatura(
+  itens: { numero: string; tipo: ServicoSicove; placa: string; enviadoEm: string | null }[],
+): Promise<{ criados: number; avisos: string[]; error?: string }> {
   const company = await prisma.companySettings.findFirst({
     select: {
       sicoveFornecedor: true,
@@ -178,7 +280,7 @@ export async function lancarFaltantesSicoveAction(
   });
   const fornecedor = (company?.sicoveFornecedor || "").trim();
   if (!fornecedor) {
-    return { ok: false, error: "Configure a prestadora em Parâmetros › Comunicação de venda." };
+    return { criados: 0, avisos: [], error: "Configure a prestadora em Parâmetros › Comunicação de venda." };
   }
   const supplierId = await resolveSupplierByName(fornecedor);
   const avisos: string[] = [];
@@ -223,9 +325,197 @@ export async function lancarFaltantesSicoveAction(
     criados += 1;
   }
 
+  return { criados, avisos };
+}
+
+// ---------------------------------------------------------------------------
+// Unificar: a fatura e o boleto viram UM borderô com os títulos do mês
+// ---------------------------------------------------------------------------
+
+export type UnificacaoFatura = {
+  ok: boolean;
+  error?: string;
+  comboId?: string;
+  /** Quantos títulos ficaram dentro do borderô. */
+  titulos?: number;
+  /** Soma deles (o que a baixa vai debitar). */
+  total?: number;
+  /** Quantos precisaram ser lançados na hora. */
+  criados?: number;
+  avisos?: string[];
+};
+
+/**
+ * Une os títulos do mês num BORDERÔ só — o boleto — assim que a fatura e o
+ * boleto chegam, sem esperar o pagamento.
+ *
+ * A prestadora manda um boleto por mês e uma linha por veículo. Cada linha
+ * continua sendo um título (é o que põe o custo no carro certo), mas quem paga
+ * paga um valor só: então os títulos entram num combo de pagamento SOLICITADO,
+ * que em Contas a pagar aparece como um pagamento único e é baixado de uma vez.
+ * Os dois PDFs ficam anexados nele, e a linha digitável na observação.
+ *
+ * Rodar de novo com a mesma fatura não cria um segundo borderô: completa o que
+ * existe (serviço lançado depois, título que faltava).
+ */
+export async function unificarFaturaSicoveAction(formData: FormData): Promise<UnificacaoFatura> {
+  try {
+    await assertCan("financeiro", "criar");
+    await assertCan("combos", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+
+  const file = formData.get("file");
+  const boletoFile = formData.get("boleto");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Selecione o PDF da fatura." };
+  if (!(boletoFile instanceof File) || boletoFile.size === 0) {
+    return { ok: false, error: "Anexe também o boleto: é ele que unifica os títulos num pagamento só." };
+  }
+  if (file.size > MAX_BYTES || boletoFile.size > MAX_BYTES) {
+    return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+
+  const faturaBuffer = Buffer.from(await file.arrayBuffer());
+  const boletoBuffer = Buffer.from(await boletoFile.arrayBuffer());
+  const fatura = lerFaturaSicove(faturaBuffer);
+  if (!fatura || fatura.itens.length === 0) {
+    return { ok: false, error: "Não consegui ler o relatório de detalhamento da fatura." };
+  }
+  const boleto = lerBoletoSicove(boletoBuffer);
+  if (!boleto) {
+    return { ok: false, error: "Não achei a linha digitável no PDF do boleto." };
+  }
+  if (boleto.numeroFatura && fatura.numero && boleto.numeroFatura !== fatura.numero) {
+    return {
+      ok: false,
+      error: `O boleto é da fatura ${boleto.numeroFatura} e o relatório é da ${fatura.numero}. Anexe os dois arquivos do mesmo mês.`,
+    };
+  }
+
+  // 1) O que a fatura cobrou e ainda não tinha título vira título agora: o
+  //    borderô só faz sentido cobrindo a fatura inteira.
+  const lancamento = await lancarItensDaFatura(
+    fatura.itens.map((i) => ({
+      numero: i.numero,
+      tipo: i.tipo,
+      placa: i.placa,
+      enviadoEm: i.enviadoEm ? i.enviadoEm.toISOString().slice(0, 10) : null,
+    })),
+  );
+  if (lancamento.error) return { ok: false, error: lancamento.error };
+  const avisos = [...lancamento.avisos];
+
+  // 2) Os títulos da fatura, pelo número do registro (a identidade do serviço).
+  const numeros = fatura.itens.map((i) => i.numero);
+  const titulos = await prisma.payable.findMany({
+    where: { documentNumber: { in: numeros } },
+    select: { id: true, amount: true, status: true, paymentComboId: true, description: true },
+  });
+  const pagos = titulos.filter((t) => t.status === "PAGO");
+  if (pagos.length) {
+    avisos.push(`${pagos.length} título(s) desta fatura já estão pagos e ficaram de fora.`);
+  }
+
+  const bordero = await prisma.paymentCombo.findFirst({
+    where: { name: nomeDoBordero(fatura.numero), status: { not: "CANCELADO" } },
+    select: { id: true, status: true },
+  });
+  if (bordero && bordero.status === "PAGO") {
+    return { ok: false, error: "O borderô desta fatura já foi pago." };
+  }
+  const emOutroCombo = titulos.filter(
+    (t) => t.status !== "PAGO" && t.paymentComboId && t.paymentComboId !== bordero?.id,
+  );
+  if (emOutroCombo.length) {
+    avisos.push(
+      `${emOutroCombo.length} título(s) já estão em outro combo de pagamento e ficaram de fora.`,
+    );
+  }
+
+  const observacao = [
+    `Boleto ${brl(boleto.valor)}${boleto.vencimento ? ` · vence ${dia(boleto.vencimento)}` : ""}`,
+    `Linha digitável: ${boleto.linhaDigitavel}`,
+    fatura.periodoInicio && fatura.periodoFim
+      ? `Serviços de ${dia(fatura.periodoInicio)} a ${dia(fatura.periodoFim)}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  const comboId =
+    bordero?.id ??
+    (
+      await prisma.paymentCombo.create({
+        // Sem `userId`: o borderô é da prestadora, não de um sócio — com dono
+        // o pagamento abateria capital de quem não tem nada a ver com isto.
+        data: { name: nomeDoBordero(fatura.numero), notes: observacao, userId: null },
+        select: { id: true },
+      })
+    ).id;
+  if (bordero) {
+    await prisma.paymentCombo.update({ where: { id: comboId }, data: { notes: observacao } });
+  }
+
+  // 3) Os títulos entram no borderô e passam a valer pelo que o boleto diz:
+  //    o vencimento é o dele, e a competência é o mês dos serviços.
+  const entrar = titulos.filter((t) => t.status !== "PAGO" && !t.paymentComboId);
+  const competencia = fatura.periodoFim
+    ? formatCompetenciaMes(fatura.periodoFim.getUTCFullYear(), fatura.periodoFim.getUTCMonth() + 1)
+    : null;
+  if (entrar.length) {
+    await prisma.payable.updateMany({
+      where: { id: { in: entrar.map((t) => t.id) } },
+      data: {
+        paymentComboId: comboId,
+        ...(boleto.vencimento ? { dueDate: boleto.vencimento } : {}),
+        ...(competencia ? { referencePeriod: competencia } : {}),
+      },
+    });
+  }
+
+  // 4) Os dois PDFs ficam no borderô — é onde quem paga vai procurá-los.
+  for (const [descricao, arquivo, buffer] of [
+    ["Boleto da fatura", boletoFile, boletoBuffer],
+    ["Relatório de detalhamento da fatura", file, faturaBuffer],
+  ] as const) {
+    await prisma.comboAttachment.deleteMany({ where: { comboId, kind: "OUTRO", description: descricao } });
+    await prisma.comboAttachment.create({
+      data: {
+        comboId,
+        kind: "OUTRO",
+        description: descricao,
+        filename: arquivo.name || `${descricao}.pdf`,
+        mimeType: arquivo.type || "application/pdf",
+        size: buffer.byteLength,
+        data: buffer,
+      },
+    });
+  }
+
+  // 5) SOLICITADO: em Contas a pagar o borderô vira UM pagamento, com baixa
+  //    única — que é exatamente como o boleto se paga.
+  const dentro = await prisma.payable.findMany({
+    where: { paymentComboId: comboId, status: { not: "PAGO" } },
+    select: { amount: true },
+  });
+  await prisma.paymentCombo.update({
+    where: { id: comboId },
+    data: { status: "SOLICITADO", requestedAt: new Date() },
+  });
+
+  const total = Math.round(dentro.reduce((s, p) => s + p.amount, 0) * 100) / 100;
+  if (Math.abs(total - boleto.valor) > 0.005) {
+    avisos.push(
+      `o borderô soma ${brl(total)} e o boleto cobra ${brl(boleto.valor)} — a baixa sai pelos títulos`,
+    );
+  }
+
   revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/combos");
+  revalidatePath(`/financeiro/combos/${comboId}`);
   revalidatePath("/financeiro/comunicacao-venda");
-  return { ok: true, criados, avisos };
+  return { ok: true, comboId, titulos: dentro.length, total, criados: lancamento.criados, avisos };
 }
 
 // ---------------------------------------------------------------------------
