@@ -78,6 +78,8 @@ export default function CashEntryForm({
   // Conta e valor viram controlados porque a leitura do comprovante os preenche.
   const [accountId, setAccountId] = useState(preselectedAccountId || accounts[0]?.id || "");
   const [amountSeed, setAmountSeed] = useState<number | null>(null);
+  // Categoria vinda do histórico do fornecedor (o campo é remontado com ela).
+  const [categoriaSeed, setCategoriaSeed] = useState<string | null>(null);
   // Leitura do comprovante pela IA (valor, data, conta, quem recebeu).
   const fileRef = useRef<HTMLInputElement>(null);
   const [lendo, setLendo] = useState(false);
@@ -106,10 +108,12 @@ export default function CashEntryForm({
   }, [isSinal, vehicleId, vehicles]);
 
   /**
-   * Comprovante anexado: a IA lê e o formulário se preenche sozinho — valor,
-   * data, conta debitada e quem recebeu. A DESCRIÇÃO vem só como sugestão e o
-   * FLUXO não é adivinhado: o comprovante diz o que o banco fez, não a que
-   * obra da loja aquilo pertence.
+   * Comprovante anexado: a IA lê e o formulário se preenche sozinho — se o
+   * dinheiro entrou ou saiu, valor, data, conta, quem recebeu e, pelo
+   * histórico desse fornecedor, o fluxo e a categoria da última vez.
+   *
+   * Tudo é SUGESTÃO: descrição e fluxo seguem editáveis, porque o comprovante
+   * diz o que o banco fez, não a que obra da loja aquilo pertence.
    */
   async function lerComprovante() {
     const file = fileRef.current?.files?.[0];
@@ -123,15 +127,22 @@ export default function CashEntryForm({
       const r = await lerComprovanteCaixaAction(fd);
       setLeitura(r);
       if (!r.ok) return;
+      const entrada = r.kind === "entrada";
+      if (r.kind) setKind(r.kind);
       if (r.valor != null && r.valor > 0) {
         setAmount(r.valor);
         setAmountSeed(r.valor);
-        setAmountKey((k) => k + 1);
       }
+      if (r.categoria) setCategoriaSeed(r.categoria);
+      // Valor e categoria ficam em estado interno dos campos: remontar é o que
+      // faz o que foi lido aparecer neles.
+      if ((r.valor != null && r.valor > 0) || r.categoria) setAmountKey((k) => k + 1);
       if (r.data) setDate(r.data);
-      // A conta lida é a DEBITADA: só vale quando o dinheiro saiu.
-      if (r.accountId && kind === "saida") setAccountId(r.accountId);
-      if (r.beneficiario && kind === "saida") setSupplierName(r.beneficiario);
+      if (r.accountId) setAccountId(r.accountId);
+      if (r.fluxo) setFlow(r.fluxo);
+      // Quem recebeu é o fornecedor — na entrada, o dinheiro veio de fora e o
+      // campo de fornecedor nem existe.
+      if (r.beneficiario && !entrada) setSupplierName(r.beneficiario);
       if (r.descricao) setDescription(r.descricao);
     } finally {
       setLendo(false);
@@ -158,6 +169,7 @@ export default function CashEntryForm({
         setCustomerId("");
         setNewCustomer(false);
         setAmountSeed(null);
+        setCategoriaSeed(null);
         setLeitura(null);
         setSenha("");
         lastAutoDesc.current = "";
@@ -269,11 +281,29 @@ export default function CashEntryForm({
           ) : null}
           {leitura?.ok ? (
             <p className="mt-1 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
-              ✓ Li o comprovante: {leitura.valor != null ? formatCurrency(leitura.valor) : "valor"}
+              ✓ Li o comprovante:{" "}
+              {leitura.kind === "entrada" ? "entrada de " : leitura.kind === "saida" ? "saída de " : ""}
+              {leitura.valor != null ? formatCurrency(leitura.valor) : "valor"}
               {leitura.data ? ` em ${formatDate(leitura.data)}` : ""}
-              {leitura.beneficiario ? ` · pago a ${leitura.beneficiario}` : ""}. Confira a{" "}
-              <strong>descrição</strong> e escolha o <strong>fluxo</strong> — o resto já está
-              preenchido.
+              {leitura.beneficiario
+                ? ` · ${leitura.kind === "entrada" ? "de" : "pago a"} ${leitura.beneficiario}`
+                : ""}
+              .{" "}
+              {leitura.fluxo || leitura.categoria
+                ? "Fluxo e categoria vieram da última vez com este fornecedor — confira a descrição e ajuste se for outro caso."
+                : "Confira a descrição e escolha o fluxo — o resto já está preenchido."}
+            </p>
+          ) : null}
+          {/*
+            O mesmo comprovante lançado duas vezes ficou fácil agora que dá
+            para pré-lançar de vários lugares. Não bloqueia — só avisa antes,
+            que é quando ainda dá para desistir.
+          */}
+          {leitura?.ok && leitura.duplicado ? (
+            <p className="mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              ⚠️ Já existe um lançamento igual — <strong>{leitura.duplicado.descricao}</strong>, em{" "}
+              {leitura.duplicado.quando} ({leitura.duplicado.status}), no mesmo valor e conta.
+              Confira se este comprovante não foi lançado antes.
             </p>
           ) : null}
           {leitura && !leitura.ok ? (
@@ -367,7 +397,7 @@ export default function CashEntryForm({
               </option>
             ))}
           </Select>
-          {leitura?.ok && leitura.accountName && kind === "saida" ? (
+          {leitura?.ok && leitura.accountName ? (
             <p className="mt-1 text-xs text-slate-500">
               Conta do comprovante: <strong>{leitura.accountName}</strong>
             </p>
@@ -499,7 +529,7 @@ export default function CashEntryForm({
                 key={amountKey}
                 name="categoryLabel"
                 options={incomeCategories}
-                defaultValue="Outros"
+                defaultValue={categoriaSeed || "Outros"}
               />
             </Field>
           )
@@ -598,7 +628,7 @@ export default function CashEntryForm({
                   key={amountKey}
                   name="categoryLabel"
                   options={categories}
-                  defaultValue="Outros"
+                  defaultValue={categoriaSeed || "Outros"}
                 />
               </Field>
             )}

@@ -16,7 +16,8 @@ import { assertCan } from "@/lib/guards";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput } from "@/lib/format";
 import { resolveDespesaCategory, resolveReceitaCategory } from "@/lib/categories";
-import { STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
+import { isStructuralKey, STRUCTURAL_KEY_VALUES } from "@/lib/structural-flows";
+import { nameKey } from "@/lib/person-keys";
 
 const schema = z.object({
   kind: z.enum(["entrada", "saida"]),
@@ -82,7 +83,9 @@ export type LeituraComprovante = {
   valor?: number | null;
   /** Data do comprovante (yyyy-mm-dd, para o campo de data). */
   data?: string | null;
-  /** Conta cadastrada reconhecida como a DEBITADA (só serve na saída). */
+  /** Para que lado o dinheiro andou: o formulário já marca Entrada ou Saída. */
+  kind?: "entrada" | "saida" | null;
+  /** Conta cadastrada reconhecida (a debitada na saída, a creditada na entrada). */
   accountId?: string | null;
   accountName?: string | null;
   /** Quem recebeu — vira o fornecedor sugerido. */
@@ -91,15 +94,92 @@ export type LeituraComprovante = {
   descricao?: string | null;
   /** PIX, TED, DOC, TRANSFERENCIA, BOLETO… */
   formaPagamento?: string | null;
+  /** Fluxo e categoria da última vez com este fornecedor (sugestão). */
+  fluxo?: string | null;
+  categoria?: string | null;
+  /** Lançamento igual que já existe — mesmo valor, dia e conta. */
+  duplicado?: { descricao: string; quando: string; status: string } | null;
 };
+
+/** Fornecedor já cadastrado com este nome — SEM criar um novo (a leitura não grava). */
+async function fornecedorCadastrado(nome: string): Promise<string | null> {
+  const limpo = nome.trim();
+  if (!limpo) return null;
+  const exato = await prisma.supplier.findFirst({
+    where: { name: { equals: limpo, mode: "insensitive" } },
+    select: { id: true },
+  });
+  if (exato) return exato.id;
+  const chave = nameKey(limpo);
+  if (!chave) return null;
+  const todos = await prisma.supplier.findMany({ select: { id: true, name: true } });
+  return todos.find((s) => nameKey(s.name) === chave)?.id ?? null;
+}
+
+/**
+ * Lançamento que já existe com o mesmo valor, no mesmo dia e na mesma conta —
+ * pago ou esperando o caixa.
+ *
+ * Com o pré-lançamento vindo de vários lugares (título, lote, movimento de
+ * caixa), lançar o mesmo comprovante duas vezes ficou fácil. Isto não bloqueia
+ * nada: só avisa antes, que é quando dá para desistir.
+ */
+async function lancamentoIgual(
+  valor: number,
+  dia: Date,
+  accountId: string | null,
+): Promise<LeituraComprovante["duplicado"]> {
+  const faixa = { gte: valor - 0.005, lte: valor + 0.005 };
+  const conta = accountId ? { accountId } : {};
+  const contaPre = accountId ? { pendingPaymentAccountId: accountId } : {};
+  const titulo = await prisma.payable.findFirst({
+    where: {
+      amount: faixa,
+      OR: [
+        { paymentDate: dia, ...conta },
+        { pendingPaymentDate: dia, ...contaPre },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    select: { description: true, status: true, paymentDate: true, pendingPaymentDate: true },
+  });
+  if (titulo) {
+    const quando = titulo.paymentDate ?? titulo.pendingPaymentDate ?? dia;
+    return {
+      descricao: titulo.description,
+      quando: quando.toLocaleDateString("pt-BR", { timeZone: "UTC" }),
+      status: titulo.status === "PAGO" ? "já pago" : "esperando o caixa",
+    };
+  }
+  const recebimento = await prisma.receivable.findFirst({
+    where: {
+      amount: faixa,
+      OR: [
+        { receivedDate: dia, ...conta },
+        { pendingReceiptDate: dia, ...(accountId ? { pendingReceiptAccountId: accountId } : {}) },
+      ],
+    },
+    orderBy: { createdAt: "desc" },
+    select: { description: true, status: true, receivedDate: true, pendingReceiptDate: true },
+  });
+  if (!recebimento) return null;
+  const quando = recebimento.receivedDate ?? recebimento.pendingReceiptDate ?? dia;
+  return {
+    descricao: recebimento.description,
+    quando: quando.toLocaleDateString("pt-BR", { timeZone: "UTC" }),
+    status: recebimento.status === "RECEBIDO" ? "já recebido" : "esperando o caixa",
+  };
+}
 
 /**
  * Lê o COMPROVANTE anexado no formulário e devolve o que dá para preencher
- * sozinho: valor, data, conta debitada, quem recebeu e uma descrição.
+ * sozinho: valor, data, sentido (entrada/saída), conta, quem recebeu, uma
+ * descrição e — pelo histórico do fornecedor — o fluxo e a categoria da última
+ * vez. Avisa também quando já existe um lançamento igual.
  *
- * Não grava nada — quem grava é o lançamento, quando o usuário confirmar. A
- * descrição e o fluxo continuam com ele: o comprovante diz o que o banco fez,
- * não a que obra da loja aquilo pertence.
+ * Não grava nada: quem grava é o lançamento, quando o usuário confirmar. Tudo
+ * o que vem daqui é sugestão — a descrição e o fluxo seguem editáveis, porque
+ * o comprovante diz o que o banco fez, não a que obra da loja aquilo pertence.
  */
 export async function lerComprovanteCaixaAction(formData: FormData): Promise<LeituraComprovante> {
   try {
@@ -146,21 +226,55 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     return { ok: false, error: "Não achei um comprovante neste arquivo. Confira se é o documento certo." };
   }
 
+  // ENTRADA (Pix recebido, depósito): a conta da loja é a CREDITADA — a conta
+  // do outro lado, a debitada, é do pagador e não está no nosso cadastro.
+  const entrada = String(lido.sentido || "").toUpperCase() === "ENTRADA";
   const { contaDoComprovante } = await import("@/lib/payment-queue");
-  const accountId = await contaDoComprovante(lido);
+  const accountId = await contaDoComprovante(
+    entrada
+      ? { banco: lido.bancoDestino, agencia: lido.agenciaDestino, conta: lido.contaDestino }
+      : lido,
+  );
   const conta = accountId
     ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
     : null;
 
+  // Como este fornecedor foi classificado da última vez: o fluxo e a categoria
+  // de um mesmo pagamento raramente mudam de mês para mês.
+  let fluxo: string | null = null;
+  let categoria: string | null = null;
+  if (lido.beneficiario && !entrada) {
+    const supplierId = await fornecedorCadastrado(lido.beneficiario);
+    if (supplierId) {
+      const ultimo = await prisma.payable.findFirst({
+        where: { supplierId },
+        orderBy: { createdAt: "desc" },
+        select: { categoryLabel: true, costCenter: { select: { key: true } } },
+      });
+      categoria = ultimo?.categoryLabel ?? null;
+      fluxo = isStructuralKey(ultimo?.costCenter?.key) ? ultimo!.costCenter!.key : null;
+    }
+  }
+
+  const dataIso = lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null;
+  const duplicado =
+    lido.valor != null && lido.valor > 0 && dataIso
+      ? await lancamentoIgual(lido.valor, parseDateInput(dataIso), accountId)
+      : null;
+
   return {
     ok: true,
     valor: lido.valor ?? null,
-    data: lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null,
+    data: dataIso,
+    kind: entrada ? "entrada" : "saida",
     accountId,
     accountName: conta?.name ?? null,
     beneficiario: lido.beneficiario ?? null,
     descricao: (lido.descricao || lido.beneficiario || "").trim() || null,
     formaPagamento: lido.formaPagamento ?? null,
+    fluxo,
+    categoria,
+    duplicado,
   };
 }
 

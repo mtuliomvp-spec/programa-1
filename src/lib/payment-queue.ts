@@ -380,6 +380,11 @@ export type PagamentoNaFila = {
    * nesta lista. Vazio em tudo o mais — no combo os títulos estão no borderô.
    */
   itens?: PagamentoNaFila[];
+  /**
+   * Nasceu no movimento de caixa (não é título do Contas a pagar/receber):
+   * tirar da fila APAGA o lançamento, em vez de devolvê-lo para a lista.
+   */
+  avulso?: boolean;
 };
 
 /** Campos do pré-lançamento que as duas listas (deste caixa e adiante) mostram. */
@@ -395,6 +400,7 @@ const FILA_SELECT = {
   pendingPaymentAccountId: true,
   pendingPaymentAccount: { select: { name: true } },
   pendingPaymentBatch: true,
+  avulso: true,
   supplier: { select: { name: true } },
 } as const;
 
@@ -410,6 +416,7 @@ type FilaRow = {
   pendingPaymentAccountId: string | null;
   pendingPaymentAccount: { name: string } | null;
   pendingPaymentBatch: string | null;
+  avulso: boolean;
   supplier: { name: string } | null;
 };
 
@@ -430,6 +437,7 @@ function toPagamento(p: FilaRow): PagamentoNaFila {
     accountId: p.pendingPaymentAccountId,
     accountName: p.pendingPaymentAccount?.name ?? null,
     note: p.pendingPaymentNote,
+    avulso: p.avulso,
   };
 }
 
@@ -559,6 +567,7 @@ const RECEBIMENTO_SELECT = {
   pendingReceiptNote: true,
   pendingReceiptAccountId: true,
   pendingReceiptAccount: { select: { name: true } },
+  avulso: true,
   customer: { select: { name: true } },
 } as const;
 
@@ -572,6 +581,7 @@ type RecebimentoRow = {
   pendingReceiptNote: string | null;
   pendingReceiptAccountId: string | null;
   pendingReceiptAccount: { name: string } | null;
+  avulso: boolean;
   customer: { name: string } | null;
 };
 
@@ -594,6 +604,7 @@ function toRecebimento(r: RecebimentoRow): PagamentoNaFila {
     accountId: r.pendingReceiptAccountId,
     accountName: r.pendingReceiptAccount?.name ?? null,
     note: r.pendingReceiptNote,
+    avulso: r.avulso,
   };
 }
 
