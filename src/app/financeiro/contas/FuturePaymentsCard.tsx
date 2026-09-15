@@ -1,10 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import type { DiaAdiante } from "@/lib/payment-queue";
+import { dismissQueuedPaymentAction } from "./actions";
+import type { DiaAdiante, PagamentoNaFila } from "@/lib/payment-queue";
+
+/** Os ids de título que a linha carrega — o lote devolve todos os que cobre. */
+function idsDaLinha(p: PagamentoNaFila): string[] {
+  return p.kind === "lote" ? (p.itens ?? []).map((i) => i.id) : [p.id];
+}
 
 /**
  * Pagamentos já feitos em dias À FRENTE do movimento aberto.
@@ -15,27 +22,82 @@ import type { DiaAdiante } from "@/lib/payment-queue";
  * nesta tela — o saldo mostrado era o de ontem, sem dizer que já havia saída
  * de hoje esperando.
  *
- * Aqui é só a conta: o total de cada dia, e ao clicar a lista do que foi pago.
- * Nada é confirmado por esta tela — quando o caixa daquele dia for aberto, os
- * mesmos pagamentos aparecem na fila de sempre, com o ok para debitar.
+ * Aqui é a conta do dia e, ao clicar, a lista do que foi pago. Nada é
+ * CONFIRMADO por esta tela — a baixa só acontece na fila, quando o caixa
+ * alcançar o dia. Mas desfazer tem que caber aqui: quem errou o pré-lançamento
+ * de um dia à frente não tem como esperar o caixa chegar lá só para poder
+ * apagar, então cada linha tem o mesmo "tirar da fila" da fila de espera.
  */
 export default function FuturePaymentsCard({
   dias,
   workDateLabel,
+  canPagar,
 }: {
   dias: DiaAdiante[];
   /** Data do movimento aberto; vazio quando não há caixa aberto. */
   workDateLabel: string;
+  canPagar: boolean;
 }) {
+  const router = useRouter();
   // O primeiro dia já abre: normalmente é "hoje", o que a pessoa quer ver.
   const [aberto, setAberto] = useState<string | null>(dias[0]?.date ?? null);
   // Lote (um boleto só) aberto nos títulos que ele cobre.
   const [loteAberto, setLoteAberto] = useState<string | null>(null);
+  const [erro, setErro] = useState<string | null>(null);
+  // Linhas já tiradas da fila: somem da tela na hora, sem esperar a página ser
+  // redesenhada pelo servidor. Sem isto o lançamento continuava aparecendo
+  // depois do clique e parecia que a exclusão não tinha funcionado.
+  const [removidas, setRemovidas] = useState<string[]>([]);
+  const [dismissing, startDismiss] = useTransition();
 
-  if (dias.length === 0) return null;
+  function descartar(p: PagamentoNaFila) {
+    const ids = idsDaLinha(p);
+    const pergunta =
+      ids.length > 1
+        ? `Tirar da fila os ${ids.length} títulos deste boleto? Os anexos continuam neles.`
+        : p.avulso
+          ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
+            // fila o apaga, em vez de deixar um título solto no a pagar.
+            "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
+          : "Tirar este pré-lançamento da fila? O anexo continua no título.";
+    if (!confirm(pergunta)) return;
+    setErro(null);
+    setRemovidas((prev) => [...prev, p.id]);
+    startDismiss(async () => {
+      for (const id of ids) {
+        const res = await dismissQueuedPaymentAction(id);
+        if (!res.ok) {
+          // Deu errado: a linha volta para a tela, senão o pré-lançamento
+          // sumiria daqui continuando de pé no banco de dados.
+          setRemovidas((prev) => prev.filter((x) => x !== p.id));
+          setErro(res.error || "Não foi possível tirar da fila.");
+          break;
+        }
+      }
+      router.refresh();
+    });
+  }
 
-  const total = dias.reduce((s, d) => s + d.total, 0);
-  const totalEntradas = dias.reduce((s, d) => s + d.totalEntradas, 0);
+  // O que continua na tela depois das retiradas, com os totais refeitos: o
+  // valor do card tem que cair junto com a linha que saiu.
+  const visiveis = dias
+    .map((d) => {
+      const pagamentos = d.pagamentos.filter((p) => !removidas.includes(p.id));
+      return {
+        date: d.date,
+        pagamentos,
+        total: pagamentos.filter((p) => p.direcao !== "entrada").reduce((s, p) => s + p.amount, 0),
+        totalEntradas: pagamentos
+          .filter((p) => p.direcao === "entrada")
+          .reduce((s, p) => s + p.amount, 0),
+      };
+    })
+    .filter((d) => d.pagamentos.length > 0);
+
+  if (visiveis.length === 0) return null;
+
+  const total = visiveis.reduce((s, d) => s + d.total, 0);
+  const totalEntradas = visiveis.reduce((s, d) => s + d.totalEntradas, 0);
   const partes = [
     total > 0.005 ? `💸 ${formatCurrency(total)} já pago` : null,
     totalEntradas > 0.005 ? `💰 ${formatCurrency(totalEntradas)} já recebido` : null,
@@ -44,7 +106,7 @@ export default function FuturePaymentsCard({
   return (
     <Card className="mb-4 border border-sky-200 bg-sky-50/40">
       <CardHeader
-        title={`${partes.join(" · ")}${dias.length > 1 ? ` em ${dias.length} dias` : ""} à frente do movimento`}
+        title={`${partes.join(" · ")}${visiveis.length > 1 ? ` em ${visiveis.length} dias` : ""} à frente do movimento`}
         description={
           workDateLabel
             ? `O dinheiro já passou pelo banco, mas o movimento ainda está em ${workDateLabel}. Ao abrir o caixa desses dias, os lançamentos aparecem prontos para o ok.`
@@ -52,7 +114,7 @@ export default function FuturePaymentsCard({
         }
       />
       <div className="divide-y divide-sky-100">
-        {dias.map((d) => {
+        {visiveis.map((d) => {
           const expandido = aberto === d.date;
           return (
             <div key={d.date}>
@@ -157,6 +219,16 @@ export default function FuturePaymentsCard({
                                 {formatCurrency(p.tituloAmount)}
                               </p>
                             ) : null}
+                            {canPagar ? (
+                              <button
+                                type="button"
+                                onClick={() => descartar(p)}
+                                disabled={dismissing}
+                                className="mt-1 text-[11px] font-medium text-slate-400 hover:text-rose-600 hover:underline disabled:opacity-50"
+                              >
+                                tirar da fila
+                              </button>
+                            ) : null}
                           </div>
                         </div>
 
@@ -192,9 +264,15 @@ export default function FuturePaymentsCard({
           );
         })}
       </div>
+      {erro ? (
+        <p className="border-t border-sky-100 px-5 py-2.5 text-sm font-medium text-rose-600">
+          {erro}
+        </p>
+      ) : null}
       <p className="border-t border-sky-100 px-5 py-2.5 text-xs text-slate-500">
         Estes valores <strong>ainda não estão</strong> no saldo das contas abaixo: eles entram na
         baixa, quando o movimento do dia for aberto e você der o ok.
+        {canPagar ? " Errou o pré-lançamento? Use o “tirar da fila” da linha para desfazer." : ""}
       </p>
     </Card>
   );

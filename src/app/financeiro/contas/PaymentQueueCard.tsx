@@ -40,10 +40,15 @@ export default function PaymentQueueCard({
   const [dismissing, startDismiss] = useTransition();
   // Lote (um boleto só) aberto nos títulos que ele cobre.
   const [loteAberto, setLoteAberto] = useState<string | null>(null);
+  // Linhas já tiradas da fila: somem na hora, sem esperar a página ser
+  // redesenhada pelo servidor — senão o lançamento continua na tela depois do
+  // clique e parece que a exclusão não funcionou.
+  const [removidas, setRemovidas] = useState<string[]>([]);
 
-  if (rows.length === 0) return null;
+  const linhas = rows.filter((r) => !removidas.includes(r.id));
+  if (linhas.length === 0) return null;
 
-  const escolhidos = rows.filter((r) => selected.has(r.id));
+  const escolhidos = linhas.filter((r) => selected.has(r.id));
   const totalSaida = escolhidos
     .filter((r) => r.direcao === "saida")
     .reduce((s, r) => s + r.amount, 0);
@@ -63,7 +68,7 @@ export default function PaymentQueueCard({
   function confirmar() {
     // O lote é uma linha só na tela, mas a baixa é título a título: ele entra
     // com todos os ids que cobre, e a conta escolhida à mão vale para todos.
-    const escolhidas = rows.filter((r) => selected.has(r.id));
+    const escolhidas = linhas.filter((r) => selected.has(r.id));
     const ids = escolhidas.flatMap(idsDaLinha);
     if (!ids.length) return;
     const contasPorTitulo: Record<string, string> = {};
@@ -95,8 +100,19 @@ export default function PaymentQueueCard({
             "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
           : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
+    setMsg(null);
+    setRemovidas((prev) => [...prev, r.id]);
     startDismiss(async () => {
-      for (const id of ids) await dismissQueuedPaymentAction(id);
+      for (const id of ids) {
+        const res = await dismissQueuedPaymentAction(id);
+        if (!res.ok) {
+          // Deu errado: a linha volta, senão sumiria da tela continuando de pé
+          // no banco de dados.
+          setRemovidas((prev) => prev.filter((x) => x !== r.id));
+          setMsg(res.error || "Não foi possível tirar da fila.");
+          break;
+        }
+      }
       router.refresh();
     });
   }
@@ -104,11 +120,11 @@ export default function PaymentQueueCard({
   return (
     <Card className="mb-4 border-2 border-amber-300">
       <CardHeader
-        title={`⏳ ${rows.length} lançamento(s) esperando este caixa`}
+        title={`⏳ ${linhas.length} lançamento(s) esperando este caixa`}
         description={`O dinheiro já passou pelo banco. Confirme para debitar/creditar no caixa de ${workDateLabel}.`}
       />
       <div className="divide-y divide-slate-100">
-        {rows.map((r) => {
+        {linhas.map((r) => {
           const semConta = !r.accountId && !contas[r.id];
           const lote = r.kind === "lote";
           const abertoLote = loteAberto === r.id;

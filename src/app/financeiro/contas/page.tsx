@@ -274,6 +274,7 @@ export default async function ContasPage({
         <FuturePaymentsCard
           dias={adiante}
           workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
+          canPagar={canPagar}
         />
         <PaymentQueueCard
           rows={fila}
