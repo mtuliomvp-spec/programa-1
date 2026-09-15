@@ -352,8 +352,20 @@ export default async function LivroCaixaPage({
 
       <BooksHealthChecks health={health} />
 
-      <div className={`mb-4 ${canCriar ? "" : "hidden"}`}>
-        {health.blockingOk ? (
+      {/*
+        Sem permissão o bloco simplesmente sumia, e quem procurava o botão
+        "Novo lançamento" não tinha como saber por quê — parecia tela quebrada
+        (principalmente no celular, onde não dá para comparar com a do colega).
+        Agora ele diz o que falta e onde se resolve.
+      */}
+      <div className="mb-4">
+        {!canCriar ? (
+          <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 print:hidden">
+            Seu perfil <strong>consulta</strong> o movimento de caixa, mas não lança nele. Para
+            lançar, peça a permissão <strong>Financeiro › Lançar conta a pagar/receber</strong> (em
+            Usuários › Perfis).
+          </p>
+        ) : health.blockingOk ? (
           <>
             {/* O aviso do Banco Neutro fora de zero (com o valor que falta e o
                 caminho do acerto) já vem do próprio farol, logo acima. */}
