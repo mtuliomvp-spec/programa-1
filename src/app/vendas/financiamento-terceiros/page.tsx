@@ -5,6 +5,13 @@ import { identificacaoVeiculo } from "./core";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import {
+  houseNameKeys,
+  situacaoDocumental,
+  seloCrlv,
+  type SituacaoDocumental,
+} from "@/lib/doc-owner";
+import {
+  Badge,
   Card,
   CardHeader,
   EmptyState,
@@ -21,6 +28,57 @@ import Can from "@/components/Can";
 
 export const dynamic = "force-dynamic";
 
+/**
+ * Os MESMOS selos do veículo vendido do estoque. A operação financeira acaba no
+ * dia, mas a documentação continua correndo: CRLV, orçamento do despachante,
+ * comunicação de venda, foto do cliente e — o que mais importa — se o carro já
+ * saiu do nome do dono anterior.
+ */
+function SelosDaOperacao({
+  doc,
+  refinancing,
+  temTransferencia,
+  className = "",
+}: {
+  doc: SituacaoDocumental;
+  refinancing: boolean;
+  /** A operação cobra transferência (há título do despachante a acertar). */
+  temTransferencia: boolean;
+  className?: string;
+}) {
+  const crlv = seloCrlv(doc);
+  return (
+    <div className={`flex flex-wrap gap-1 ${className}`}>
+      <Badge tone={crlv.tone}>{crlv.label}</Badge>
+      {doc.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
+      {doc.hasTransferQuote ? (
+        <Badge tone="success">✓ Orçamento transf.</Badge>
+      ) : temTransferencia ? (
+        // Só cobra o orçamento quando a operação tem transferência: é o recibo
+        // do despachante que acerta o título já lançado no Contas a pagar.
+        <Badge tone="warning">⚠ Orçamento transf. pendente</Badge>
+      ) : null}
+      <Badge tone={doc.hasComunicacao ? "success" : "warning"}>
+        {doc.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
+      </Badge>
+      <Badge tone={doc.hasFotoCliente ? "success" : "warning"}>
+        {doc.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
+      </Badge>
+      {/* Refinanciamento não transfere nada: o veículo continua com o
+          proprietário, que é o próprio financiado. */}
+      {refinancing ? null : (
+        <Badge tone={doc.transferDoneAt ? "success" : "danger"}>
+          {doc.transferDoneAt
+            ? doc.transferDoneByCrlv
+              ? "✓ Transferido · CRLV no nome do comprador"
+              : `✓ Transferido em ${formatDate(doc.transferDoneAt)}`
+            : "⚠ No nome do dono anterior"}
+        </Badge>
+      )}
+    </div>
+  );
+}
+
 export default async function FinanciamentoTerceirosListPage({
   searchParams,
 }: {
@@ -30,7 +88,7 @@ export default async function FinanciamentoTerceirosListPage({
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
 
-  const [openPreRaw, opsRaw] = await Promise.all([
+  const [openPreRaw, opsRaw, houseKeys] = await Promise.all([
     prisma.preSale.findMany({
       where: { saleType: "FINANCIAMENTO_TERCEIROS", status: "ABERTA" },
       orderBy: { createdAt: "desc" },
@@ -38,8 +96,24 @@ export default async function FinanciamentoTerceirosListPage({
     prisma.sale.findMany({
       where: { saleType: "FINANCIAMENTO_TERCEIROS" },
       orderBy: { saleDate: "desc" },
-      include: { vehicle: true, customer: true },
+      include: {
+        // O veículo é de terceiro, mas a documentação corre igual à de um
+        // vendido do estoque: CRLV, orçamento do despachante, comunicação de
+        // venda, foto do cliente e a transferência de propriedade. Quem
+        // responde por tudo isso são os anexos, custos e títulos do carro.
+        vehicle: {
+          include: {
+            attachments: { select: { kind: true, description: true, createdAt: true } },
+            costs: { select: { description: true, createdAt: true } },
+            payables: { select: { description: true, createdAt: true } },
+          },
+        },
+        customer: true,
+      },
     }),
+    // Nomes "da casa" (loja + sócios): dizem se o documento está no nome da
+    // loja, do comprador ou ainda do dono anterior.
+    houseNameKeys(),
   ]);
   // PreSale não tem relação com veículo/cliente — busca em lote pelos ids.
   const preVehicleIds = openPreRaw.map((p) => p.vehicleId);
@@ -78,21 +152,32 @@ export default async function FinanciamentoTerceirosListPage({
         inValueRange(p.financingAmount, min, max),
     );
 
-  const ops = opsRaw.filter(
-    (o) =>
-      matchesSearch(
-        q,
-        o.vehicle.brand,
-        o.vehicle.model,
-        o.vehicle.plate,
-        o.customer.name,
-        formatDate(o.saleDate),
-        o.financingAmount,
-        formatCurrency(o.financingAmount),
-      ) &&
-      inDateRange(o.saleDate, de, ate) &&
-      inValueRange(o.financingAmount, min, max),
-  );
+  const ops = opsRaw
+    .filter(
+      (o) =>
+        matchesSearch(
+          q,
+          o.vehicle.brand,
+          o.vehicle.model,
+          o.vehicle.plate,
+          o.customer.name,
+          formatDate(o.saleDate),
+          o.financingAmount,
+          formatCurrency(o.financingAmount),
+        ) &&
+        inDateRange(o.saleDate, de, ate) &&
+        inValueRange(o.financingAmount, min, max),
+    )
+    .map((o) => ({
+      ...o,
+      doc: situacaoDocumental(
+        {
+          ...o.vehicle,
+          sale: { saleDate: o.saleDate, transferDoneAt: o.transferDoneAt, customer: o.customer },
+        },
+        houseKeys,
+      ),
+    }));
 
   return (
     <div>
@@ -198,6 +283,34 @@ export default async function FinanciamentoTerceirosListPage({
                     {o.refinancing ? (
                       <span className="ml-1.5 rounded bg-blue-50 px-1 text-[10px] font-medium text-blue-700">Refi</span>
                     ) : null}
+                    {/* Em nome de quem o documento está: a pergunta que sobra
+                        depois da operação — o carro já saiu do nome do dono
+                        anterior? */}
+                    {o.vehicle.docOwnerName ? (
+                      <p className="mt-0.5 text-[11px] font-normal text-slate-500">
+                        Este veículo está em nome de{" "}
+                        <strong className={o.doc.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
+                          {o.vehicle.docOwnerName}
+                        </strong>
+                      </p>
+                    ) : null}
+                    {o.vehicle.transferToName && !o.doc.transferDoneAt ? (
+                      <p className="mt-0.5 text-[11px] font-normal text-sky-700">
+                        🔄 Transferência para <strong>{o.vehicle.transferToName}</strong>
+                      </p>
+                    ) : null}
+                    {/* No celular a tabela rola de lado e a coluna Situação
+                        fica fora da tela — aqui os selos andam junto do
+                        veículo, sem precisar arrastar nada. Operação cancelada
+                        não tem documentação a cobrar. */}
+                    {o.status === "CANCELADA" ? null : (
+                      <SelosDaOperacao
+                        doc={o.doc}
+                        refinancing={o.refinancing}
+                        temTransferencia={o.transferCharged && o.transferAmount > 0}
+                        className="mt-1.5 font-normal sm:hidden"
+                      />
+                    )}
                   </Td>
                   <Td>{o.customer.name}</Td>
                   <Td>{formatDate(o.saleDate)}</Td>
@@ -207,7 +320,15 @@ export default async function FinanciamentoTerceirosListPage({
                     {o.status === "CANCELADA" ? (
                       <span className="text-rose-600">Cancelada</span>
                     ) : (
-                      <span className="text-emerald-700">Concluída</span>
+                      <>
+                        <span className="text-emerald-700">Concluída</span>
+                        <SelosDaOperacao
+                          doc={o.doc}
+                          refinancing={o.refinancing}
+                          temTransferencia={o.transferCharged && o.transferAmount > 0}
+                          className="mt-1 hidden sm:flex"
+                        />
+                      </>
                     )}
                   </Td>
                 </Tr>

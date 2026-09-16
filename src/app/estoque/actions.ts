@@ -28,6 +28,17 @@ import { parseDebtItems } from "@/lib/vehicle-debts";
 import { plateKey, plateIdentityKey, plateVariants } from "@/lib/plate";
 import { structuralCenterId } from "@/lib/structural";
 
+/**
+ * Telas que mostram a situação de um veículo. O financiamento de terceiros usa
+ * os MESMOS cards de documento da ficha do estoque (orçamento do despachante,
+ * ATPV-e, comunicação de venda, transferência), então o que muda aqui precisa
+ * aparecer lá também — senão a tela da operação fica com o dado velho.
+ */
+function revalidarTelasDeVeiculo() {
+  revalidatePath("/estoque");
+  revalidatePath("/vendas/financiamento-terceiros", "layout");
+}
+
 const advanceSchema = z.object({
   vehicleId: z.string().min(1),
   amount: z.coerce.number().min(0.01, "Informe o valor do sinal"),
@@ -356,7 +367,7 @@ export async function createVehicleAction(
         },
       });
     }
-    revalidatePath("/estoque");
+    revalidarTelasDeVeiculo();
     revalidatePath("/financeiro/a-pagar");
     revalidatePath("/");
     redirect(`/estoque/${vehicle.id}`);
@@ -459,7 +470,7 @@ export async function updateVehicleAction(
     const { regenerateVehicleAcquisitionPayables } = await import("@/lib/finance");
     await regenerateVehicleAcquisitionPayables(data.id);
 
-    revalidatePath("/estoque");
+    revalidarTelasDeVeiculo();
     revalidatePath(`/estoque/${data.id}`);
     revalidatePath("/financeiro/a-pagar");
     revalidatePath("/");
@@ -472,7 +483,7 @@ export async function updateVehicleAction(
 export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RESERVADO") {
   await assertCan("estoque", "editar");
   await prisma.vehicle.update({ where: { id }, data: { status } });
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath(`/estoque/${id}`);
   revalidatePath("/");
 }
@@ -507,7 +518,7 @@ export async function setSaleTransferDoneAction(
   if (date) {
     await prisma.vehicle.update({ where: { id: sale.vehicleId }, data: { transferInProgress: false } });
   }
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath(`/estoque/${sale.vehicleId}`);
   revalidatePath(`/vendas/${saleId}`);
   return { ok: true };
@@ -533,7 +544,7 @@ export async function setVehicleTransferInProgressAction(
   const v = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
   if (!v) return { ok: false, error: "Veículo não encontrado." };
   await prisma.vehicle.update({ where: { id: vehicleId }, data: { transferInProgress: inProgress } });
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath(`/estoque/${vehicleId}`);
   return { ok: true };
 }
@@ -569,7 +580,7 @@ export async function setVehicleCostCapitalBeneficiaryAction(
     where: { id: vehicleId },
     data: { postSaleCapitalBeneficiaryId: beneficiaryId },
   });
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath(`/estoque/${vehicleId}`);
   return { ok: true };
 }
@@ -776,7 +787,7 @@ export async function addVehicleCostAction(
     return { error: e instanceof Error ? e.message : "Não foi possível lançar o custo. Tente novamente." };
   }
   revalidatePath(`/estoque/${data.vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
   return { success: true };
@@ -786,7 +797,7 @@ export async function deleteVehicleCostAction(costId: string, vehicleId: string)
   await assertCan("estoque", "custos");
   await deleteVehicleCost(costId);
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
 }
@@ -796,7 +807,7 @@ export async function detachVehicleCostAction(costId: string, vehicleId: string)
   await assertCan("estoque", "custos");
   await detachVehicleCost(costId);
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
 }
@@ -1019,7 +1030,18 @@ async function applyTransferQuote(input: {
 
   const vehicle = await prisma.vehicle.findUniqueOrThrow({
     where: { id: input.vehicleId },
-    select: { id: true, plate: true, brand: true, model: true, status: true, transferToName: true },
+    select: {
+      id: true,
+      plate: true,
+      brand: true,
+      model: true,
+      status: true,
+      transferToName: true,
+      // Veículo de TERCEIRO (financiamento de terceiros): o carro nunca foi da
+      // loja, então o que o despachante cobra não é custo dele — é despesa da
+      // operação. Muda para onde vai o título.
+      intermediation: true,
+    },
   });
 
   // Placa do recibo × veículo (quando o recibo traz placa legível).
@@ -1281,6 +1303,75 @@ async function applyTransferQuote(input: {
       if (itens.length) filled.push(`linhas: ${linhas}`);
       return { filled, warnings };
     }
+    // Veículo de TERCEIRO sem título reservado na operação (a transferência não
+    // foi cobrada no fechamento, mas o despachante cobra da loja): o carro não é
+    // da loja, então isto não pode virar custo do veículo — vira despesa DAQUELA
+    // operação, no mesmo formato do título que o fechamento cria, e a
+    // transferência passa a aparecer no resultado da intermediação.
+    if (venda && !reservado && vehicle.intermediation) {
+      // Mês da operação já encerrado: ligar o título à venda mudaria o
+      // resultado de um mês fechado (a transferência entra na conta da
+      // operação). Aí o gasto entra como despesa administrativa do período
+      // aberto — mesma regra do custo pós-venda do estoque.
+      let mesFechado = false;
+      try {
+        await assertMonthOpen(venda.saleDate);
+      } catch {
+        mesFechado = true;
+      }
+      const mesOperacao = venda.saleDate.toLocaleDateString("pt-BR", {
+        month: "2-digit",
+        year: "numeric",
+        timeZone: "UTC",
+      });
+      await prisma.payable.create({
+        data: {
+          description: `Transferência DETRAN — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+          category: "COMISSAO",
+          categoryLabel: "Documentação de veículo",
+          amount: total,
+          dueDate: vencimento,
+          status: "PENDENTE",
+          costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+          saleId: mesFechado ? null : venda.id,
+          supplierId,
+          notes:
+            `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}) na operação de ` +
+            `financiamento de terceiros — o veículo é de terceiro, então a transferência é despesa da operação, ` +
+            `não custo do carro.` +
+            (mesFechado
+              ? ` O mês da operação (${mesOperacao}) já está encerrado, então este gasto entra no período aberto, fora do resultado daquela operação.`
+              : "") +
+            (linhas ? ` Linhas: ${linhas}.` : ""),
+        },
+      });
+      if (!mesFechado) {
+        await prisma.sale.update({
+          where: { id: venda.id },
+          data: { transferCharged: true, transferAmount: total },
+        });
+      }
+      filled.push(
+        `título "Transferência DETRAN" de ${brl(total)} lançado no Contas a pagar${despachante ? ` (${despachante})` : ""} — ` +
+          (mesFechado
+            ? `despesa do período aberto (o mês da operação, ${mesOperacao}, já está encerrado)`
+            : "despesa desta operação"),
+      );
+      if (itens.length) filled.push(`linhas: ${linhas}`);
+      revalidarTelasDeVeiculo();
+      revalidatePath("/financeiro/a-pagar");
+      return { filled, warnings };
+    }
+  }
+
+  // Veículo de TERCEIRO cuja operação ainda não foi concluída (ou foi
+  // cancelada): não há operação a que atribuir o gasto, e o carro não é da loja
+  // para virar custo dele. O anexo fica guardado; o título, não.
+  if (vehicle.intermediation) {
+    warnings.push(
+      "Orçamento lido, mas a operação de financiamento de terceiros deste veículo ainda não está concluída — o título não foi lançado. Conclua a operação e use “Ler e lançar”.",
+    );
+    return { filled, warnings };
   }
 
   // Já lançado? (mesmo valor, custo de transferência neste veículo)
@@ -1336,7 +1427,7 @@ export async function readTransferQuoteAttachmentAction(attachmentId: string): P
       mimeType: att.mimeType,
     });
     revalidatePath(`/estoque/${att.vehicleId}`);
-    revalidatePath("/estoque");
+    revalidarTelasDeVeiculo();
     revalidatePath("/financeiro/a-pagar");
     return { ok: true, filled: read.filled, warnings: read.warnings };
   } catch (e) {
@@ -1451,7 +1542,7 @@ export async function uploadVehicleAttachmentAction(
   revalidatePath(`/estoque/${vehicleId}`);
   // A lista mostra o selo do CRLV e os dados do carro — sem isto o card ficava
   // defasado até outra revalidação.
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   return { ok: true, filled: read.filled, warnings: read.warnings };
 }
@@ -1738,7 +1829,7 @@ export async function uploadVehicleBoletoAction(
   }
 
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   return { ok: true, filled, warnings };
 }
@@ -1841,7 +1932,7 @@ export async function refazerDebitosVeiculoAction(
   });
 
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   const brlv = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
   return {
@@ -1891,7 +1982,7 @@ export async function encerrarDebitosVeiculoAction(
     }),
   ]);
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   return {
     ok: true,
@@ -1932,7 +2023,7 @@ export async function readCrlvAttachmentAction(attachmentId: string): Promise<At
       typedYear: att.description.match(/(\d{4})/)?.[1] ?? null,
     });
     revalidatePath(`/estoque/${att.vehicleId}`);
-    revalidatePath("/estoque");
+    revalidarTelasDeVeiculo();
     return { ok: true, filled: read.filled, warnings: read.warnings };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível ler o CRLV." };
@@ -2082,7 +2173,7 @@ export async function readAtpvAttachmentAction(attachmentId: string): Promise<At
   });
 
   revalidatePath(`/estoque/${vehicle.id}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   return { ok: true, filled, warnings };
 }
 
@@ -2096,7 +2187,7 @@ export async function deleteVehicleAttachmentAction(id: string, vehicleId: strin
   await assertCan("estoque", action);
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
 }
 
 /**
@@ -2132,7 +2223,7 @@ export async function toggleVehiclePublishedAction(
     data: { published: publish, ...(publish ? { publishedAt: new Date() } : {}) },
   });
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/vitrine");
   revalidatePath(`/vitrine/${vehicleId}`);
   return { ok: true };
@@ -2317,7 +2408,7 @@ export async function uploadClientPhotoAction(
     },
   });
   revalidatePath(`/estoque/${vehicleId}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/vendas");
   return { ok: true };
 }
@@ -2334,7 +2425,7 @@ export async function deleteVehicleAction(id: string) {
   await prisma.receivable.deleteMany({ where: { vehicleId: id } });
   await prisma.payable.deleteMany({ where: { vehicleId: id } });
   await prisma.vehicle.delete({ where: { id } });
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/");
   redirect("/estoque");
 }
@@ -2523,7 +2614,7 @@ export async function saveVehicleRenaveAction(
   });
 
   revalidatePath(`/estoque/${vehicle.id}`);
-  revalidatePath("/estoque");
+  revalidarTelasDeVeiculo();
   revalidatePath("/estoque/renave");
   return { success: "Dados do Renave salvos." };
 }

@@ -20,7 +20,9 @@ export default function CrlvLine({ crlvs }: { crlvs: Crlv[] }) {
     <div className="space-y-0.5 sm:col-span-2">
       {crlvs.map((c) => (
         <p key={c.id} className="flex flex-wrap items-center gap-x-3">
-          <span>
+          {/* min-w-0 + break-all: nome de arquivo é uma palavra só e comprida —
+              no celular ele empurrava a tela para o lado. */}
+          <span className="min-w-0 break-all">
             <span className="text-slate-500">{c.description}:</span> 📎 {c.filename}
             <span className="ml-1 text-xs text-slate-400">({formatDate(c.createdAt)})</span>
           </span>
