@@ -173,7 +173,15 @@ export default async function FinanciamentoTerceirosListPage({
       doc: situacaoDocumental(
         {
           ...o.vehicle,
-          sale: { saleDate: o.saleDate, transferDoneAt: o.transferDoneAt, customer: o.customer },
+          sale: {
+            saleDate: o.saleDate,
+            transferDoneAt: o.transferDoneAt,
+            transferCharged: o.transferCharged,
+            transferAmount: o.transferAmount,
+            ownerName: o.ownerName,
+            ownerDocument: o.ownerDocument,
+            customer: o.customer,
+          },
         },
         houseKeys,
       ),
