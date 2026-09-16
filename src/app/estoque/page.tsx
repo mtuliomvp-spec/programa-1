@@ -117,6 +117,15 @@ export default async function EstoquePage({
             select: {
               saleDate: true,
               transferDoneAt: true,
+              // Transferência cobrada na venda: o título do despachante fica
+              // preso à VENDA (não ao veículo), e é ele que diz que o processo
+              // está correndo.
+              transferCharged: true,
+              transferAmount: true,
+              // Vendedor da operação (financiamento de terceiros): o documento
+              // no nome dele significa que NADA foi transferido ainda.
+              ownerName: true,
+              ownerDocument: true,
               customer: { select: { name: true, document: true } },
             },
           },

@@ -77,11 +77,29 @@ export function crlvNoNomeDoComprador(v: {
   docOwnerName: string | null;
   docOwnerIsOurs: boolean;
   lastCrlvAt: Date | null;
-  sale: { saleDate: Date; transferDoneAt: Date | null; customer: { name: string; document: string | null } } | null;
+  sale: {
+    saleDate: Date;
+    transferDoneAt: Date | null;
+    customer: { name: string; document: string | null };
+    /** Vendedor/proprietário do documento na operação (financiamento de
+     *  terceiros). Vazio nas vendas de estoque, onde o carro era da loja. */
+    ownerName?: string | null;
+    ownerDocument?: string | null;
+  } | null;
 }): boolean {
   if (v.status !== "VENDIDO" || !v.sale || v.sale.transferDoneAt) return false;
   if (!v.docOwnerName || v.docOwnerIsOurs) return false;
   if (sameParty(v.docOwnerName, null, v.sale.customer)) return true;
+  // Documento ainda no nome do VENDEDOR da operação (financiamento de
+  // terceiros: o carro nunca foi da loja). Nada foi transferido — e o CRLV
+  // dele costuma ser anexado no dia da operação, o que fazia a regra de baixo
+  // concluir "transferido" só porque o anexo é posterior à venda.
+  if (
+    v.sale.ownerName &&
+    sameParty(v.docOwnerName, null, { name: v.sale.ownerName, document: v.sale.ownerDocument ?? null })
+  ) {
+    return false;
+  }
   return v.lastCrlvAt != null && v.lastCrlvAt.getTime() > v.sale.saleDate.getTime();
 }
 
@@ -105,6 +123,12 @@ export type VeiculoDocumental = {
     saleDate: Date;
     transferDoneAt: Date | null;
     customer: { name: string; document: string | null };
+    /** Transferência cobrada na venda: existe título do despachante a pagar. */
+    transferCharged?: boolean;
+    transferAmount?: number;
+    /** Vendedor/proprietário do documento (financiamento de terceiros). */
+    ownerName?: string | null;
+    ownerDocument?: string | null;
   } | null;
   /** Ainda em estoque, mas com pré-venda aberta (conta como "saindo"). */
   preVendido?: boolean;
@@ -164,6 +188,16 @@ export function situacaoDocumental(
   const transferDoneAt: Date | null =
     v.sale?.transferDoneAt ?? (crlvDoComprador && lastCrlvAt != null ? new Date(lastCrlvAt) : null);
   const saindo = v.status === "VENDIDO" || Boolean(v.preVendido);
+  // Orçamento do despachante anexado.
+  const temOrcamento = v.attachments.some(
+    (a) => a.kind === "DOCUMENTO" && ORCAMENTO_TRANSFERENCIA_RE.test(a.description),
+  );
+  // Sinais de que o processo está correndo POR CONTA DA VENDA: o título
+  // "Transferência DETRAN" nasce preso à venda (não ao veículo), então ele não
+  // aparece em costs/payables do carro — sem isto, o veículo com transferência
+  // cobrada e orçamento anexado não acendia nenhum selo de processo.
+  const processoDaVenda =
+    temOrcamento || Boolean(v.sale?.transferCharged && (v.sale.transferAmount ?? 0) > 0);
 
   return {
     hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
@@ -181,19 +215,20 @@ export function situacaoDocumental(
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
     // Orçamento da transferência (despachante) anexado — só selo positivo.
-    hasTransferQuote: v.attachments.some(
-      (a) => a.kind === "DOCUMENTO" && ORCAMENTO_TRANSFERENCIA_RE.test(a.description),
-    ),
+    hasTransferQuote: temOrcamento,
     // Documento no nome da loja/sócio (verde) ou de terceiro (vermelho).
     docOwnerIsOurs,
     // Nome no documento é o esperado: da casa — ou, em veículo vendido já
     // transferido, do comprador (também verde: é onde o carro deve estar).
     docOwnerOk: docOwnerIsOurs || (v.status === "VENDIDO" && transferDoneAt != null),
     // Processo de transferência iniciado quando qualquer um: marca manual
-    // (casos antigos); custo do veículo com "transferência"; ou conta a pagar
-    // com "transferência" (pagamento ao despachante), mesmo fora da ficha de
-    // venda.
-    transferStarted: v.transferInProgress || lastTransferAt != null,
+    // (casos antigos); custo do veículo com "transferência"; conta a pagar com
+    // "transferência" (pagamento ao despachante), mesmo fora da ficha de venda;
+    // o ORÇAMENTO do despachante anexado (é o começo do processo, e na venda
+    // que já reservou a transferência ele é o único sinal no carro, porque o
+    // título fica preso à venda, não ao veículo); ou a transferência cobrada na
+    // própria venda.
+    transferStarted: v.transferInProgress || lastTransferAt != null || processoDaVenda,
     transferInProgress: v.transferInProgress,
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
     // marcada na venda ou provada pelo CRLV no nome do comprador.
@@ -213,7 +248,7 @@ export function situacaoDocumental(
         // Detecção automática só enquanto o processo NÃO concluiu (CRLV no
         // nosso nome anexado depois do lançamento encerra o aviso); a marca
         // MANUAL continua valendo até ser desfeita na ficha.
-        (!transferConcluded && lastTransferAt != null)),
+        (!transferConcluded && (lastTransferAt != null || processoDaVenda))),
   };
 }
 

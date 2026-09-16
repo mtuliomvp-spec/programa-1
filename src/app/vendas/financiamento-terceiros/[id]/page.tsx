@@ -90,7 +90,15 @@ export default async function FinanciamentoTerceirosDetailPage({
   const doc = situacaoDocumental(
     {
       ...sale.vehicle,
-      sale: { saleDate: sale.saleDate, transferDoneAt: sale.transferDoneAt, customer: sale.customer },
+      sale: {
+        saleDate: sale.saleDate,
+        transferDoneAt: sale.transferDoneAt,
+        transferCharged: sale.transferCharged,
+        transferAmount: sale.transferAmount,
+        ownerName: sale.ownerName,
+        ownerDocument: sale.ownerDocument,
+        customer: sale.customer,
+      },
     },
     houseKeys,
   );
