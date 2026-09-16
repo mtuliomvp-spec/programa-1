@@ -13,7 +13,7 @@ import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
-import { isOwnName, crlvNoNomeDoComprador } from "@/lib/doc-owner";
+import { situacaoDocumental, seloCrlv } from "@/lib/doc-owner";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -41,60 +41,6 @@ function vehicleLabel(brand: string, model: string, version: string | null): str
   const v = (version || "").trim();
   if (!v || nameKey(base).includes(nameKey(v))) return base;
   return `${base} ${v}`;
-}
-
-/** O que o selo de documentação precisa saber de cada veículo. */
-type DocState = {
-  hasCrlv: boolean;
-  crlvYear: string | null;
-  transferStarted: boolean;
-  docOwnerIsOurs: boolean;
-  transferInProgress: boolean;
-  saleTransferPending: boolean;
-  /** Vendido e já transferido ao comprador (marcado ou pelo CRLV no nome dele). */
-  soldTransferred: boolean;
-};
-
-/**
- * Selo de documentação do veículo, em três estados:
- *  - "⚠ CRLV pendente": sem CRLV anexado e sem transferência lançada;
- *  - "🔄 Transferência em aberto": custo de transferência (DETRAN) lançado e o
- *    CRLV novo ainda não anexado — o processo está correndo;
- *  - "✓ CRLV {ano}" (ou "✓ Transferido · CRLV {ano}"): o CRLV no nome da
- *    loja/sócio foi anexado — documentação em dia. Em veículo VENDIDO,
- *    "Transferido" é a transferência ao COMPRADOR.
- */
-function crlvBadge({
-  hasCrlv,
-  crlvYear: year,
-  transferStarted,
-  docOwnerIsOurs,
-  transferInProgress: transferManual,
-  saleTransferPending,
-  soldTransferred,
-}: DocState): { label: string; tone: "success" | "warning" | "info" } {
-  const crlv = `CRLV${year ? ` ${year}` : ""}`;
-  // Vendido e já no nome do comprador: processo encerrado, inclusive a marca
-  // manual (o CRLV novo é a prova de que a transferência concluiu).
-  if (soldTransferred) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
-  // Marca MANUAL "em processo de transferência" vence tudo: o usuário afirmou
-  // que a transferência ainda está correndo (ex.: veículo vendido cujo CRLV
-  // ainda está no nome de um sócio, não do comprador). Desfazer a marca na ficha
-  // libera os demais estados.
-  if (transferManual) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
-  // Veículo vendido/pré-vendido, ainda no nosso nome, com transferência lançada:
-  // é a transferência ao COMPRADOR em andamento — vence o "Transferido".
-  if (saleTransferPending) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
-  // Documento JÁ no nome da loja/sócio → transferência concluída de fato. Ter
-  // CRLV anexado não basta: pode ser o do dono anterior (ex.: implantação de
-  // estoque com o CRLV antigo).
-  if (hasCrlv && docOwnerIsOurs) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
-  // Processo em aberto (custo de transferência) e ainda NÃO no nosso nome —
-  // mesmo com o CRLV do dono anterior anexado.
-  if (transferStarted) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
-  // Tem CRLV, sem processo e sem confirmação de que está no nosso nome.
-  if (hasCrlv) return { label: `✓ ${crlv}`, tone: "success" };
-  return { label: "⚠ CRLV pendente", tone: "warning" };
 }
 
 /**
@@ -214,97 +160,15 @@ export default async function EstoquePage({
   // agregadas (nunca uma por linha).
   const visitas = await visitasPorVeiculo(vehicles.map((v) => v.id));
 
-  const allRows = vehicles.map((v) => {
-    // Momento do ÚLTIMO lançamento de transferência (custo/conta com a palavra)
-    // e do ÚLTIMO CRLV anexado. Um CRLV no NOSSO nome anexado DEPOIS do
-    // lançamento significa que a transferência paga era a mudança para o nosso
-    // nome e ela CONCLUIU — o selo "em processo" deve dar lugar ao
-    // "Transferido" (o caso contrário — CRLV antigo, transferência ao comprador
-    // em andamento — mantém o "em processo").
-    const transferSignals = [
-      ...v.costs.filter((c) => /transfer[eê]ncia/i.test(c.description)),
-      ...v.payables.filter((p) => /transfer[eê]ncia/i.test(p.description)),
-    ].map((x) => x.createdAt.getTime());
-    const lastTransferAt = transferSignals.length ? Math.max(...transferSignals) : null;
-    const crlvTimes = v.attachments
-      .filter((a) => a.kind === "CRLV")
-      .map((a) => a.createdAt.getTime());
-    const lastCrlvAt = crlvTimes.length ? Math.max(...crlvTimes) : null;
-    const docOwnerIsOurs = v.docOwnerName ? isOwnName(v.docOwnerName, houseKeys) : false;
-    const transferConcluded =
-      docOwnerIsOurs && lastCrlvAt != null && lastTransferAt != null && lastCrlvAt > lastTransferAt;
-    // Vendido com o CRLV mais recente já em nome de terceiro (o comprador):
-    // transferência ao comprador concluída, mesmo sem a marcação na venda.
-    const crlvDoComprador = crlvNoNomeDoComprador({
-      status: v.status,
-      docOwnerName: v.docOwnerName,
-      docOwnerIsOurs,
-      lastCrlvAt: lastCrlvAt != null ? new Date(lastCrlvAt) : null,
-      sale: v.sale,
-    });
-    // Quando a transferência ao comprador concluiu: a data marcada na venda ou,
-    // faltando ela, a do CRLV no nome do comprador.
-    const transferDone: Date | null =
-      v.sale?.transferDoneAt ?? (crlvDoComprador && lastCrlvAt != null ? new Date(lastCrlvAt) : null);
-
-    return {
+  const allRows = vehicles.map((v) => ({
     ...v,
+    // CRLV, orçamento, comunicação de venda, foto do cliente e situação da
+    // transferência: as MESMAS regras da ficha e do financiamento de terceiros.
+    ...situacaoDocumental({ ...v, preVendido: preSaleByVehicle.has(v.id) }, houseKeys),
     preSaleNumber: preSaleByVehicle.get(v.id) ?? null,
-    hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
-    hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
-    hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
-    // Documento no nome da loja/sócio (verde) ou de terceiro (vermelho).
-    docOwnerIsOurs,
-    // Nome no documento é o esperado: da casa — ou, em veículo vendido já
-    // transferido, do comprador (também verde: é onde o carro deve estar).
-    docOwnerOk: docOwnerIsOurs || (v.status === "VENDIDO" && transferDone != null),
-    // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
-    // ATPV-e não aparece nada (nem "pendente").
-    hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
     // Renave: quantos dados ainda faltam para escriturar este veículo. Só selo
     // — a lista e as ações continuam iguais durante a implantação.
     renavePendentes: pendenciasCobraveis(v, renaveOperando).length,
-    // Orçamento da transferência (despachante) anexado — só selo positivo.
-    hasTransferQuote: v.attachments.some(
-      (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
-    ),
-    // Processo de transferência iniciado quando qualquer um: marca manual
-    // (casos antigos); custo do veículo com "transferência"; ou conta a pagar
-    // com "transferência" (pagamento ao despachante), mesmo fora da ficha de
-    // venda.
-    transferStarted:
-      v.transferInProgress ||
-      v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
-      v.payables.some((p) => /transfer[eê]ncia/i.test(p.description)),
-    // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
-    // marcada na venda ou provada pelo CRLV no nome do comprador.
-    transferDoneAt: transferDone,
-    transferDoneByCrlv: !v.sale?.transferDoneAt && transferDone != null,
-    soldTransferred: v.status === "VENDIDO" && transferDone != null,
-    // Em veículo VENDIDO/PRÉ-VENDIDO ainda no nosso nome, uma transferência
-    // lançada (custo/conta com "transferência") significa a transferência ao
-    // COMPRADOR em andamento — então o selo "em processo" deve vencer o
-    // "Transferido". Em estoque puro isso não vale (senão todo carro comprado,
-    // que teve custo de transferência ao entrar, ficaria eternamente "em
-    // processo"). Não vale se a baixa no DETRAN já foi marcada como concluída.
-    saleTransferPending:
-      (v.status === "VENDIDO" || preSaleByVehicle.has(v.id)) &&
-      transferDone == null &&
-      (v.transferInProgress ||
-        // Detecção automática só enquanto o processo NÃO concluiu (CRLV no
-        // nosso nome anexado depois do lançamento encerra o aviso); a marca
-        // MANUAL continua valendo até ser desfeita na ficha.
-        (!transferConcluded &&
-          (v.costs.some((c) => /transfer[eê]ncia/i.test(c.description)) ||
-            v.payables.some((p) => /transfer[eê]ncia/i.test(p.description))))),
-    // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
-    crlvYear:
-      v.attachments
-        .filter((a) => a.kind === "CRLV")
-        .map((a) => a.description.match(/(\d{4})/)?.[1] ?? "")
-        .filter(Boolean)
-        .sort()
-        .at(-1) ?? null,
     // Custos custeados pelo capital de um sócio ficam de fora do "investido" da
     // loja (são do sócio, dono do resultado do carro).
     invested:
@@ -330,8 +194,7 @@ export default async function EstoquePage({
           ? ` (${v.tradeInForSale.vehicle.brand} ${v.tradeInForSale.vehicle.model} - ${v.tradeInForSale.vehicle.plate})`
           : "")
       : null,
-    };
-  });
+  }));
 
   // Filtro derivado "Pré-vendido": em estoque (não vendido) e com pré-venda aberta.
   const statusFiltered = preVendidoFilter
@@ -343,7 +206,7 @@ export default async function EstoquePage({
   // DETRAN (transferDoneAt) dos vendidos.
   const docMatch = (v: (typeof allRows)[number]): boolean => {
     if (!docFilter) return true;
-    const badge = crlvBadge(v);
+    const badge = seloCrlv(v);
     switch (docFilter) {
       case "TRANSFERENCIA":
         return badge.label.startsWith("🔄");
@@ -470,7 +333,7 @@ export default async function EstoquePage({
         </div>
         {v.status !== "VENDIDO" ? (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
+            <Badge tone={seloCrlv(v).tone}>{seloCrlv(v).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.renavePendentes > 0 ? (
               <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
@@ -489,7 +352,7 @@ export default async function EstoquePage({
           </div>
         ) : (
           <div className="mt-2 flex flex-wrap justify-end gap-1.5">
-            <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
+            <Badge tone={seloCrlv(v).tone}>{seloCrlv(v).label}</Badge>
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.renavePendentes > 0 ? (
               <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
@@ -601,7 +464,7 @@ export default async function EstoquePage({
           </span>
         ) : null}
         <span className="mt-1 block">
-          <Badge tone={crlvBadge(v).tone}>{crlvBadge(v).label}</Badge>
+          <Badge tone={seloCrlv(v).tone}>{seloCrlv(v).label}</Badge>
         </span>
         {v.hasAtpv ? (
           <span className="mt-1 block">
