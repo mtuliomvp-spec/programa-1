@@ -154,6 +154,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     cardNonExpense.set(it.payableId, (cardNonExpense.get(it.payableId) ?? 0) + it.amount);
   }
 
+  // Sobra da transferência de venda em mês já encerrado: entra no mês do
+  // AJUSTE (período aberto), não no da venda — ver o extrato de Lucro/Prejuízo.
+  const transferSobras = await prisma.sale.findMany({
+    where: { status: "CONCLUIDA", transferSobraAt: { not: null }, transferSobraAmount: { gt: 0 } },
+    select: { transferSobraAmount: true, transferSobraAt: true },
+  });
+
   // Fechamentos mensais: o resultado do mês fechado migrou para o capital, então
   // a DRE do mês fechado desconta o valor transferido (fica ~zero).
   const allClosings = await prisma.monthlyClosing.findMany({
@@ -218,11 +225,13 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
     const despesas = monthExpenses
       .filter((e) => e.category !== "COMISSAO")
       .reduce((sum, e) => sum + e.amount - (cardNonExpense.get(e.id) ?? 0), 0);
-    // Transferência (DETRAN) cobrada por competência no mês.
-    const transferencias = monthSales.reduce(
-      (sum, s) => sum + (s.transferCharged ? s.transferAmount : 0),
-      0,
-    );
+    // Transferência (DETRAN) cobrada por competência no mês, menos a sobra de
+    // orçamentos lidos neste mês para vendas de meses já encerrados.
+    const transferencias =
+      monthSales.reduce((sum, s) => sum + (s.transferCharged ? s.transferAmount : 0), 0) -
+      transferSobras
+        .filter((s) => s.transferSobraAt! >= start && s.transferSobraAt! < end)
+        .reduce((sum, s) => sum + (s.transferSobraAmount ?? 0), 0);
     const fechamentos =
       allClosings.find(
         (c) => c.year === start.getUTCFullYear() && c.month === start.getUTCMonth() + 1,
@@ -427,6 +436,23 @@ async function profitLossStatement(
     include: { sale: { include: { vehicle: { select: { brand: true, model: true, plate: true } } } } },
   });
 
+  // Sobra da transferência reconhecida no período (venda de mês já encerrado):
+  // entra pela data do ajuste, não pela data da venda.
+  const transferSobras = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      transferSobraAt: { gte: rangeStart, lt: rangeEnd },
+      transferSobraAmount: { gt: 0 },
+    },
+    select: {
+      id: true,
+      transferSobraAmount: true,
+      transferSobraAt: true,
+      transferAmount: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+
   // Comissão do vendedor sobre o SEGURO: pela data da BAIXA (é quando o valor
   // fica conhecido), para casar com a receita, que também entra na baixa.
   const seguroComissoes = await prisma.sale.findMany({
@@ -552,6 +578,25 @@ async function profitLossStatement(
         value: -s.returnCommissionAmount,
       });
     }
+  }
+
+  // Sobra da transferência de uma venda cujo MÊS JÁ FOI ENCERRADO: o orçamento
+  // do despachante veio mais barato que o reservado, o título a pagar encolheu
+  // (não se paga o que não se deve) e o resultado do mês fechado ficou como
+  // estava. O ganho é reconhecido AQUI, no período aberto, pela data do ajuste
+  // — é o espelho do custo pós-venda que o orçamento mais caro gera.
+  for (const s of transferSobras) {
+    const valor = Math.round((s.transferSobraAmount ?? 0) * 100) / 100;
+    if (valor <= 0.004) continue;
+    transferencias -= valor;
+    entries.push({
+      id: `transfsobra-${s.id}`,
+      date: s.transferSobraAt!,
+      kind: "DESPESA",
+      description: "Sobra da transferência DETRAN",
+      detail: `${s.vehicle.brand} ${s.vehicle.model} · ${s.vehicle.plate} — orçamento do despachante menor que o reservado na venda de ${fmt(s.transferAmount)}; o mês da venda já estava encerrado, então a sobra entra aqui`,
+      value: valor,
+    });
   }
 
   // Comissão do seguro: custo na data da baixa (a receita entrou no mesmo dia).
