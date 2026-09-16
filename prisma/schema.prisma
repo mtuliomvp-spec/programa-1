@@ -1054,6 +1054,13 @@ model Sale {
   // Valor RESERVADO no registro da venda. O orçamento do despachante pode
   // ajustar transferAmount para o valor real; este guarda o "de" do ajuste.
   transferReservedAmount    Float?
+  // Sobra da transferência de uma venda cujo MÊS JÁ FOI ENCERRADO: o orçamento
+  // do despachante veio mais barato que o reservado, então o título a pagar
+  // encolhe (não se paga o que não se deve), mas o resultado do mês fechado não
+  // pode mudar. A diferença é reconhecida como ganho no PERÍODO ABERTO, na data
+  // abaixo — é o espelho do custo pós-venda que o orçamento mais caro gera.
+  transferSobraAmount       Float?
+  transferSobraAt           DateTime?
   // Quando a transferência de propriedade no DETRAN foi concluída. Nulo = o
   // carro ainda está no nome do dono anterior (multa e ponto continuam caindo
   // para ele). Não confundir com transferCharged, que é só a cobrança.

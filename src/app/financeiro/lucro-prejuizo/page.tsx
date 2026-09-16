@@ -173,6 +173,22 @@ export default async function LucroPrejuizoPage({
           <Row label="( = ) Lucro bruto" value={s.lucroBruto} kind="total" />
           <Row label="Despesas operacionais" value={-s.despesas} kind="sub" />
           <Row label="Comissões" value={-s.comissoes} kind="sub" />
+          {/* Transferência (DETRAN) das vendas do período. Negativo quando é
+              SOBRA: orçamento do despachante mais barato que o reservado numa
+              venda de mês já encerrado — o ganho entra aqui, no período aberto,
+              em vez de reescrever o mês fechado. Sem esta linha a conta da tela
+              não fechava. */}
+          {Math.abs(s.transferencias) > 0.005 ? (
+            <Row
+              label={
+                s.transferencias > 0
+                  ? "Transferência DETRAN (documentação das vendas)"
+                  : "Sobra de transferência (venda de mês encerrado)"
+              }
+              value={-s.transferencias}
+              kind="sub"
+            />
+          ) : null}
           {s.posVenda > 0 ? (
             <Row label="Custos pós-venda (veículos já vendidos)" value={-s.posVenda} kind="sub" />
           ) : null}

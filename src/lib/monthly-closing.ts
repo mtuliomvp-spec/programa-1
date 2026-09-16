@@ -313,3 +313,89 @@ export async function reopenMonth(year: number, month: number) {
     prisma.monthlyClosing.delete({ where: { id: closing.id } }),
   ]);
 }
+
+/**
+ * Avisos de mexida em mês já encerrado.
+ *
+ * O resultado de um mês fechado não é uma foto: ele é recalculado dos dados de
+ * hoje. Como o custo de um veículo entra no resultado na DATA DA VENDA (é ali
+ * que a margem é reconhecida), mexer no custo de um carro vendido num mês já
+ * encerrado muda o resultado daquele mês — e o fechamento registrado, que já
+ * mandou o lucro ao capital, não se refaz sozinho. As duas telas
+ * (Lucro/Prejuízo e painel) passam a mostrar números diferentes até o mês ser
+ * reaberto e fechado de novo.
+ *
+ * Nada aqui bloqueia a operação: o sistema avisa na hora, em vez de deixar a
+ * divergência aparecer depois no painel sem explicação.
+ */
+
+/** Mês da venda do veículo, quando ele está vendido e o mês já foi encerrado. */
+async function mesEncerradoDaVenda(vehicleId: string): Promise<string | null> {
+  const venda = await prisma.sale.findFirst({
+    where: { vehicleId, status: "CONCLUIDA" },
+    orderBy: { saleDate: "desc" },
+    select: { saleDate: true },
+  });
+  if (!venda || !(await isMonthClosed(venda.saleDate))) return null;
+  return monthLabelBR(venda.saleDate.getUTCFullYear(), venda.saleDate.getUTCMonth() + 1);
+}
+
+/**
+ * LANÇAR custo num veículo vendido em mês encerrado: o custo nasce PÓS-VENDA e
+ * entra no período aberto (quando for pago), não no mês da venda. O aviso é
+ * informativo — diz onde o dinheiro vai cair, para ninguém esperar ver o
+ * número mudar no mês fechado.
+ */
+export async function avisoDeCustoEmVeiculoVendido(vehicleId: string): Promise<string | null> {
+  const mes = await mesEncerradoDaVenda(vehicleId);
+  if (!mes) return null;
+  return (
+    `Este veículo foi vendido em ${mes}, mês já encerrado: o custo entra como PÓS-VENDA no período ` +
+    `aberto (no dia em que for pago) e não altera o resultado de ${mes}.`
+  );
+}
+
+/**
+ * EXCLUIR custo: aqui o mês fechado pode mudar de verdade. Dois casos:
+ *  - custo PRÉ-VENDA de um carro vendido em mês encerrado — ele compõe a
+ *    margem daquela venda, então tirá-lo aumenta o lucro daquele mês;
+ *  - custo cujo título já foi PAGO com data dentro de um mês encerrado — a
+ *    despesa some do mês em que foi paga.
+ * Chame ANTES de excluir (depois o custo não existe mais para ser consultado).
+ */
+export async function avisoDeExclusaoDeCusto(costId: string): Promise<string | null> {
+  const custo = await prisma.vehicleCost.findUnique({
+    where: { id: costId },
+    select: {
+      postSale: true,
+      vehicleId: true,
+      payable: { select: { status: true, paymentDate: true } },
+    },
+  });
+  if (!custo) return null;
+
+  if (!custo.postSale) {
+    const mes = await mesEncerradoDaVenda(custo.vehicleId);
+    if (mes) {
+      return (
+        `Atenção: este custo compõe a margem de uma venda de ${mes}, mês já encerrado. Excluí-lo aumenta ` +
+        `o lucro de ${mes}, que passa a divergir do fechamento registrado — para alinhar, reabra e feche ` +
+        `${mes} de novo em Financeiro → Fechamento Mensal.`
+      );
+    }
+  }
+
+  const pago = custo.payable;
+  if (pago?.status === "PAGO" && pago.paymentDate && (await isMonthClosed(pago.paymentDate))) {
+    const mes = monthLabelBR(
+      pago.paymentDate.getUTCFullYear(),
+      pago.paymentDate.getUTCMonth() + 1,
+    );
+    return (
+      `Atenção: o título deste custo foi pago em ${mes}, mês já encerrado. Excluí-lo tira a despesa do ` +
+      `resultado de ${mes}, que passa a divergir do fechamento registrado — para alinhar, reabra e feche ` +
+      `${mes} de novo em Financeiro → Fechamento Mensal.`
+    );
+  }
+  return null;
+}

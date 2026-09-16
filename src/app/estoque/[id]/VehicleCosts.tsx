@@ -97,9 +97,31 @@ export default function VehicleCosts({
     {},
   );
   const [deleting, startDelete] = useTransition();
+  // Aviso de mexida em mês já encerrado (o custo entra no resultado na data da
+  // venda): aparece depois de excluir, como aparece depois de lançar.
+  const [avisoMes, setAvisoMes] = useState<string | null>(null);
+
+  /** Exclui o custo e mostra o aviso quando o carro foi vendido em mês fechado. */
+  function excluirCusto(costId: string) {
+    setConfirmingId(null);
+    setAvisoMes(null);
+    startDelete(async () => {
+      const r = await deleteVehicleCostAction(costId, vehicleId);
+      if (r?.warning) setAvisoMes(r.warning);
+    });
+  }
+
+  const aviso = avisoMes ?? state.warning ?? null;
 
   return (
     <div>
+      {/* Mexeu no custo de um carro vendido em mês já encerrado: o resultado
+          daquele mês muda e o fechamento registrado não se refaz sozinho. */}
+      {aviso ? (
+        <p className="mx-5 mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          ⚠️ {aviso}
+        </p>
+      ) : null}
       {costs.length === 0 ? (
         <p className="px-5 py-4 text-sm text-slate-500">
           Nenhum custo lançado. Registre preparação, documentação, mecânica etc. para
@@ -204,10 +226,7 @@ export default function VehicleCosts({
                       <button
                         type="button"
                         disabled={deleting}
-                        onClick={() => {
-                          setConfirmingId(null);
-                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                        }}
+                        onClick={() => excluirCusto(c.id)}
                         className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
                       >
                         {deleting ? "Excluindo..." : "Excluir (desfaz custo, título e retirada)"}
@@ -242,10 +261,7 @@ export default function VehicleCosts({
                       <button
                         type="button"
                         disabled={deleting}
-                        onClick={() => {
-                          setConfirmingId(null);
-                          startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                        }}
+                        onClick={() => excluirCusto(c.id)}
                         className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
                       >
                         {deleting ? "Excluindo..." : "Excluir custo e conta a pagar"}
@@ -270,10 +286,7 @@ export default function VehicleCosts({
                     <button
                       type="button"
                       disabled={deleting}
-                      onClick={() => {
-                        setConfirmingId(null);
-                        startDelete(() => deleteVehicleCostAction(c.id, vehicleId));
-                      }}
+                      onClick={() => excluirCusto(c.id)}
                       className="rounded-md bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-50"
                     >
                       {deleting ? "Excluindo..." : "Sim, excluir"}

@@ -21,7 +21,11 @@ import {
 } from "@/lib/vehicle-doc";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
-import { assertMonthOpen } from "@/lib/monthly-closing";
+import {
+  assertMonthOpen,
+  avisoDeCustoEmVeiculoVendido,
+  avisoDeExclusaoDeCusto,
+} from "@/lib/monthly-closing";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseDebtItems } from "@/lib/vehicle-debts";
@@ -738,7 +742,7 @@ const costSchema = z.object({
   capitalBeneficiaryId: z.string().optional(),
 });
 
-export type CostFormState = { error?: string; success?: boolean };
+export type CostFormState = { error?: string; success?: boolean; warning?: string };
 
 export async function addVehicleCostAction(
   _prevState: CostFormState,
@@ -790,16 +794,28 @@ export async function addVehicleCostAction(
   revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
-  return { success: true };
+  // Carro vendido em mês já encerrado: o custo nasce pós-venda e cai no período
+  // aberto, não no mês da venda. Dizer isso na hora evita a dúvida de por que o
+  // resultado daquele mês não mudou.
+  const aviso = await avisoDeCustoEmVeiculoVendido(data.vehicleId);
+  return { success: true, ...(aviso ? { warning: aviso } : {}) };
 }
 
-export async function deleteVehicleCostAction(costId: string, vehicleId: string) {
+export async function deleteVehicleCostAction(
+  costId: string,
+  vehicleId: string,
+): Promise<{ warning?: string }> {
   await assertCan("estoque", "custos");
+  // O aviso é lido ANTES da exclusão: depois o custo não existe mais para dizer
+  // se ele compunha a margem de uma venda de mês encerrado (ou se o título foi
+  // pago dentro dele).
+  const aviso = await avisoDeExclusaoDeCusto(costId);
   await deleteVehicleCost(costId);
   revalidatePath(`/estoque/${vehicleId}`);
   revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/");
+  return aviso ? { warning: aviso } : {};
 }
 
 /** Remove o custo do veículo mantendo a conta a pagar (volta ao a-pagar, Administrativo). */
@@ -1136,7 +1152,13 @@ async function applyTransferQuote(input: {
     const venda = await prisma.sale.findFirst({
       where: { vehicleId: vehicle.id, status: "CONCLUIDA" },
       orderBy: { saleDate: "desc" },
-      select: { id: true, saleDate: true, transferAmount: true, transferReservedAmount: true },
+      select: {
+        id: true,
+        saleDate: true,
+        transferAmount: true,
+        transferReservedAmount: true,
+        transferSobraAmount: true,
+      },
     });
     const reservado = venda
       ? await prisma.payable.findFirst({
@@ -1230,6 +1252,49 @@ async function applyTransferQuote(input: {
         revalidatePath("/financeiro/a-pagar");
         return { filled, warnings };
       }
+      // Mês da venda ENCERRADO e o orçamento veio MAIS BARATO: o título tem de
+      // encolher (não se paga o que não se deve), mas o resultado daquele mês
+      // não pode mudar — senão ele passa a divergir do fechamento registrado.
+      // A sobra é reconhecida como ganho no PERÍODO ABERTO (campo transferSobra
+      // da venda), espelhando o custo pós-venda do caso mais caro: a competência
+      // do mês fechado fica intacta, o título encolhe e a equação patrimonial
+      // continua fechada porque o ganho entra junto.
+      if (reservado.status !== "PAGO" && mesFechado && diff < 0) {
+        const sobra = Math.round(-diff * 100) / 100;
+        await prisma.$transaction([
+          prisma.payable.update({
+            where: { id: reservado.id },
+            data: {
+              amount: alvo,
+              supplierId: supplierId ?? undefined,
+              dueDate: vencimento,
+              notes:
+                `Ajustado pela leitura do orçamento do despachante (anexo ${input.attachmentId}): de ${brl(antes)} para ${brl(alvo)}. ` +
+                `O mês da venda (${mesVenda}) já está encerrado, então o resultado dele continua com os ${brl(venda.transferAmount)} ` +
+                `reconhecidos na venda e a sobra de ${brl(sobra)} entra como ganho no período aberto.` +
+                (diffPaga > 0 ? ` Diferença de ${brl(diffPaga)} já paga em título próprio.` : "") +
+                (linhas ? ` Linhas: ${linhas}.` : ""),
+            },
+          }),
+          prisma.sale.update({
+            where: { id: venda.id },
+            data: {
+              transferSobraAmount: Math.round(((venda.transferSobraAmount ?? 0) + sobra) * 100) / 100,
+              transferSobraAt: hoje,
+            },
+          }),
+        ]);
+        filled.push(
+          `título "Transferência DETRAN" da venda ajustado de ${brl(antes)} para ${brl(alvo)} — o mês da venda (${mesVenda}) já está encerrado, então a sobra de ${brl(sobra)} entra como ganho no período aberto, sem mexer no resultado daquele mês`,
+        );
+        if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
+        if (itens.length) filled.push(`linhas: ${linhas}`);
+        revalidatePath(`/vendas/${venda.id}`);
+        revalidarTelasDeVeiculo();
+        revalidatePath("/financeiro/a-pagar");
+        revalidatePath("/financeiro/lucro-prejuizo");
+        return { filled, warnings };
+      }
       if (reservado.status !== "PAGO") {
         // Título e competência mudam JUNTOS (equação patrimonial segue
         // fechada). Com o mês da venda ABERTO isso não move nada de lugar: o
@@ -1267,15 +1332,9 @@ async function applyTransferQuote(input: {
               : `título "Transferência DETRAN" da venda já está em ${brl(alvo)} (reservado na venda: ${brl(reservadoNaVenda)}) — fornecedor, vencimento e observação atualizados`,
         );
         if (diffPaga > 0) filled.push(`diferença de ${brl(diffPaga)} já paga em título próprio, descontada do alvo`);
-        // Só sobra (diff < 0) chega aqui com o mês fechado: reduzir o título é
-        // o certo — não se paga o que não se deve —, mas a sobra volta ao
-        // resultado de um mês já encerrado, cujo fechamento não é refeito. A
-        // tela de Lucro/Prejuízo mostra essa diferença no bloco de conferência.
-        if (mesFechado && diff !== 0) {
-          warnings.push(
-            `O mês da venda (${mesVenda}) já estava fechado: a sobra de ${brl(-diff)} volta ao resultado daquele mês, e o fechamento registrado não é refeito — a diferença aparece no bloco de conferência da tela de Lucro/Prejuízo.`,
-          );
-        }
+        // Mês fechado COM diferença nunca chega aqui: mais caro vira custo
+        // pós-venda e mais barato vira sobra no período aberto, ambos acima.
+        // Sobra só o ajuste sem diferença (fornecedor/vencimento/observação).
         if (itens.length) filled.push(`linhas: ${linhas}`);
         revalidatePath(`/vendas/${venda.id}`);
         revalidatePath("/financeiro/a-pagar");
