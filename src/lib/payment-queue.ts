@@ -741,7 +741,7 @@ export async function debitosPrelancados(): Promise<{
   /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
   semConta: number;
 }> {
-  const [titulos, combos, recebimentos] = await Promise.all([
+  const [titulos, combos, recebimentos, transferencias] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
       select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
@@ -760,6 +760,10 @@ export async function debitosPrelancados(): Promise<{
       where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null } },
       select: { amount: true, pendingReceiptAmount: true, pendingReceiptAccountId: true },
     }),
+    // Transferência informada ("já transferi"): o dinheiro já mudou de conta no
+    // banco. Não muda o TOTAL — sai de uma e entra na outra —, mas muda o
+    // previsto de cada uma, que é o que o card da conta mostra.
+    prisma.pendingTransfer.findMany({ select: { fromId: true, toId: true, amount: true } }),
   ]);
 
   const porConta = new Map<string, number>();
@@ -779,6 +783,10 @@ export async function debitosPrelancados(): Promise<{
   }
   for (const r of recebimentos) {
     somar(r.pendingReceiptAccountId, r.pendingReceiptAmount ?? r.amount);
+  }
+  for (const t of transferencias) {
+    somar(t.fromId, -t.amount);
+    somar(t.toId, t.amount);
   }
   return { porConta, semConta };
 }
