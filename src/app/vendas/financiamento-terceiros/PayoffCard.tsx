@@ -10,29 +10,44 @@ function humanSize(bytes: number): string {
 }
 
 /**
- * Cartão "Quitação do financiamento anterior" da ficha (pré-venda e operação):
- * banco credor, valor, código de barras, vencimento e os boletos anexados ao
- * veículo de terceiro. Só aparece quando a operação tem quitação.
+ * Cartão de QUITAÇÃO da ficha (pré-venda e operação): o que parte do valor
+ * financiado vai pagar, com o documento anexado ao veículo de terceiro. Serve
+ * para as duas quitações da operação, que têm a mesma mecânica:
+ *  - o financiamento anterior (boleto do banco credor);
+ *  - os débitos do veículo — IPVA, multas, licenciamento (guia do órgão).
+ * Só aparece quando a operação tem aquela quitação.
  */
 export default function PayoffCard({
   payoff,
   boletos,
   className,
+  titulo = "Quitação do financiamento anterior",
+  descricao = "Parte do valor financiado paga o boleto do banco credor do veículo — consta no contrato de intermediação.",
+  rotuloCredor = "Banco credor",
+  rotuloDocumento = "boleto",
+  detalhe = null,
 }: {
   payoff: { bank: string | null; amount: number | null; barcode: string | null; dueDate: Date | null };
   boletos: Boleto[];
   className?: string;
+  titulo?: string;
+  descricao?: string;
+  rotuloCredor?: string;
+  /** Como o papel se chama nas mensagens: "boleto" ou "guia". */
+  rotuloDocumento?: string;
+  /** Linha extra (ex.: o que está sendo quitado nos débitos). */
+  detalhe?: { rotulo: string; valor: string | null } | null;
 }) {
   if (!payoff.amount && boletos.length === 0) return null;
   return (
     <Card className={className}>
-      <CardHeader
-        title="Quitação do financiamento anterior"
-        description="Parte do valor financiado paga o boleto do banco credor do veículo — consta no contrato de intermediação."
-      />
+      <CardHeader title={titulo} description={descricao} />
       <div className="grid grid-cols-1 gap-x-6 gap-y-1 p-5 text-sm sm:grid-cols-2">
-        <p><span className="text-slate-500">Banco credor:</span> <strong>{payoff.bank || "—"}</strong></p>
+        <p><span className="text-slate-500">{rotuloCredor}:</span> <strong>{payoff.bank || "—"}</strong></p>
         <p><span className="text-slate-500">Valor da quitação:</span> <strong>{payoff.amount != null ? formatCurrency(payoff.amount) : "—"}</strong></p>
+        {detalhe ? (
+          <p className="sm:col-span-2"><span className="text-slate-500">{detalhe.rotulo}:</span> {detalhe.valor || "—"}</p>
+        ) : null}
         <p className="sm:col-span-2 break-all"><span className="text-slate-500">Código de barras:</span> {payoff.barcode || "—"}</p>
         <p><span className="text-slate-500">Vencimento:</span> {payoff.dueDate ? formatDate(payoff.dueDate) : "—"}</p>
       </div>
@@ -59,7 +74,7 @@ export default function PayoffCard({
         </ul>
       ) : (
         <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-          Nenhum boleto anexado — use “Editar” na pré-venda para anexar o arquivo.
+          Nenhum {rotuloDocumento} anexado — use “Editar” na pré-venda para anexar o arquivo.
         </p>
       )}
     </Card>

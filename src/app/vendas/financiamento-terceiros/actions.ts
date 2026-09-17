@@ -13,6 +13,7 @@ import {
   updateIntermediationPreSale,
   convertIntermediationPreSale,
   PAYOFF_BOLETO_PREFIX,
+  DEBITOS_GUIA_PREFIX,
   NOTA_VEICULO_PREFIX,
   type IntermediationFormState,
 } from "./core";
@@ -96,6 +97,28 @@ export async function createIntermediationPreSaleAction(
         mimeType: boleto.type || "application/octet-stream",
         size: boleto.size,
         data: Buffer.from(await boleto.arrayBuffer()),
+      },
+    });
+  }
+
+  // Guia dos débitos do veículo (IPVA, multas, licenciamento): mesmo caminho do
+  // boleto de quitação — fica no prontuário do veículo de terceiro, com o órgão
+  // e o valor na descrição.
+  const guia = formData.get("debtsGuia");
+  if (parsed.data.debtsEnabled && guia instanceof File && guia.size > 0) {
+    if (guia.size > PAYOFF_BOLETO_MAX_BYTES) {
+      return { error: "A guia é muito grande (máximo 15 MB). A pré-venda foi salva sem o anexo." };
+    }
+    const pre = await prisma.preSale.findUniqueOrThrow({ where: { id }, select: { vehicleId: true } });
+    await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId: pre.vehicleId,
+        kind: "DOCUMENTO",
+        description: `${DEBITOS_GUIA_PREFIX} — ${parsed.data.debtsOrgao?.trim() || parsed.data.debtsDescricao?.trim() || "órgão"} · R$ ${parsed.data.debtsAmount.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}`,
+        filename: guia.name || "guia-debitos.pdf",
+        mimeType: guia.type || "application/octet-stream",
+        size: guia.size,
+        data: Buffer.from(await guia.arrayBuffer()),
       },
     });
   }

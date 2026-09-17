@@ -73,6 +73,14 @@ export type IntermediationInitial = {
   payoffDueDate?: string;
   /** Boletos já anexados (edição) — só para mostrar que existem. */
   payoffBoletos?: { id: string; filename: string }[];
+  /** Quitação de débitos do veículo (IPVA, multas, licenciamento). */
+  debtsOrgao?: string;
+  debtsDescricao?: string;
+  debtsAmount?: number;
+  debtsBarcode?: string;
+  debtsDueDate?: string;
+  /** Guias já anexadas (edição). */
+  debtsGuias?: { id: string; filename: string }[];
   /** CRLVs já anexados (edição). */
   crlvs?: { id: string; filename: string; description: string }[];
 };
@@ -144,6 +152,8 @@ export default function IntermediationForm({
   const [referrals, setReferrals] = useState<{ name: string; amount: number }[]>(initial?.referrals ?? []);
   const [payoffEnabled, setPayoffEnabled] = useState(Boolean(initial?.payoffAmount && initial.payoffAmount > 0));
   const [payoffAmount, setPayoffAmount] = useState(initial?.payoffAmount ?? 0);
+  const [debtsEnabled, setDebtsEnabled] = useState(Boolean(initial?.debtsAmount && initial.debtsAmount > 0));
+  const [debtsAmount, setDebtsAmount] = useState(initial?.debtsAmount ?? 0);
 
   const financer = financers.find((f) => f.id === financerId) || null;
 
@@ -920,6 +930,95 @@ export default function IntermediationForm({
               <p className="text-xs text-amber-700">
                 A quitação ({formatCurrency(payoffAmount)}) é maior que a devolução ao comprador (
                 {formatCurrency(refund)}). Confira os valores.
+              </p>
+            ) : null}
+          </>
+        ) : null}
+      </fieldset>
+
+      {/* Quitação de DÉBITOS do veículo: IPVA, multas, licenciamento. Mesma
+          mecânica da quitação do financiamento — parte do valor financiado paga
+          a guia do órgão (DARE e afins). Informativo: consta no contrato e na
+          ficha, e a guia fica anexada ao veículo de terceiro. */}
+      <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 text-sm font-semibold text-slate-700">
+          Quitação de débitos do veículo — IPVA, multas, licenciamento (opcional)
+        </legend>
+        <label className="flex items-center gap-2 text-sm text-slate-700">
+          <input
+            type="checkbox"
+            name="debtsEnabled"
+            value="true"
+            checked={debtsEnabled}
+            onChange={(e) => setDebtsEnabled(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Parte do valor financiado será usada para quitar débitos anteriores do veículo (IPVA,
+          multas, licenciamento)
+        </label>
+        {debtsEnabled ? (
+          <>
+            <p className="text-xs text-slate-500">
+              Consta no contrato de intermediação: órgão, o que está sendo quitado, valor, linha
+              digitável e vencimento da guia.{" "}
+              {refinancing
+                ? "No refinanciamento a quitação é feita pelo financiado com o valor liberado."
+                : "A loja paga a guia com essa parte da devolução (D), em vez de devolvê-la ao comprador."}
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Órgão / emissor da guia">
+                <Input
+                  name="debtsOrgao"
+                  defaultValue={initial?.debtsOrgao ?? ""}
+                  placeholder="Ex.: SEFAZ-MA (DARE) · DETRAN-MA"
+                />
+              </Field>
+              <Field label="O que está sendo quitado">
+                <Input
+                  name="debtsDescricao"
+                  defaultValue={initial?.debtsDescricao ?? ""}
+                  placeholder="Ex.: IPVA 2026 + juros e multa"
+                />
+              </Field>
+              <Field label="Valor dos débitos (R$)" required>
+                <MoneyInput
+                  name="debtsAmount"
+                  defaultValue={initial?.debtsAmount ?? null}
+                  onValueChange={setDebtsAmount}
+                  placeholder="Valor total da guia"
+                />
+              </Field>
+              <Field label="Vencimento / validade da guia">
+                <Input type="date" name="debtsDueDate" defaultValue={initial?.debtsDueDate ?? ""} />
+              </Field>
+              <Field label="Código de barras / linha digitável">
+                <Input
+                  name="debtsBarcode"
+                  defaultValue={initial?.debtsBarcode ?? ""}
+                  placeholder="85620000037 5 10450332170 5 92609211401 2 04347458426 5"
+                  inputMode="numeric"
+                />
+              </Field>
+              <Field label="Arquivo da guia (PDF ou imagem)">
+                <input
+                  type="file"
+                  name="debtsGuia"
+                  accept="application/pdf,image/*"
+                  className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
+                />
+                {initial?.debtsGuias?.length ? (
+                  <p className="mt-1 text-xs text-slate-500">
+                    Já anexada: {initial.debtsGuias.map((b) => b.filename).join(", ")}. Enviar outro
+                    arquivo acrescenta, não substitui.
+                  </p>
+                ) : null}
+              </Field>
+            </div>
+            {!refinancing && payoffAmount + debtsAmount > refund && refund > 0 ? (
+              <p className="text-xs text-amber-700">
+                A quitação ({formatCurrency(payoffAmount + debtsAmount)}
+                {payoffAmount > 0 ? " — financiamento + débitos" : ""}) é maior que a devolução ao
+                comprador ({formatCurrency(refund)}). Confira os valores.
               </p>
             ) : null}
           </>

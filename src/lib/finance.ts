@@ -1073,6 +1073,12 @@ async function vehicleSale(input: {
   payoffAmount?: number | null;
   payoffBarcode?: string | null;
   payoffDueDate?: Date | null;
+  // Quitação de DÉBITOS do veículo — IPVA, multas, licenciamento (idem).
+  debtsOrgao?: string | null;
+  debtsDescricao?: string | null;
+  debtsAmount?: number | null;
+  debtsBarcode?: string | null;
+  debtsDueDate?: Date | null;
   sellerName?: string | null;
   // Vendedor = usuário (beneficiário da comissão, com dados bancários).
   sellerId?: string | null;
@@ -1238,6 +1244,11 @@ async function vehicleSale(input: {
         payoffAmount: input.payoffAmount ?? null,
         payoffBarcode: input.payoffBarcode || null,
         payoffDueDate: input.payoffDueDate ?? null,
+        debtsOrgao: input.debtsOrgao || null,
+        debtsDescricao: input.debtsDescricao || null,
+        debtsAmount: input.debtsAmount ?? null,
+        debtsBarcode: input.debtsBarcode || null,
+        debtsDueDate: input.debtsDueDate ?? null,
         notes: input.notes || null,
         tradeInVehicleId: input.tradeInVehicleId || null,
         consigned: Boolean(input.consigned),

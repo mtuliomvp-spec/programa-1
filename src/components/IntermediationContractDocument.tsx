@@ -66,6 +66,14 @@ export type IntermediationContractData = {
   installmentsInfo: { count: number; amount: number } | null;
   // Quitação do financiamento anterior do veículo com parte do valor financiado.
   payoff?: { bank: string | null; amount: number; barcode: string | null; dueDate: Date | null } | null;
+  /** Débitos do veículo (IPVA, multas, licenciamento) quitados na operação. */
+  debts?: {
+    orgao: string | null;
+    descricao: string | null;
+    amount: number;
+    barcode: string | null;
+    dueDate: Date | null;
+  } | null;
   backHref: string;
 };
 
@@ -340,6 +348,36 @@ export default function IntermediationContractDocument(d: IntermediationContract
               {d.refinancing ? "do(a) FINANCIADO(A)" : "do(a) VENDEDOR(A) e do(a) COMPRADOR(A)"}, não
               respondendo a INTERMEDIADORA por eventual saldo residual, encargos ou diferença de valor
               apurada pelo banco credor após a data do boleto.
+            </p>
+          </Clausula>
+        ) : null}
+
+        {d.debts && d.debts.amount > 0 ? (
+          <Clausula n={++n} titulo="Da quitação de débitos do veículo">
+            <p>
+              As partes declaram que o veículo objeto deste contrato possui{" "}
+              <strong>débitos anteriores{d.debts.descricao ? ` (${d.debts.descricao})` : " (IPVA, multas e licenciamento)"}</strong>
+              {d.debts.orgao ? <> junto a <strong>{d.debts.orgao}</strong></> : null} e que, do valor{" "}
+              {d.refinancing ? "financiado" : "devolvido ao(à) COMPRADOR(A)"}, a importância de{" "}
+              <strong>{formatCurrency(d.debts.amount)}</strong> será destinada à{" "}
+              <strong>quitação desses débitos</strong>, mediante pagamento da guia emitida pelo órgão
+              {d.debts.dueDate ? <>, com vencimento em <strong>{formatDate(d.debts.dueDate)}</strong></> : null}
+              {d.refinancing
+                ? ", a cargo do(a) FINANCIADO(A)."
+                : ", efetuado pela INTERMEDIADORA por conta e ordem do(a) COMPRADOR(A), abatendo-se esse valor da devolução prevista na cláusula anterior."}
+            </p>
+            {d.debts.barcode ? (
+              <p className="rounded-md bg-slate-50 p-2 text-xs">
+                <span className="text-slate-500">Código de barras / linha digitável da guia:</span>{" "}
+                <strong className="break-all font-mono">{d.debts.barcode}</strong>
+              </p>
+            ) : null}
+            <p>
+              Os valores acima são os apurados na data da guia. Débitos que venham a ser lançados,
+              atualizados ou apurados depois dela — inclusive juros, multa e correção — são de
+              responsabilidade{" "}
+              {d.refinancing ? "do(a) FINANCIADO(A)" : "do(a) VENDEDOR(A) e do(a) COMPRADOR(A)"}, não
+              respondendo a INTERMEDIADORA por diferença apurada pelo órgão após aquela data.
             </p>
           </Clausula>
         ) : null}
