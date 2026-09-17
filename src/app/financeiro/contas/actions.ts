@@ -524,6 +524,287 @@ export async function createTransferAction(
   return {};
 }
 
+/**
+ * Regras que toda transferência precisa respeitar, no pré-lançamento e no ok:
+ * contas diferentes, nada de conta de Aplicação e, com o Banco Neutro, só a
+ * direção (e o valor) que o aproxima de zero. Devolve a mensagem do problema,
+ * ou null quando pode seguir.
+ */
+async function conferirTransferencia(
+  fromId: string,
+  toId: string,
+  amount: number,
+): Promise<string | null> {
+  if (fromId === toId) return "Origem e destino precisam ser contas diferentes.";
+  const invest = await prisma.financialAccount.findMany({
+    where: { id: { in: [fromId, toId] }, isInvestment: true },
+    select: { id: true },
+  });
+  if (invest.length > 0) {
+    return "Contas de Aplicação não recebem transferência comum. Use a tela da conta (Aplicar / Resgatar).";
+  }
+  const estruturais = await prisma.financialAccount.findMany({
+    where: { id: { in: [fromId, toId] }, structural: true },
+    select: { id: true },
+  });
+  if (estruturais.length === 0) return null;
+  const neutro = await getNeutralBalance();
+  const falta = Math.round(Math.abs(neutro.balance) * 100) / 100;
+  if (falta <= 0.005) {
+    return "O Banco Neutro já está zerado. Ele é conta de compensação: só entra numa transferência para acertar um saldo fora de zero.";
+  }
+  const paraONeutro = toId === neutro.id;
+  const direcaoCerta = neutro.balance < 0 ? paraONeutro : !paraONeutro;
+  if (!direcaoCerta) {
+    return neutro.balance < 0
+      ? `O Banco Neutro está em ${formatCurrency(neutro.balance)}: para zerá-lo o dinheiro precisa ENTRAR nele — escolha-o como destino.`
+      : `O Banco Neutro está em ${formatCurrency(neutro.balance)}: para zerá-lo o dinheiro precisa SAIR dele — escolha-o como origem.`;
+  }
+  if (amount > falta + 0.005) {
+    return `O Banco Neutro está em ${formatCurrency(neutro.balance)}: esta transferência pode ser de no máximo ${formatCurrency(falta)} (o que falta para zerá-lo).`;
+  }
+  return null;
+}
+
+export type LeituraTransferencia = {
+  ok: boolean;
+  error?: string;
+  senhaNecessaria?: boolean;
+  valor?: number | null;
+  /** yyyy-mm-dd do débito no banco. */
+  data?: string | null;
+  fromId?: string | null;
+  fromNome?: string | null;
+  toId?: string | null;
+  toNome?: string | null;
+  /** O que o comprovante diz de cada lado, para a tela mostrar o que foi lido. */
+  origemLida?: string | null;
+  destinoLido?: string | null;
+  descricao?: string | null;
+  avisos?: string[];
+};
+
+/**
+ * Lê o COMPROVANTE de uma transferência entre as contas da loja (TED/Pix de
+ * mesma titularidade) e devolve o que precisa para o usuário só confirmar:
+ * valor, data do débito e as duas contas CADASTRADAS — a debitada e a
+ * creditada. O que a leitura não identificar fica para o usuário escolher.
+ */
+export async function lerComprovanteTransferenciaAction(
+  formData: FormData,
+): Promise<LeituraTransferencia> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Anexe o comprovante." };
+  if (file.size > 15 * 1024 * 1024) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+
+  let buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema ler.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
+  let lido;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não consegui ler este comprovante." };
+  }
+  if (!lido) return { ok: false, error: "Não achei um comprovante neste arquivo." };
+
+  const { contaDoComprovante } = await import("@/lib/payment-queue");
+  // Os dois lados do comprovante viram contas cadastradas: a debitada (origem)
+  // e a creditada (destino). O que não casar fica para o usuário escolher.
+  const [fromId, toId] = await Promise.all([
+    contaDoComprovante(lido),
+    contaDoComprovante({
+      banco: lido.bancoDestino,
+      agencia: lido.agenciaDestino,
+      conta: lido.contaDestino,
+    }),
+  ]);
+  const contas = await prisma.financialAccount.findMany({
+    where: { id: { in: [fromId, toId].filter(Boolean) as string[] } },
+    select: { id: true, name: true },
+  });
+  const nomeDe = (id: string | null) => contas.find((c) => c.id === id)?.name ?? null;
+
+  const avisos: string[] = [];
+  if (!fromId) avisos.push("não identifiquei a conta DEBITADA no comprovante — escolha abaixo");
+  if (!toId) avisos.push("não identifiquei a conta CREDITADA no comprovante — escolha abaixo");
+  if (fromId && toId && fromId === toId) {
+    avisos.push("as duas pontas casaram com a MESMA conta cadastrada — confira qual é qual");
+  }
+  const dataIso = lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null;
+  if (!dataIso) avisos.push("não identifiquei a data do débito — informe abaixo");
+
+  return {
+    ok: true,
+    valor: lido.valor ?? null,
+    data: dataIso,
+    fromId,
+    fromNome: nomeDe(fromId),
+    toId: toId && toId !== fromId ? toId : null,
+    toNome: toId && toId !== fromId ? nomeDe(toId) : null,
+    origemLida: [lido.contaDebitada, lido.banco, lido.agencia, lido.conta].filter(Boolean).join(" · ") || null,
+    destinoLido: [lido.bancoDestino, lido.agenciaDestino, lido.contaDestino].filter(Boolean).join(" · ") || null,
+    descricao: (lido.descricao || "").trim() || null,
+    avisos,
+  };
+}
+
+/**
+ * "Já transferi": informa uma transferência que JÁ saiu do banco em um dia que
+ * o movimento de caixa ainda não alcançou. Nada de saldo se move aqui — a
+ * transferência fica esperando, e o ok (com o caixa aberto naquele dia) é que
+ * a efetiva, como acontece com os títulos pré-lançados.
+ */
+export async function preLancarTransferenciaAction(formData: FormData): Promise<ContaFormState> {
+  const user = await getSessionUser();
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const fromId = String(formData.get("fromId") || "").trim();
+  const toId = String(formData.get("toId") || "").trim();
+  const amount = Math.round(Number(String(formData.get("amount") || "0").replace(",", ".")) * 100) / 100;
+  const dataTexto = String(formData.get("date") || "").trim();
+  if (!fromId || !toId) return { error: "Escolha a conta de origem e a de destino." };
+  if (!(amount > 0)) return { error: "Informe o valor da transferência." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dataTexto)) {
+    return { error: "Informe a data em que a transferência saiu do banco." };
+  }
+  const problema = await conferirTransferencia(fromId, toId, amount);
+  if (problema) return { error: problema };
+
+  const date = parseDateInput(dataTexto);
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  // O comprovante fica guardado com a transferência — é a prova de que o
+  // dinheiro andou antes de o caixa alcançar o dia.
+  const file = formData.get("file");
+  let receipt: { name: string; mime: string; size: number; data: Uint8Array } | null = null;
+  if (file instanceof File && file.size > 0) {
+    if (file.size > 15 * 1024 * 1024) return { error: "Comprovante muito grande (máximo 15 MB)." };
+    receipt = {
+      name: file.name || "comprovante",
+      mime: file.type || "application/octet-stream",
+      size: file.size,
+      data: new Uint8Array(await file.arrayBuffer()),
+    };
+  }
+
+  await prisma.pendingTransfer.create({
+    data: {
+      fromId,
+      toId,
+      amount,
+      date,
+      description: String(formData.get("description") || "").trim() || null,
+      note: String(formData.get("note") || "").trim() || null,
+      createdBy: user?.name ?? null,
+      receiptName: receipt?.name ?? null,
+      receiptMime: receipt?.mime ?? null,
+      receiptSize: receipt?.size ?? null,
+      receiptData: receipt ? new Uint8Array(receipt.data) : null,
+    },
+  });
+  revalidatePath("/financeiro/contas");
+  return {};
+}
+
+/**
+ * OK da transferência informada: com o caixa aberto, ela vira transferência de
+ * verdade — com a data do MOVIMENTO, como toda baixa —, levando junto o
+ * comprovante e a data real em que o dinheiro saiu do banco.
+ */
+export async function confirmarTransferenciaPendenteAction(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+  }
+  const pend = await prisma.pendingTransfer.findUnique({ where: { id } });
+  if (!pend) return { ok: false, error: "Transferência não encontrada." };
+
+  const problema = await conferirTransferencia(pend.fromId, pend.toId, pend.amount);
+  if (problema) return { ok: false, error: problema };
+
+  const date = await getCashboxWorkDate();
+  try {
+    await assertMonthOpen(date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+  }
+
+  await prisma.$transaction([
+    prisma.accountTransfer.create({
+      data: {
+        fromId: pend.fromId,
+        toId: pend.toId,
+        amount: pend.amount,
+        date,
+        description: pend.description,
+        informedDate: pend.date,
+        note: pend.note,
+        receiptName: pend.receiptName,
+        receiptMime: pend.receiptMime,
+        receiptSize: pend.receiptSize,
+        receiptData: pend.receiptData,
+      },
+    }),
+    prisma.pendingTransfer.delete({ where: { id } }),
+  ]);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  return { ok: true };
+}
+
+/** Tirar da fila: a transferência informada some, sem ter mexido em nada. */
+export async function descartarTransferenciaPendenteAction(
+  id: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "contas");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  await prisma.pendingTransfer.delete({ where: { id } });
+  revalidatePath("/financeiro/contas");
+  return { ok: true };
+}
+
 export async function deleteTransferAction(id: string) {
   await assertCan("financeiro", "contas");
   await prisma.accountTransfer.delete({ where: { id } });

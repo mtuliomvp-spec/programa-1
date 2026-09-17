@@ -234,6 +234,8 @@ model FinancialAccount {
   receivables         Receivable[]
   transfersOut        AccountTransfer[]      @relation("TransferFrom")
   transfersIn         AccountTransfer[]      @relation("TransferTo")
+  pendingTransfersOut PendingTransfer[]      @relation("PendingTransferFrom")
+  pendingTransfersIn  PendingTransfer[]      @relation("PendingTransferTo")
   financedSales       Sale[]                 @relation("SaleFinancer")
   allocations         InvestmentAllocation[]
   paymentCombos       PaymentCombo[]
@@ -257,9 +259,51 @@ model AccountTransfer {
   amount      Float
   date        DateTime         @default(now())
   description String?
+  // Transferência informada ANTES de o caixa alcançar o dia (pré-lançada): a
+  // data em que o dinheiro saiu do banco de verdade e os avisos da conferência
+  // do comprovante. O `date` acima continua sendo o do movimento, como em toda
+  // baixa. O comprovante fica guardado aqui, junto do lançamento que ele prova.
+  informedDate DateTime?
+  note         String?
+  receiptName  String?
+  receiptMime  String?
+  receiptSize  Int?
+  receiptData  Bytes?
   createdAt   DateTime         @default(now())
 
   @@map("account_transfers")
+}
+
+/**
+ * Transferência entre contas JÁ FEITA no banco, esperando o movimento de caixa
+ * alcançar o dia — o mesmo "já paguei" dos títulos, para o dinheiro que anda
+ * entre as contas da loja.
+ *
+ * Fica em tabela separada de propósito: enquanto espera, ela não pode mexer em
+ * saldo, extrato nem conciliação. No ok, vira uma AccountTransfer de verdade,
+ * com a data do caixa, e esta some.
+ */
+model PendingTransfer {
+  id          String           @id @default(cuid())
+  fromId      String
+  from        FinancialAccount @relation("PendingTransferFrom", fields: [fromId], references: [id], onDelete: Cascade)
+  toId        String
+  to          FinancialAccount @relation("PendingTransferTo", fields: [toId], references: [id], onDelete: Cascade)
+  amount      Float
+  /// Data em que o dinheiro saiu do banco (a do comprovante).
+  date        DateTime
+  description String?
+  /// Avisos da conferência do comprovante (valor/data/conta que não bateram).
+  note        String?
+  receiptName String?
+  receiptMime String?
+  receiptSize Int?
+  receiptData Bytes?
+  createdAt   DateTime         @default(now())
+  createdBy   String?
+
+  @@index([date])
+  @@map("pending_transfers")
 }
 
 // Consórcio: parcelas mensais geradas automaticamente em contas a pagar.

@@ -15,6 +15,8 @@ import PaymentQueueCard from "./PaymentQueueCard";
 import FuturePaymentsCard from "./FuturePaymentsCard";
 import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
+import InformarTransferencia from "./InformarTransferencia";
+import PendingTransfersCard from "./PendingTransfersCard";
 import AccountRowActions from "./AccountRowActions";
 import DeleteTransferButton from "./DeleteTransferButton";
 
@@ -66,8 +68,12 @@ export default async function ContasPage({
   // O farol também precisa dos saldos: pede-se UMA vez e repassa-se a promessa
   // (antes esta tela calculava a mesma soma três vezes por visita).
   const accountsPromise = getAccountsWithBalances();
-  const [accounts, transfers, health, cashbox, cashboxHistory, owners, beneficiaries] = await Promise.all([
+  const [accounts, pendingTransfers, transfers, health, cashbox, cashboxHistory, owners, beneficiaries] = await Promise.all([
     accountsPromise,
+    prisma.pendingTransfer.findMany({
+      include: { from: { select: { name: true } }, to: { select: { name: true } } },
+      orderBy: { date: "asc" },
+    }),
     prisma.accountTransfer.findMany({
       include: { from: { select: { name: true } }, to: { select: { name: true } } },
       orderBy: { date: "desc" },
@@ -276,6 +282,24 @@ export default async function ContasPage({
           workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
           canPagar={canPagar}
         />
+        {/* Transferências entre contas já feitas no banco, esperando o dia. */}
+        <PendingTransfersCard
+          rows={pendingTransfers.map((t) => ({
+            id: t.id,
+            fromName: t.from.name,
+            toName: t.to.name,
+            amount: t.amount,
+            date: t.date.toISOString(),
+            description: t.description,
+            note: t.note,
+            temComprovante: t.receiptSize != null,
+            // Só dá para confirmar quando o movimento alcançou o dia: a
+            // transferência entra com a data do caixa, como toda baixa.
+            podeConfirmar: workDate != null && t.date.getTime() <= workDate.getTime(),
+          }))}
+          workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
+          canConfirmar={canContas}
+        />
         <PaymentQueueCard
           rows={fila}
           accounts={accounts
@@ -369,7 +393,29 @@ export default async function ContasPage({
                         <Td className="whitespace-nowrap">{formatDate(t.date)}</Td>
                         <Td>{t.from.name}</Td>
                         <Td>{t.to.name}</Td>
-                        <Td>{t.description || "—"}</Td>
+                        <Td>
+                          {t.description || "—"}
+                          {/* Transferência informada pelo comprovante: o
+                              arquivo continua com ela depois do ok. */}
+                          {t.receiptSize != null ? (
+                            <>
+                              {" "}
+                              <a
+                                href={`/financeiro/contas/comprovante/${t.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs font-medium text-blue-700 hover:underline"
+                              >
+                                📎 comprovante
+                              </a>
+                            </>
+                          ) : null}
+                          {t.informedDate && t.informedDate.getTime() !== t.date.getTime() ? (
+                            <span className="block text-xs text-slate-400">
+                              saiu do banco em {formatDate(t.informedDate)}
+                            </span>
+                          ) : null}
+                        </Td>
                         <Td className="text-right tabular-nums">{formatCurrency(t.amount)}</Td>
                         <Td>
                           {canContas ? <DeleteTransferButton id={t.id} /> : null}
@@ -409,6 +455,15 @@ export default async function ContasPage({
                       cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
                     />
                   </div>
+                  {/* A transferência que já saiu do banco em outro dia entra
+                      por aqui: informa agora, confirma quando o caixa chegar. */}
+                  <InformarTransferencia
+                    accounts={transferiveis.map((a) => ({
+                      id: a.id,
+                      name: accountPickerName(a.name, a.structural),
+                    }))}
+                    cashboxDate={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null}
+                  />
                 </Card>
               </div>
             ) : null}
