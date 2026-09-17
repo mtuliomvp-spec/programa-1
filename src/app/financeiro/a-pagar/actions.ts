@@ -3007,6 +3007,89 @@ export type PreLancarLoteResult = {
   avisos?: string[];
 };
 
+/** O que a conferência do comprovante do LOTE devolve para a tela. */
+export type ConferenciaLote = {
+  ok: boolean;
+  error?: string;
+  senhaNecessaria?: boolean;
+  valor?: number | null;
+  /** yyyy-mm-dd do pagamento. */
+  data?: string | null;
+  /** Conta CADASTRADA que o comprovante identificou como debitada. */
+  accountId?: string | null;
+  accountName?: string | null;
+  /** O que o papel diz da conta, mesmo sem casar com nenhuma cadastrada. */
+  contaLida?: string | null;
+};
+
+/**
+ * Confere o comprovante ANTES de pré-lançar o lote: valor, data e — o que mais
+ * pega — a CONTA DEBITADA. A conta do pré-lançamento é a escolhida na barra, e
+ * não a do papel; sem esta conferência o usuário só descobria a divergência
+ * depois de confirmar, no aviso. Aqui ela aparece na hora, com o atalho para
+ * trocar a conta para a do comprovante.
+ */
+export async function conferirComprovanteLoteAction(formData: FormData): Promise<ConferenciaLote> {
+  try {
+    await assertCanAny([
+      ["financeiro", "pagar"],
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Selecione o comprovante." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+
+  let buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+  const { ehPdf, pdfPedeSenha, decifrarPdf, SenhaIncorretaError } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: "Este comprovante está protegido por senha. Digite a senha do documento para o sistema ler.",
+      };
+    }
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch (e) {
+      return {
+        ok: false,
+        senhaNecessaria: true,
+        error: e instanceof SenhaIncorretaError ? e.message : "Não foi possível abrir este PDF com a senha informada.",
+      };
+    }
+  }
+
+  let lido;
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não consegui ler este comprovante." };
+  }
+  if (!lido) return { ok: false, error: "Não achei um comprovante neste arquivo." };
+
+  const { contaDoComprovante } = await import("@/lib/payment-queue");
+  const accountId = await contaDoComprovante(lido);
+  const conta = accountId
+    ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
+    : null;
+  return {
+    ok: true,
+    valor: lido.valor ?? null,
+    data: lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null,
+    accountId,
+    accountName: conta?.name ?? null,
+    contaLida: [lido.contaDebitada, lido.banco, lido.agencia, lido.conta].filter(Boolean).join(" · ") || null,
+  };
+}
+
 /**
  * Informa que VÁRIOS títulos foram pagos de uma vez e os põe na fila do caixa.
  *

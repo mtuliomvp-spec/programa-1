@@ -605,6 +605,7 @@ export default function PayablesTable({
               accountName={accounts.find((a) => a.id === accountId)?.name ?? null}
               total={selectedTotal}
               cashboxDate={cashboxDate}
+              onAccountChange={setAccountId}
               onDone={(mensagem) => {
                 setShowPre(false);
                 setSelected(new Set());
