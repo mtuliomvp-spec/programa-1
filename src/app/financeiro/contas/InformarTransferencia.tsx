@@ -53,6 +53,11 @@ export default function InformarTransferencia({
   const [amount, setAmount] = useState("");
   const [date, setDate] = useState(hojeLocal);
   const [description, setDescription] = useState("");
+  // Tarifa do banco: entra como título PENDENTE no Contas a pagar (a baixa é
+  // dada quando o banco debitar). Vem preenchida pela leitura; dá para
+  // desmarcar ou corrigir o valor.
+  const [tarifa, setTarifa] = useState("");
+  const [lancarTarifa, setLancarTarifa] = useState(true);
 
   async function ler() {
     const file = fileRef.current?.files?.[0];
@@ -76,6 +81,10 @@ export default function InformarTransferencia({
       if (r.valor != null) setAmount(r.valor.toFixed(2));
       if (r.data) setDate(r.data);
       if (r.descricao) setDescription(r.descricao);
+      if (r.tarifa != null && r.tarifa > 0) {
+        setTarifa(r.tarifa.toFixed(2));
+        setLancarTarifa(true);
+      }
     });
   }
 
@@ -90,6 +99,7 @@ export default function InformarTransferencia({
       fd.set("date", date);
       fd.set("description", description);
       if (leitura?.avisos?.length) fd.set("note", leitura.avisos.join(" · "));
+      if (lancarTarifa && Number(tarifa) > 0) fd.set("tarifa", tarifa);
       const file = fileRef.current?.files?.[0];
       if (file) fd.set("file", await resizeImageToJpeg(file));
       const r = await preLancarTransferenciaAction(fd);
@@ -97,9 +107,13 @@ export default function InformarTransferencia({
         setErro(r.error);
         return;
       }
+      const tarifaLancada = lancarTarifa && Number(tarifa) > 0 ? Number(tarifa) : 0;
       setOk(
         `Transferência de ${formatCurrency(Number(amount) || 0)} informada para ${formatDate(date)}. ` +
-          "Ela espera o movimento de caixa chegar nesse dia para ser confirmada.",
+          "Ela espera o movimento de caixa chegar nesse dia para ser confirmada." +
+          (tarifaLancada > 0
+            ? ` A tarifa de ${formatCurrency(tarifaLancada)} entrou como título PENDENTE no Contas a pagar — dê a baixa quando o banco debitar.`
+            : ""),
       );
       setLeitura(null);
       setAmount("");
@@ -165,7 +179,8 @@ export default function InformarTransferencia({
             ✓ Li o comprovante: {leitura.valor != null ? formatCurrency(leitura.valor) : "valor"}
             {leitura.data ? ` em ${formatDate(leitura.data)}` : ""}
             {leitura.origemLida ? ` · debitado de ${leitura.origemLida}` : ""}
-            {leitura.destinoLido ? ` · creditado em ${leitura.destinoLido}` : ""}.
+            {leitura.destinoLido ? ` · creditado em ${leitura.destinoLido}` : ""}
+            {leitura.tarifa ? ` · tarifa do banco ${formatCurrency(leitura.tarifa)}` : ""}.
           </p>
         ) : null}
         {leitura?.ok && leitura.avisos?.length ? (
@@ -231,6 +246,25 @@ export default function InformarTransferencia({
             onChange={(e) => setDescription(e.target.value)}
             placeholder="Ex.: TED mesma titularidade"
           />
+        </Field>
+        <Field label="Tarifa do banco (R$)">
+          <Input
+            type="number"
+            step="0.01"
+            min={0}
+            value={tarifa}
+            onChange={(e) => setTarifa(e.target.value)}
+            placeholder="0,00 — se o banco cobrou"
+          />
+          <label className="mt-1 flex items-center gap-2 text-xs text-slate-600">
+            <input
+              type="checkbox"
+              checked={lancarTarifa}
+              onChange={(e) => setLancarTarifa(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300"
+            />
+            Lançar a tarifa como conta a pagar (fica PENDENTE — a baixa é sua, quando o banco debitar)
+          </label>
         </Field>
       </div>
 

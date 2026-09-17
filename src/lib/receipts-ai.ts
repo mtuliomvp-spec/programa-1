@@ -43,6 +43,9 @@ const receiptSchema = z.object({
   bancoDestino: z.string().nullable().optional(),
   agenciaDestino: z.string().nullable().optional(),
   contaDestino: z.string().nullable().optional(),
+  // Tarifa cobrada pelo BANCO na operação (TED, DOC, Pix agendado...): é
+  // despesa da loja, separada do valor transferido — vira título próprio.
+  tarifa: z.number().nullable().optional(),
 });
 
 const receiptsSchema = z.object({ comprovantes: z.array(receiptSchema) });
@@ -75,6 +78,7 @@ const RECEIPTS_JSON_SCHEMA = {
           "bancoDestino",
           "agenciaDestino",
           "contaDestino",
+          "tarifa",
         ],
         properties: {
           pagina: { type: "integer", description: "número da página no PDF, começando em 1" },
@@ -135,6 +139,11 @@ const RECEIPTS_JSON_SCHEMA = {
             type: ["string", "null"],
             description: "número da conta creditada, só dígitos (sem o dígito verificador)",
           },
+          tarifa: {
+            type: ["number", "null"],
+            description:
+              "tarifa/taxa que o BANCO cobra pela operação (linha 'Tarifa', 'Tarifa da operação', 'Custo do serviço'), em reais. NÃO é o valor transferido nem o total debitado. null quando o comprovante não traz tarifa",
+          },
         },
       },
     },
@@ -152,7 +161,8 @@ const SYSTEM_PROMPT =
   "conta dele (banco/agência/conta DE DESTINO), a FORMA (Pix, TED, DOC, transferência, boleto) e o " +
   "SENTIDO — SAIDA quando o comprovante é de pagamento/envio, ENTRADA quando é de recebimento " +
   "('Pix recebido', depósito, crédito). " +
-  "Regras: 1) O valor é o total efetivamente pago no comprovante. 2) CONTA DEBITADA é a do PAGADOR: " +
+  "Regras: 1) O valor é o total efetivamente pago no comprovante — quando o comprovante cobra TARIFA, "
+    + "o valor é o TRANSFERIDO (não o total debitado) e a tarifa vai no campo tarifa. 2) CONTA DEBITADA é a do PAGADOR: " +
   "todo comprovante mostra os dois lados (quem pagou e quem recebeu) — em Pix e TED eles vêm em " +
   "blocos 'Pagador' e 'Recebedor'/'Favorecido'. Não troque um pelo outro. Agência e conta só com os " +
   "dígitos, sem o dígito verificador. 3) DOCUMENTO DO BENEFICIÁRIO: o CPF/CNPJ de quem recebeu, só " +
