@@ -885,6 +885,15 @@ model PreSale {
   payoffAmount              Float?
   payoffBarcode             String?
   payoffDueDate             DateTime?
+  // Quitação de DÉBITOS do veículo (IPVA, multas, licenciamento) com parte do
+  // valor financiado — a guia/DARE do órgão. Mesma mecânica da quitação acima:
+  // informativa, consta no contrato e na ficha, e a guia fica anexada ao
+  // veículo de terceiro.
+  debtsOrgao                String?
+  debtsDescricao            String?
+  debtsAmount               Float?
+  debtsBarcode              String?
+  debtsDueDate              DateTime?
   downPayment               Float          @default(0)
   installmentsCount         Int            @default(0)
   financerAccountId         String?
@@ -989,6 +998,13 @@ model Sale {
   payoffAmount              Float?
   payoffBarcode             String?
   payoffDueDate             DateTime?
+  // Quitação de débitos do veículo — IPVA, multas, licenciamento (cópia da
+  // pré-venda; consta no contrato).
+  debtsOrgao                String?
+  debtsDescricao            String?
+  debtsAmount               Float?
+  debtsBarcode              String?
+  debtsDueDate              DateTime?
   // Consignado: o veículo era de um terceiro. `ownerRefundAmount` (cópia travada
   // do veículo no fechamento) é o valor devido ao proprietário. Se
   // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário

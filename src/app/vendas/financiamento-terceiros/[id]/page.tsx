@@ -13,6 +13,7 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui
 import { cancelIntermediationAction } from "../actions";
 import {
   listPayoffBoletos,
+  listDebitosGuias,
   listIntermediationCrlvs,
   identificacaoVeiculo,
   PAYOFF_BOLETO_PREFIX,
@@ -82,8 +83,9 @@ export default async function FinanciamentoTerceirosDetailPage({
     },
   });
   if (!sale || sale.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
-  const [boletos, crlvs, houseKeys] = await Promise.all([
+  const [boletos, guiasDebitos, crlvs, houseKeys] = await Promise.all([
     listPayoffBoletos(sale.vehicleId),
+    listDebitosGuias(sale.vehicleId),
     listIntermediationCrlvs(sale.vehicleId),
     houseNameKeys(),
   ]);
@@ -203,6 +205,19 @@ export default async function FinanciamentoTerceirosDetailPage({
         className="mt-4"
         payoff={{ bank: sale.payoffBank, amount: sale.payoffAmount, barcode: sale.payoffBarcode, dueDate: sale.payoffDueDate }}
         boletos={boletos}
+      />
+
+      {/* Débitos do veículo (IPVA, multas, licenciamento): mesma mecânica da
+          quitação do financiamento, com a guia do órgão no lugar do boleto. */}
+      <PayoffCard
+        className="mt-4"
+        titulo="Quitação de débitos do veículo"
+        descricao="IPVA, multas e licenciamento anteriores pagos com parte do valor financiado — consta no contrato de intermediação."
+        rotuloCredor="Órgão / emissor"
+        rotuloDocumento="guia"
+        detalhe={{ rotulo: "O que está sendo quitado", valor: sale.debtsDescricao }}
+        payoff={{ bank: sale.debtsOrgao, amount: sale.debtsAmount, barcode: sale.debtsBarcode, dueDate: sale.debtsDueDate }}
+        boletos={guiasDebitos}
       />
 
       {/* Documentação: a operação financeira acaba no dia, mas o carro só fica

@@ -63,6 +63,17 @@ export default async function ContratoIntermediacaoPrePage({
           ? { bank: pre.payoffBank, amount: pre.payoffAmount, barcode: pre.payoffBarcode, dueDate: pre.payoffDueDate }
           : null
       }
+      debts={
+        pre.debtsAmount
+          ? {
+              orgao: pre.debtsOrgao,
+              descricao: pre.debtsDescricao,
+              amount: pre.debtsAmount,
+              barcode: pre.debtsBarcode,
+              dueDate: pre.debtsDueDate,
+            }
+          : null
+      }
       backHref={`/vendas/financiamento-terceiros/pre/${pre.id}`}
     />
   );

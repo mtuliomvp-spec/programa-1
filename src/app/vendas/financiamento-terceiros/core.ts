@@ -92,6 +92,14 @@ export const intermediationSchema = z.object({
   payoffAmount: z.coerce.number().min(0).default(0),
   payoffBarcode: z.string().optional(),
   payoffDueDate: z.string().optional(),
+  // Quitação de DÉBITOS do veículo (IPVA, multas, licenciamento): a guia do
+  // órgão (DARE e afins) paga com parte do valor financiado.
+  debtsEnabled: z.coerce.boolean().optional(),
+  debtsOrgao: z.string().optional(),
+  debtsDescricao: z.string().optional(),
+  debtsAmount: z.coerce.number().min(0).default(0),
+  debtsBarcode: z.string().optional(),
+  debtsDueDate: z.string().optional(),
 })
   .superRefine((d, ctx) => {
     if (d.payoffEnabled) {
@@ -101,6 +109,13 @@ export const intermediationSchema = z.object({
       if (!d.payoffBank?.trim()) {
         ctx.addIssue({ code: "custom", path: ["payoffBank"], message: "Informe o banco credor da quitação" });
       }
+    }
+    if (d.debtsEnabled && !(d.debtsAmount > 0)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["debtsAmount"],
+        message: "Informe o valor dos débitos a quitar (IPVA, multas...)",
+      });
     }
     if (!d.zeroKm) {
       if (!d.plate?.trim()) {
@@ -132,6 +147,9 @@ export type IntermediationFormState = { error?: string };
 /** Prefixo da descrição do anexo do boleto de quitação (no veículo de terceiro). */
 export const PAYOFF_BOLETO_PREFIX = "Boleto de quitação do financiamento anterior";
 
+/** Prefixo da descrição do anexo da guia de débitos (IPVA, multas, DARE...). */
+export const DEBITOS_GUIA_PREFIX = "Guia de débitos do veículo";
+
 /** Prefixo do anexo da nota fiscal de veículo 0 km (lida no formulário). */
 export const NOTA_VEICULO_PREFIX = "Nota fiscal do veículo (0 km)";
 
@@ -154,6 +172,15 @@ export async function listIntermediationCrlvs(vehicleId: string) {
 export async function listPayoffBoletos(vehicleId: string) {
   return prisma.vehicleAttachment.findMany({
     where: { vehicleId, kind: "DOCUMENTO", description: { startsWith: PAYOFF_BOLETO_PREFIX } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, description: true, filename: true, size: true, createdAt: true },
+  });
+}
+
+/** Guias de débitos (IPVA, multas, licenciamento) anexadas ao veículo. */
+export async function listDebitosGuias(vehicleId: string) {
+  return prisma.vehicleAttachment.findMany({
+    where: { vehicleId, kind: "DOCUMENTO", description: { startsWith: DEBITOS_GUIA_PREFIX } },
     orderBy: { createdAt: "desc" },
     select: { id: true, description: true, filename: true, size: true, createdAt: true },
   });
@@ -296,6 +323,12 @@ function buildPreSaleData(
     payoffAmount: d.payoffEnabled ? Math.round(d.payoffAmount * 100) / 100 : null,
     payoffBarcode: d.payoffEnabled ? d.payoffBarcode?.replace(/\s+/g, " ").trim() || null : null,
     payoffDueDate: d.payoffEnabled && d.payoffDueDate ? parseDateInput(d.payoffDueDate) : null,
+    // Débitos do veículo (IPVA, multas, licenciamento): só quando marcado.
+    debtsOrgao: d.debtsEnabled ? d.debtsOrgao?.trim() || null : null,
+    debtsDescricao: d.debtsEnabled ? d.debtsDescricao?.trim() || null : null,
+    debtsAmount: d.debtsEnabled ? Math.round(d.debtsAmount * 100) / 100 : null,
+    debtsBarcode: d.debtsEnabled ? d.debtsBarcode?.replace(/\s+/g, " ").trim() || null : null,
+    debtsDueDate: d.debtsEnabled && d.debtsDueDate ? parseDateInput(d.debtsDueDate) : null,
   };
 }
 
@@ -460,6 +493,11 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     payoffAmount: pre.payoffAmount,
     payoffBarcode: pre.payoffBarcode,
     payoffDueDate: pre.payoffDueDate,
+    debtsOrgao: pre.debtsOrgao,
+    debtsDescricao: pre.debtsDescricao,
+    debtsAmount: pre.debtsAmount,
+    debtsBarcode: pre.debtsBarcode,
+    debtsDueDate: pre.debtsDueDate,
   });
 
   await prisma.preSale.update({

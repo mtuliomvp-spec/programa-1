@@ -8,7 +8,12 @@ import { computeReturn } from "@/lib/retorno";
 import IntermediationPreSaleActions from "./IntermediationPreSaleActions";
 import PayoffCard from "../../PayoffCard";
 import CrlvLine from "../../CrlvLine";
-import { listPayoffBoletos, listIntermediationCrlvs, identificacaoVeiculo } from "../../core";
+import {
+  listPayoffBoletos,
+  listDebitosGuias,
+  listIntermediationCrlvs,
+  identificacaoVeiculo,
+} from "../../core";
 import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 
 export const dynamic = "force-dynamic";
@@ -42,13 +47,14 @@ export default async function IntermediationPreSalePage({
   if (pre.status === "CONVERTIDA" && pre.convertedSaleId) {
     redirect(`/vendas/financiamento-terceiros/${pre.convertedSaleId}`);
   }
-  const [vehicle, customer, financerAccount, boletos, crlvs] = await Promise.all([
+  const [vehicle, customer, financerAccount, boletos, guiasDebitos, crlvs] = await Promise.all([
     prisma.vehicle.findUnique({ where: { id: pre.vehicleId } }),
     prisma.customer.findUnique({ where: { id: pre.customerId } }),
     pre.financerAccountId
       ? prisma.financialAccount.findUnique({ where: { id: pre.financerAccountId } })
       : Promise.resolve(null),
     listPayoffBoletos(pre.vehicleId),
+    listDebitosGuias(pre.vehicleId),
     listIntermediationCrlvs(pre.vehicleId),
   ]);
   // Veículo/cliente podem não existir mais (ex.: apagados num "zerar dados").
@@ -193,6 +199,19 @@ export default async function IntermediationPreSalePage({
         className="mb-4"
         payoff={{ bank: pre.payoffBank, amount: pre.payoffAmount, barcode: pre.payoffBarcode, dueDate: pre.payoffDueDate }}
         boletos={boletos}
+      />
+
+      {/* Débitos do veículo (IPVA, multas, licenciamento) pagos com parte do
+          valor financiado — a guia do órgão no lugar do boleto do banco. */}
+      <PayoffCard
+        className="mb-4"
+        titulo="Quitação de débitos do veículo"
+        descricao="IPVA, multas e licenciamento anteriores pagos com parte do valor financiado — consta no contrato de intermediação."
+        rotuloCredor="Órgão / emissor"
+        rotuloDocumento="guia"
+        detalhe={{ rotulo: "O que está sendo quitado", valor: pre.debtsDescricao }}
+        payoff={{ bank: pre.debtsOrgao, amount: pre.debtsAmount, barcode: pre.debtsBarcode, dueDate: pre.debtsDueDate }}
+        boletos={guiasDebitos}
       />
 
       {vehicle ? (
