@@ -1,4 +1,5 @@
 import { Card, CardHeader } from "@/components/ui";
+import CopyBarcode from "@/components/CopyBarcode";
 import { formatCurrency, formatDate } from "@/lib/format";
 
 type Boleto = { id: string; filename: string; size: number; createdAt: Date };
@@ -48,8 +49,18 @@ export default function PayoffCard({
         {detalhe ? (
           <p className="sm:col-span-2"><span className="text-slate-500">{detalhe.rotulo}:</span> {detalhe.valor || "—"}</p>
         ) : null}
-        <p className="sm:col-span-2 break-all"><span className="text-slate-500">Código de barras:</span> {payoff.barcode || "—"}</p>
         <p><span className="text-slate-500">Vencimento:</span> {payoff.dueDate ? formatDate(payoff.dueDate) : "—"}</p>
+        {/* Linha digitável com o botão de copiar: é daqui que ela vai para o
+            leitor do banco, então copia só os dígitos. */}
+        {payoff.barcode ? (
+          <div className="sm:col-span-2">
+            <CopyBarcode value={payoff.barcode} />
+          </div>
+        ) : (
+          <p className="sm:col-span-2">
+            <span className="text-slate-500">Código de barras:</span> —
+          </p>
+        )}
       </div>
       {boletos.length > 0 ? (
         <ul className="divide-y divide-slate-100 border-t border-slate-100 px-5">
