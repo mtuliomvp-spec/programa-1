@@ -581,6 +581,8 @@ export type LeituraTransferencia = {
   origemLida?: string | null;
   destinoLido?: string | null;
   descricao?: string | null;
+  /** Tarifa que o banco cobrou pela operação (vira título a pagar). */
+  tarifa?: number | null;
   avisos?: string[];
 };
 
@@ -671,6 +673,7 @@ export async function lerComprovanteTransferenciaAction(
     origemLida: [lido.contaDebitada, lido.banco, lido.agencia, lido.conta].filter(Boolean).join(" · ") || null,
     destinoLido: [lido.bancoDestino, lido.agenciaDestino, lido.contaDestino].filter(Boolean).join(" · ") || null,
     descricao: (lido.descricao || "").trim() || null,
+    tarifa: lido.tarifa != null && lido.tarifa > 0 ? Math.round(lido.tarifa * 100) / 100 : null,
     avisos,
   };
 }
@@ -719,6 +722,37 @@ export async function preLancarTransferenciaAction(formData: FormData): Promise<
       size: file.size,
       data: new Uint8Array(await file.arrayBuffer()),
     };
+  }
+
+  // TARIFA do banco: é despesa da loja, não parte do valor transferido. Vira
+  // um título PENDENTE no Contas a pagar, com o banco da conta debitada como
+  // fornecedor — a baixa é dada quando o banco debitar de fato.
+  const tarifa = Math.round(Number(String(formData.get("tarifa") || "0").replace(",", ".")) * 100) / 100;
+  if (tarifa > 0) {
+    const origem = await prisma.financialAccount.findUnique({
+      where: { id: fromId },
+      select: { name: true, bankName: true },
+    });
+    const destino = await prisma.financialAccount.findUnique({
+      where: { id: toId },
+      select: { name: true },
+    });
+    const { resolveSupplierByName, createManualPayable } = await import("@/lib/finance");
+    const banco = (origem?.bankName || origem?.name || "Banco").trim();
+    const supplierId = await resolveSupplierByName(banco);
+    await createManualPayable({
+      description: `Tarifa bancária — transferência ${origem?.name ?? ""} → ${destino?.name ?? ""}`.trim(),
+      category: "DESPESA_OPERACIONAL",
+      categoryLabel: "Tarifa bancária",
+      amount: tarifa,
+      dueDate: date,
+      supplierId,
+      structuralKey: "ADMINISTRATIVO",
+      notes:
+        `Tarifa lida do comprovante da transferência de ${formatCurrency(amount)} em ` +
+        `${date.toLocaleDateString("pt-BR", { timeZone: "UTC" })}. Fica pendente: a baixa é dada quando o banco debitar.`,
+      alreadyPaid: false,
+    });
   }
 
   await prisma.pendingTransfer.create({
