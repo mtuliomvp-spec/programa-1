@@ -13,7 +13,12 @@ import { lookupCepAction } from "@/app/cep-actions";
 import { findPersonByDocument } from "@/app/person-lookup";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_NIVEIS } from "@/lib/retorno";
-import { createIntermediationPreSaleAction, readIntermediationCrlvAction } from "./actions";
+import {
+  createIntermediationPreSaleAction,
+  readIntermediationCrlvAction,
+  lerGuiaIntermediacaoAction,
+  type GuiaLida,
+} from "./actions";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import type { IntermediationFormState } from "./core";
 
@@ -85,6 +90,12 @@ export type IntermediationInitial = {
   crlvs?: { id: string; filename: string; description: string }[];
 };
 
+/** yyyy-mm-dd (do documento lido) → dd/mm/aaaa, sem passar pelo fuso. */
+function toDateBr(iso: string): string {
+  const [a, m, d] = iso.split("-");
+  return `${d}/${m}/${a}`;
+}
+
 const initialState: IntermediationFormState = {};
 
 export default function IntermediationForm({
@@ -154,6 +165,48 @@ export default function IntermediationForm({
   const [payoffAmount, setPayoffAmount] = useState(initial?.payoffAmount ?? 0);
   const [debtsEnabled, setDebtsEnabled] = useState(Boolean(initial?.debtsAmount && initial.debtsAmount > 0));
   const [debtsAmount, setDebtsAmount] = useState(initial?.debtsAmount ?? 0);
+  // Leitura do boleto/guia anexado: preenche os campos do bloco (valor,
+  // vencimento, linha digitável, emitente e o que está sendo cobrado). Quem
+  // confere é o usuário — a leitura só adianta a digitação.
+  const [payoffLido, setPayoffLido] = useState<GuiaLida | null>(null);
+  const [debtsLido, setDebtsLido] = useState<GuiaLida | null>(null);
+  const [lendoGuia, startLerGuia] = useTransition();
+  const [guiaMsg, setGuiaMsg] = useState<{ bloco: "payoff" | "debts"; tone: "ok" | "err"; text: string } | null>(null);
+
+  function lerGuia(bloco: "payoff" | "debts", input: HTMLInputElement | null) {
+    const file = input?.files?.[0];
+    if (!file) return;
+    setGuiaMsg(null);
+    startLerGuia(async () => {
+      const fd = new FormData();
+      fd.set("file", file);
+      const r = await lerGuiaIntermediacaoAction(fd);
+      if (!r.ok) {
+        setGuiaMsg({ bloco, tone: "err", text: r.error });
+        return;
+      }
+      if (bloco === "payoff") {
+        setPayoffLido(r.data);
+        if (r.data.valor != null) setPayoffAmount(r.data.valor);
+      } else {
+        setDebtsLido(r.data);
+        if (r.data.valor != null) setDebtsAmount(r.data.valor);
+      }
+      const partes = [
+        r.data.valor != null ? formatCurrency(r.data.valor) : null,
+        r.data.vencimento ? `vence em ${toDateBr(r.data.vencimento)}` : null,
+        r.data.emitente,
+      ].filter(Boolean);
+      setGuiaMsg({
+        bloco,
+        tone: "ok",
+        text:
+          `Li o documento: ${partes.join(" · ") || "confira os campos"}.` +
+          (r.data.outros > 0 ? ` O arquivo tem mais ${r.data.outros} documento(s) — preenchi com o primeiro.` : "") +
+          " Confira antes de salvar.",
+      });
+    });
+  }
 
   const financer = financers.find((f) => f.id === financerId) || null;
 
@@ -890,34 +943,58 @@ export default function IntermediationForm({
             </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Banco credor (onde o veículo está financiado)" required>
-                <BankInput name="payoffBank" defaultValue={initial?.payoffBank ?? ""} placeholder="Ex.: Banco C6" />
+                <BankInput
+                  key={`payoffBank-${payoffLido?.emitente ?? "x"}`}
+                  name="payoffBank"
+                  defaultValue={payoffLido?.emitente ?? initial?.payoffBank ?? ""}
+                  placeholder="Ex.: Banco C6"
+                />
               </Field>
               <Field label="Valor da quitação (R$)" required>
                 <MoneyInput
+                  key={`payoffAmount-${payoffLido?.valor ?? "x"}`}
                   name="payoffAmount"
-                  defaultValue={initial?.payoffAmount ?? null}
+                  defaultValue={payoffLido?.valor ?? initial?.payoffAmount ?? null}
                   onValueChange={setPayoffAmount}
                   placeholder="Valor do boleto de quitação"
                 />
               </Field>
               <Field label="Código de barras / linha digitável">
                 <Input
+                  key={`payoffBarcode-${payoffLido?.linhaDigitavel ?? "x"}`}
                   name="payoffBarcode"
-                  defaultValue={initial?.payoffBarcode ?? ""}
+                  defaultValue={payoffLido?.linhaDigitavel ?? initial?.payoffBarcode ?? ""}
                   placeholder="33690.00009 00000.010330 35036.240535 7 15560005331584"
                   inputMode="numeric"
                 />
               </Field>
               <Field label="Vencimento do boleto">
-                <Input type="date" name="payoffDueDate" defaultValue={initial?.payoffDueDate ?? ""} />
+                <Input
+                  key={`payoffDueDate-${payoffLido?.vencimento ?? "x"}`}
+                  type="date"
+                  name="payoffDueDate"
+                  defaultValue={payoffLido?.vencimento ?? initial?.payoffDueDate ?? ""}
+                />
               </Field>
-              <Field label="Arquivo do boleto (PDF ou imagem)">
+              <Field label="Arquivo do boleto (PDF ou imagem) — a IA lê e preenche os campos acima">
                 <input
                   type="file"
                   name="payoffBoleto"
                   accept="application/pdf,image/*"
+                  onChange={(e) => lerGuia("payoff", e.currentTarget)}
                   className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                 />
+                {lendoGuia && guiaMsg?.bloco !== "debts" ? (
+                  <p className="mt-1 text-xs text-slate-500">Lendo o boleto — alguns segundos…</p>
+                ) : null}
+                {guiaMsg?.bloco === "payoff" ? (
+                  <p
+                    className={`mt-1 text-xs ${guiaMsg.tone === "ok" ? "text-emerald-700" : "text-amber-700"}`}
+                  >
+                    {guiaMsg.tone === "ok" ? "✓ " : "⚠️ "}
+                    {guiaMsg.text}
+                  </p>
+                ) : null}
                 {initial?.payoffBoletos?.length ? (
                   <p className="mt-1 text-xs text-slate-500">
                     Já anexado: {initial.payoffBoletos.map((b) => b.filename).join(", ")}. Enviar outro
@@ -968,44 +1045,65 @@ export default function IntermediationForm({
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <Field label="Órgão / emissor da guia">
                 <Input
+                  key={`debtsOrgao-${debtsLido?.emitente ?? "x"}`}
                   name="debtsOrgao"
-                  defaultValue={initial?.debtsOrgao ?? ""}
+                  defaultValue={debtsLido?.emitente ?? initial?.debtsOrgao ?? ""}
                   placeholder="Ex.: SEFAZ-MA (DARE) · DETRAN-MA"
                 />
               </Field>
               <Field label="O que está sendo quitado">
                 <Input
+                  key={`debtsDescricao-${debtsLido?.descricao ?? "x"}`}
                   name="debtsDescricao"
-                  defaultValue={initial?.debtsDescricao ?? ""}
+                  defaultValue={debtsLido?.descricao ?? initial?.debtsDescricao ?? ""}
                   placeholder="Ex.: IPVA 2026 + juros e multa"
                 />
               </Field>
               <Field label="Valor dos débitos (R$)" required>
                 <MoneyInput
+                  key={`debtsAmount-${debtsLido?.valor ?? "x"}`}
                   name="debtsAmount"
-                  defaultValue={initial?.debtsAmount ?? null}
+                  defaultValue={debtsLido?.valor ?? initial?.debtsAmount ?? null}
                   onValueChange={setDebtsAmount}
                   placeholder="Valor total da guia"
                 />
               </Field>
               <Field label="Vencimento / validade da guia">
-                <Input type="date" name="debtsDueDate" defaultValue={initial?.debtsDueDate ?? ""} />
+                <Input
+                  key={`debtsDueDate-${debtsLido?.vencimento ?? "x"}`}
+                  type="date"
+                  name="debtsDueDate"
+                  defaultValue={debtsLido?.vencimento ?? initial?.debtsDueDate ?? ""}
+                />
               </Field>
               <Field label="Código de barras / linha digitável">
                 <Input
+                  key={`debtsBarcode-${debtsLido?.linhaDigitavel ?? "x"}`}
                   name="debtsBarcode"
-                  defaultValue={initial?.debtsBarcode ?? ""}
+                  defaultValue={debtsLido?.linhaDigitavel ?? initial?.debtsBarcode ?? ""}
                   placeholder="85620000037 5 10450332170 5 92609211401 2 04347458426 5"
                   inputMode="numeric"
                 />
               </Field>
-              <Field label="Arquivo da guia (PDF ou imagem)">
+              <Field label="Arquivo da guia (PDF ou imagem) — a IA lê e preenche os campos acima">
                 <input
                   type="file"
                   name="debtsGuia"
                   accept="application/pdf,image/*"
+                  onChange={(e) => lerGuia("debts", e.currentTarget)}
                   className="block w-full text-sm text-slate-700 file:mr-3 file:rounded-md file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
                 />
+                {lendoGuia && guiaMsg?.bloco !== "payoff" ? (
+                  <p className="mt-1 text-xs text-slate-500">Lendo a guia — alguns segundos…</p>
+                ) : null}
+                {guiaMsg?.bloco === "debts" ? (
+                  <p
+                    className={`mt-1 text-xs ${guiaMsg.tone === "ok" ? "text-emerald-700" : "text-amber-700"}`}
+                  >
+                    {guiaMsg.tone === "ok" ? "✓ " : "⚠️ "}
+                    {guiaMsg.text}
+                  </p>
+                ) : null}
                 {initial?.debtsGuias?.length ? (
                   <p className="mt-1 text-xs text-slate-500">
                     Já anexada: {initial.debtsGuias.map((b) => b.filename).join(", ")}. Enviar outro

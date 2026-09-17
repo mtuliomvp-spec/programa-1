@@ -305,3 +305,76 @@ export async function cancelIntermediationAction(id: string) {
   }
   redirect(`/vendas/financiamento-terceiros/${id}`);
 }
+
+/** O que a leitura do boleto/guia devolve para o formulário preencher. */
+export type GuiaLida = {
+  /** Valor a pagar até o vencimento. */
+  valor: number | null;
+  /** yyyy-mm-dd, pronto para o input date. */
+  vencimento: string | null;
+  /** Linha digitável como impressa. */
+  linhaDigitavel: string | null;
+  /** Quem emitiu — o banco credor (quitação) ou o órgão (guia). */
+  emitente: string | null;
+  /** O que o documento cobra ("IPVA 2026 cota única"), com a referência. */
+  descricao: string | null;
+  /** QUITACAO, IPVA, LICENCIAMENTO, MULTA, TAXA ou OUTRO. */
+  tipo: string | null;
+  /** Mais de um documento no arquivo: o formulário avisa que leu o primeiro. */
+  outros: number;
+};
+
+/**
+ * Lê o BOLETO de quitação do financiamento ou a GUIA de débitos (IPVA, multas,
+ * licenciamento) anexada na ficha da intermediação e devolve os campos para o
+ * formulário preencher sozinho — valor, vencimento, linha digitável, emitente e
+ * o que está sendo cobrado. Quem confere é o usuário: a leitura só preenche.
+ *
+ * É o mesmo leitor dos boletos do estoque, que já entende guias de órgão
+ * (DARE e afins) além dos boletos de banco.
+ */
+export async function lerGuiaIntermediacaoAction(
+  formData: FormData,
+): Promise<{ ok: true; data: GuiaLida } | { ok: false; error: string }> {
+  try {
+    await assertCan("vendas", "terceiros");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) {
+    return { ok: false, error: "Selecione o arquivo do boleto ou da guia." };
+  }
+  if (file.size > PAYOFF_BOLETO_MAX_BYTES) {
+    return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  }
+  try {
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    const lidos = await extractBoletos(
+      Buffer.from(await file.arrayBuffer()).toString("base64"),
+      file.type || "application/octet-stream",
+    );
+    const b = lidos[0];
+    if (!b) {
+      return { ok: false, error: "Não achei um boleto/guia neste arquivo. Confira se é o documento certo." };
+    }
+    const referencia = b.referencia?.trim() || null;
+    const descricao = [b.descricao?.trim() || null, referencia && !b.descricao?.includes(referencia) ? referencia : null]
+      .filter(Boolean)
+      .join(" · ");
+    return {
+      ok: true,
+      data: {
+        valor: b.valor ?? null,
+        vencimento: b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null,
+        linhaDigitavel: b.linhaDigitavel?.replace(/\s+/g, " ").trim() || null,
+        emitente: b.cedente?.trim() || null,
+        descricao: descricao || null,
+        tipo: b.tipo ?? null,
+        outros: Math.max(0, lidos.length - 1),
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não consegui ler este documento." };
+  }
+}

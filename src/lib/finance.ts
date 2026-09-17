@@ -1592,18 +1592,83 @@ async function vehicleSale(input: {
         where: { id: input.customerId },
         select: { name: true },
       });
-      await tx.payable.create({
-        data: {
-          description: `Devolução ao cliente${customer?.name ? ` ${customer.name}` : ""} - ${baseDescription}`,
-          category: "DEVOLUCAO_CLIENTE",
-          amount: devolucaoCliente,
-          dueDate: input.saleDate,
-          status: "PENDENTE",
-          vehicleId: input.vehicleId,
-          costCenterId: veiculosCenterId,
-          notes: "Excedente do financiamento sobre o restante a pagar da venda.",
-        },
-      });
+      // QUITAÇÕES informadas na intermediação: parte da devolução não vai ao
+      // cliente — a loja paga o banco credor e o órgão POR CONTA E ORDEM dele
+      // (é o que o contrato diz), abatendo do que seria devolvido. São títulos
+      // da MESMA natureza (dinheiro do cliente em trânsito), por isso a mesma
+      // categoria: a soma dos três continua sendo a devolução, e a equação
+      // patrimonial não muda. No refinanciamento não há devolução da loja: a
+      // quitação é feita pelo financiado com o valor liberado.
+      const quitacaoBanco = input.refinancing
+        ? 0
+        : Math.max(0, Math.round((input.payoffAmount ?? 0) * 100) / 100);
+      const quitacaoDebitos = input.refinancing
+        ? 0
+        : Math.max(0, Math.round((input.debtsAmount ?? 0) * 100) / 100);
+      // Nunca passa do que há para devolver (o formulário avisa antes; aqui é a
+      // trava): o excedente fica com o cliente em vez de virar título negativo.
+      const quitacaoTotal = Math.min(
+        Math.round((quitacaoBanco + quitacaoDebitos) * 100) / 100,
+        devolucaoCliente,
+      );
+      const aoCliente = Math.round((devolucaoCliente - quitacaoTotal) * 100) / 100;
+
+      if (quitacaoBanco > 0 && quitacaoTotal > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Quitação do financiamento anterior${input.payoffBank ? ` — ${input.payoffBank}` : ""} - ${baseDescription}`,
+            category: "DEVOLUCAO_CLIENTE",
+            categoryLabel: "Quitação do financiamento anterior",
+            amount: Math.min(quitacaoBanco, quitacaoTotal),
+            dueDate: input.payoffDueDate ?? input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+            barcode: input.payoffBarcode || null,
+            notes:
+              "Pago pela loja ao banco credor por conta e ordem do comprador, abatido da devolução " +
+              "(contrato de intermediação).",
+          },
+        });
+      }
+      const sobraParaDebitos = Math.round((quitacaoTotal - quitacaoBanco) * 100) / 100;
+      if (quitacaoDebitos > 0 && sobraParaDebitos > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Quitação de débitos do veículo${input.debtsDescricao ? ` (${input.debtsDescricao})` : ""}${input.debtsOrgao ? ` — ${input.debtsOrgao}` : ""} - ${baseDescription}`,
+            category: "DEVOLUCAO_CLIENTE",
+            categoryLabel: "Quitação de débitos do veículo",
+            amount: Math.min(quitacaoDebitos, sobraParaDebitos),
+            dueDate: input.debtsDueDate ?? input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+            barcode: input.debtsBarcode || null,
+            notes:
+              "Guia paga pela loja por conta e ordem do comprador, abatida da devolução " +
+              "(contrato de intermediação).",
+          },
+        });
+      }
+
+      if (aoCliente > 0) {
+        await tx.payable.create({
+          data: {
+            description: `Devolução ao cliente${customer?.name ? ` ${customer.name}` : ""} - ${baseDescription}`,
+            category: "DEVOLUCAO_CLIENTE",
+            amount: aoCliente,
+            dueDate: input.saleDate,
+            status: "PENDENTE",
+            vehicleId: input.vehicleId,
+            costCenterId: veiculosCenterId,
+            notes:
+              "Excedente do financiamento sobre o restante a pagar da venda." +
+              (quitacaoTotal > 0
+                ? ` Já descontadas as quitações informadas na operação (${brl(quitacaoTotal)}).`
+                : ""),
+          },
+        });
+      }
     }
 
     // Consignado: o valor ACERTADO com o proprietário (bruto) é o custo do
