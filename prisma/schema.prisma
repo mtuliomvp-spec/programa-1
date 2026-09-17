@@ -1337,8 +1337,10 @@ model PaymentCombo {
   // (vira aporte na baixa); o restante saiu em dinheiro. 0 = sem abatimento.
   capitalAbatement Float             @default(0)
   // Se true, paga o valor INTEGRAL ao beneficiário mesmo com saldo devedor
-  // (não abate o capital). Default false = abate como de costume.
-  payFull          Boolean           @default(false)
+  // (não abate o capital). Default TRUE: o borderô costuma ser recebido
+  // inteiro, e o abatimento — que vira aporte e devolve dinheiro à conta — só
+  // acontece quando for pedido no combo.
+  payFull          Boolean           @default(true)
   // Forma de recebimento escolhida pelo solicitante: "conta" | "pix".
   payoutMethod     String?
   // Linha digitável do boleto que o borderô paga (quando ele nasce de uma

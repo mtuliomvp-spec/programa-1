@@ -183,7 +183,10 @@ export async function payComboAction(comboId: string, accountId: string): Promis
       name: true,
       userId: true,
       payFull: true,
-      payables: { where: { status: { not: "PAGO" } }, select: { id: true, amount: true } },
+      payables: {
+        where: { status: { not: "PAGO" } },
+        select: { id: true, amount: true, capitalBeneficiaryId: true },
+      },
     },
   });
   if (!combo) return { ok: false, error: "Combo não encontrado." };
@@ -192,7 +195,10 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   // Beneficiário do combo (quem o montou) com saldo LIVRE de capital negativo:
   // parte do total cobre esse débito como APORTE (igual à comissão do vendedor);
   // o resto sai em dinheiro. Fica equação-neutra (aporte na mesma conta).
-  // Se o combo estiver marcado como "valor integral" (payFull), não abate.
+  // O abatimento é EXPLÍCITO: só acontece quando o combo for marcado para
+  // abater (payFull desligado). O normal é pagar o valor integral — quem
+  // recebe o borderô costuma receber tudo, e um aporte que não houve some com
+  // o saldo devedor e ainda inventa uma entrada de dinheiro na conta.
   const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
   let abate = 0;
   let beneficiary: { id: string; name: string } | null = null;
@@ -204,7 +210,16 @@ export async function payComboAction(comboId: string, accountId: string): Promis
     if (beneficiary) {
       const free = await freeCapitalOf(beneficiary.id);
       const debt = Math.max(0, round2(-free));
-      abate = round2(Math.min(total, debt));
+      // Só o que de fato SAI para o beneficiário pode abater o débito dele.
+      // Título do fluxo Capital DELE (despesa pessoal que a loja paga) já vira
+      // RETIRADA na baixa: abater em cima dele anularia a própria retirada e
+      // criaria uma entrada que o banco não teve.
+      const baseAbativel = round2(
+        combo.payables
+          .filter((p) => p.capitalBeneficiaryId !== beneficiary!.id)
+          .reduce((s, p) => s + p.amount, 0),
+      );
+      abate = round2(Math.min(baseAbativel, debt));
     }
   }
 
@@ -259,6 +274,63 @@ export async function payComboAction(comboId: string, accountId: string): Promis
       pendingPaymentNote: null,
     },
   });
+  revalidate(comboId);
+  return { ok: true };
+}
+
+/**
+ * Desfaz SÓ o abatimento do saldo devedor de um combo já PAGO — o beneficiário
+ * recebeu o valor integral, então o aporte não existiu.
+ *
+ * O abatimento grava um par recebível↔aporte: o aporte some com parte do saldo
+ * devedor e o recebível devolve o dinheiro à conta (é o que faz o banco sair
+ * só com a diferença). Quando o banco, na verdade, pagou o total, esse par
+ * mente duas vezes — infla o saldo da conta e apaga uma dívida que continua de
+ * pé. Isto o apaga sem mexer nos títulos: eles seguem pagos, como foram.
+ */
+export async function desfazerAbatimentoDoComboAction(comboId: string): Promise<Result> {
+  try {
+    await assertCan("combos", "aprovar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const combo = await prisma.paymentCombo.findUnique({
+    where: { id: comboId },
+    select: { status: true, name: true, userId: true, paidAt: true, capitalAbatement: true },
+  });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status !== "PAGO") return { ok: false, error: "Este combo não está pago." };
+  if (combo.capitalAbatement <= 0.005) return { ok: false, error: "Este combo não abateu saldo devedor." };
+  if (combo.paidAt) {
+    try {
+      await assertMonthOpen(combo.paidAt);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "O mês do pagamento já foi fechado." };
+    }
+  }
+
+  const beneficiary = combo.userId
+    ? await prisma.capitalBeneficiary.findUnique({ where: { userId: combo.userId }, select: { id: true } })
+    : null;
+  const receivable = beneficiary
+    ? await prisma.receivable.findFirst({
+        where: {
+          capitalBeneficiaryId: beneficiary.id,
+          status: "RECEBIDO",
+          amount: combo.capitalAbatement,
+          description: { startsWith: `Aporte p/ abater saldo devedor de capital (combo ${combo.name})` },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      })
+    : null;
+  if (!receivable) return { ok: false, error: "Não encontrei o aporte deste combo para desfazer." };
+
+  await prisma.$transaction([
+    prisma.capitalTransaction.deleteMany({ where: { receivableId: receivable.id } }),
+    prisma.receivable.delete({ where: { id: receivable.id } }),
+    prisma.paymentCombo.update({ where: { id: comboId }, data: { capitalAbatement: 0, payFull: true } }),
+  ]);
   revalidate(comboId);
   return { ok: true };
 }

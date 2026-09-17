@@ -36,8 +36,8 @@ export default function PayFullToggle({
           </p>
           <p className="text-xs text-slate-500">
             {payFull
-              ? `${beneficiaryName || "O beneficiário"} recebe o total do borderô; o saldo devedor de capital NÃO será abatido.`
-              : `Parte do total cobre o saldo devedor de capital${beneficiaryName ? ` de ${beneficiaryName}` : ""} (vira aporte); só a diferença sai em dinheiro.`}
+              ? `${beneficiaryName || "O beneficiário"} recebe o total do borderô; o saldo devedor de capital NÃO será abatido (é o normal — o abatimento só acontece se você pedir aqui).`
+              : `Parte do total cobre o saldo devedor de capital${beneficiaryName ? ` de ${beneficiaryName}` : ""}: vira APORTE e só a diferença sai em dinheiro. Marque isto apenas se ${beneficiaryName || "o beneficiário"} for receber a menos por causa da dívida.`}
           </p>
         </div>
         <button
@@ -50,7 +50,7 @@ export default function PayFullToggle({
               : "bg-blue-600 text-white hover:bg-blue-500"
           }`}
         >
-          {pending ? "..." : payFull ? "Voltar a abater o saldo devedor" : "Receber valor integral"}
+          {pending ? "..." : payFull ? "Abater o saldo devedor neste combo" : "Voltar ao valor integral"}
         </button>
       </div>
     </div>
