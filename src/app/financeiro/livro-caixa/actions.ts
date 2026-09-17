@@ -99,6 +99,23 @@ export type LeituraComprovante = {
   categoria?: string | null;
   /** Lançamento igual que já existe — mesmo valor, dia e conta. */
   duplicado?: { descricao: string; quando: string; status: string } | null;
+  /**
+   * Título/recebimento EM ABERTO que este comprovante provavelmente paga. O
+   * lugar certo do comprovante é dentro dele (lá ele dá a baixa daquele
+   * título); lançar aqui criaria um segundo lançamento para o mesmo dinheiro.
+   */
+  emAberto?: {
+    id: string;
+    numero: string;
+    descricao: string;
+    valor: number;
+    vencimento: string;
+    href: string;
+    /** Por que casou: "mesmo valor" ou "mesmo beneficiário". */
+    motivo: string;
+    /** Quantos outros candidatos existem além deste. */
+    outros: number;
+  } | null;
 };
 
 /** Fornecedor já cadastrado com este nome — SEM criar um novo (a leitura não grava). */
@@ -114,6 +131,128 @@ async function fornecedorCadastrado(nome: string): Promise<string | null> {
   if (!chave) return null;
   const todos = await prisma.supplier.findMany({ select: { id: true, name: true } });
   return todos.find((s) => nameKey(s.name) === chave)?.id ?? null;
+}
+
+/**
+ * Título (ou recebimento) EM ABERTO que este comprovante provavelmente quita.
+ *
+ * O comprovante de um pagamento que JÁ TEM título pertence ao título: é lá que
+ * ele confere valor/data/conta e dá a baixa daquele título. Lançado aqui, no
+ * movimento de caixa, ele vira um SEGUNDO lançamento para o mesmo dinheiro — o
+ * título continua em aberto e o caixa ganha uma saída repetida.
+ *
+ * Só avisa (não bloqueia): pode ser mesmo um pagamento sem título. Casa por
+ * valor igual com vencimento perto da data do comprovante, ou pelo mesmo
+ * beneficiário com valor próximo (boleto pago com juros/desconto).
+ */
+async function tituloEmAberto(
+  kind: "entrada" | "saida",
+  valor: number,
+  data: Date,
+  beneficiario: string | null,
+): Promise<LeituraComprovante["emAberto"]> {
+  const JANELA = 45 * 24 * 60 * 60 * 1000;
+  const perto = { gte: new Date(data.getTime() - JANELA), lte: new Date(data.getTime() + JANELA) };
+  const mesmoValor = { gte: valor - 0.005, lte: valor + 0.005 };
+  // Valor próximo: boleto pago com juros/multa ou desconto não bate no centavo.
+  // A folga é pequena de propósito — 5% ou R$ 20, o que for menor.
+  const folga = Math.min(valor * 0.05, 20);
+  const proximo = { gte: valor - folga, lte: valor + folga };
+  const chaveBenef = nameKey(beneficiario || "");
+
+  /** O candidato casa pelo beneficiário/fornecedor lido no comprovante? */
+  const doBeneficiario = (nomes: (string | null | undefined)[]) =>
+    chaveBenef.length >= 4 &&
+    nomes.some((n) => {
+      const k = nameKey(n || "");
+      return k.length >= 4 && (k.includes(chaveBenef) || chaveBenef.includes(k));
+    });
+
+  if (kind === "saida") {
+    const candidatos = await prisma.payable.findMany({
+      where: {
+        status: { not: "PAGO" },
+        // Já pré-lançado não entra: esse caso é o do aviso de duplicidade.
+        pendingPaymentDate: null,
+        dueDate: perto,
+        OR: [{ amount: mesmoValor }, { amount: proximo }],
+      },
+      orderBy: { dueDate: "asc" },
+      take: 6,
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        amount: true,
+        dueDate: true,
+        supplier: { select: { name: true } },
+        beneficiaryUser: { select: { name: true } },
+        capitalBeneficiary: { select: { name: true } },
+      },
+    });
+    const exatos = candidatos.filter((c) => Math.abs(c.amount - valor) <= 0.005);
+    const porNome = candidatos.filter((c) =>
+      doBeneficiario([c.supplier?.name, c.beneficiaryUser?.name, c.capitalBeneficiary?.name]),
+    );
+    // Preferência: valor exato E beneficiário; depois valor exato; depois
+    // beneficiário com valor próximo. Sem nenhum dos três, não avisa nada.
+    const escolhido =
+      exatos.find((c) => porNome.includes(c)) ?? exatos[0] ?? porNome[0] ?? null;
+    if (!escolhido) return null;
+    const motivo =
+      Math.abs(escolhido.amount - valor) <= 0.005
+        ? porNome.includes(escolhido)
+          ? "mesmo valor e mesmo beneficiário"
+          : "mesmo valor"
+        : "mesmo beneficiário, valor próximo";
+    return {
+      id: escolhido.id,
+      numero: String(escolhido.orderNumber).padStart(4, "0"),
+      descricao: escolhido.description,
+      valor: escolhido.amount,
+      vencimento: escolhido.dueDate.toLocaleDateString("pt-BR", { timeZone: "UTC" }),
+      href: `/financeiro/a-pagar/${escolhido.id}/editar`,
+      motivo,
+      outros: Math.max(0, new Set([...exatos, ...porNome]).size - 1),
+    };
+  }
+
+  const candidatos = await prisma.receivable.findMany({
+    where: {
+      status: { not: "RECEBIDO" },
+      pendingReceiptDate: null,
+      dueDate: perto,
+      OR: [{ amount: mesmoValor }, { amount: proximo }],
+    },
+    orderBy: { dueDate: "asc" },
+    take: 6,
+    select: {
+      id: true,
+      description: true,
+      amount: true,
+      dueDate: true,
+      customer: { select: { name: true } },
+      capitalBeneficiary: { select: { name: true } },
+    },
+  });
+  const exatos = candidatos.filter((c) => Math.abs(c.amount - valor) <= 0.005);
+  const porNome = candidatos.filter((c) =>
+    doBeneficiario([c.customer?.name, c.capitalBeneficiary?.name]),
+  );
+  const escolhido = exatos.find((c) => porNome.includes(c)) ?? exatos[0] ?? porNome[0] ?? null;
+  if (!escolhido) return null;
+  return {
+    id: escolhido.id,
+    // O recebimento não tem número de ordem — quem identifica é a descrição.
+    numero: "",
+    descricao: escolhido.description,
+    valor: escolhido.amount,
+    vencimento: escolhido.dueDate.toLocaleDateString("pt-BR", { timeZone: "UTC" }),
+    href: `/financeiro/a-receber/${escolhido.id}/editar`,
+    motivo:
+      Math.abs(escolhido.amount - valor) <= 0.005 ? "mesmo valor" : "mesmo pagador, valor próximo",
+    outros: Math.max(0, new Set([...exatos, ...porNome]).size - 1),
+  };
 }
 
 /**
@@ -261,6 +400,17 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     lido.valor != null && lido.valor > 0 && dataIso
       ? await lancamentoIgual(lido.valor, parseDateInput(dataIso), accountId)
       : null;
+  // Este pagamento já tem título esperando? Então o comprovante é dele — aqui
+  // ele viraria um segundo lançamento para o mesmo dinheiro.
+  const emAberto =
+    !duplicado && lido.valor != null && lido.valor > 0 && dataIso
+      ? await tituloEmAberto(
+          entrada ? "entrada" : "saida",
+          lido.valor,
+          parseDateInput(dataIso),
+          lido.beneficiario ?? null,
+        )
+      : null;
 
   return {
     ok: true,
@@ -275,6 +425,7 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     fluxo,
     categoria,
     duplicado,
+    emAberto,
   };
 }
 

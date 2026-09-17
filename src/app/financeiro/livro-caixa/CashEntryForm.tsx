@@ -306,6 +306,39 @@ export default function CashEntryForm({
               Confira se este comprovante não foi lançado antes.
             </p>
           ) : null}
+          {/*
+            O pagamento já tem título esperando: o lugar do comprovante é
+            DENTRO dele — lá ele dá a baixa daquele título. Lançado aqui, o
+            mesmo dinheiro sairia duas vezes (o título continuaria em aberto).
+            Não bloqueia: pode ser mesmo um pagamento sem título.
+          */}
+          {leitura?.ok && leitura.emAberto ? (
+            <div className="mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              <p>
+                ⚠️ Este pagamento parece ser do título{" "}
+                {leitura.emAberto.numero ? <strong>nº {leitura.emAberto.numero}</strong> : null}{" "}
+                <strong>{leitura.emAberto.descricao}</strong> — {formatCurrency(leitura.emAberto.valor)},
+                vencendo em {leitura.emAberto.vencimento} ({leitura.emAberto.motivo})
+                {leitura.emAberto.outros > 0
+                  ? `, e há mais ${leitura.emAberto.outros} título(s) parecido(s)`
+                  : ""}
+                .
+              </p>
+              <p className="mt-1">
+                O comprovante deve ser anexado <strong>dentro do título</strong>: lá ele confere e dá a
+                baixa daquele título. Lançando aqui, nasce um segundo lançamento e o título continua em
+                aberto.{" "}
+                <a
+                  href={leitura.emAberto.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold underline"
+                >
+                  Abrir o título e anexar lá →
+                </a>
+              </p>
+            </div>
+          ) : null}
           {leitura && !leitura.ok ? (
             <p className="mt-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               ⚠️ {leitura.error} O arquivo continua anexado: dá para preencher à mão e lançar.
