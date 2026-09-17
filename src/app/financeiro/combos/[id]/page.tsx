@@ -14,6 +14,7 @@ import PrintButton from "@/components/PrintButton";
 import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
 import PayFullToggle from "./PayFullToggle";
+import UndoAbatementButton from "./UndoAbatementButton";
 import PayoutMethodPicker from "./PayoutMethodPicker";
 import ComboReceipt from "./ComboReceipt";
 import ReadReceiptAi from "../../a-pagar/ReadReceiptAi";
@@ -348,7 +349,21 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                 </span>
                 <span className="text-2xl font-black text-slate-900">{formatCurrency(liquido)}</span>
               </div>
-              {combo.payFull && debtTotal > 0.005 ? (
+              {combo.status === "PAGO" && abatimento > 0.005 ? (
+                <>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Deste combo, {formatCurrency(abatimento)} não saíram em dinheiro: viraram aporte
+                    para cobrir o saldo devedor de capital{bene?.name ? ` de ${bene.name}` : ""}.
+                  </p>
+                  {canPagar ? (
+                    <UndoAbatementButton
+                      comboId={combo.id}
+                      amount={formatCurrency(abatimento)}
+                      beneficiaryName={bene?.name}
+                    />
+                  ) : null}
+                </>
+              ) : combo.payFull && debtTotal > 0.005 ? (
                 <p className="mt-1 text-xs text-blue-600">
                   Valor integral — o saldo devedor de capital do beneficiário <strong>não será abatido</strong> neste combo.
                 </p>
