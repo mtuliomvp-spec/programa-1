@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { barcodeDigits, formatBarcodeLine } from "@/lib/barcode-line";
 
 /**
@@ -13,6 +13,10 @@ import { barcodeDigits, formatBarcodeLine } from "@/lib/barcode-line";
  */
 export default function CopyBarcode({ value }: { value: string }) {
   const [copiado, setCopiado] = useState(false);
+  // Ref em vez de id: a mesma tela pode ter mais de uma linha digitável (as
+  // duas quitações da intermediação), e o id fixo selecionava sempre a
+  // primeira.
+  const linhaRef = useRef<HTMLParagraphElement>(null);
   const digitos = barcodeDigits(value);
 
   async function copiar() {
@@ -21,7 +25,7 @@ export default function CopyBarcode({ value }: { value: string }) {
     } catch {
       // Navegador sem permissão de área de transferência: seleciona o texto
       // para o usuário copiar à mão (Ctrl+C / segurar e copiar).
-      const el = document.getElementById("linha-digitavel");
+      const el = linhaRef.current;
       if (el) {
         const range = document.createRange();
         range.selectNodeContents(el);
@@ -49,7 +53,7 @@ export default function CopyBarcode({ value }: { value: string }) {
           {copiado ? "✓ Copiado" : "📋 Copiar"}
         </button>
       </div>
-      <p id="linha-digitavel" className="mt-1 break-all font-mono text-sm text-slate-900">
+      <p ref={linhaRef} className="mt-1 break-all font-mono text-sm text-slate-900">
         {formatBarcodeLine(value)}
       </p>
       <p className="mt-1 text-xs text-slate-500 print:hidden">
