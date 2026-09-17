@@ -454,6 +454,20 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
 
   const F = pre.financingAmount;
   const D = pre.refundAmount;
+  // As quitações informadas saem da devolução (a loja paga banco e órgão por
+  // conta e ordem do comprador). Somando mais do que há para devolver, a conta
+  // não fecha — e é aqui, na conclusão, que o dinheiro se mexe.
+  if (!pre.refinancing) {
+    const quitacoes =
+      Math.max(0, pre.payoffAmount ?? 0) + Math.max(0, pre.debtsAmount ?? 0);
+    if (quitacoes > D + 0.005) {
+      const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+      throw new Error(
+        `As quitações informadas (${brl(quitacoes)} — financiamento anterior e/ou débitos do veículo) ` +
+          `somam mais que a devolução ao cliente (${brl(D)}). Ajuste os valores na pré-venda antes de concluir.`,
+      );
+    }
+  }
 
   const sale = await registerVehicleSale({
     vehicleId: pre.vehicleId,
