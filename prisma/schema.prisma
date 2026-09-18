@@ -1962,6 +1962,9 @@ model CompanySettings {
   // dias esperando" em vez de tratar a loja como se nada tivesse feito.
   renaveAdesaoSolicitadaEm DateTime?
   renaveAdesaoProtocolo    String?
+  // Processo SEI do Ministério dos Transportes aberto pela solicitação — é por
+  // ele que se acompanha o andamento fora do Credencia (art. 10, § 4º).
+  renaveAdesaoSei          String?
   renaveIntegradora       String?
   // "AVALIACAO" (em negociação, ainda sem contrato) ou "CONTRATADA". Enquanto
   // for só avaliação, a etapa da integradora continua pendente no roteiro.

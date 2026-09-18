@@ -68,6 +68,7 @@ export default async function ParametrosRenavePage() {
     renaveAderidoEm: company.renaveAderidoEm?.toISOString() ?? null,
     renaveAdesaoSolicitadaEm: company.renaveAdesaoSolicitadaEm?.toISOString() ?? null,
     renaveAdesaoProtocolo: company.renaveAdesaoProtocolo,
+    renaveAdesaoSei: company.renaveAdesaoSei,
     renaveIntegradora: company.renaveIntegradora,
     renaveIntegradoraStatus: company.renaveIntegradoraStatus,
     renaveCnae: company.renaveCnae,
@@ -155,6 +156,9 @@ export default async function ParametrosRenavePage() {
                 </strong>
                 {company.renaveAdesaoProtocolo ? (
                   <span className="text-slate-500"> · nº {company.renaveAdesaoProtocolo}</span>
+                ) : null}
+                {company.renaveAdesaoSei ? (
+                  <span className="text-slate-500"> · SEI {company.renaveAdesaoSei}</span>
                 ) : null}
                 <span className="ml-1.5 align-middle">
                   {diasEmAnalise > 30 ? (

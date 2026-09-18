@@ -13,6 +13,7 @@ const schema = z.object({
   renaveAderidoEm: z.string().optional(),
   renaveAdesaoSolicitadaEm: z.string().optional(),
   renaveAdesaoProtocolo: z.string().optional(),
+  renaveAdesaoSei: z.string().optional(),
   renaveIntegradora: z.string().optional(),
   renaveIntegradoraStatus: z.string().optional(),
   renaveCnae: z.string().optional(),
@@ -54,6 +55,7 @@ export async function saveRenaveConfigAction(
       renaveAderidoEm: data(d.renaveAderidoEm),
       renaveAdesaoSolicitadaEm: data(d.renaveAdesaoSolicitadaEm),
       renaveAdesaoProtocolo: d.renaveAdesaoProtocolo?.trim() || null,
+      renaveAdesaoSei: d.renaveAdesaoSei?.trim() || null,
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
       renaveIntegradoraStatus:
         d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
@@ -76,6 +78,7 @@ export async function saveRenaveConfigAction(
       renaveAderidoEm: data(d.renaveAderidoEm),
       renaveAdesaoSolicitadaEm: data(d.renaveAdesaoSolicitadaEm),
       renaveAdesaoProtocolo: d.renaveAdesaoProtocolo?.trim() || null,
+      renaveAdesaoSei: d.renaveAdesaoSei?.trim() || null,
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
       renaveIntegradoraStatus:
         d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
