@@ -46,6 +46,8 @@ type Vehicle = {
   preSaleTag?: string;
   /** Renave: o que falta para escriturar a saída deste veículo (só aviso). */
   renavePendencias?: string[];
+  /** Renave: a ENTRADA já foi registrada (tem protocolo)? Pesa no gravame. */
+  renaveEntradaRegistrada?: boolean;
 };
 type Customer = { id: string; name: string };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
@@ -444,6 +446,25 @@ export default function SaleForm({
         {/* Renave: aviso, nunca trava. A venda continua sendo registrada como
             hoje — o que muda a partir do prazo é que a saída do estoque também
             precisa do registro eletrônico. */}
+        {/* Gravame: o banco só aponta em veículo já registrado no estoque do
+            Renave, e o apontamento vem ANTES da liberação do financiamento —
+            por isso este aviso é separado (e vermelho): sem a entrada, a venda
+            financiada não fecha, mesmo que a escrituração ainda não seja
+            fiscalizada. */}
+        {paymentMethod === "FINANCIADO" && selectedVehicle && !selectedVehicle.renaveEntradaRegistrada ? (
+          <div className="rounded-xl border-2 border-rose-300 bg-rose-50 p-3 sm:col-span-2">
+            <p className="text-sm font-semibold text-rose-900">
+              🏦 Renave: entrada não registrada — o banco não aponta o gravame
+            </p>
+            <p className="mt-0.5 text-xs text-rose-800">
+              A instituição financeira só registra o gravame de veículo que já esteja no estoque da
+              loja dentro do Renave, e o apontamento acontece <strong>antes</strong> de o
+              financiamento ser liberado. Registre a entrada pela integradora e anote o protocolo na{" "}
+              <strong>ficha do veículo → Renave</strong>
+              {renavePrazo ? ` — a exigência vale a partir de ${renavePrazo}` : ""}.
+            </p>
+          </div>
+        ) : null}
         {selectedVehicle?.renavePendencias?.length ? (
           <div className="rounded-xl border border-amber-300 bg-amber-50 p-3 sm:col-span-2">
             <p className="text-sm font-medium text-amber-900">

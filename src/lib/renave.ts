@@ -21,6 +21,17 @@ import type { RenaveSituacao, TituloNegocio, TipoIdentificacaoPrevia, TipoAssina
 export const RENAVE_PUBLICACAO = new Date("2026-06-30T12:00:00.000Z");
 export const RENAVE_PRAZO_PADRAO = new Date("2026-09-28T12:00:00.000Z");
 
+/**
+ * Implantação em duas etapas, como os bancos vêm comunicando às lojas: primeiro
+ * uma PRODUÇÃO ASSISTIDA, em que já dá para registrar com apoio da integradora,
+ * e só depois a obrigatoriedade de fato. A data que governa os avisos do sistema
+ * continua sendo a de Parâmetros → Renave (`renaveObrigatorioEm`) — esta aqui é
+ * o marco para a loja ensaiar antes, que é quando os problemas aparecem.
+ */
+export const RENAVE_PRODUCAO_ASSISTIDA = new Date("2026-10-04T12:00:00.000Z");
+export const RENAVE_CRONOGRAMA_FONTE =
+  "cronograma informado pelas instituições financeiras (comunicado do C6 Bank, 18/09/2026)";
+
 export const RENAVE_NORMA = "Resolução Contran nº 1.026/2026";
 
 // ---------------------------------------------------------------------------
@@ -438,6 +449,25 @@ export function avisoIntermediacao(prazo: Date | null | undefined): string {
       "(entrada em estoque ou contrato de consignação).",
     prazo,
     "art. 20, § 1º",
+  );
+}
+
+/**
+ * Aviso da VENDA FINANCIADA de um veículo cuja entrada ainda não foi registrada.
+ *
+ * É a exigência que chega primeiro na prática, antes mesmo da fiscalização da
+ * escrituração: o banco não consegue apontar o gravame de um veículo que não
+ * esteja no estoque da loja dentro do Renave, e o apontamento acontece ANTES
+ * de o financiamento ser liberado. Sem o registro da entrada, a venda financiada
+ * simplesmente não fecha.
+ */
+export function avisoGravameSemEntrada(prazo: Date | null | undefined): string {
+  return avisoImplantacao(
+    "Este veículo ainda não tem a ENTRADA registrada no Renave e a venda é financiada. " +
+      "A instituição financeira só aponta o gravame de veículo já registrado no estoque da loja, " +
+      "e o apontamento vem antes da liberação do financiamento.",
+    prazo,
+    "art. 34, que altera a Resolução Contran nº 807/2020",
   );
 }
 
