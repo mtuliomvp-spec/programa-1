@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { ensureCompanyBeneficiary } from "@/lib/company";
 import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
-import { Badge, Card, EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { Badge, Card, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import { userCan } from "@/lib/guards";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
@@ -74,6 +74,25 @@ export default async function CapitalPage({
   const comSaldo = cards.filter((b) => Math.abs(b.saldo) >= 0.005);
   const zerados = cards.filter((b) => Math.abs(b.saldo) < 0.005);
 
+  // RELATÓRIO (só na impressão/PDF): a tela mostra cards, que no papel viram
+  // uma coluna estreita cheia de espaço vazio e um botão que ninguém clica no
+  // papel. Aqui a mesma informação sai como lista: uma linha por beneficiário,
+  // o vinculado logo abaixo do responsável e o total fechando embaixo.
+  const filhosPorPai = new Map<string, typeof mapped>();
+  for (const b of mapped) {
+    if (!b.parentId) continue;
+    const atual = filhosPorPai.get(b.parentId) ?? [];
+    atual.push(b);
+    filhosPorPai.set(b.parentId, atual);
+  }
+  const linhasRelatorio = cards.flatMap((b) => [
+    { b, caucao: false },
+    ...(filhosPorPai.get(b.id) ?? []).map((f) => ({ b: f, caucao: true })),
+  ]);
+  const temProLabore = filtered.some((b) => b.proLabore > 0.005);
+  const totalAplicado = filtered.reduce((s, b) => s + b.aplicado, 0);
+  const totalProLabore = filtered.reduce((s, b) => s + b.proLabore, 0);
+
   const renderCard = (b: (typeof cards)[number]) => (
     <Link key={b.id} href={`/capital/${b.id}`} className="block">
       <Card className="px-5 py-4 transition-shadow hover:shadow-md">
@@ -129,10 +148,14 @@ export default async function CapitalPage({
 
   return (
     <div>
-      <PageHeader
-        title="Capital dos sócios"
-        description="Aportes, retiradas e pró-labore individualizados por beneficiário"
-      />
+      {/* No papel quem dá o título é o cabeçalho do relatório (com a data de
+          emissão), logo abaixo — dois títulos seguidos só ocupariam espaço. */}
+      <div className="print:hidden">
+        <PageHeader
+          title="Capital dos sócios"
+          description="Aportes, retiradas e pró-labore individualizados por beneficiário"
+        />
+      </div>
 
       <ReportToolbar
         basePath="/capital"
@@ -144,13 +167,103 @@ export default async function CapitalPage({
         max={max}
       />
 
-      <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* Os três números do topo saem da impressão: a última linha da tabela já
+          fecha aportes, retiradas e saldo, e no papel eles custam meia página. */}
+      <div className="mb-4 grid grid-cols-1 gap-4 print:hidden sm:grid-cols-3">
         <StatCard label="Capital investido" value={formatCurrency(totalInvestido)} hint="aportes menos retiradas" />
         <StatCard label="Total de aportes" value={formatCurrency(totalAportes)} tone="positive" />
         <StatCard label="Total de retiradas" value={formatCurrency(totalRetiradas)} tone="negative" />
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+      {/* Relatório em lista: só no papel. Tabela própria (e não a da tela, que
+          tem largura mínima para rolar de lado): no papel não há rolagem, e
+          coluna que não cabe é coluna que some. */}
+      {linhasRelatorio.length > 0 ? (
+        <div className="hidden print:block">
+          <table className="w-full border-collapse text-[10px] leading-tight">
+            <thead>
+              <tr className="border-y border-slate-300 bg-slate-50 text-left uppercase tracking-wide text-slate-500">
+                <th className="px-1.5 py-1.5 font-medium">Beneficiário</th>
+                <th className="px-1.5 py-1.5 text-right font-medium">Aportes</th>
+                <th className="px-1.5 py-1.5 text-right font-medium">Retiradas</th>
+                {temProLabore ? <th className="px-1.5 py-1.5 text-right font-medium">Pró-labore</th> : null}
+                <th className="px-1.5 py-1.5 text-right font-medium">Saldo investido</th>
+                <th className="px-1.5 py-1.5 text-right font-medium">Aplicado</th>
+                <th className="px-1.5 py-1.5 text-right font-medium">Livre</th>
+              </tr>
+            </thead>
+            <tbody>
+              {linhasRelatorio.map(({ b, caucao }) => (
+                <tr key={b.id} className="border-b border-slate-100">
+                  <td className="px-1.5 py-1.5 text-slate-700">
+                    {caucao ? <span className="text-slate-400">↳ caução · </span> : null}
+                    {b.name}
+                    {b.isCompany ? <span className="text-slate-400"> (empresa)</span> : null}
+                  </td>
+                  <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                    {formatCurrency(b.aportes)}
+                  </td>
+                  <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                    {formatCurrency(b.retiradas)}
+                  </td>
+                  {temProLabore ? (
+                    <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                      {b.proLabore > 0.005 ? formatCurrency(b.proLabore) : "—"}
+                    </td>
+                  ) : null}
+                  <td
+                    className={`whitespace-nowrap px-1.5 py-1.5 text-right font-semibold tabular-nums ${
+                      b.saldo < 0 ? "text-rose-700" : "text-slate-900"
+                    }`}
+                  >
+                    {formatCurrency(b.saldo)}
+                  </td>
+                  <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                    {b.aplicado > 0.005 ? formatCurrency(b.aplicado) : "—"}
+                  </td>
+                  <td
+                    className={`whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums ${
+                      b.aplicado > 0.005 && b.livre < 0 ? "text-rose-700" : ""
+                    }`}
+                  >
+                    {b.aplicado > 0.005 ? formatCurrency(b.livre) : "—"}
+                  </td>
+                </tr>
+              ))}
+              <tr className="border-y border-slate-300 bg-slate-50 font-semibold">
+                <td className="px-1.5 py-1.5">Total · {linhasRelatorio.length} beneficiários</td>
+                <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                  {formatCurrency(totalAportes)}
+                </td>
+                <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                  {formatCurrency(totalRetiradas)}
+                </td>
+                {temProLabore ? (
+                  <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                    {formatCurrency(totalProLabore)}
+                  </td>
+                ) : null}
+                <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                  {formatCurrency(totalInvestido)}
+                </td>
+                <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                  {formatCurrency(totalAplicado)}
+                </td>
+                <td className="whitespace-nowrap px-1.5 py-1.5 text-right tabular-nums">
+                  {formatCurrency(Math.round((totalInvestido - totalAplicado) * 100) / 100)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p className="mt-2 text-[9px] leading-snug text-slate-500">
+            Saldo investido = aportes − retiradas. Aplicado = capital em contas de Aplicação; livre é o que
+            resta dele. Caução de terceiros aparece sob o responsável e não entra no saldo investido dele,
+            mas conta no total da loja. Pró-labore é despesa da loja — não entra no saldo.
+          </p>
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 gap-4 print:hidden lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">
           {cards.length === 0 ? (
             <Card>
