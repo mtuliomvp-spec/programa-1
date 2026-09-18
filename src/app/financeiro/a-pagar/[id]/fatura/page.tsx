@@ -17,6 +17,8 @@ import {
   Tr,
 } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
+import { userCan } from "@/lib/guards";
+import CorrigirSocio from "./CorrigirSocio";
 
 export const dynamic = "force-dynamic";
 
@@ -67,7 +69,20 @@ export default async function FaturaCartaoPage({
     who: i.vehicle
       ? `${i.vehicle.brand} ${i.vehicle.model} · ${i.vehicle.plate}`
       : i.capitalBeneficiary?.name || "—",
+    beneficiaryId: i.capitalBeneficiaryId,
   }));
+
+  // Correção do sócio de um lançamento do Capital: a despesa pessoal marcada
+  // no sócio errado só aparece quando o capital de alguém não fecha, e aí a
+  // fatura já está paga — e título pago não abre mais a tela de edição.
+  const canCorrigir = (await userCan("administrativo", "capital")) || (await userCan("financeiro", "editar"));
+  const beneficiaries = canCorrigir
+    ? await prisma.capitalBeneficiary.findMany({
+        where: { active: true },
+        orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+        select: { id: true, name: true },
+      })
+    : [];
 
   // Opções do filtro "Quem": os sócios/veículos que aparecem nos lançamentos.
   const whoOptions = [...new Set(rows.map((r) => r.who))].sort((a, b) =>
@@ -180,7 +195,16 @@ export default async function FaturaCartaoPage({
                       {r.flow}
                     </Badge>
                   </Td>
-                  <Td>{r.who}</Td>
+                  <Td>
+                    {r.who}
+                    {canCorrigir && r.flowKey === "CAPITAL" ? (
+                      <CorrigirSocio
+                        itemId={r.id}
+                        atualId={r.beneficiaryId}
+                        beneficiaries={beneficiaries}
+                      />
+                    ) : null}
+                  </Td>
                   <Td className="text-right font-medium tabular-nums">{formatCurrency(r.amount)}</Td>
                 </Tr>
               ))}
