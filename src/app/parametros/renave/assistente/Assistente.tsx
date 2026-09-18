@@ -125,13 +125,20 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
           ".",
       );
     }
-    // A data configurada NÃO entra no texto: ela muda (e deve mudar) conforme a
-    // integradora confirma, e a anotação viraria mentira no dia seguinte. A data
-    // em vigor está viva no passo 5 e no cabeçalho das telas.
+    // A linha do cronograma é um REGISTRO DO DIA (como a primeira, que é do dia
+    // do protocolo): por isso começa com a data de hoje. A data da
+    // obrigatoriedade entra como a decisão tomada nesse dia — "configurada para
+    // X" continua verdade mesmo depois de alguém mudá-la, e a mudança vira uma
+    // anotação nova. O que não podia era escrever "data em vigor no sistema",
+    // que se lê como fato do presente e envelhece calada.
     linhas.push(
       `${dados.hoje} — Cronograma da implantação: produção assistida a partir de ${dados.producaoAssistida} e ` +
-        `operações adequadas no início de novembro. Gravame só é apontado em veículo já registrado no ` +
-        `estoque do Renave, antes da liberação do financiamento.`,
+        `operações adequadas no início de novembro` +
+        (v.renaveObrigatorioEm
+          ? `; obrigatoriedade configurada no sistema para ${br(v.renaveObrigatorioEm)}, a confirmar com a integradora`
+          : "") +
+        `. Gravame só é apontado em veículo já registrado no estoque do Renave, antes da liberação do ` +
+        `financiamento.`,
     );
     return linhas.join("\n");
   }
@@ -375,8 +382,10 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
           <p className="text-sm text-slate-600">
             O botão abaixo monta um texto com o que já está preenchido aqui — datas, números, cronograma.
             Nada é inventado: o que estiver em branco não aparece. Complete com o que a integradora
-            respondeu e o que o DETRAN disse. O texto é uma <strong>foto do momento</strong>: mudou algum
-            passo e quer atualizá-lo, refaça o texto e salve de novo.
+            respondeu e o que o DETRAN disse. Cada linha começa com a <strong>data do fato</strong> — a do
+            cronograma é o dia em que a anotação foi feita, não a data da obrigatoriedade (essa vai escrita
+            dentro da linha). O texto é uma <strong>foto do momento</strong>: mudou algum passo e quer
+            atualizá-lo, refaça o texto e salve de novo.
           </p>
           <Field label="O que já foi apurado (aparece no passo a passo)">
             <Textarea
