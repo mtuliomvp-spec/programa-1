@@ -8,8 +8,10 @@ import { formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import {
+  RENAVE_CRONOGRAMA_FONTE,
   RENAVE_NORMA,
   RENAVE_PRAZO_PADRAO,
+  RENAVE_PRODUCAO_ASSISTIDA,
   avisoDetranParado,
   detranOperando,
   detranStatusLabel,
@@ -204,6 +206,42 @@ export default async function RenavePassoAPassoPage() {
         </div>
       ) : null}
 
+      {/* Cronograma em duas etapas: é o que os bancos estão comunicando às
+          lojas, e muda o que fazer agora — a produção assistida é a janela para
+          ensaiar com a integradora antes de valer para valer. */}
+      <Card className="mt-4">
+        <CardHeader
+          title="Cronograma da implantação"
+          description={RENAVE_CRONOGRAMA_FONTE}
+        />
+        <ul className="space-y-2 p-5 text-sm text-slate-700">
+          <li>
+            <strong>A partir de {prazoTexto(RENAVE_PRODUCAO_ASSISTIDA)} — produção assistida.</strong>{" "}
+            Dá para registrar entrada, saída, transferência e consignação com apoio da integradora,
+            sem a cobrança valendo. É a janela para ensaiar: registre <strong>um</strong> carro de cada
+            tipo (comprado, consignado) e veja onde trava.
+          </li>
+          <li>
+            <strong>Início de novembro — operações já adequadas.</strong> A partir daí não se opera
+            veículo fora do Renave. Confirme a data exata com a sua integradora e informe-a em{" "}
+            <Link href="/parametros/renave" className="font-medium text-blue-700 hover:underline">
+              Parâmetros → Renave
+            </Link>
+            : é ela que o sistema usa nos avisos (hoje: {prazoTexto(prazo)}).
+          </li>
+          <li>
+            <strong>Financiamento:</strong> a instituição financeira só aponta o gravame de veículo já
+            registrado no estoque da loja no Renave, e o apontamento vem <strong>antes</strong> da
+            liberação. Na prática, é a primeira exigência que chega ao balcão — venda financiada de
+            carro sem entrada registrada não fecha.
+          </li>
+          <li>
+            <strong>Consignação:</strong> também entra no Renave, por contrato eletrônico assinado
+            digitalmente pelas duas partes (art. 20, §§ 1º a 3º).
+          </li>
+        </ul>
+      </Card>
+
       <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
         <p className="font-semibold">Nada está bloqueado no sistema</p>
         <p className="text-xs">
@@ -286,7 +324,7 @@ export default async function RenavePassoAPassoPage() {
         prazo="1 dia para protocolar + até 30 dias de análise"
       >
         <ul className="list-disc space-y-1.5 pl-5">
-          <li>A adesão é solicitada no <strong>Credencia</strong>, com o e-CNPJ. Pode ser feita direto pela loja ou pela integradora — o efeito é o mesmo (art. 8º).</li>
+          <li>A adesão é solicitada no <strong>Credencia (SERPRO)</strong>, com o e-CNPJ. Pode ser feita direto pela loja ou pela integradora — o efeito é o mesmo (art. 8º).</li>
           <li>
             O órgão tem <strong>até 30 dias</strong> para analisar, prorrogáveis uma vez. Por isso esta etapa não
             pode esperar: protocole com folga.

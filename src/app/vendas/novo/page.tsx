@@ -167,6 +167,9 @@ export default async function NovaVendaPage({
       ...v,
       preSaleTag: n ? `pré-vendido nº ${String(n).padStart(4, "0")}` : undefined,
       renavePendencias: pendenciasRenave(v).map((p) => `${p.texto} (${p.base})`),
+      // Gravame: o financiamento depende do registro da ENTRADA, não das
+      // pendências em geral — vai separado para o formulário destacar.
+      renaveEntradaRegistrada: Boolean(v.renaveEntradaProtocolo),
     };
   });
 
