@@ -35,7 +35,9 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   const beneficiary = await prisma.capitalBeneficiary.findUnique({
     where: { id },
     include: {
-      transactions: { orderBy: { date: "desc" } },
+      // Ordem estável (data e, no mesmo dia, a hora do registro): é sobre ela
+      // que o saldo acumulado de cada linha é calculado.
+      transactions: { orderBy: [{ date: "desc" }, { createdAt: "desc" }] },
       parent: { select: { id: true, name: true } },
     },
   });
@@ -94,6 +96,20 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   const aportes = sum("APORTE");
   const retiradas = sum("RETIRADA");
   const proLabore = sum("PRO_LABORE");
+
+  // Saldo acumulado DEPOIS de cada lançamento, como no extrato do banco: soma
+  // de baixo para cima (do mais antigo ao mais novo) e guarda o saldo de cada
+  // linha. O pró-labore não entra — ele é despesa da loja, não capital —, então
+  // a linha dele repete o saldo anterior. A linha do topo fecha no "Saldo
+  // investido"; é assim que se acha o lançamento em que a conta desandou.
+  const saldoApos = new Map<string, number>();
+  {
+    let acumulado = 0;
+    for (const t of [...beneficiary.transactions].reverse()) {
+      acumulado += t.kind === "APORTE" ? t.amount : t.kind === "RETIRADA" ? -t.amount : 0;
+      saldoApos.set(t.id, Math.round(acumulado * 100) / 100);
+    }
+  }
 
   // Capital aplicado x livre + fatias por conta de Aplicação.
   const [appliedTotal, freeCapital, appliedRows, substitutesRaw, payAccounts] = await Promise.all([
@@ -308,7 +324,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         <Card className="lg:col-span-2">
           <CardHeader
             title="Movimentações"
-            description="Cada lançamento entra automaticamente no caixa da loja"
+            description="Cada lançamento entra automaticamente no caixa da loja · o saldo ao lado é o acumulado depois daquele lançamento"
           />
           {beneficiary.transactions.length === 0 ? (
             <EmptyState title="Nenhuma movimentação" description="Registre o primeiro aporte ao lado." />
@@ -320,6 +336,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
                   <Th>Tipo</Th>
                   <Th>Descrição</Th>
                   <Th className="text-right">Valor</Th>
+                  <Th className="text-right">Saldo</Th>
                   <Th />
                 </Tr>
               </Thead>
@@ -338,6 +355,16 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
                     >
                       {t.kind === "APORTE" ? "+" : "−"}
                       {formatCurrency(t.amount)}
+                    </Td>
+                    <Td
+                      className={`whitespace-nowrap text-right tabular-nums ${
+                        (saldoApos.get(t.id) ?? 0) < 0 ? "text-rose-600" : "text-slate-700"
+                      }`}
+                    >
+                      {formatCurrency(saldoApos.get(t.id) ?? 0)}
+                      {t.kind === "PRO_LABORE" ? (
+                        <span className="block text-[11px] text-slate-400">não muda o saldo</span>
+                      ) : null}
                     </Td>
                     <Td>
                       {canManage ? (
