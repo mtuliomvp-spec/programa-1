@@ -22,6 +22,14 @@ export const dynamic = "force-dynamic";
 const kindLabel = { APORTE: "Aporte", RETIRADA: "Retirada", PRO_LABORE: "Pró-labore" } as const;
 const kindTone = { APORTE: "success", RETIRADA: "danger", PRO_LABORE: "info" } as const;
 
+/** Razão do capital aplicado (o que forma o "Aplicado" do sócio). */
+const alocacaoLabel = {
+  APLICAR: "Aplicação",
+  RESGATAR: "Resgate",
+  RENDIMENTO: "Rendimento",
+  SUBSTITUICAO: "Substituição",
+} as const;
+
 export default async function BeneficiarioPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const beneficiary = await prisma.capitalBeneficiary.findUnique({
@@ -122,6 +130,23 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
     substitutesRaw.map(async (s) => ({ id: s.id, name: s.name, free: await freeCapitalOf(s.id) })),
   );
 
+  // Razão do capital APLICADO: o "Aplicado" muda o capital LIVRE do sócio sem
+  // passar pelas Movimentações (que são aportes/retiradas), então sem esta
+  // lista um valor preso na aplicação — uma fatia assumida por substituição,
+  // por exemplo — some do livre sem nenhum lugar onde conferir de onde veio.
+  const alocacoes = await prisma.investmentAllocation.findMany({
+    where: { beneficiaryId: beneficiary.id },
+    orderBy: [{ date: "desc" }, { createdAt: "desc" }],
+    select: {
+      id: true,
+      kind: true,
+      amount: true,
+      date: true,
+      description: true,
+      account: { select: { id: true, name: true } },
+    },
+  });
+
   return (
     <div>
       <PageHeader
@@ -156,6 +181,57 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
             </p>
           ) : null}
         </div>
+      ) : null}
+
+      {alocacoes.length > 0 ? (
+        <Card className="mb-4">
+          <CardHeader
+            title="Capital aplicado — de onde vem"
+            description="O aplicado desconta do capital livre sem passar pelas movimentações; aqui está cada pedaço dele."
+          />
+          <Table>
+            <Thead>
+              <Tr>
+                <Th>Data</Th>
+                <Th>Tipo</Th>
+                <Th>Descrição</Th>
+                <Th className="text-right">Valor</Th>
+              </Tr>
+            </Thead>
+            <tbody>
+              {alocacoes.map((a) => (
+                <Tr key={a.id}>
+                  <Td className="whitespace-nowrap">{formatDate(a.date)}</Td>
+                  <Td>
+                    <Badge tone={a.amount >= 0 ? "info" : "warning"}>{alocacaoLabel[a.kind]}</Badge>
+                  </Td>
+                  <Td>
+                    {a.description || "—"}
+                    {a.account?.name ? (
+                      <span className="block text-xs text-slate-400">{a.account.name}</span>
+                    ) : null}
+                  </Td>
+                  <Td
+                    className={`text-right font-medium tabular-nums ${
+                      a.amount >= 0 ? "text-slate-800" : "text-emerald-600"
+                    }`}
+                  >
+                    {a.amount >= 0 ? "" : "−"}
+                    {formatCurrency(Math.abs(a.amount))}
+                  </Td>
+                </Tr>
+              ))}
+              <Tr>
+                <Td className="text-xs font-semibold uppercase tracking-wide text-slate-500">Total aplicado</Td>
+                <Td>{""}</Td>
+                <Td>{""}</Td>
+                <Td className="text-right font-bold tabular-nums text-slate-900">
+                  {formatCurrency(appliedTotal)}
+                </Td>
+              </Tr>
+            </tbody>
+          </Table>
+        </Card>
       ) : null}
 
       {isChild && beneficiary.parent ? (
