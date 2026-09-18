@@ -53,6 +53,7 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
   const [salvando, start] = useTransition();
   const [passoSalvo, setPassoSalvo] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
+  const [confirmandoModelo, setConfirmandoModelo] = useState(false);
 
   // Estado local de cada campo (o servidor é a fonte da verdade no recarregar).
   const [v, setV] = useState({
@@ -121,11 +122,13 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
           ".",
       );
     }
+    // A data configurada NÃO entra no texto: ela muda (e deve mudar) conforme a
+    // integradora confirma, e a anotação viraria mentira no dia seguinte. A data
+    // em vigor está viva no passo 5 e no cabeçalho das telas.
     linhas.push(
       `${dados.hoje} — Cronograma da implantação: produção assistida a partir de ${dados.producaoAssistida} e ` +
-        `operações adequadas no início de novembro` +
-        (v.renaveObrigatorioEm ? ` (data em vigor no sistema: ${br(v.renaveObrigatorioEm)})` : "") +
-        `. Gravame só é apontado em veículo já registrado no estoque do Renave, antes da liberação do financiamento.`,
+        `operações adequadas no início de novembro. Gravame só é apontado em veículo já registrado no ` +
+        `estoque do Renave, antes da liberação do financiamento.`,
     );
     return linhas.join("\n");
   }
@@ -369,7 +372,8 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
           <p className="text-sm text-slate-600">
             O botão abaixo monta um texto com o que já está preenchido aqui — datas, números, cronograma.
             Nada é inventado: o que estiver em branco não aparece. Complete com o que a integradora
-            respondeu e o que o DETRAN disse.
+            respondeu e o que o DETRAN disse. O texto é uma <strong>foto do momento</strong>: mudou algum
+            passo e quer atualizá-lo, refaça o texto e salve de novo.
           </p>
           <Field label="O que já foi apurado (aparece no passo a passo)">
             <Textarea
@@ -379,13 +383,49 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
               placeholder="Datas, números, preços da integradora, respostas do DETRAN…"
             />
           </Field>
-          <button
-            type="button"
-            onClick={() => setV((prev) => ({ ...prev, renaveObservacoes: modeloDeAnotacoes() }))}
-            className="text-sm font-medium text-blue-700 hover:underline"
-          >
-            ✨ Montar o texto com o que já está preenchido
-          </button>
+          {confirmandoModelo ? (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+              <p className="text-xs text-slate-700">
+                Isto <strong>substitui</strong> o texto acima pelo modelo montado a partir dos campos
+                preenchidos. O que você escreveu à mão se perde — copie antes, se quiser guardar.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setV((prev) => ({ ...prev, renaveObservacoes: modeloDeAnotacoes() }));
+                    setConfirmandoModelo(false);
+                  }}
+                  className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700"
+                >
+                  Refazer o texto
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConfirmandoModelo(false)}
+                  className="h-8 rounded-lg border border-slate-300 px-3 text-xs font-semibold text-slate-700 hover:bg-white"
+                >
+                  Voltar
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => {
+                // Texto já escrito é histórico da loja: refazer é substituir, e
+                // isso se pergunta antes.
+                if (v.renaveObservacoes.trim()) {
+                  setConfirmandoModelo(true);
+                  return;
+                }
+                setV((prev) => ({ ...prev, renaveObservacoes: modeloDeAnotacoes() }));
+              }}
+              className="text-sm font-medium text-blue-700 hover:underline"
+            >
+              ✨ {v.renaveObservacoes.trim() ? "Refazer" : "Montar"} o texto com o que já está preenchido
+            </button>
+          )}
           <BotaoSalvar passo="anotacoes" campos={["renaveObservacoes"]} />
         </div>
       </Card>
