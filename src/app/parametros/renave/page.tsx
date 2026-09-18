@@ -94,7 +94,10 @@ export default async function ParametrosRenavePage() {
         description={`Escrituração eletrônica de entrada e saída de veículos (${RENAVE_NORMA})`}
         action={
           <div className="flex flex-wrap gap-2">
-            <LinkButton href="/parametros/renave/passo-a-passo">🧭 Passo a passo</LinkButton>
+            <LinkButton href="/parametros/renave/assistente">🪄 Preencher com o assistente</LinkButton>
+            <LinkButton href="/parametros/renave/passo-a-passo" variant="secondary">
+              🧭 Passo a passo
+            </LinkButton>
             <LinkButton href="/estoque/renave" variant="secondary">
               📒 Livro de entradas e saídas
             </LinkButton>

@@ -138,6 +138,7 @@ export default async function RenavePassoAPassoPage() {
         description={`O que fazer, em que ordem, até ${prazoTexto(prazo)} (${RENAVE_NORMA})`}
         action={
           <div className="flex flex-wrap gap-2 print:hidden">
+            <LinkButton href="/parametros/renave/assistente">🪄 Preencher com o assistente</LinkButton>
             <PrintButton mode="document" title="Renave — passo a passo da adequação" />
             <LinkButton href="/parametros/renave" variant="secondary">
               ← Renave
