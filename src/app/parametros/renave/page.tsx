@@ -29,6 +29,11 @@ export default async function ParametrosRenavePage() {
   const prazo = company.renaveObrigatorioEm ?? RENAVE_PRAZO_PADRAO;
   const agora = new Date();
   const diasParaPrazo = Math.ceil((prazo.getTime() - agora.getTime()) / (24 * 60 * 60 * 1000));
+  // Dias desde o protocolo da adesão no Credencia: o órgão tem até 30 (art. 10),
+  // e pendência aberta congela a contagem — por isso o aviso, e não um prazo fatal.
+  const diasEmAnalise = company.renaveAdesaoSolicitadaEm
+    ? Math.floor((agora.getTime() - company.renaveAdesaoSolicitadaEm.getTime()) / (24 * 60 * 60 * 1000))
+    : 0;
 
   const vehicles = await prisma.vehicle.findMany({
     where: { intermediation: false, status: { not: "VENDIDO" } },
@@ -61,6 +66,8 @@ export default async function ParametrosRenavePage() {
   const config: RenaveConfig = {
     renaveAderido: company.renaveAderido,
     renaveAderidoEm: company.renaveAderidoEm?.toISOString() ?? null,
+    renaveAdesaoSolicitadaEm: company.renaveAdesaoSolicitadaEm?.toISOString() ?? null,
+    renaveAdesaoProtocolo: company.renaveAdesaoProtocolo,
     renaveIntegradora: company.renaveIntegradora,
     renaveIntegradoraStatus: company.renaveIntegradoraStatus,
     renaveCnae: company.renaveCnae,
@@ -121,6 +128,8 @@ export default async function ParametrosRenavePage() {
           action={
             company.renaveAderido ? (
               <Badge tone="success">Aderido</Badge>
+            ) : company.renaveAdesaoSolicitadaEm ? (
+              <Badge tone="info">Adesão em análise</Badge>
             ) : (
               <Badge tone="warning">Sem adesão</Badge>
             )
@@ -130,6 +139,34 @@ export default async function ParametrosRenavePage() {
           <p>
             Obrigatoriedade a partir de <strong>{prazoTexto(prazo)}</strong>
             {diasParaPrazo >= 0 ? ` — faltam ${diasParaPrazo} dia(s).` : ` — prazo vencido há ${Math.abs(diasParaPrazo)} dia(s).`}
+          </p>
+          <p>
+            Adesão:{" "}
+            {company.renaveAderido ? (
+              <strong className="text-emerald-700">
+                concluída
+                {company.renaveAderidoEm ? ` em ${formatDate(company.renaveAderidoEm)}` : ""}
+              </strong>
+            ) : company.renaveAdesaoSolicitadaEm ? (
+              <>
+                <strong className="text-slate-900">
+                  solicitada em {formatDate(company.renaveAdesaoSolicitadaEm)} — em análise há{" "}
+                  {diasEmAnalise} dia(s)
+                </strong>
+                {company.renaveAdesaoProtocolo ? (
+                  <span className="text-slate-500"> · nº {company.renaveAdesaoProtocolo}</span>
+                ) : null}
+                <span className="ml-1.5 align-middle">
+                  {diasEmAnalise > 30 ? (
+                    <Badge tone="warning">passou de 30 dias — confira pendência</Badge>
+                  ) : (
+                    <Badge tone="info">o órgão tem até 30 dias</Badge>
+                  )}
+                </span>
+              </>
+            ) : (
+              <strong className="text-slate-900">ainda não solicitada</strong>
+            )}
           </p>
           <p>
             Integradora:{" "}

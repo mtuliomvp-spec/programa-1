@@ -31,11 +31,12 @@ export const dynamic = "force-dynamic";
  * fica marcado como conferência manual, sem fingir que o sistema sabe.
  */
 
-type Situacao = "feito" | "pendente" | "manual" | "aguardando";
+type Situacao = "feito" | "pendente" | "manual" | "aguardando" | "analise";
 
 function StatusBadge({ status }: { status: Situacao }) {
   if (status === "feito") return <Badge tone="success">✓ Feito</Badge>;
   if (status === "pendente") return <Badge tone="warning">Pendente</Badge>;
+  if (status === "analise") return <Badge tone="info">Protocolada — em análise</Badge>;
   if (status === "aguardando") return <Badge tone="info">Aguardando o DETRAN</Badge>;
   return <Badge tone="default">Conferir fora do sistema</Badge>;
 }
@@ -114,7 +115,16 @@ export default async function RenavePassoAPassoPage() {
   const etapa2: Situacao = dependeDoEstado(
     Boolean(company.renaveIntegradora) && company.renaveIntegradoraStatus === "CONTRATADA",
   );
-  const etapa3: Situacao = dependeDoEstado(company.renaveAderido);
+  // Adesão protocolada e ainda em análise não é pendência da loja: o pedido já
+  // saiu, o que resta é acompanhar (e correr atrás se aparecer pendência).
+  const diasEmAnalise = company.renaveAdesaoSolicitadaEm
+    ? Math.floor((agora.getTime() - company.renaveAdesaoSolicitadaEm.getTime()) / (24 * 60 * 60 * 1000))
+    : null;
+  const etapa3: Situacao = company.renaveAderido
+    ? "feito"
+    : diasEmAnalise != null
+      ? "analise"
+      : dependeDoEstado(false);
   const etapa5: Situacao =
     company.renaveAderido && company.renaveIntegradora && certOk ? "feito" : "pendente";
   const etapa6: Situacao = vehicles.length > 0 && comPendencia === 0 ? "feito" : "pendente";
@@ -335,11 +345,43 @@ export default async function RenavePassoAPassoPage() {
           </li>
           <li>Acompanhe pelo próprio Credencia e pelo SEI do Ministério dos Transportes (art. 10, § 4º).</li>
         </ul>
+        <p>
+          Acompanhar em{" "}
+          <a
+            href="https://credencia.serpro.gov.br/credencia-web/#/solicitacao/consultar"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-blue-700 hover:underline"
+          >
+            credencia.serpro.gov.br → Consultar solicitação
+          </a>
+          .
+        </p>
         {company.renaveAderido ? (
           <p className="text-emerald-700">
             Adesão marcada como concluída
             {company.renaveAderidoEm ? ` em ${formatDate(company.renaveAderidoEm)}` : ""}.
           </p>
+        ) : diasEmAnalise != null ? (
+          <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900">
+            <p className="font-semibold">
+              Solicitação protocolada em {formatDate(company.renaveAdesaoSolicitadaEm!)} — em análise há{" "}
+              {diasEmAnalise} dia(s)
+              {company.renaveAdesaoProtocolo ? ` · nº ${company.renaveAdesaoProtocolo}` : ""}.
+            </p>
+            <p className="mt-0.5">
+              {diasEmAnalise > 30
+                ? "Passou dos 30 dias: entre no Credencia e veja se há pendência aberta — com pendência o prazo fica parado, e pendência não resolvida em 30 dias leva ao indeferimento (o pedido recomeça do zero)."
+                : "Confira o Credencia a cada poucos dias: se aparecer pendência, o prazo para de contar até você resolver."}
+            </p>
+            <p className="mt-0.5">
+              Enquanto espera, siga com as etapas 1, 2, 4 e 6 — a adesão deferida não adianta nada sem
+              integradora contratada e sem os dados dos veículos em ordem.
+            </p>
+            <p className="mt-0.5">
+              Quando sair o deferimento, marque <strong>Adesão concluída</strong> em Parâmetros → Renave.
+            </p>
+          </div>
         ) : null}
       </Etapa>
 

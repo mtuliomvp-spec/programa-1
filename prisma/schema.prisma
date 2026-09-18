@@ -1956,6 +1956,12 @@ model CompanySettings {
   // CNAE principal e validade do certificado digital e-CNPJ.
   renaveAderido           Boolean   @default(false)
   renaveAderidoEm         DateTime?
+  // Solicitação de adesão PROTOCOLADA no Credencia e ainda em análise: o órgão
+  // tem até 30 dias, prorrogáveis uma vez (art. 10), e pendência aberta PARA o
+  // prazo. Guardar a data e o número é o que permite ao roteiro dizer "há N
+  // dias esperando" em vez de tratar a loja como se nada tivesse feito.
+  renaveAdesaoSolicitadaEm DateTime?
+  renaveAdesaoProtocolo    String?
   renaveIntegradora       String?
   // "AVALIACAO" (em negociação, ainda sem contrato) ou "CONTRATADA". Enquanto
   // for só avaliação, a etapa da integradora continua pendente no roteiro.

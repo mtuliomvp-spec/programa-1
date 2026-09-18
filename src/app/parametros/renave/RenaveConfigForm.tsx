@@ -8,6 +8,8 @@ import { saveRenaveConfigAction, type RenaveConfigState } from "./actions";
 export type RenaveConfig = {
   renaveAderido: boolean;
   renaveAderidoEm: string | null;
+  renaveAdesaoSolicitadaEm: string | null;
+  renaveAdesaoProtocolo: string | null;
   renaveIntegradora: string | null;
   renaveIntegradoraStatus: string | null;
   renaveCnae: string | null;
@@ -44,11 +46,40 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
               <option value="true">Adesão concluída</option>
             </Select>
             <span className="mt-1 block text-xs text-slate-500">
-              A adesão é solicitada no sistema Credencia, com e-CNPJ (art. 7º).
+              A adesão é solicitada no{" "}
+              <a
+                href="https://credencia.serpro.gov.br/credencia-web/#/solicitacao/consultar"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-blue-700 hover:underline"
+              >
+                Credencia (SERPRO)
+              </a>
+              , com e-CNPJ (art. 7º).
             </span>
           </Field>
           <Field label="Data da adesão">
             <Input type="date" name="renaveAderidoEm" defaultValue={dia(config.renaveAderidoEm)} />
+          </Field>
+          {/* Protocolada e em análise: o órgão tem até 30 dias (art. 10), e é
+              disso que sai o "há N dias esperando" do passo a passo. */}
+          <Field label="Solicitação protocolada em">
+            <Input
+              type="date"
+              name="renaveAdesaoSolicitadaEm"
+              defaultValue={dia(config.renaveAdesaoSolicitadaEm)}
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              A data em que o pedido entrou no Credencia — enquanto a adesão não sai, o roteiro mostra
+              há quantos dias está em análise.
+            </span>
+          </Field>
+          <Field label="Nº da solicitação (Credencia)">
+            <Input
+              name="renaveAdesaoProtocolo"
+              defaultValue={config.renaveAdesaoProtocolo || ""}
+              placeholder="Como aparece em Consultar solicitação"
+            />
           </Field>
           <Field label="Integradora">
             <Input

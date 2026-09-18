@@ -11,6 +11,8 @@ import { DETRAN_STATUS_VALUES } from "@/lib/renave";
 const schema = z.object({
   renaveAderido: z.string().optional(),
   renaveAderidoEm: z.string().optional(),
+  renaveAdesaoSolicitadaEm: z.string().optional(),
+  renaveAdesaoProtocolo: z.string().optional(),
   renaveIntegradora: z.string().optional(),
   renaveIntegradoraStatus: z.string().optional(),
   renaveCnae: z.string().optional(),
@@ -50,6 +52,8 @@ export async function saveRenaveConfigAction(
     update: {
       renaveAderido: d.renaveAderido === "true",
       renaveAderidoEm: data(d.renaveAderidoEm),
+      renaveAdesaoSolicitadaEm: data(d.renaveAdesaoSolicitadaEm),
+      renaveAdesaoProtocolo: d.renaveAdesaoProtocolo?.trim() || null,
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
       renaveIntegradoraStatus:
         d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
@@ -70,6 +74,8 @@ export async function saveRenaveConfigAction(
       id: "company",
       renaveAderido: d.renaveAderido === "true",
       renaveAderidoEm: data(d.renaveAderidoEm),
+      renaveAdesaoSolicitadaEm: data(d.renaveAdesaoSolicitadaEm),
+      renaveAdesaoProtocolo: d.renaveAdesaoProtocolo?.trim() || null,
       renaveIntegradora: d.renaveIntegradora?.trim() || null,
       renaveIntegradoraStatus:
         d.renaveIntegradoraStatus === "CONTRATADA" || d.renaveIntegradoraStatus === "AVALIACAO"
