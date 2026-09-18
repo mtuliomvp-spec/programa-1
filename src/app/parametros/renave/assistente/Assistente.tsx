@@ -79,6 +79,9 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
   function salvar(passo: string, campos: (keyof typeof v)[]) {
     setErro(null);
     setPassoSalvo(null);
+    // Salvou: a pergunta do "refazer o texto" não tem mais o que confirmar e
+    // não pode ficar pendurada na tela como se ainda esperasse resposta.
+    setConfirmandoModelo(false);
     start(async () => {
       const payload: Record<string, string> = {};
       for (const c of campos) payload[c] = v[c];
