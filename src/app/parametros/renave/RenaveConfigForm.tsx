@@ -10,6 +10,7 @@ export type RenaveConfig = {
   renaveAderidoEm: string | null;
   renaveAdesaoSolicitadaEm: string | null;
   renaveAdesaoProtocolo: string | null;
+  renaveAdesaoSei: string | null;
   renaveIntegradora: string | null;
   renaveIntegradoraStatus: string | null;
   renaveCnae: string | null;
@@ -80,6 +81,16 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
               defaultValue={config.renaveAdesaoProtocolo || ""}
               placeholder="Como aparece em Consultar solicitação"
             />
+          </Field>
+          <Field label="Processo SEI (Ministério dos Transportes)">
+            <Input
+              name="renaveAdesaoSei"
+              defaultValue={config.renaveAdesaoSei || ""}
+              placeholder="Ex.: 50000.041207/2026-50"
+            />
+            <span className="mt-1 block text-xs text-slate-500">
+              É por ele que se acompanha o andamento fora do Credencia (art. 10, § 4º).
+            </span>
           </Field>
           <Field label="Integradora">
             <Input

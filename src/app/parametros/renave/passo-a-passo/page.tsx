@@ -367,7 +367,8 @@ export default async function RenavePassoAPassoPage() {
             <p className="font-semibold">
               Solicitação protocolada em {formatDate(company.renaveAdesaoSolicitadaEm!)} — em análise há{" "}
               {diasEmAnalise} dia(s)
-              {company.renaveAdesaoProtocolo ? ` · nº ${company.renaveAdesaoProtocolo}` : ""}.
+              {company.renaveAdesaoProtocolo ? ` · nº ${company.renaveAdesaoProtocolo}` : ""}
+              {company.renaveAdesaoSei ? ` · processo SEI ${company.renaveAdesaoSei}` : ""}.
             </p>
             <p className="mt-0.5">
               {diasEmAnalise > 30
