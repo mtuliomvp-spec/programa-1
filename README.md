@@ -59,6 +59,27 @@ rode localmente apontando para o banco da Vercel:
 DATABASE_URL="<url do Neon>" npm run db:seed
 ```
 
+## Projeto de demonstração (atualização diária)
+
+Demonstração e produção são **dois projetos na Vercel lendo este mesmo
+repositório**. Com os dois publicando da mesma branch, todo merge subia nos
+dois — e o demo mudava no meio de uma apresentação.
+
+O demo publica da branch **`demo`**, que é levada até o último commit da
+produção **uma vez por dia**, às 22h de Brasília, pela rotina
+`.github/workflows/demo-diario.yml`. Para atualizar na hora, use o botão
+**Run workflow** em *Actions → Demo diário*.
+
+Na Vercel, o projeto do demo precisa de:
+
+| Onde | O quê |
+|---|---|
+| Settings → Git → Production Branch | `demo` |
+| Settings → Environment Variables | `DEMO_MODE=1` (libera a tela `/demo`) |
+| Storage | banco próprio, separado do de produção |
+
+A produção segue como está: publica da branch padrão a cada merge.
+
 ## Consulta por placa (preenchimento automático)
 
 No cadastro de veículo, o botão **"Buscar dados pela placa"** preenche

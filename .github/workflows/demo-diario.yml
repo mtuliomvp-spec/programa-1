@@ -1,0 +1,41 @@
+# Atualização diária do projeto de DEMONSTRAÇÃO.
+#
+# Produção e demonstração são dois projetos na Vercel lendo o mesmo
+# repositório. Com os dois na mesma branch, todo merge publicava nos dois — e o
+# demo mudava no meio de uma apresentação. Agora o demo publica da branch
+# `demo`, e é esta rotina que a leva até o último commit da produção: uma vez
+# por dia, às 22h de Brasília (01:00 UTC), depois do expediente.
+#
+# Para atualizar o demo na hora (sem esperar a rotina), use o botão
+# "Run workflow" na aba Actions — é o mesmo passo, disparado à mão.
+name: Demo diário
+
+on:
+  schedule:
+    # 01:00 UTC = 22:00 em Brasília (UTC-3).
+    - cron: "0 1 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: demo-diario
+  cancel-in-progress: false
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Levar a branch demo até a produção
+        run: |
+          set -euo pipefail
+          # A rotina roda na branch padrão do repositório (a de produção), então
+          # GITHUB_SHA já é o commit que a produção está publicando.
+          git push origin "${GITHUB_SHA}:refs/heads/demo" --force
+          echo "Branch demo atualizada para ${GITHUB_SHA}." >> "$GITHUB_STEP_SUMMARY"
+          echo "Commit: $(git log -1 --pretty=%s "${GITHUB_SHA}")" >> "$GITHUB_STEP_SUMMARY"
