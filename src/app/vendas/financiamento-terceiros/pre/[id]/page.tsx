@@ -144,7 +144,12 @@ export default async function IntermediationPreSalePage({
           <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{customerName}</strong></p>
           <p><span className="text-slate-500">Financeira:</span> {financerAccount?.name || "—"}</p>
           <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
-          <p><span className="text-slate-500">Banco do comprador:</span> {pre.buyerBankName || "—"} {pre.buyerBankAgency ? `· Ag ${pre.buyerBankAgency}` : ""} {pre.buyerBankAccount ? `· Cc ${pre.buyerBankAccount}` : ""}</p>
+          <p>
+            <span className="text-slate-500">
+              Banco do {pre.devolucaoPara === "PROPRIETARIO" ? "proprietário" : "comprador"}:
+            </span>{" "}
+            {pre.buyerBankName || "—"} {pre.buyerBankAgency ? `· Ag ${pre.buyerBankAgency}` : ""} {pre.buyerBankAccount ? `· Cc ${pre.buyerBankAccount}` : ""}
+          </p>
           <CrlvLine crlvs={crlvs} />
         </div>
       </Card>

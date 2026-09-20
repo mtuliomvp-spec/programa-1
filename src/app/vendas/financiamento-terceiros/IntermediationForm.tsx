@@ -159,6 +159,10 @@ export default function IntermediationForm({
   const [devolucaoPara, setDevolucaoPara] = useState(
     initial?.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : "COMPRADOR",
   );
+  // Os dados bancários pedidos são sempre os de QUEM RECEBE a devolução — o
+  // rótulo acompanha a escolha para ninguém digitar a conta do comprador
+  // quando quem recebe é o vendedor.
+  const quemRecebe = devolucaoPara === "PROPRIETARIO" ? "proprietário/vendedor" : "comprador";
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
   const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
   const [transferAmount, setTransferAmount] = useState(initial?.transferAmount ?? 0);
@@ -839,7 +843,7 @@ export default function IntermediationForm({
               </Select>
               <span className="mt-1 block text-xs text-slate-500">
                 {devolucaoPara === "PROPRIETARIO"
-                  ? "O vendedor ainda não recebeu pela venda: a loja paga a ele quando o financiamento cair. O título sai no nome do proprietário."
+                  ? "O vendedor ainda não recebeu pela venda: a loja paga a ele quando o financiamento cair. O título sai no nome do proprietário, e os dados bancários abaixo são os dele."
                   : "O comprador já pagou o vendedor e financiou para levantar o dinheiro — a devolução é dele."}
               </span>
             </Field>
@@ -903,21 +907,28 @@ export default function IntermediationForm({
         ) : null}
       </fieldset>
 
-      {/* Dados bancários: no refinanciamento são do financiado (a financeira deposita
-          o valor direto nessa conta); nos demais, do comprador (para a devolução).
-          Em ambos os casos constam no contrato. */}
+      {/* Dados bancários: é a conta de QUEM RECEBE. No refinanciamento, o
+          financiado (a financeira deposita direto nela); nos demais, quem foi
+          escolhido em "Quem recebe a devolução" — comprador ou proprietário.
+          Em todos os casos constam no contrato. */}
       <fieldset className="space-y-4 rounded-lg border border-slate-200 p-4">
         <legend className="px-1 text-sm font-semibold text-slate-700">
-          {refinancing ? "Dados bancários do financiado" : "Dados bancários do comprador (para a devolução)"}
+          {refinancing
+            ? "Dados bancários do financiado"
+            : `Dados bancários do ${quemRecebe} (para a devolução)`}
         </legend>
         <p className="text-xs text-slate-500">
           {refinancing
             ? "Constam no contrato: a financeira deposita o valor financiado direto nesta conta do financiado."
-            : "Constam no contrato: a loja fará a transferência da devolução ao comprador assim que a financeira pagar."}
+            : `Constam no contrato: a loja fará a transferência da devolução ao ${quemRecebe} assim que a financeira pagar.`}
         </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Banco">
-            <BankInput name="buyerBankName" defaultValue={initial?.buyerBankName ?? ""} placeholder={refinancing ? "Banco do financiado" : "Banco do comprador"} />
+            <BankInput
+              name="buyerBankName"
+              defaultValue={initial?.buyerBankName ?? ""}
+              placeholder={refinancing ? "Banco do financiado" : `Banco do ${quemRecebe}`}
+            />
           </Field>
           <Field label="Tipo de conta">
             <Select name="buyerBankAccountType" defaultValue={initial?.buyerBankAccountType ?? ""}>
