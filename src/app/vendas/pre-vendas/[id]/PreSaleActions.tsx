@@ -2,11 +2,17 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Button, LinkButton } from "@/components/ui";
+import { LinkButton } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import ConfirmButton from "@/components/ConfirmButton";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { convertPreSaleAction, deletePreSaleAction } from "../actions";
 
+/**
+ * Ações da pré-venda. A confirmação é um bloco na tela, não o `confirm` do
+ * navegador: no atalho instalado no celular o diálogo nativo não abre, o clique
+ * volta como "cancelar" e o botão parece morto.
+ */
 export default function PreSaleActions({
   id,
   editHref,
@@ -24,12 +30,10 @@ export default function PreSaleActions({
   const router = useRouter();
 
   function handleConvert() {
-    if (!confirm("Registrar a venda agora? A partir daqui os lançamentos financeiros serão gerados.")) return;
     setRunningLabel("Registrando a venda… aguarde. Não feche esta página.");
     start(() => convertPreSaleAction(id));
   }
   function handleDelete() {
-    if (!confirm("Excluir esta pré-venda? Ela não gerou nada no financeiro; será apenas removida.")) return;
     setError(null);
     setRunningLabel("Excluindo a pré-venda…");
     start(async () => {
@@ -61,14 +65,27 @@ export default function PreSaleActions({
         </LinkButton>
         <PrintButton />
         {canPreSale ? (
-          <Button type="button" variant="danger" onClick={handleDelete} disabled={pending}>
+          <ConfirmButton
+            question="Excluir esta pré-venda? Ela não gerou nada no financeiro; será apenas removida."
+            confirmLabel="Excluir a pré-venda"
+            cancelLabel="Manter"
+            onConfirm={handleDelete}
+            disabled={pending}
+            className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+          >
             {pending ? "..." : "Excluir"}
-          </Button>
+          </ConfirmButton>
         ) : null}
         {canRegister ? (
-          <Button type="button" onClick={handleConvert} disabled={pending}>
+          <ConfirmButton
+            question="Registrar a venda agora? A partir daqui os lançamentos financeiros serão gerados."
+            confirmLabel="Registrar a venda"
+            onConfirm={handleConvert}
+            disabled={pending}
+            className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
+          >
             {pending ? "Registrando..." : "✓ Registrar venda"}
-          </Button>
+          </ConfirmButton>
         ) : null}
       </div>
       {error ? (
