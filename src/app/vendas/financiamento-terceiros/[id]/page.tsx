@@ -160,7 +160,13 @@ export default async function FinanciamentoTerceirosDetailPage({
         <div className="p-5">
           <Row label="Valor do financiamento (F)" value={formatCurrency(sale.financingAmount)} />
           <Row
-            label={sale.refinancing ? "(−) Devolução ao financiado (D)" : "(−) Devolução ao cliente (D)"}
+            label={
+              sale.refinancing
+                ? "(−) Devolução ao financiado (D)"
+                : sale.devolucaoPara === "PROPRIETARIO"
+                  ? "(−) Devolução ao proprietário/vendedor (D)"
+                  : "(−) Devolução ao cliente (D)"
+            }
             value={formatCurrency(devolucaoDisplay)}
             tone="rose"
           />

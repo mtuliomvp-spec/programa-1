@@ -1055,6 +1055,13 @@ async function vehicleSale(input: {
   refinancing?: boolean | null;
   financingAmount?: number | null;
   refundAmount?: number | null;
+  /**
+   * A quem vai a devolução do excedente do financiamento: "PROPRIETARIO"
+   * (o vendedor ainda não recebeu; a loja paga quando o financiamento cair) ou
+   * "COMPRADOR" — o padrão, quando ele já pagou o vendedor e financiou para
+   * levantar o dinheiro. Só muda de quem é o título; o valor é o mesmo.
+   */
+  devolucaoPara?: string | null;
   ownerName?: string | null;
   ownerDocument?: string | null;
   ownerPhone?: string | null;
@@ -1229,6 +1236,7 @@ async function vehicleSale(input: {
         refinancing: Boolean(input.refinancing),
         financingAmount: Math.max(0, input.financingAmount ?? 0),
         refundAmount: Math.max(0, input.refundAmount ?? 0),
+        devolucaoPara: input.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : null,
         ownerName: input.ownerName || null,
         ownerDocument: input.ownerDocument || null,
         ownerPhone: input.ownerPhone || null,
@@ -1652,17 +1660,28 @@ async function vehicleSale(input: {
       }
 
       if (aoCliente > 0) {
+        // Quem recebe: o comprador (padrão) ou o PROPRIETÁRIO do veículo, quando
+        // o vendedor ainda não foi pago e vai receber da loja depois que o
+        // financiamento cair. A categoria continua a mesma — é dinheiro de
+        // terceiro em trânsito pelo caixa, e a equação patrimonial trata os dois
+        // casos igual —; o que muda é de quem é o título.
+        const aoProprietario = input.devolucaoPara === "PROPRIETARIO";
+        const nome = aoProprietario ? input.ownerName : customer?.name;
         await tx.payable.create({
           data: {
-            description: `Devolução ao cliente${customer?.name ? ` ${customer.name}` : ""} - ${baseDescription}`,
+            description: `${aoProprietario ? "Devolução ao proprietário" : "Devolução ao cliente"}${nome ? ` ${nome}` : ""} - ${baseDescription}`,
             category: "DEVOLUCAO_CLIENTE",
+            categoryLabel: aoProprietario ? "Devolução ao proprietário (vendedor)" : null,
             amount: aoCliente,
             dueDate: input.saleDate,
             status: "PENDENTE",
             vehicleId: input.vehicleId,
             costCenterId: veiculosCenterId,
             notes:
-              "Excedente do financiamento sobre o restante a pagar da venda." +
+              (aoProprietario
+                ? "Valor do financiamento que a loja repassa ao PROPRIETÁRIO (vendedor) do veículo, " +
+                  "que ainda não havia recebido pela venda."
+                : "Excedente do financiamento sobre o restante a pagar da venda.") +
               (quitacaoTotal > 0
                 ? ` Já descontadas as quitações informadas na operação (${brl(quitacaoTotal)}).`
                 : ""),
