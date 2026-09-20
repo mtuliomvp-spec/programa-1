@@ -154,7 +154,13 @@ export default async function IntermediationPreSalePage({
         <div className="p-5">
           <Row label="Valor do financiamento (F)" value={formatCurrency(pre.financingAmount)} />
           <Row
-            label={pre.refinancing ? "(−) Devolução ao financiado (D)" : "(−) Devolução ao cliente (D)"}
+            label={
+              pre.refinancing
+                ? "(−) Devolução ao financiado (D)"
+                : pre.devolucaoPara === "PROPRIETARIO"
+                  ? "(−) Devolução ao proprietário/vendedor (D)"
+                  : "(−) Devolução ao cliente (D)"
+            }
             value={formatCurrency(devolucaoDisplay)}
             tone="rose"
           />

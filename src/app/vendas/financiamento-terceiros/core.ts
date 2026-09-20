@@ -66,6 +66,9 @@ export const intermediationSchema = z.object({
   // Valores da operação
   financingAmount: z.coerce.number().min(0.01, "Informe o valor do financiamento"),
   refundAmount: z.coerce.number().min(0).default(0),
+  // A quem a loja devolve o excedente: o comprador (padrão) ou o proprietário
+  // (vendedor) que ainda não recebeu pela venda.
+  devolucaoPara: z.enum(["COMPRADOR", "PROPRIETARIO"]).optional(),
   // Refinanciamento: o proprietário refinancia o próprio veículo. A financeira
   // paga F direto ao financiado; a loja recebe só o retorno (sem repasse/devolução).
   refinancing: z.coerce.boolean().optional(),
@@ -295,6 +298,7 @@ function buildPreSaleData(
     paymentMethod: "FINANCIADO" as const,
     financingAmount: F,
     refundAmount: D,
+    devolucaoPara: d.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : null,
     refinancing: Boolean(d.refinancing),
     financedAmount: F,
     financerAccountId: d.financerAccountId,
@@ -491,6 +495,7 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     refinancing: pre.refinancing,
     financingAmount: F,
     refundAmount: D,
+    devolucaoPara: pre.devolucaoPara,
     ownerName: pre.ownerName,
     ownerDocument: pre.ownerDocument,
     ownerPhone: pre.ownerPhone,

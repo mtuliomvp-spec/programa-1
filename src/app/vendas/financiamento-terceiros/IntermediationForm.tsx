@@ -58,6 +58,7 @@ export type IntermediationInitial = {
   transmission?: string;
   financingAmount?: number;
   refundAmount?: number;
+  devolucaoPara?: string | null;
   refinancing?: boolean;
   financerAccountId?: string;
   returnLevel?: number;
@@ -154,6 +155,10 @@ export default function IntermediationForm({
   const [ownerNameLive, setOwnerNameLive] = useState(initial?.ownerName ?? "");
   const [financing, setFinancing] = useState(initial?.financingAmount ?? 0);
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
+  // Quem recebe a devolução: o comprador (padrão) ou o proprietário do veículo.
+  const [devolucaoPara, setDevolucaoPara] = useState(
+    initial?.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : "COMPRADOR",
+  );
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
   const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
   const [transferAmount, setTransferAmount] = useState(initial?.transferAmount ?? 0);
@@ -812,13 +817,31 @@ export default function IntermediationForm({
             />
           </Field>
           {!refinancing ? (
-            <Field label="Devolução de financiamento (ao cliente)">
+            <Field label="Devolução de financiamento">
               <MoneyInput
                 name="refundAmount"
                 defaultValue={initial?.refundAmount ?? null}
                 onValueChange={setRefund}
-                placeholder="Quanto será devolvido ao cliente"
+                placeholder="Quanto a loja vai devolver"
               />
+            </Field>
+          ) : null}
+          {!refinancing ? (
+            <Field label="Quem recebe a devolução">
+              <Select
+                name="devolucaoPara"
+                value={devolucaoPara}
+                onChange={(e) => setDevolucaoPara(e.target.value)}
+                disabled={refund <= 0}
+              >
+                <option value="COMPRADOR">Comprador (cliente)</option>
+                <option value="PROPRIETARIO">Proprietário (vendedor)</option>
+              </Select>
+              <span className="mt-1 block text-xs text-slate-500">
+                {devolucaoPara === "PROPRIETARIO"
+                  ? "O vendedor ainda não recebeu pela venda: a loja paga a ele quando o financiamento cair. O título sai no nome do proprietário."
+                  : "O comprador já pagou o vendedor e financiou para levantar o dinheiro — a devolução é dele."}
+              </span>
             </Field>
           ) : null}
           <Field label="Nº de parcelas (informado ao comprador)" required>

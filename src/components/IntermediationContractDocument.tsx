@@ -58,6 +58,8 @@ export type IntermediationContractData = {
   date: Date;
   financingAmount: number;
   refundAmount: number;
+  /** "PROPRIETARIO" quando a devolução é paga ao vendedor; vazio = comprador. */
+  devolucaoPara?: string | null;
   // Refinanciamento: a financeira paga o valor financiado direto ao financiado
   // (o próprio proprietário); a intermediadora não faz devolução.
   refinancing?: boolean;
@@ -290,14 +292,27 @@ export default function IntermediationContractDocument(d: IntermediationContract
           ) : (
             <p className="mt-2">
               A INTERMEDIADORA efetuará a <strong>transferência bancária</strong> do valor de{" "}
-              <strong>{formatCurrency(d.refundAmount)}</strong> ao(à) COMPRADOR(A), a título de devolução
-              do financiamento, <strong>tão logo receba</strong> o valor do financiamento da instituição
-              financeira{d.financerName ? <> <strong>{d.financerName}</strong></> : null}, na conta
-              bancária abaixo indicada:
+              <strong>{formatCurrency(d.refundAmount)}</strong>{" "}
+              {d.devolucaoPara === "PROPRIETARIO" ? (
+                <>
+                  ao(à) <strong>PROPRIETÁRIO(A)/VENDEDOR(A)</strong>, a título de pagamento pela venda do
+                  veículo
+                </>
+              ) : (
+                <>ao(à) COMPRADOR(A), a título de devolução do financiamento</>
+              )}
+              , <strong>tão logo receba</strong> o valor do financiamento da instituição financeira
+              {d.financerName ? <> <strong>{d.financerName}</strong></> : null}, na conta bancária abaixo
+              indicada:
             </p>
           )}
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-3">
-            <p><span className="text-slate-500">Titular:</span> <strong>{d.refinancing ? seller.name : buyer.name}</strong></p>
+            <p>
+              <span className="text-slate-500">Titular:</span>{" "}
+              <strong>
+                {d.refinancing || d.devolucaoPara === "PROPRIETARIO" ? seller.name : buyer.name}
+              </strong>
+            </p>
             <p><span className="text-slate-500">CPF/CNPJ:</span> {buyer.document || "—"}</p>
             <p><span className="text-slate-500">Banco:</span> {buyerBank.name || "—"}</p>
             <p><span className="text-slate-500">Agência:</span> {buyerBank.agency || "—"}</p>
@@ -307,8 +322,9 @@ export default function IntermediationContractDocument(d: IntermediationContract
           </div>
           {!hasBank ? (
             <p className="mt-1 text-xs text-slate-400">
-              (Preencha os dados bancários do {d.refinancing ? "financiado" : "comprador"} na operação
-              para constarem aqui.)
+              (Preencha os dados bancários do{" "}
+              {d.refinancing ? "financiado" : d.devolucaoPara === "PROPRIETARIO" ? "proprietário" : "comprador"}{" "}
+              na operação para constarem aqui.)
             </p>
           ) : null}
           {d.installmentsInfo && d.installmentsInfo.count > 0 ? (
