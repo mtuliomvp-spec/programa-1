@@ -313,7 +313,10 @@ export default function IntermediationContractDocument(d: IntermediationContract
                 {d.refinancing || d.devolucaoPara === "PROPRIETARIO" ? seller.name : buyer.name}
               </strong>
             </p>
-            <p><span className="text-slate-500">CPF/CNPJ:</span> {buyer.document || "—"}</p>
+            <p>
+              <span className="text-slate-500">CPF/CNPJ:</span>{" "}
+              {(d.refinancing || d.devolucaoPara === "PROPRIETARIO" ? seller.document : buyer.document) || "—"}
+            </p>
             <p><span className="text-slate-500">Banco:</span> {buyerBank.name || "—"}</p>
             <p><span className="text-slate-500">Agência:</span> {buyerBank.agency || "—"}</p>
             <p><span className="text-slate-500">Conta:</span> {buyerBank.account || "—"}</p>
