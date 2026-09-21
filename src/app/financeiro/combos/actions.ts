@@ -8,9 +8,9 @@ import { markPayablePaid, markPayablePending } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
-import { freeCapitalOf } from "@/lib/investments";
 import { structuralCenterId } from "@/lib/structural";
 import { isAdminRole } from "@/lib/permissions";
+import { formatCurrency } from "@/lib/format";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -200,28 +200,13 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   // recebe o borderô costuma receber tudo, e um aporte que não houve some com
   // o saldo devedor e ainda inventa uma entrada de dinheiro na conta.
   const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
-  let abate = 0;
-  let beneficiary: { id: string; name: string } | null = null;
-  if (combo.userId && !combo.payFull) {
-    beneficiary = await prisma.capitalBeneficiary.findUnique({
-      where: { userId: combo.userId },
-      select: { id: true, name: true },
-    });
-    if (beneficiary) {
-      const free = await freeCapitalOf(beneficiary.id);
-      const debt = Math.max(0, round2(-free));
-      // Só o que de fato SAI para o beneficiário pode abater o débito dele.
-      // Título do fluxo Capital DELE (despesa pessoal que a loja paga) já vira
-      // RETIRADA na baixa: abater em cima dele anularia a própria retirada e
-      // criaria uma entrada que o banco não teve.
-      const baseAbativel = round2(
-        combo.payables
-          .filter((p) => p.capitalBeneficiaryId !== beneficiary!.id)
-          .reduce((s, p) => s + p.amount, 0),
-      );
-      abate = round2(Math.min(baseAbativel, debt));
-    }
-  }
+  const { abatimentoDoCombo } = await import("@/lib/combo-capital");
+  const previsto = await abatimentoDoCombo(combo);
+  const abate = previsto.abate;
+  const beneficiary =
+    previsto.beneficiaryId && previsto.beneficiaryName
+      ? { id: previsto.beneficiaryId, name: previsto.beneficiaryName }
+      : null;
 
   // 1) Quita todos os títulos do combo na conta escolhida.
   for (const p of combo.payables) {
@@ -492,7 +477,12 @@ export async function readComboReceiptAction(formData: FormData): Promise<ReadCo
       name: true,
       status: true,
       user: { select: { name: true, document: true } },
-      payables: { where: { status: { not: "PAGO" } }, select: { amount: true, dueDate: true } },
+      userId: true,
+      payFull: true,
+      payables: {
+        where: { status: { not: "PAGO" } },
+        select: { amount: true, dueDate: true, capitalBeneficiaryId: true },
+      },
     },
   });
   if (!combo) return { ok: false, ...vazio, error: "Combo não encontrado." };
@@ -582,9 +572,16 @@ export async function readComboReceiptAction(formData: FormData): Promise<ReadCo
     (menor, p) => (p.dueDate < menor ? p.dueDate : menor),
     combo.payables[0]?.dueDate ?? dataPagamento,
   );
+  // Combo que abate saldo devedor não sai inteiro do banco: parte vira aporte e
+  // volta para a conta. Conferir o comprovante contra o TOTAL acusava a
+  // diferença como "desconto?" quando ela era o abatimento — o líquido é que
+  // tem de bater com o extrato.
+  const { abatimentoDoCombo } = await import("@/lib/combo-capital");
+  const { abate, beneficiaryName } = await abatimentoDoCombo(combo);
+  const liquido = round2(total - abate);
   const { avisos } = conferirComprovante(
     {
-      amount: total,
+      amount: liquido,
       dueDate: vencimento,
       description: `Combo ${combo.name}`,
       rotulo: "combo",
@@ -599,6 +596,13 @@ export async function readComboReceiptAction(formData: FormData): Promise<ReadCo
       formaPagamento: lido.formaPagamento,
     },
   );
+  if (abate > 0.005) {
+    // Informativo, não alarme: explica de onde vem a diferença entre o borderô
+    // e o que o banco debitou.
+    avisos.unshift(
+      `borderô ${formatCurrency(total)} − abatimento do saldo devedor${beneficiaryName ? ` de ${beneficiaryName}` : ""} ${formatCurrency(abate)} = ${formatCurrency(liquido)} saindo do banco`,
+    );
+  }
   if (!accountId) {
     avisos.push(
       lido.contaDebitada
