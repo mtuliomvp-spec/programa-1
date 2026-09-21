@@ -5,7 +5,7 @@ import { requireAction, userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
 import { getCompany } from "@/lib/company";
-import { freeCapitalOf } from "@/lib/investments";
+import { abatimentoDoCombo } from "@/lib/combo-capital";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
@@ -95,20 +95,19 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   // `debtTotal` = saldo devedor TOTAL (livre) do beneficiário — informativo, pode
   // ser maior que o abatido neste combo.
   const round2 = (n: number) => Math.round(n * 100) / 100;
-  let abatimento = combo.status === "PAGO" ? combo.capitalAbatement : 0;
-  let debtTotal = 0;
-  if (combo.userId && combo.status !== "CANCELADO") {
-    const beneficiary = await prisma.capitalBeneficiary.findUnique({
-      where: { userId: combo.userId },
-      select: { id: true },
-    });
-    if (beneficiary) {
-      const free = await freeCapitalOf(beneficiary.id);
-      debtTotal = Math.max(0, round2(-free));
-      // "Valor integral" (payFull) não abate; senão abate até o total.
-      if (combo.status !== "PAGO") abatimento = combo.payFull ? 0 : Math.min(total, debtTotal);
-    }
-  }
+  // A previsão vem da MESMA função que a baixa usa (src/lib/combo-capital.ts):
+  // antes a ficha fazia a sua própria conta e podia prometer um abatimento
+  // maior do que o pagamento faria.
+  const previsto =
+    combo.status === "CANCELADO"
+      ? { abate: 0, debt: 0 }
+      : await abatimentoDoCombo({
+          userId: combo.userId,
+          payFull: combo.payFull,
+          payables: combo.payables.filter((p) => p.status !== "PAGO"),
+        });
+  const abatimento = combo.status === "PAGO" ? combo.capitalAbatement : previsto.abate;
+  const debtTotal = previsto.debt;
   const liquido = round2(total - abatimento);
   const restante = round2(Math.max(0, debtTotal - abatimento));
   // Mostra o toggle "valor integral" quando há débito e o combo ainda pode mudar.
@@ -465,7 +464,9 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             ) : (
               <ReadReceiptAi
                 alvo={{ tipo: "combo", id: combo.id }}
-                amountAtual={total}
+                /* Com abatimento, o que sai do banco é o LÍQUIDO — comparar o
+                   comprovante com o total acusaria diferença onde não há. */
+                amountAtual={liquido}
                 cashboxDate={cashbox.open && cashbox.session ? cashbox.session.workDate.toISOString() : null}
               />
             )}
