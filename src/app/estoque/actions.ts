@@ -872,6 +872,9 @@ async function applyCrlvToVehicle(input: {
       plate: true, chassi: true, renavam: true, brand: true, model: true,
       manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
       docOwnerName: true, status: true,
+      // Marca manual "em processo de transferência": o CRLV no nome da casa a
+      // desliga (o documento é a prova de que o processo acabou).
+      transferInProgress: true,
       // Veículo vendido: o CRLV no nome do COMPRADOR encerra a transferência.
       sale: {
         select: {
@@ -990,6 +993,19 @@ async function applyCrlvToVehicle(input: {
         `transferência ao comprador concluída em ${quando.toLocaleDateString("pt-BR", { timeZone: "UTC" })} (CRLV em nome de ${proprietario})`,
       );
       revalidatePath(`/vendas/${vehicle.sale.id}`);
+    }
+  }
+
+  // Veículo EM ESTOQUE cujo CRLV volta no nome da CASA: a transferência para a
+  // loja concluiu. A marca manual "em processo de transferência" costuma ter
+  // sido ligada na compra; sem apagá-la aqui, o carro ficava para sempre com o
+  // selo "🔄 Processo de transferência em aberto" mesmo com o documento novo
+  // anexado e o proprietário já trocado.
+  if (proprietario && vehicle.status !== "VENDIDO" && vehicle.transferInProgress) {
+    const { houseNameKeys, isOwnName } = await import("@/lib/doc-owner");
+    if (isOwnName(proprietario, await houseNameKeys())) {
+      data.transferInProgress = false;
+      filled.push(`transferência para o nome da loja concluída (CRLV em nome de ${proprietario})`);
     }
   }
 
