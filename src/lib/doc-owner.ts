@@ -145,6 +145,11 @@ export type SituacaoDocumental = {
   docOwnerOk: boolean;
   transferStarted: boolean;
   transferInProgress: boolean;
+  /**
+   * Veículo EM ESTOQUE cujo CRLV já está no nome da casa: a transferência para
+   * a loja acabou, e o documento é a prova disso.
+   */
+  transferConcluded: boolean;
   transferDoneAt: Date | null;
   transferDoneByCrlv: boolean;
   soldTransferred: boolean;
@@ -199,8 +204,10 @@ export function situacaoDocumental(
   const processoDaVenda =
     temOrcamento || Boolean(v.sale?.transferCharged && (v.sale.transferAmount ?? 0) > 0);
 
+  const hasCrlv = v.attachments.some((a) => a.kind === "CRLV");
+
   return {
-    hasCrlv: v.attachments.some((a) => a.kind === "CRLV"),
+    hasCrlv,
     // Ano em exercício do CRLV mais recente (guardado no description "CRLV 2025").
     crlvYear:
       v.attachments
@@ -230,6 +237,12 @@ export function situacaoDocumental(
     // própria venda.
     transferStarted: v.transferInProgress || lastTransferAt != null || processoDaVenda,
     transferInProgress: v.transferInProgress,
+    // Estoque com o CRLV já no NOSSO nome: a transferência para a loja
+    // concluiu. Vale mais que a marca manual "em processo", que costuma ter
+    // ficado ligada desde a compra e ninguém lembra de desligar — o documento
+    // novo é a prova. Em carro saindo (vendido/pré-vendido) não vale: ali a
+    // transferência que interessa é a que vai para o COMPRADOR.
+    transferConcluded: !saindo && hasCrlv && docOwnerIsOurs,
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
     // marcada na venda ou provada pelo CRLV no nome do comprador.
     transferDoneAt,
@@ -267,6 +280,7 @@ export function seloCrlv({
   transferStarted,
   docOwnerIsOurs,
   transferInProgress: transferManual,
+  transferConcluded,
   saleTransferPending,
   soldTransferred,
 }: Pick<
@@ -276,6 +290,7 @@ export function seloCrlv({
   | "transferStarted"
   | "docOwnerIsOurs"
   | "transferInProgress"
+  | "transferConcluded"
   | "saleTransferPending"
   | "soldTransferred"
 >): { label: string; tone: "success" | "warning" | "info" } {
@@ -283,6 +298,9 @@ export function seloCrlv({
   // Vendido e já no nome do comprador: processo encerrado, inclusive a marca
   // manual (o CRLV novo é a prova de que a transferência concluiu).
   if (soldTransferred) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
+  // Em estoque com o CRLV já no nosso nome: idem — o documento encerra o
+  // processo, mesmo com a marca manual ligada.
+  if (transferConcluded) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
   // Marca MANUAL "em processo de transferência" vence tudo: o usuário afirmou
   // que a transferência ainda está correndo (ex.: veículo vendido cujo CRLV
   // ainda está no nome de um sócio, não do comprador). Desfazer a marca na ficha
