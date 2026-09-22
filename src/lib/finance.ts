@@ -2689,6 +2689,98 @@ export async function resolveSupplierByName(name: string): Promise<string> {
 }
 
 /**
+ * Troca a FINANCEIRA de uma venda já registrada — a venda saiu por uma e o
+ * negócio era com outra.
+ *
+ * Só muda de mãos: os valores, as datas e os status ficam exatamente como
+ * estão. O que se move é para QUEM a loja tem a receber (e de quem recebeu):
+ * o repasse e o retorno saem da conta da financeira antiga e passam para a
+ * nova, junto das transferências das baixas já feitas. Por isso não mexe no
+ * resultado de mês nenhum — uma conta desce o que a outra sobe.
+ *
+ * O que NÃO se refaz: o valor do retorno foi calculado com a tabela da
+ * financeira antiga (nível e imposto). Quem troca recebe o aviso para conferir,
+ * porque refazer o cálculo por conta própria mudaria dinheiro já reconhecido.
+ */
+export async function trocarFinanceiraDaVenda(saleId: string, novaFinanceiraId: string) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: saleId },
+    select: {
+      id: true,
+      status: true,
+      financerAccountId: true,
+      returnLevel: true,
+      returnNet: true,
+      returnSettledAt: true,
+      financerSettledAt: true,
+      vehicle: { select: { plate: true } },
+      financerAccount: { select: { name: true, returnTaxPercent: true, sellerReturnPercent: true } },
+    },
+  });
+  if (sale.status !== "CONCLUIDA") throw new Error("Só uma venda concluída tem financeira para trocar.");
+  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
+  if (sale.financerAccountId === novaFinanceiraId) throw new Error("Esta já é a financeira da venda.");
+  const nova = await prisma.financialAccount.findUnique({
+    where: { id: novaFinanceiraId },
+    select: { id: true, name: true, type: true, active: true, returnTaxPercent: true },
+  });
+  if (!nova) throw new Error("Financeira não encontrada.");
+  if (nova.type !== "FINANCEIRA") throw new Error("Escolha uma conta do tipo Financeira.");
+  if (!nova.active) throw new Error("Essa financeira está inativa.");
+
+  const antiga = sale.financerAccount?.name ?? "";
+  const avisos: string[] = [];
+
+  await prisma.$transaction(async (tx) => {
+    // Recebíveis da venda que estavam na conta da financeira antiga (repasse e
+    // retorno): mudam de conta e trocam o nome escrito na descrição.
+    const recs = await tx.receivable.findMany({
+      where: { saleId, accountId: sale.financerAccountId },
+      select: { id: true, description: true },
+    });
+    for (const r of recs) {
+      await tx.receivable.update({
+        where: { id: r.id },
+        data: {
+          accountId: nova.id,
+          description: antiga ? r.description.split(antiga).join(nova.name) : r.description,
+        },
+      });
+    }
+    // Transferências das baixas já feitas (repasse e retorno): saíam da conta
+    // antiga; passam a sair da nova, com o nome corrigido na descrição.
+    const transfers = await tx.accountTransfer.findMany({
+      where: { fromId: sale.financerAccountId!, description: { contains: sale.vehicle.plate } },
+      select: { id: true, description: true },
+    });
+    for (const t of transfers) {
+      await tx.accountTransfer.update({
+        where: { id: t.id },
+        data: {
+          fromId: nova.id,
+          description: antiga && t.description ? t.description.split(antiga).join(nova.name) : t.description,
+        },
+      });
+    }
+    await tx.sale.update({
+      where: { id: saleId },
+      data: { financerAccountId: nova.id, financerName: nova.name },
+    });
+  });
+
+  const taxaAntiga = sale.financerAccount?.returnTaxPercent ?? 0;
+  if (sale.returnNet > 0 && Math.abs((nova.returnTaxPercent ?? 0) - taxaAntiga) > 0.001) {
+    avisos.push(
+      `O retorno ${sale.returnLevel ? `R-${String(sale.returnLevel).padStart(2, "0")} ` : ""}foi calculado com o imposto de ${antiga || "a financeira anterior"} (${taxaAntiga}%); ${nova.name} está com ${nova.returnTaxPercent ?? 0}%. Confira o valor antes de receber.`,
+    );
+  }
+  if (sale.returnSettledAt) {
+    avisos.push("O retorno desta venda já havia sido recebido — o valor não foi refeito, só mudou de financeira.");
+  }
+  return { ok: true as const, de: antiga, para: nova.name, avisos };
+}
+
+/**
  * Baixa do financiamento: a financeira pagou. Transfere o valor financiado da
  * conta da financeira para a conta da empresa escolhida (o dinheiro passa a ser
  * caixa) e marca a venda como recebida. É o "dar baixa" do repasse.
