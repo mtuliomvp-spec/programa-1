@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import {
+  trocarFinanceiraDaVenda,
   settleFinancing,
   settleReturn,
   settleInsurance,
@@ -126,4 +127,41 @@ export async function reverseInsuranceAction(saleId: string): Promise<SettleResu
   }
   revalidateFinancing();
   return { ok: true };
+}
+
+export type TrocaFinanceiraResult = {
+  ok: boolean;
+  error?: string;
+  message?: string;
+  avisos?: string[];
+};
+
+/**
+ * Corrige a financeira de uma venda já registrada (a operação saiu por uma e o
+ * negócio era com outra). Não mexe em valor nem em data: o repasse, o retorno e
+ * as baixas já feitas apenas mudam de financeira.
+ */
+export async function trocarFinanceiraAction(
+  saleId: string,
+  financerAccountId: string,
+): Promise<TrocaFinanceiraResult> {
+  if (!financerAccountId) return { ok: false, error: "Escolha a financeira certa." };
+  try {
+    await assertCan("vendas", "cancelar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  try {
+    const r = await trocarFinanceiraDaVenda(saleId, financerAccountId);
+    revalidateFinancing();
+    revalidatePath("/vendas");
+    revalidatePath("/financeiro/a-receber");
+    return {
+      ok: true,
+      message: `Financeira trocada de ${r.de || "—"} para ${r.para}.`,
+      avisos: r.avisos,
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível trocar a financeira." };
+  }
 }

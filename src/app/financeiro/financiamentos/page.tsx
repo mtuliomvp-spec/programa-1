@@ -9,6 +9,7 @@ import { userCan } from "@/lib/guards";
 import FinancingSettleButton from "./FinancingSettleButton";
 import InsuranceSettleButton from "./InsuranceSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
+import TrocarFinanceira from "./TrocarFinanceira";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +21,9 @@ export default async function FinanciamentosPage({
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canReceber = await userCan("financeiro", "receber");
+  // Corrigir a financeira é conserto de registro, não recebimento: pede a mesma
+  // permissão de cancelar/refazer uma venda.
+  const canTrocar = await userCan("vendas", "cancelar");
   const [allSales, accounts] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", paymentMethod: "FINANCIADO" },
@@ -142,6 +146,13 @@ export default async function FinanciamentosPage({
                     ) : (
                       <span className="text-slate-400">{s.financerName || "—"}</span>
                     )}
+                    {s.financerAccountId && canTrocar ? (
+                      <TrocarFinanceira
+                        saleId={s.id}
+                        atualId={s.financerAccountId}
+                        financeiras={financers.map((f) => ({ id: f.id, name: f.name }))}
+                      />
+                    ) : null}
                   </Td>
                   <Td className="text-right font-semibold tabular-nums">
                     {formatCurrency(s.financedAmount ?? 0)}
