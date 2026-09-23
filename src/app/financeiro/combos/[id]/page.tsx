@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireAction, userCan } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
+import { disponivelParaSaque } from "@/lib/saque";
 import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
 import { getCompany } from "@/lib/company";
@@ -79,6 +81,16 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
     userCan("combos", "criar"),
   ]);
   const cashboxDate = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
+  // SAQUE: combo de um título só (a retirada de capital de quem pediu). Não
+  // recebe títulos, não abate saldo devedor, e quem pediu pode desistir.
+  const isSaque = combo.tipo === "SAQUE";
+  const sessionUser = await getSessionUser();
+  const donoDoSaque = isSaque && !!sessionUser && combo.userId === sessionUser.id;
+  const podeDesistir = donoDoSaque && (await userCan("combos", "saque"));
+  const saqueSaldo =
+    isSaque && combo.userId && combo.status !== "PAGO" && combo.status !== "CANCELADO"
+      ? await disponivelParaSaque(combo.userId, combo.id)
+      : null;
 
   // Enquanto o combo não foi pago, um título pode ter sido quitado por fora (na
   // tela de Contas a pagar). Esse título já pago não deve mais aparecer nem
@@ -112,6 +124,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
   const restante = round2(Math.max(0, debtTotal - abatimento));
   // Mostra o toggle "valor integral" quando há débito e o combo ainda pode mudar.
   const showPayFullToggle =
+    !isSaque &&
     debtTotal > 0.005 && (combo.status === "ABERTO" || combo.status === "SOLICITADO") && (canManage || canPagar);
   const bankType = bene?.bankAccountType ? accountTypeLabel[bene.bankAccountType] || bene.bankAccountType : null;
   const hasBankData = Boolean(bene && (bene.bankName || bene.bankAccount || bene.pixKey));
@@ -172,7 +185,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             company={company}
             right={
               <>
-                <p className="font-bold">BORDERÔ DE PAGAMENTO</p>
+                <p className="font-bold">{isSaque ? "SAQUE DE CAPITAL" : "BORDERÔ DE PAGAMENTO"}</p>
                 <p className="text-slate-500">{combo.name}</p>
                 <p className="text-slate-500">{formatDate(combo.createdAt)}</p>
                 <Badge tone={info.tone}>{info.label}</Badge>
@@ -180,12 +193,39 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
             }
           />
 
+          {saqueSaldo ? (
+            <div
+              className={`mb-4 rounded-lg border px-4 py-3 text-sm print:hidden ${
+                saqueSaldo.disponivel + 0.005 >= total
+                  ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                  : "border-rose-200 bg-rose-50 text-rose-800"
+              }`}
+            >
+              💸 Saque de capital de <strong>{saqueSaldo.beneficiaryName}</strong>. Capital livre hoje:{" "}
+              <strong>{formatCurrency(saqueSaldo.livre)}</strong>
+              {saqueSaldo.pendente > 0.005
+                ? ` (${formatCurrency(saqueSaldo.pendente)} em outros saques ainda não pagos)`
+                : ""}
+              .{" "}
+              {saqueSaldo.disponivel + 0.005 >= total
+                ? "Cabe no disponível — pode pagar."
+                : "O disponível ficou menor que o saque: o pagamento será recusado. Cancele e peça de novo com o valor atual."}{" "}
+              A retirada só entra no capital quando o pagamento sair.
+            </div>
+          ) : null}
+
           {combo.status === "CANCELADO" ? (
             <div className="mb-4 flex items-center gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3">
               <span className="text-2xl">⛔</span>
               <div>
-                <p className="text-sm font-bold uppercase tracking-wide text-rose-700">Combo cancelado</p>
-                <p className="text-sm text-rose-600">Este combo foi cancelado — os títulos voltaram soltos para o Contas a pagar.</p>
+                <p className="text-sm font-bold uppercase tracking-wide text-rose-700">
+                  {isSaque ? "Saque cancelado" : "Combo cancelado"}
+                </p>
+                <p className="text-sm text-rose-600">
+                  {isSaque
+                    ? "Este saque foi cancelado — nada saiu do capital e o pedido não está mais no Contas a pagar."
+                    : "Este combo foi cancelado — os títulos voltaram soltos para o Contas a pagar."}
+                </p>
               </div>
             </div>
           ) : null}
@@ -265,7 +305,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                     <Th>Fornecedor</Th>
                     <Th>Vencimento</Th>
                     <Th className="text-right">Valor</Th>
-                    {comboEditavel && canManage ? <Th /> : null}
+                    {comboEditavel && canManage && !isSaque ? <Th /> : null}
                   </Tr>
                 </Thead>
                 <tbody>
@@ -305,7 +345,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                       <Td className="text-slate-600">{p.supplier?.name || p.beneficiaryUser?.name || "—"}</Td>
                       <Td className="whitespace-nowrap text-slate-600">{formatDate(p.dueDate)}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
-                      {comboEditavel && canManage ? (
+                      {comboEditavel && canManage && !isSaque ? (
                         <Td className="text-right">
                           <RemoveFromCombo payableId={p.id} comboId={combo.id} />
                         </Td>
@@ -478,13 +518,13 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           status={combo.status}
           accounts={accounts}
           canPagar={canPagar}
-          canManage={canManage}
+          canManage={canManage || podeDesistir}
           cashboxDate={cashboxDate}
         />
       </Card>
       </div>
 
-      {comboEditavel && canManage ? (
+      {comboEditavel && canManage && !isSaque ? (
         <Card className="mt-4 print:hidden">
           <div className="border-b border-slate-100 px-5 py-4">
             <h2 className="text-base font-semibold text-slate-900">Adicionar títulos</h2>

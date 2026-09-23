@@ -6,6 +6,8 @@ import DeleteComboButton from "./DeleteComboButton";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import NewComboForm from "./NewComboForm";
+import SolicitarSaque from "./SolicitarSaque";
+import { disponivelParaSaque } from "@/lib/saque";
 import { isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +22,12 @@ const statusInfo = {
 export default async function CombosPage() {
   await requireAction("combos", "visualizar");
   const canManage = await userCan("combos", "criar");
-  const isAdmin = isAdminRole((await getSessionUser())?.role);
+  const sessionUser = await getSessionUser();
+  const isAdmin = isAdminRole(sessionUser?.role);
+  // Saque: só para quem tem a permissão E está ligado a um beneficiário do
+  // capital — o saque sai do capital dele, não de qualquer um.
+  const saque =
+    sessionUser && (await userCan("combos", "saque")) ? await disponivelParaSaque(sessionUser.id) : null;
   const combos = await prisma.paymentCombo.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
     include: { user: { select: { name: true } }, payables: { select: { amount: true } } },
@@ -33,10 +40,18 @@ export default async function CombosPage() {
         description="Junte vários títulos a pagar num combo e quite todos de uma vez, com um borderô."
       />
 
-      {canManage ? (
+      {canManage || saque ? (
         <Card className="mb-4">
-          <div className="p-4">
-            <NewComboForm />
+          <div className="space-y-3 p-4">
+            {canManage ? <NewComboForm /> : null}
+            {saque ? (
+              <SolicitarSaque
+                disponivel={saque.disponivel}
+                livre={saque.livre}
+                pendente={saque.pendente}
+                beneficiario={saque.beneficiaryName}
+              />
+            ) : null}
           </div>
         </Card>
       ) : null}
@@ -69,6 +84,11 @@ export default async function CombosPage() {
                       >
                         {c.name}
                       </Link>
+                      {c.tipo === "SAQUE" ? (
+                        <span className="ml-2 align-middle">
+                          <Badge tone="success">💸 Saque</Badge>
+                        </span>
+                      ) : null}
                       <span className="block text-xs font-normal text-slate-400">criado em {formatDate(c.createdAt)}</span>
                     </Td>
                     <Td>{c.user?.name || "—"}</Td>
