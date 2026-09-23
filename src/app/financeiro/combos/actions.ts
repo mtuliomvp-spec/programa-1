@@ -10,7 +10,7 @@ import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { structuralCenterId } from "@/lib/structural";
 import { isAdminRole } from "@/lib/permissions";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -41,6 +41,82 @@ export async function createComboAction(name: string): Promise<{ ok: boolean; id
   return { ok: true, id: combo.id };
 }
 
+/**
+ * Pede um SAQUE do próprio capital: vira um combo do tipo SAQUE com um título
+ * só — a retirada de capital do beneficiário —, já SOLICITADO (pedir o saque é
+ * a solicitação). Dali em diante é o combo de sempre: borderô com os dados
+ * bancários de quem pediu, comprovante, fila do caixa, pagamento e estorno.
+ *
+ * O título é do fluxo Capital (capitalBeneficiaryId): a RETIRADA só nasce na
+ * baixa, quando o dinheiro sai de verdade, e some se o pagamento for estornado.
+ */
+export async function solicitarSaqueAction(
+  valor: number,
+  observacao: string,
+): Promise<{ ok: boolean; id?: string; error?: string }> {
+  try {
+    await assertCan("combos", "saque");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const user = await getSessionUser();
+  if (!user) return { ok: false, error: "Sessão expirada." };
+  const amount = round2(Number(valor));
+  if (!Number.isFinite(amount) || amount <= 0) return { ok: false, error: "Informe o valor do saque." };
+
+  const { disponivelParaSaque } = await import("@/lib/saque");
+  const saldo = await disponivelParaSaque(user.id);
+  if (!saldo) {
+    return {
+      ok: false,
+      error: "Seu usuário não está ligado a um beneficiário do capital — peça ao administrador para fazer o vínculo.",
+    };
+  }
+  if (amount > saldo.disponivel + 0.005) {
+    return {
+      ok: false,
+      error:
+        `O disponível para saque é ${formatCurrency(saldo.disponivel)}` +
+        (saldo.pendente > 0 ? ` (capital livre ${formatCurrency(saldo.livre)}, com ${formatCurrency(saldo.pendente)} em saques ainda não pagos).` : "."),
+    };
+  }
+
+  const hoje = await getCashboxWorkDate();
+  const capitalCenterId = await structuralCenterId("CAPITAL");
+  const nota = (observacao || "").trim().slice(0, 500) || null;
+  const combo = await prisma.$transaction(async (tx) => {
+    const c = await tx.paymentCombo.create({
+      data: {
+        name: `Saque — ${saldo.beneficiaryName} — ${formatDate(hoje)}`,
+        tipo: "SAQUE",
+        status: "SOLICITADO",
+        requestedAt: new Date(),
+        userId: user.id,
+        // O próprio título é a retirada dele: não há o que abater.
+        payFull: true,
+        notes: nota,
+      },
+    });
+    await tx.payable.create({
+      data: {
+        description: `Saque de capital - ${saldo.beneficiaryName}`,
+        category: "OUTROS",
+        categoryLabel: "Saque de capital",
+        amount,
+        dueDate: hoje,
+        status: "PENDENTE",
+        costCenterId: capitalCenterId,
+        capitalBeneficiaryId: saldo.beneficiaryId,
+        paymentComboId: c.id,
+        notes: nota,
+      },
+    });
+    return c;
+  });
+  revalidate(combo.id);
+  return { ok: true, id: combo.id };
+}
+
 /** Joga títulos (não pagos e sem combo) para dentro de um combo ABERTO ou
  * SOLICITADO (enquanto não for pago, o borderô ainda pode ser ajustado). */
 export async function addPayablesToComboAction(comboId: string, ids: string[]): Promise<{ ok: boolean; added: number; error?: string }> {
@@ -50,8 +126,9 @@ export async function addPayablesToComboAction(comboId: string, ids: string[]): 
     return { ok: false, added: 0, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   if (!ids.length) return { ok: false, added: 0, error: "Selecione ao menos um título." };
-  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
+  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true, tipo: true } });
   if (!combo) return { ok: false, added: 0, error: "Combo não encontrado." };
+  if (combo.tipo === "SAQUE") return { ok: false, added: 0, error: "Um saque não recebe outros títulos." };
   if (combo.status !== "ABERTO" && combo.status !== "SOLICITADO") {
     return { ok: false, added: 0, error: "Este combo já foi finalizado." };
   }
@@ -72,9 +149,12 @@ export async function removePayableFromComboAction(payableId: string): Promise<R
   }
   const p = await prisma.payable.findUnique({
     where: { id: payableId },
-    select: { paymentComboId: true, paymentCombo: { select: { status: true } } },
+    select: { paymentComboId: true, paymentCombo: { select: { status: true, tipo: true } } },
   });
   if (!p?.paymentComboId) return { ok: false, error: "Título não está em um combo." };
+  if (p.paymentCombo?.tipo === "SAQUE") {
+    return { ok: false, error: "Para desistir do saque, cancele o saque." };
+  }
   if (p.paymentCombo?.status !== "ABERTO" && p.paymentCombo?.status !== "SOLICITADO") {
     return { ok: false, error: "O combo já foi finalizado." };
   }
@@ -181,6 +261,7 @@ export async function payComboAction(comboId: string, accountId: string): Promis
     select: {
       status: true,
       name: true,
+      tipo: true,
       userId: true,
       payFull: true,
       payables: {
@@ -200,6 +281,19 @@ export async function payComboAction(comboId: string, accountId: string): Promis
   // recebe o borderô costuma receber tudo, e um aporte que não houve some com
   // o saldo devedor e ainda inventa uma entrada de dinheiro na conta.
   const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
+  // SAQUE: entre o pedido e o pagamento o capital pode ter mudado (outra
+  // retirada, uma aplicação). Pagar mais do que há de livre deixaria o sócio
+  // devendo à loja sem ninguém ter decidido isso.
+  if (combo.tipo === "SAQUE" && combo.userId) {
+    const { disponivelParaSaque } = await import("@/lib/saque");
+    const saldo = await disponivelParaSaque(combo.userId, comboId);
+    if (saldo && total > saldo.disponivel + 0.005) {
+      return {
+        ok: false,
+        error: `O capital livre de ${saldo.beneficiaryName} hoje é ${formatCurrency(saldo.disponivel)} — menos que o saque de ${formatCurrency(total)}. Cancele e peça de novo com o valor atual.`,
+      };
+    }
+  }
   const { abatimentoDoCombo } = await import("@/lib/combo-capital");
   const previsto = await abatimentoDoCombo(combo);
   const abate = previsto.abate;
@@ -397,16 +491,33 @@ export async function revertComboPaymentAction(comboId: string): Promise<Result>
 
 /** Cancela o combo (não pago): solta os títulos de volta e marca CANCELADO. */
 export async function cancelComboAction(comboId: string): Promise<Result> {
+  const combo = await prisma.paymentCombo.findUnique({
+    where: { id: comboId },
+    select: { status: true, tipo: true, userId: true },
+  });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
   try {
-    await assertCan("combos", "criar");
+    // Quem pediu o saque pode desistir dele com a mesma permissão de pedir.
+    const user = await getSessionUser();
+    if (combo.tipo === "SAQUE" && user && combo.userId === user.id) {
+      await assertCanAny([
+        ["combos", "saque"],
+        ["combos", "criar"],
+      ]);
+    } else {
+      await assertCan("combos", "criar");
+    }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  const combo = await prisma.paymentCombo.findUnique({ where: { id: comboId }, select: { status: true } });
-  if (!combo) return { ok: false, error: "Combo não encontrado." };
   if (combo.status === "PAGO") return { ok: false, error: "Combo já pago — não pode ser cancelado." };
   await prisma.$transaction([
-    prisma.payable.updateMany({ where: { paymentComboId: comboId }, data: { paymentComboId: null } }),
+    // SAQUE: o título só existia por causa do pedido — some junto. Soltá-lo no
+    // Contas a pagar deixaria uma retirada pendente que alguém poderia pagar
+    // por engano. No combo comum os títulos voltam soltos, como sempre.
+    combo.tipo === "SAQUE"
+      ? prisma.payable.deleteMany({ where: { paymentComboId: comboId, status: { not: "PAGO" } } })
+      : prisma.payable.updateMany({ where: { paymentComboId: comboId }, data: { paymentComboId: null } }),
     prisma.paymentCombo.update({ where: { id: comboId }, data: { status: "CANCELADO" } }),
   ]);
   revalidate(comboId);

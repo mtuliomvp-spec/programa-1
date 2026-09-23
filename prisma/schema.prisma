@@ -1335,6 +1335,11 @@ model PaymentCombo {
   id               String            @id @default(cuid())
   name             String
   status           ComboStatus       @default(ABERTO)
+  // "PAGAMENTO" (o combo de sempre: títulos juntados num borderô) ou "SAQUE":
+  // o beneficiário do capital pede parte do seu capital LIVRE. O saque é um
+  // combo com um título só — a retirada de capital —, e todo o resto (borderô,
+  // comprovante, fila do caixa, estorno) é o mesmo.
+  tipo             String            @default("PAGAMENTO")
   notes            String?
   // Beneficiário/dono: usuário logado que montou o combo (dados do borderô).
   userId           String?

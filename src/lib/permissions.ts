@@ -124,6 +124,7 @@ export const MODULES: ModuleConfig[] = [
     acoes: [
       { acao: "visualizar", label: "Ver combos" },
       { acao: "criar", label: "Montar combo (adicionar títulos / solicitar)" },
+      { acao: "saque", label: "Solicitar saque do próprio capital" },
       { acao: "aprovar", label: "Aprovar e pagar combo" },
     ],
   },
