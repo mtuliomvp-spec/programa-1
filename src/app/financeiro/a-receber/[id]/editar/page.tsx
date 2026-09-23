@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireActionAny } from "@/lib/guards";
+import { requireActionAny, requireModule } from "@/lib/guards";
 import { listCategoryNames, labelForReceber } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditReceivableForm from "./EditReceivableForm";
@@ -8,6 +8,7 @@ import EditReceivableForm from "./EditReceivableForm";
 export const dynamic = "force-dynamic";
 
 export default async function EditarReceivablePage({ params }: { params: Promise<{ id: string }> }) {
+  await requireModule("financeiro");
   await requireActionAny([
     ["financeiro", "criar"],
     ["financeiro", "editar"],

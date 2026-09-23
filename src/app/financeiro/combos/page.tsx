@@ -8,7 +8,7 @@ import { Badge, Card, CardHeader, EmptyState, PageHeader, Table, Td, Th, Thead, 
 import NewComboForm from "./NewComboForm";
 import SolicitarSaque from "./SolicitarSaque";
 import { disponivelParaSaque } from "@/lib/saque";
-import { isAdminRole } from "@/lib/permissions";
+import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -50,6 +50,10 @@ export default async function CombosPage() {
                 livre={saque.livre}
                 pendente={saque.pendente}
                 beneficiario={saque.beneficiaryName}
+                verExtrato={
+                  !!sessionUser &&
+                  (hasModuleAccess(sessionUser, "meu_capital") || hasModuleAccess(sessionUser, "administrativo"))
+                }
               />
             ) : null}
           </div>

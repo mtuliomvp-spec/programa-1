@@ -9,7 +9,7 @@ import { dentroDoPrazo, prazoEfetivo } from "@/lib/banking-days";
 import { getCashboxState } from "@/lib/cashbox";
 import { Badge, Card, LinkButton } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import OrdemPdfButton, { type OrdemPdfData } from "./OrdemPdfButton";
 import SetSupplierForm from "./SetSupplierForm";
 import ReadReceiptAi from "../../ReadReceiptAi";
@@ -58,6 +58,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 }
 
 export default async function OrdemPagamentoPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireModule("financeiro");
   const { id } = await params;
   const payable = await prisma.payable.findUnique({
     where: { id },

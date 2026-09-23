@@ -9,7 +9,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import Can from "@/components/Can";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import ReceivablesTable, { type ReceivableRow } from "./ReceivablesTable";
 
 export const dynamic = "force-dynamic";
@@ -22,6 +22,7 @@ export default async function ContasAReceberPage({
 }: {
   searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; vendas?: string; p?: string }>;
 }) {
+  await requireModule("financeiro");
   const { status: statusFilter, q: qParam, de, ate, min, max, vendas, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
   const [canReceber, canManage, canEditOnly, canDiscount, canFixDate] = await Promise.all([

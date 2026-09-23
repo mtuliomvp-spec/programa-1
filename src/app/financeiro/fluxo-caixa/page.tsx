@@ -2,10 +2,12 @@ import { getCashFlowLastMonths, getDashboardStats } from "@/lib/queries";
 import { formatCurrency } from "@/lib/format";
 import { Card, CardHeader, PageHeader, StatCard } from "@/components/ui";
 import CashFlowChart from "@/components/CashFlowChart";
+import { requireModule } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
 export default async function FluxoCaixaPage() {
+  await requireModule("financeiro");
   const [monthly, stats] = await Promise.all([getCashFlowLastMonths(6), getDashboardStats()]);
 
   return (

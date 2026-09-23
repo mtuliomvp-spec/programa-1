@@ -7,7 +7,7 @@ import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { placaExibicao } from "@/lib/vehicle-display";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import PrintButton from "@/components/PrintButton";
 import AccountFinancerSettings from "./AccountFinancerSettings";
 import AccountOwnerSetting from "./AccountOwnerSetting";
@@ -25,6 +25,7 @@ export default async function AccountStatementPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ q?: string; tipo?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
+  await requireModule("financeiro");
   const { id } = await params;
   const { q: qRaw, tipo, de, ate, min, max } = await searchParams;
   const q = (qRaw ?? "").trim();

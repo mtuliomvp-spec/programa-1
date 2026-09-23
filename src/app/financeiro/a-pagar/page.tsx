@@ -13,7 +13,7 @@ import { Card, EmptyState, LinkButton, PageHeader, Select } from "@/components/u
 import ReportToolbar from "@/components/ReportToolbar";
 import SearchSelect from "@/components/SearchSelect";
 import Can from "@/components/Can";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import PayablesTable, { type PayableRow } from "./PayablesTable";
 import SolicitedCombosCard, { type SolicitedCombo } from "./SolicitedCombosCard";
 import ImportReceiptsButton from "./ImportReceiptsButton";
@@ -38,6 +38,7 @@ export default async function ContasAPagarPage({
 }: {
   searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; fornecedor?: string; beneficiario?: string; veiculo?: string; painel?: string; vendidos?: string; p?: string }>;
 }) {
+  await requireModule("financeiro");
   const { status: statusFilter, q: qParam, de, ate, min, max, fornecedor, beneficiario, veiculo, painel: painelParam, vendidos, p: pParam } = await searchParams;
   // Linha vermelha do painel: abre só os títulos que somam aquele valor.
   // `vendidos=1` era o nome antigo do primeiro desses filtros e segue valendo.

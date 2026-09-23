@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireActionAny } from "@/lib/guards";
+import { requireActionAny, requireModule } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import EditPayableForm from "./EditPayableForm";
@@ -38,6 +38,7 @@ export default async function EditarPayablePage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ returnTo?: string }>;
 }) {
+  await requireModule("financeiro");
   await requireActionAny([
     ["financeiro", "criar"],
     ["financeiro", "editar"],

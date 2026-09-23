@@ -3,11 +3,28 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { can, hasModuleAccess, type ModuleKey } from "@/lib/permissions";
 
-/** Garante que o usuário logado pode acessar o módulo; senão volta ao dashboard. */
-export async function requireModule(moduleKey: ModuleKey) {
+/**
+ * Garante que o usuário logado pode acessar o módulo; senão volta ao dashboard
+ * (ou a `destino`, quando a tela tem uma versão restrita — ex.: "Meu capital").
+ */
+export async function requireModule(moduleKey: ModuleKey, destino = "/") {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  if (!hasModuleAccess(user, moduleKey)) redirect("/");
+  if (!hasModuleAccess(user, moduleKey)) redirect(destino);
+  return user;
+}
+
+/**
+ * Como `requireModule`, mas passa com QUALQUER um dos módulos. Para layouts que
+ * abrigam telas de módulos diferentes (ex.: Combos mora dentro de /financeiro):
+ * a trava fina fica em cada página. Travar o layout só pelo módulo "de fora"
+ * criava loop — "/" manda para a primeira tela liberada (Combos) e o layout
+ * devolvia para "/", e a tela ficava presa no "Carregando…".
+ */
+export async function requireModuleAny(moduleKeys: ModuleKey[]) {
+  const user = await getSessionUser();
+  if (!user) redirect("/login");
+  if (!moduleKeys.some((m) => hasModuleAccess(user, m))) redirect("/");
   return user;
 }
 

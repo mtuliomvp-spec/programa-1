@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { toDateInputValue } from "@/lib/format";
 import { listCategoryNames, CATEGORIA_PAGAR_LABEL, CATEGORIA_RECEBER_LABEL } from "@/lib/categories";
 import RecurringForm from "../../novo/RecurringForm";
@@ -9,6 +9,7 @@ import RecurringForm from "../../novo/RecurringForm";
 export const dynamic = "force-dynamic";
 
 export default async function EditarRecorrenciaPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireModule("financeiro");
   await requireAction("financeiro", "criar");
   const { id } = await params;
 

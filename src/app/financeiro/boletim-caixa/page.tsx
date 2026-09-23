@@ -7,6 +7,7 @@ import type { PatrimonialStats } from "@/lib/patrimonial";
 import { Card, Input, Button, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import PrintButton from "@/components/PrintButton";
+import { requireModule } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +31,7 @@ export default async function BoletimCaixaPage({
 }: {
   searchParams: Promise<{ de?: string; ate?: string; sem?: string }>;
 }) {
+  await requireModule("financeiro");
   const { de, ate, sem } = await searchParams;
   const cashbox = await getCashboxState();
   const baseDay = cashbox.open && cashbox.session ? cashbox.session.workDate : new Date();

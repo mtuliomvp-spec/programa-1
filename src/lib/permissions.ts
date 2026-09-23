@@ -141,6 +141,14 @@ export const MODULES: ModuleConfig[] = [
     ],
   },
   {
+    // Autoatendimento do sócio: o extrato do PRÓPRIO capital (o beneficiário
+    // ligado ao usuário), sem abrir o Administrativo — que mostraria o capital
+    // de todos. Só leitura: lançar/corrigir continua em "Capital dos sócios".
+    key: "meu_capital",
+    label: "Meu capital (só o próprio)",
+    acoes: [{ acao: "visualizar", label: "Ver o próprio capital (sem ver o dos outros sócios)" }],
+  },
+  {
     key: "relatorios",
     label: "Relatórios",
     acoes: [VER],

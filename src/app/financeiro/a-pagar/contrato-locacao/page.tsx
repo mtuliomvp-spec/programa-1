@@ -1,10 +1,11 @@
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { LinkButton, PageHeader } from "@/components/ui";
 import RentContractForm from "./RentContractForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function ContratoLocacaoPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "contratolocacao");
 
   // Pré-preenchido com o contrato atual (Leonardo × MVP); editável e reutilizável.

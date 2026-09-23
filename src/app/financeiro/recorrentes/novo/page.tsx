@@ -1,12 +1,13 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import RecurringForm from "./RecurringForm";
 
 export const dynamic = "force-dynamic";
 
 export default async function NovaRecorrenciaPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "criar");
   const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),

@@ -1,11 +1,12 @@
 import { PageHeader } from "@/components/ui";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { listCategories } from "@/lib/categories";
 import CategoriesManager from "./CategoriesManager";
 
 export const dynamic = "force-dynamic";
 
 export default async function CategoriasPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "criar");
   const [despesa, receita] = await Promise.all([
     listCategories("DESPESA"),

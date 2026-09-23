@@ -17,7 +17,7 @@ import {
   Tr,
 } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import CorrigirSocio from "./CorrigirSocio";
 
 export const dynamic = "force-dynamic";
@@ -42,6 +42,7 @@ export default async function FaturaCartaoPage({
   params: Promise<{ id: string }>;
   searchParams: Promise<{ q?: string; quem?: string; fluxo?: string; min?: string; max?: string }>;
 }) {
+  await requireModule("financeiro");
   const { id } = await params;
   const { q: qParam, quem, fluxo, min, max } = await searchParams;
   const q = (qParam || "").trim();

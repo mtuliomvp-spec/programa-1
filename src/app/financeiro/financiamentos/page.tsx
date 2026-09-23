@@ -5,7 +5,7 @@ import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { retornoLabel } from "@/lib/retorno";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import FinancingSettleButton from "./FinancingSettleButton";
 import InsuranceSettleButton from "./InsuranceSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
@@ -18,6 +18,7 @@ export default async function FinanciamentosPage({
 }: {
   searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
+  await requireModule("financeiro");
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canReceber = await userCan("financeiro", "receber");

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { toDateInputValue } from "@/lib/format";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import AccountForm from "../../AccountForm";
@@ -14,6 +14,7 @@ export const dynamic = "force-dynamic";
  * pagamento reconhece sozinho a conta debitada.
  */
 export default async function EditarContaPage({ params }: { params: Promise<{ id: string }> }) {
+  await requireModule("financeiro");
   await requireAction("financeiro", "contas");
   const { id } = await params;
 

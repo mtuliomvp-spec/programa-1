@@ -4,7 +4,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import RecurringRowActions from "./RecurringRowActions";
 import GenerateNowButton from "./GenerateNowButton";
 
@@ -33,6 +33,7 @@ export default async function RecorrentesPage({
 }: {
   searchParams: Promise<{ q?: string; min?: string; max?: string }>;
 }) {
+  await requireModule("financeiro");
   await ensureRecurringGenerated();
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();

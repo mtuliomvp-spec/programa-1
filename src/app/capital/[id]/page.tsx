@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { getSelectableAccounts } from "@/lib/accounts";
 import { appliedTotalOf, freeCapitalOf } from "@/lib/investments";
@@ -15,7 +15,7 @@ import BeneficiaryUserLink from "./BeneficiaryUserLink";
 import BeneficiaryParentSelect from "./BeneficiaryParentSelect";
 import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
-import { isAdminRole } from "@/lib/permissions";
+import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -45,6 +45,10 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
 
   const canManage = await userCan("administrativo", "capital");
   const sessionUser = await getSessionUser();
+  // Sem o Administrativo, só com "Meu capital": abre apenas o beneficiário
+  // ligado ao próprio usuário — o capital dos outros sócios não aparece.
+  const verTodos = !!sessionUser && hasModuleAccess(sessionUser, "administrativo");
+  if (!verTodos && (!sessionUser || beneficiary.userId !== sessionUser.id)) redirect("/capital/meu");
   const isAdmin = isAdminRole(sessionUser?.role);
   // Lista de usuários para o vínculo (só admin vê o controle).
   const linkableUsers = isAdmin && !beneficiary.isCompany
@@ -120,12 +124,16 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
       where: { beneficiaryId: beneficiary.id },
       _sum: { amount: true },
     }),
-    prisma.capitalBeneficiary.findMany({
-      where: { active: true, id: { not: beneficiary.id } },
-      orderBy: [{ isCompany: "desc" }, { name: "asc" }],
-      select: { id: true, name: true },
-    }),
-    getSelectableAccounts(),
+    // Só para quem administra o capital (a substituição mostra o livre de
+    // cada sócio) — quem vê só o próprio não carrega o dos outros.
+    canManage
+      ? prisma.capitalBeneficiary.findMany({
+          where: { active: true, id: { not: beneficiary.id } },
+          orderBy: [{ isCompany: "desc" }, { name: "asc" }],
+          select: { id: true, name: true },
+        })
+      : Promise.resolve([]),
+    canManage ? getSelectableAccounts() : Promise.resolve([]),
   ]);
   const appliedAccountIds = appliedRows.filter((r) => (r._sum.amount ?? 0) > 0.005).map((r) => r.accountId);
   const appliedAccountNames = appliedAccountIds.length
@@ -170,7 +178,9 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         description={
           beneficiary.proLabore > 0
             ? `Pró-labore combinado: ${formatCurrency(beneficiary.proLabore)}/mês`
-            : "Beneficiário de capital"
+            : verTodos
+              ? "Beneficiário de capital"
+              : "Seu capital na empresa — extrato só de leitura"
         }
       />
 
@@ -253,9 +263,13 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
       {isChild && beneficiary.parent ? (
         <p className="mb-4 rounded-lg border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm text-slate-600">
           🏠 Caução vinculada a{" "}
-          <a href={`/capital/${beneficiary.parent.id}`} className="font-medium text-blue-700 hover:underline">
-            {beneficiary.parent.name}
-          </a>
+          {verTodos ? (
+            <a href={`/capital/${beneficiary.parent.id}`} className="font-medium text-blue-700 hover:underline">
+              {beneficiary.parent.name}
+            </a>
+          ) : (
+            <strong className="font-medium">{beneficiary.parent.name}</strong>
+          )}
           . O saldo continua contando no capital total.
         </p>
       ) : null}
@@ -327,7 +341,10 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
             description="Cada lançamento entra automaticamente no caixa da loja · o saldo ao lado é o acumulado depois daquele lançamento"
           />
           {beneficiary.transactions.length === 0 ? (
-            <EmptyState title="Nenhuma movimentação" description="Registre o primeiro aporte ao lado." />
+            <EmptyState
+              title="Nenhuma movimentação"
+              description={canManage ? "Registre o primeiro aporte ao lado." : "Ainda não há lançamentos no seu capital."}
+            />
           ) : (
             <Table>
               <Thead>

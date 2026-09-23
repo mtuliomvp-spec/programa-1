@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
@@ -17,11 +18,14 @@ export default function SolicitarSaque({
   livre,
   pendente,
   beneficiario,
+  verExtrato,
 }: {
   disponivel: number;
   livre: number;
   pendente: number;
   beneficiario: string;
+  /** Mostra o atalho para o extrato do próprio capital (quem pode vê-lo). */
+  verExtrato?: boolean;
 }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
@@ -54,6 +58,14 @@ export default function SolicitarSaque({
             {pendente > 0.005
               ? ` (capital livre ${formatCurrency(livre)}, com ${formatCurrency(pendente)} em saques ainda não pagos)`
               : ""}
+            {verExtrato ? (
+              <>
+                {" · "}
+                <Link href="/capital/meu" className="font-medium text-emerald-900 underline">
+                  Ver meu extrato
+                </Link>
+              </>
+            ) : null}
           </p>
         </div>
         {!aberto ? (

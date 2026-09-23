@@ -1,4 +1,4 @@
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { getCompany } from "@/lib/company";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import FaturaConferencia from "./FaturaConferencia";
@@ -12,6 +12,7 @@ export const dynamic = "force-dynamic";
  * lançamento com valor diferente e título que a fatura não cobrou.
  */
 export default async function ConferenciaFaturaPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "criar");
   const company = await getCompany();
   const configurado = Boolean(company.sicoveFornecedor && company.sicoveComunicado);
