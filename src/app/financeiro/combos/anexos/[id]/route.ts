@@ -1,16 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { userCan } from "@/lib/guards";
+import { userCanAny } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
 /**
  * Serve o arquivo anexado a um combo — hoje o comprovante do borderô, que vale
- * por todos os títulos dele. Exige permissão de visualizar no Financeiro.
+ * por todos os títulos dele. Exige ver o Financeiro ou os Combos — a tela do
+ * combo mostra o link a quem vê combos (ex.: o sócio acompanhando o saque).
  * `?download=1` força baixar em vez de abrir no navegador.
  */
 export async function GET(req: NextRequest, ctx: RouteContext<"/financeiro/combos/anexos/[id]">) {
-  if (!(await userCan("financeiro", "visualizar"))) {
+  if (
+    !(await userCanAny([
+      ["financeiro", "visualizar"],
+      ["combos", "visualizar"],
+    ]))
+  ) {
     return new NextResponse("Acesso negado", { status: 403 });
   }
 

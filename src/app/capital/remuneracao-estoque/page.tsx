@@ -3,7 +3,7 @@ import { ensureCompanyBeneficiary } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, EmptyState, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { stockVehiclesForInterest, stockInterestHistory } from "@/lib/stock-interest";
-import { userCan } from "@/lib/guards";
+import { requireModule, userCan } from "@/lib/guards";
 import { getCashboxState } from "@/lib/cashbox";
 import RemuneracaoForm from "./RemuneracaoForm";
 import ReverseRunButton from "./ReverseRunButton";
@@ -11,6 +11,7 @@ import ReverseRunButton from "./ReverseRunButton";
 export const dynamic = "force-dynamic";
 
 export default async function RemuneracaoEstoquePage() {
+  await requireModule("administrativo", "/capital/meu");
   await ensureCompanyBeneficiary();
   const canManage = await userCan("administrativo", "capital");
   const [vehicles, beneficiaries, history, cashbox] = await Promise.all([

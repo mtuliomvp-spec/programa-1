@@ -9,7 +9,7 @@ import { matchesSearch } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
 import BooksHealthChecks from "@/components/BooksHealthChecks";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import CashboxCard from "./CashboxCard";
 import PaymentQueueCard from "./PaymentQueueCard";
 import FuturePaymentsCard from "./FuturePaymentsCard";
@@ -61,6 +61,7 @@ export default async function ContasPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  await requireModule("financeiro");
   const q = ((await searchParams).q || "").trim();
   // Conta estrutural do sistema: existe desde a primeira visita a esta tela,
   // sem depender de alguém fazer uma operação interna primeiro.

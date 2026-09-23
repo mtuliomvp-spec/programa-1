@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { Badge, Card, CardHeader, EmptyState, Input, LinkButton, PageHeader, Select, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import { requireModule } from "@/lib/guards";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function LucroPrejuizoPage({
 }: {
   searchParams: Promise<{ mes?: string; q?: string; tipo?: string; de?: string; ate?: string; min?: string; max?: string }>;
 }) {
+  await requireModule("financeiro");
   const { mes, tipo, de, ate, min, max } = await searchParams;
   const q = ((await searchParams).q ?? "").trim();
   // Com qualquer filtro ativo, o saldo acumulado deixa de fazer sentido (a linha

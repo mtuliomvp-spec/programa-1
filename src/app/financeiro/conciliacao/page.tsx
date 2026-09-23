@@ -1,13 +1,14 @@
 import { PageHeader } from "@/components/ui";
 import { prisma } from "@/lib/prisma";
 import { getSelectableAccounts } from "@/lib/accounts";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import ReconcileClient from "./ReconcileClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function ConciliacaoPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "conciliar");
   const [accounts, suppliers, customers, allVehicles, beneficiaries, costCenters, despesas, receitas] =
     await Promise.all([

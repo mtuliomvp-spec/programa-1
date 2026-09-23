@@ -4,7 +4,7 @@ import { getBooksHealth } from "@/lib/books-health";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inValueRange, inDateRange } from "@/lib/search";
 import { getCashboxState } from "@/lib/cashbox";
-import { userCan } from "@/lib/guards";
+import { userCan, requireModule } from "@/lib/guards";
 import { getClosedMonths, monthLabelBR } from "@/lib/monthly-closing";
 import { capitalStatusByBeneficiary } from "@/lib/investments";
 import { listCategoryNames } from "@/lib/categories";
@@ -30,6 +30,7 @@ export default async function LivroCaixaPage({
 }: {
   searchParams: Promise<{ mes?: string; conta?: string; q?: string; min?: string; max?: string; de?: string; ate?: string; ver?: string }>;
 }) {
+  await requireModule("financeiro");
   const params = await searchParams;
   const { year, month } = parseMonth(params.mes);
   const accountFilter = params.conta || "";

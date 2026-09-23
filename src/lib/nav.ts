@@ -16,6 +16,11 @@ export type NavItem = {
    * pessoal vazia, que faria parecer que o sistema é só aquilo.
    */
   personal?: boolean;
+  /**
+   * Some quando o usuário já tem este módulo — é a versão restrita de uma tela
+   * maior (ex.: "Meu capital" para quem não vê o Capital dos sócios inteiro).
+   */
+  hideIfModule?: ModuleKey;
 };
 
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
@@ -104,7 +109,17 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
     // a todos). Fica por último para não mudar o destino pós-login de quem tem
     // telas operacionais.
     title: "Pessoal",
-    items: [{ href: "/minhas-comissoes", label: "Minhas comissões", icon: "💰", personal: true }],
+    items: [
+      { href: "/minhas-comissoes", label: "Minhas comissões", icon: "💰", personal: true },
+      // Extrato do próprio capital, para o sócio sem acesso ao Administrativo.
+      {
+        href: "/capital/meu",
+        label: "Meu capital",
+        icon: "💼",
+        module: "meu_capital",
+        hideIfModule: "administrativo",
+      },
+    ],
   },
 ];
 
@@ -119,6 +134,7 @@ function canSeeItem(user: NavUser, item: NavItem) {
   // Itens do dono do sistema não existem para a loja — nem para o ADMIN.
   if (item.superOnly) return superAdmin;
   if (item.adminOnly) return user.role === "ADMIN" || superAdmin;
+  if (item.hideIfModule && hasModuleAccess(user, item.hideIfModule)) return false;
   if (item.module) return hasModuleAccess(user, item.module);
   return true;
 }

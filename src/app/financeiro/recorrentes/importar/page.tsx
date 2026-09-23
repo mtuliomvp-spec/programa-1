@@ -1,5 +1,5 @@
 import { prisma } from "@/lib/prisma";
-import { requireAction } from "@/lib/guards";
+import { requireAction, requireModule } from "@/lib/guards";
 import { listCategoryNames } from "@/lib/categories";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import ImportRecurringDoc from "./ImportRecurringDoc";
@@ -14,6 +14,7 @@ export const maxDuration = 300;
  * cada um preso a um boleto específico e já cumpridos.
  */
 export default async function ImportarRecorrenciaPage() {
+  await requireModule("financeiro");
   await requireAction("financeiro", "criar");
   const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),

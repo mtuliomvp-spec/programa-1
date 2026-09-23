@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/format";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
-import { userCan } from "@/lib/guards";
+import { requireModule, userCan } from "@/lib/guards";
 import NewBeneficiaryForm from "./NewBeneficiaryForm";
 import ContabilizarButton from "./ContabilizarButton";
 import ZeroBalanceSection from "./ZeroBalanceSection";
@@ -17,6 +17,8 @@ export default async function CapitalPage({
 }: {
   searchParams: Promise<{ q?: string; min?: string; max?: string }>;
 }) {
+  // Quem só tem "Meu capital" não vê a lista de todos: vai para o próprio.
+  await requireModule("administrativo", "/capital/meu");
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canManage = await userCan("administrativo", "capital");
