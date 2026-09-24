@@ -1059,9 +1059,13 @@ async function vehicleSale(input: {
    * A quem vai a devolução do excedente do financiamento: "PROPRIETARIO"
    * (o vendedor ainda não recebeu; a loja paga quando o financiamento cair) ou
    * "COMPRADOR" — o padrão, quando ele já pagou o vendedor e financiou para
-   * levantar o dinheiro. Só muda de quem é o título; o valor é o mesmo.
+   * levantar o dinheiro. "TERCEIRO": conta de outra pessoa, autorizada pelas
+   * duas partes. Só muda de quem é o título; o valor é o mesmo.
    */
   devolucaoPara?: string | null;
+  devolucaoTerceiroNome?: string | null;
+  devolucaoTerceiroDocumento?: string | null;
+  devolucaoTerceiroVinculo?: string | null;
   ownerName?: string | null;
   ownerDocument?: string | null;
   ownerPhone?: string | null;
@@ -1236,7 +1240,12 @@ async function vehicleSale(input: {
         refinancing: Boolean(input.refinancing),
         financingAmount: Math.max(0, input.financingAmount ?? 0),
         refundAmount: Math.max(0, input.refundAmount ?? 0),
-        devolucaoPara: input.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : null,
+        devolucaoPara:
+          input.devolucaoPara === "PROPRIETARIO" || input.devolucaoPara === "TERCEIRO" ? input.devolucaoPara : null,
+        devolucaoTerceiroNome: input.devolucaoPara === "TERCEIRO" ? input.devolucaoTerceiroNome || null : null,
+        devolucaoTerceiroDocumento:
+          input.devolucaoPara === "TERCEIRO" ? input.devolucaoTerceiroDocumento || null : null,
+        devolucaoTerceiroVinculo: input.devolucaoPara === "TERCEIRO" ? input.devolucaoTerceiroVinculo || null : null,
         ownerName: input.ownerName || null,
         ownerDocument: input.ownerDocument || null,
         ownerPhone: input.ownerPhone || null,
@@ -1665,23 +1674,44 @@ async function vehicleSale(input: {
         // financiamento cair. A categoria continua a mesma — é dinheiro de
         // terceiro em trânsito pelo caixa, e a equação patrimonial trata os dois
         // casos igual —; o que muda é de quem é o título.
+        // TERCEIRO: conta de outra pessoa, indicada e autorizada pelas duas
+        // partes no contrato — o título sai no nome do titular dessa conta.
         const aoProprietario = input.devolucaoPara === "PROPRIETARIO";
-        const nome = aoProprietario ? input.ownerName : customer?.name;
+        const aoTerceiro = input.devolucaoPara === "TERCEIRO";
+        const nome = aoTerceiro
+          ? input.devolucaoTerceiroNome
+          : aoProprietario
+            ? input.ownerName
+            : customer?.name;
         await tx.payable.create({
           data: {
-            description: `${aoProprietario ? "Devolução ao proprietário" : "Devolução ao cliente"}${nome ? ` ${nome}` : ""} - ${baseDescription}`,
+            description: `${
+              aoTerceiro
+                ? "Devolução a terceiro autorizado"
+                : aoProprietario
+                  ? "Devolução ao proprietário"
+                  : "Devolução ao cliente"
+            }${nome ? ` ${nome}` : ""} - ${baseDescription}`,
             category: "DEVOLUCAO_CLIENTE",
-            categoryLabel: aoProprietario ? "Devolução ao proprietário (vendedor)" : null,
+            categoryLabel: aoTerceiro
+              ? "Devolução a terceiro (autorizado pelas partes)"
+              : aoProprietario
+                ? "Devolução ao proprietário (vendedor)"
+                : null,
             amount: aoCliente,
             dueDate: input.saleDate,
             status: "PENDENTE",
             vehicleId: input.vehicleId,
             costCenterId: veiculosCenterId,
             notes:
-              (aoProprietario
-                ? "Valor do financiamento que a loja repassa ao PROPRIETÁRIO (vendedor) do veículo, " +
-                  "que ainda não havia recebido pela venda."
-                : "Excedente do financiamento sobre o restante a pagar da venda.") +
+              (aoTerceiro
+                ? `Devolução paga na conta de TERCEIRO (${input.devolucaoTerceiroNome ?? "—"}, CPF/CNPJ ` +
+                  `${input.devolucaoTerceiroDocumento ?? "—"}${input.devolucaoTerceiroVinculo ? `, ${input.devolucaoTerceiroVinculo}` : ""}), ` +
+                  "indicada e autorizada pelo comprador e pelo vendedor no contrato de intermediação."
+                : aoProprietario
+                  ? "Valor do financiamento que a loja repassa ao PROPRIETÁRIO (vendedor) do veículo, " +
+                    "que ainda não havia recebido pela venda."
+                  : "Excedente do financiamento sobre o restante a pagar da venda.") +
               (quitacaoTotal > 0
                 ? ` Já descontadas as quitações informadas na operação (${brl(quitacaoTotal)}).`
                 : ""),

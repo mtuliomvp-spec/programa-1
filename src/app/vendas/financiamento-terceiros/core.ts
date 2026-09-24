@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { devolucaoParaSalvar } from "@/lib/devolucao";
 import { prisma } from "@/lib/prisma";
 import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance";
 import { assertMonthOpen } from "@/lib/monthly-closing";
@@ -68,7 +69,11 @@ export const intermediationSchema = z.object({
   refundAmount: z.coerce.number().min(0).default(0),
   // A quem a loja devolve o excedente: o comprador (padrão) ou o proprietário
   // (vendedor) que ainda não recebeu pela venda.
-  devolucaoPara: z.enum(["COMPRADOR", "PROPRIETARIO"]).optional(),
+  devolucaoPara: z.enum(["COMPRADOR", "PROPRIETARIO", "TERCEIRO"]).optional(),
+  // Terceiro autorizado pelas partes: titular da conta que recebe a devolução.
+  devolucaoTerceiroNome: z.string().optional(),
+  devolucaoTerceiroDocumento: z.string().optional(),
+  devolucaoTerceiroVinculo: z.string().optional(),
   // Refinanciamento: o proprietário refinancia o próprio veículo. A financeira
   // paga F direto ao financiado; a loja recebe só o retorno (sem repasse/devolução).
   refinancing: z.coerce.boolean().optional(),
@@ -105,6 +110,25 @@ export const intermediationSchema = z.object({
   debtsDueDate: z.string().optional(),
 })
   .superRefine((d, ctx) => {
+    // Devolução a TERCEIRO: sem o titular identificado, a autorização no
+    // contrato não respalda a loja — nome e CPF/CNPJ são obrigatórios.
+    if (!d.refinancing && d.refundAmount > 0 && d.devolucaoPara === "TERCEIRO") {
+      if (!d.devolucaoTerceiroNome?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["devolucaoTerceiroNome"],
+          message: "Informe o nome do terceiro que vai receber a devolução",
+        });
+      }
+      const doc = (d.devolucaoTerceiroDocumento ?? "").replace(/\D/g, "");
+      if (doc.length !== 11 && doc.length !== 14) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["devolucaoTerceiroDocumento"],
+          message: "Informe o CPF ou CNPJ do terceiro que vai receber a devolução",
+        });
+      }
+    }
     if (d.payoffEnabled) {
       if (!(d.payoffAmount > 0)) {
         ctx.addIssue({ code: "custom", path: ["payoffAmount"], message: "Informe o valor da quitação do financiamento anterior" });
@@ -281,6 +305,19 @@ async function resolveIntermediationCustomerId(d: IntermediationData): Promise<s
 }
 
 /**
+/** Terceiro que recebe a devolução — só guardado quando é mesmo um terceiro. */
+function dadosDoTerceiro(
+  para: string | null | undefined,
+  d: { devolucaoTerceiroNome?: string; devolucaoTerceiroDocumento?: string; devolucaoTerceiroVinculo?: string },
+) {
+  const terceiro = para === "TERCEIRO";
+  return {
+    devolucaoTerceiroNome: terceiro ? d.devolucaoTerceiroNome?.trim() || null : null,
+    devolucaoTerceiroDocumento: terceiro ? d.devolucaoTerceiroDocumento?.trim() || null : null,
+    devolucaoTerceiroVinculo: terceiro ? d.devolucaoTerceiroVinculo?.trim() || null : null,
+  };
+}
+
 /** Monta os campos da PreSale/venda a partir dos dados do formulário. */
 function buildPreSaleData(
   d: IntermediationData,
@@ -298,7 +335,8 @@ function buildPreSaleData(
     paymentMethod: "FINANCIADO" as const,
     financingAmount: F,
     refundAmount: D,
-    devolucaoPara: d.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : null,
+    devolucaoPara: d.refinancing ? null : devolucaoParaSalvar(d.devolucaoPara),
+    ...dadosDoTerceiro(d.refinancing ? null : d.devolucaoPara, d),
     refinancing: Boolean(d.refinancing),
     financedAmount: F,
     financerAccountId: d.financerAccountId,
@@ -496,6 +534,9 @@ export async function convertIntermediationPreSale(preSaleId: string): Promise<s
     financingAmount: F,
     refundAmount: D,
     devolucaoPara: pre.devolucaoPara,
+    devolucaoTerceiroNome: pre.devolucaoTerceiroNome,
+    devolucaoTerceiroDocumento: pre.devolucaoTerceiroDocumento,
+    devolucaoTerceiroVinculo: pre.devolucaoTerceiroVinculo,
     ownerName: pre.ownerName,
     ownerDocument: pre.ownerDocument,
     ownerPhone: pre.ownerPhone,

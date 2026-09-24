@@ -47,6 +47,15 @@ export default async function ContratoIntermediacaoPage({
       financingAmount={sale.financingAmount}
       refundAmount={sale.refundAmount}
       devolucaoPara={sale.devolucaoPara}
+      terceiro={
+        sale.devolucaoPara === "TERCEIRO"
+          ? {
+              nome: sale.devolucaoTerceiroNome,
+              documento: sale.devolucaoTerceiroDocumento,
+              vinculo: sale.devolucaoTerceiroVinculo,
+            }
+          : null
+      }
       refinancing={sale.refinancing}
       financerName={sale.financerAccount?.name ?? null}
       installmentsInfo={

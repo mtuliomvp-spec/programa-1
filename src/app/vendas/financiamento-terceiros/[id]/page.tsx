@@ -151,6 +151,13 @@ export default async function FinanciamentoTerceirosDetailPage({
           <p><span className="text-slate-500">Comprador (cliente):</span> <strong>{sale.customer.name}</strong></p>
           <p><span className="text-slate-500">Financeira:</span> {sale.financerAccount?.name || "—"}</p>
           <p><span className="text-slate-500">Data:</span> {formatDate(sale.saleDate)}</p>
+          {sale.devolucaoPara === "TERCEIRO" ? (
+            <p className="sm:col-span-2">
+              <span className="text-slate-500">Devolução a terceiro (autorizado pelas partes):</span>{" "}
+              <strong>{sale.devolucaoTerceiroNome || "—"}</strong> · CPF/CNPJ {sale.devolucaoTerceiroDocumento || "—"}
+              {sale.devolucaoTerceiroVinculo ? ` · ${sale.devolucaoTerceiroVinculo}` : ""}
+            </p>
+          ) : null}
           <CrlvLine crlvs={crlvs} />
         </div>
       </Card>
@@ -165,7 +172,9 @@ export default async function FinanciamentoTerceirosDetailPage({
                 ? "(−) Devolução ao financiado (D)"
                 : sale.devolucaoPara === "PROPRIETARIO"
                   ? "(−) Devolução ao proprietário/vendedor (D)"
-                  : "(−) Devolução ao cliente (D)"
+                  : sale.devolucaoPara === "TERCEIRO"
+                    ? "(−) Devolução a terceiro autorizado (D)"
+                    : "(−) Devolução ao cliente (D)"
             }
             value={formatCurrency(devolucaoDisplay)}
             tone="rose"

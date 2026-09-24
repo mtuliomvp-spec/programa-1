@@ -58,8 +58,13 @@ export type IntermediationContractData = {
   date: Date;
   financingAmount: number;
   refundAmount: number;
-  /** "PROPRIETARIO" quando a devolução é paga ao vendedor; vazio = comprador. */
+  /**
+   * "PROPRIETARIO" quando a devolução é paga ao vendedor; "TERCEIRO" quando vai
+   * para a conta de outra pessoa autorizada pelas partes; vazio = comprador.
+   */
   devolucaoPara?: string | null;
+  /** Titular da conta quando a devolução vai a um TERCEIRO. */
+  terceiro?: { nome: string | null; documento: string | null; vinculo: string | null } | null;
   // Refinanciamento: a financeira paga o valor financiado direto ao financiado
   // (o próprio proprietário); a intermediadora não faz devolução.
   refinancing?: boolean;
@@ -98,6 +103,19 @@ function Clausula({ n, titulo, children }: { n: number; titulo: string; children
  */
 export default function IntermediationContractDocument(d: IntermediationContractData) {
   const { company, seller, buyer, buyerBank, vehicle } = d;
+  // Quem recebe a devolução (fora do refinanciamento, em que é o financiado).
+  const aoTerceiro = !d.refinancing && d.devolucaoPara === "TERCEIRO";
+  const aoProprietario = !d.refinancing && d.devolucaoPara === "PROPRIETARIO";
+  const titular = d.refinancing || aoProprietario
+    ? { nome: seller.name, documento: seller.document ?? null }
+    : aoTerceiro
+      ? { nome: d.terceiro?.nome || "—", documento: d.terceiro?.documento ?? null }
+      : { nome: buyer.name, documento: buyer.document ?? null };
+  const recebedor = aoTerceiro
+    ? "TERCEIRO(A) AUTORIZADO(A)"
+    : aoProprietario
+      ? "PROPRIETÁRIO(A)/VENDEDOR(A)"
+      : "COMPRADOR(A)";
   const hasBank =
     !!(buyerBank.name || buyerBank.agency || buyerBank.account || buyerBank.pixKey);
   const cidadeData = company.city
@@ -275,7 +293,7 @@ export default function IntermediationContractDocument(d: IntermediationContract
               </tr>
               {!d.refinancing ? (
                 <tr>
-                  <td className="py-1">(−) Valor devolvido ao(à) COMPRADOR(A)</td>
+                  <td className="py-1">(−) Valor devolvido ao(à) {recebedor}</td>
                   <td className="py-1 text-right tabular-nums">{formatCurrency(d.refundAmount)}</td>
                 </tr>
               ) : null}
@@ -293,7 +311,14 @@ export default function IntermediationContractDocument(d: IntermediationContract
             <p className="mt-2">
               A INTERMEDIADORA efetuará a <strong>transferência bancária</strong> do valor de{" "}
               <strong>{formatCurrency(d.refundAmount)}</strong>{" "}
-              {d.devolucaoPara === "PROPRIETARIO" ? (
+              {aoTerceiro ? (
+                <>
+                  ao(à) <strong>TERCEIRO(A) AUTORIZADO(A)</strong> <strong>{titular.nome}</strong>
+                  {titular.documento ? <>, CPF/CNPJ {titular.documento}</> : null}
+                  {d.terceiro?.vinculo ? <> ({d.terceiro.vinculo})</> : null}, indicado(a) de comum acordo
+                  pelo(a) VENDEDOR(A) e pelo(a) COMPRADOR(A)
+                </>
+              ) : aoProprietario ? (
                 <>
                   ao(à) <strong>PROPRIETÁRIO(A)/VENDEDOR(A)</strong>, a título de pagamento pela venda do
                   veículo
@@ -309,13 +334,10 @@ export default function IntermediationContractDocument(d: IntermediationContract
           <div className="mt-2 grid grid-cols-2 gap-x-6 gap-y-1 rounded-md bg-slate-50 p-3 text-sm sm:grid-cols-3">
             <p>
               <span className="text-slate-500">Titular:</span>{" "}
-              <strong>
-                {d.refinancing || d.devolucaoPara === "PROPRIETARIO" ? seller.name : buyer.name}
-              </strong>
+              <strong>{titular.nome}</strong>
             </p>
             <p>
-              <span className="text-slate-500">CPF/CNPJ:</span>{" "}
-              {(d.refinancing || d.devolucaoPara === "PROPRIETARIO" ? seller.document : buyer.document) || "—"}
+              <span className="text-slate-500">CPF/CNPJ:</span> {titular.documento || "—"}
             </p>
             <p><span className="text-slate-500">Banco:</span> {buyerBank.name || "—"}</p>
             <p><span className="text-slate-500">Agência:</span> {buyerBank.agency || "—"}</p>
@@ -326,9 +348,37 @@ export default function IntermediationContractDocument(d: IntermediationContract
           {!hasBank ? (
             <p className="mt-1 text-xs text-slate-400">
               (Preencha os dados bancários do{" "}
-              {d.refinancing ? "financiado" : d.devolucaoPara === "PROPRIETARIO" ? "proprietário" : "comprador"}{" "}
+              {d.refinancing
+                ? "financiado"
+                : aoTerceiro
+                  ? "terceiro autorizado"
+                  : aoProprietario
+                    ? "proprietário"
+                    : "comprador"}{" "}
               na operação para constarem aqui.)
             </p>
+          ) : null}
+          {aoTerceiro ? (
+            <div className="mt-2 space-y-1 rounded-md border border-slate-300 p-3">
+              <p>
+                <strong>Autorização expressa das partes.</strong> O(A) VENDEDOR(A) e o(a) COMPRADOR(A), de comum
+                acordo, <strong>autorizam e determinam</strong> que a INTERMEDIADORA deposite o valor acima na
+                conta de titularidade do(a) TERCEIRO(A) AUTORIZADO(A) <strong>{titular.nome}</strong>
+                {titular.documento ? <>, CPF/CNPJ {titular.documento}</> : null}, que não é parte da compra e
+                venda do veículo.
+              </p>
+              <p>
+                O crédito nessa conta <strong>quita integralmente</strong> a obrigação da INTERMEDIADORA quanto a
+                esse valor: as partes dão plena, geral e irrevogável quitação, nada mais tendo a reclamar a esse
+                título, e <strong>isentam a INTERMEDIADORA</strong> de qualquer responsabilidade pela relação entre
+                elas e o(a) terceiro(a), pelo destino do dinheiro depois do depósito e por eventual divergência
+                entre elas sobre essa indicação.
+              </p>
+              <p>
+                Eventual erro nos dados bancários informados é de responsabilidade de quem os indicou; a
+                INTERMEDIADORA só responde por creditar a conta exatamente como informada acima.
+              </p>
+            </div>
           ) : null}
           {d.installmentsInfo && d.installmentsInfo.count > 0 ? (
             <p className="mt-2 rounded-md bg-amber-50 p-2">
@@ -428,7 +478,9 @@ export default function IntermediationContractDocument(d: IntermediationContract
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-3 gap-6 text-center text-sm">
+          <div
+            className={`grid gap-6 text-center text-sm ${aoTerceiro ? "grid-cols-2 gap-y-12" : "grid-cols-3"}`}
+          >
             <div>
               <div className="border-t border-slate-400 pt-2">{seller.name}</div>
               <p className="text-xs text-slate-500">VENDEDOR(A)</p>
@@ -441,6 +493,14 @@ export default function IntermediationContractDocument(d: IntermediationContract
               <div className="border-t border-slate-400 pt-2">{company.razaoSocial}</div>
               <p className="text-xs text-slate-500">INTERMEDIADORA</p>
             </div>
+            {aoTerceiro ? (
+              // O terceiro assina como ciente: confirma que a conta é dele e
+              // que o crédito ali quita o que a loja devia repassar.
+              <div>
+                <div className="border-t border-slate-400 pt-2">{titular.nome}</div>
+                <p className="text-xs text-slate-500">TERCEIRO(A) AUTORIZADO(A) — ciente e de acordo</p>
+              </div>
+            ) : null}
           </div>
         )}
 

@@ -1,4 +1,5 @@
 import { notFound, redirect } from "next/navigation";
+import { quemRecebeLabel } from "@/lib/devolucao";
 import { prisma } from "@/lib/prisma";
 import { requireModule, userCan } from "@/lib/guards";
 import { parseReferrals } from "@/lib/referrals";
@@ -146,10 +147,17 @@ export default async function IntermediationPreSalePage({
           <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
           <p>
             <span className="text-slate-500">
-              Banco do {pre.devolucaoPara === "PROPRIETARIO" ? "proprietário" : "comprador"}:
+              Banco do {quemRecebeLabel(pre.devolucaoPara)}:
             </span>{" "}
             {pre.buyerBankName || "—"} {pre.buyerBankAgency ? `· Ag ${pre.buyerBankAgency}` : ""} {pre.buyerBankAccount ? `· Cc ${pre.buyerBankAccount}` : ""}
           </p>
+          {pre.devolucaoPara === "TERCEIRO" ? (
+            <p className="sm:col-span-2">
+              <span className="text-slate-500">Devolução a terceiro (autorizado pelas partes):</span>{" "}
+              <strong>{pre.devolucaoTerceiroNome || "—"}</strong> · CPF/CNPJ {pre.devolucaoTerceiroDocumento || "—"}
+              {pre.devolucaoTerceiroVinculo ? ` · ${pre.devolucaoTerceiroVinculo}` : ""}
+            </p>
+          ) : null}
           <CrlvLine crlvs={crlvs} />
         </div>
       </Card>
@@ -164,7 +172,9 @@ export default async function IntermediationPreSalePage({
                 ? "(−) Devolução ao financiado (D)"
                 : pre.devolucaoPara === "PROPRIETARIO"
                   ? "(−) Devolução ao proprietário/vendedor (D)"
-                  : "(−) Devolução ao cliente (D)"
+                  : pre.devolucaoPara === "TERCEIRO"
+                    ? "(−) Devolução a terceiro autorizado (D)"
+                    : "(−) Devolução ao cliente (D)"
             }
             value={formatCurrency(devolucaoDisplay)}
             tone="rose"
