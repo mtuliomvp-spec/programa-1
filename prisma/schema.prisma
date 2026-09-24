@@ -941,8 +941,14 @@ model PreSale {
   // A quem a loja devolve o excedente do financiamento: "COMPRADOR" (ele já
   // pagou o vendedor e financiou para levantar o dinheiro) ou "PROPRIETARIO"
   // (o vendedor ainda não recebeu e será pago pela loja quando o financiamento
-  // cair). Vazio = comprador, como sempre foi.
+  // cair) ou "TERCEIRO" (conta de outra pessoa, indicada e autorizada pelas
+  // duas partes). Vazio = comprador, como sempre foi.
   devolucaoPara             String?
+  // Terceiro que recebe a devolução ("TERCEIRO"): o titular da conta indicada.
+  // Vai para o contrato, com a autorização das partes, e para o título a pagar.
+  devolucaoTerceiroNome      String?
+  devolucaoTerceiroDocumento String?
+  devolucaoTerceiroVinculo   String?
   downPayment               Float          @default(0)
   installmentsCount         Int            @default(0)
   financerAccountId         String?
@@ -1055,8 +1061,11 @@ model Sale {
   debtsBarcode              String?
   debtsDueDate              DateTime?
   // A quem a loja devolveu o excedente do financiamento (cópia da pré-venda):
-  // "COMPRADOR" ou "PROPRIETARIO". Vazio = comprador.
+  // "COMPRADOR", "PROPRIETARIO" ou "TERCEIRO". Vazio = comprador.
   devolucaoPara             String?
+  devolucaoTerceiroNome      String?
+  devolucaoTerceiroDocumento String?
+  devolucaoTerceiroVinculo   String?
   // Consignado: o veículo era de um terceiro. `ownerRefundAmount` (cópia travada
   // do veículo no fechamento) é o valor devido ao proprietário. Se
   // `ownerRefundToCapital`, esse valor vira aporte no capital do beneficiário

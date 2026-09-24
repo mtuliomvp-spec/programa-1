@@ -1,6 +1,7 @@
 "use client";
 
-import { useActionState, useMemo, useRef, useState, useTransition } from "react";
+import { quemRecebeLabel } from "@/lib/devolucao";
+import { startTransition, useActionState, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { CHASSI_LENGTH, RENAVAM_LENGTH } from "@/lib/vehicle-doc";
 import BankInput from "@/components/BankInput";
@@ -59,6 +60,9 @@ export type IntermediationInitial = {
   financingAmount?: number;
   refundAmount?: number;
   devolucaoPara?: string | null;
+  devolucaoTerceiroNome?: string | null;
+  devolucaoTerceiroDocumento?: string | null;
+  devolucaoTerceiroVinculo?: string | null;
   refinancing?: boolean;
   financerAccountId?: string;
   returnLevel?: number;
@@ -157,12 +161,15 @@ export default function IntermediationForm({
   const [refund, setRefund] = useState(initial?.refundAmount ?? 0);
   // Quem recebe a devolução: o comprador (padrão) ou o proprietário do veículo.
   const [devolucaoPara, setDevolucaoPara] = useState(
-    initial?.devolucaoPara === "PROPRIETARIO" ? "PROPRIETARIO" : "COMPRADOR",
+    initial?.devolucaoPara === "PROPRIETARIO" || initial?.devolucaoPara === "TERCEIRO"
+      ? initial.devolucaoPara
+      : "COMPRADOR",
   );
   // Os dados bancários pedidos são sempre os de QUEM RECEBE a devolução — o
   // rótulo acompanha a escolha para ninguém digitar a conta do comprador
   // quando quem recebe é o vendedor.
-  const quemRecebe = devolucaoPara === "PROPRIETARIO" ? "proprietário/vendedor" : "comprador";
+  const quemRecebe = quemRecebeLabel(devolucaoPara);
+  const aoTerceiro = !refinancing && refund > 0 && devolucaoPara === "TERCEIRO";
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
   const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
   const [transferAmount, setTransferAmount] = useState(initial?.transferAmount ?? 0);
@@ -472,7 +479,20 @@ export default function IntermediationForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-6">
+    <form
+      ref={formRef}
+      action={formAction}
+      // Envio à mão, sem o reset automático do <form action>: quando o servidor
+      // devolve um erro, o React limpava o formulário — o que foi digitado
+      // sumia e as caixas de seleção voltavam para a primeira opção por baixo
+      // da tela (ela mostrava "Terceiro", mas enviava "Comprador").
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget, (e.nativeEvent as SubmitEvent).submitter);
+        startTransition(() => formAction(fd));
+      }}
+      className="space-y-6"
+    >
       <ProcessingOverlay show={pending} label="Gerando a pré-venda… aguarde. Não feche esta página." />
       {state.error ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
@@ -840,11 +860,14 @@ export default function IntermediationForm({
               >
                 <option value="COMPRADOR">Comprador (cliente)</option>
                 <option value="PROPRIETARIO">Proprietário (vendedor)</option>
+                <option value="TERCEIRO">Terceiro (autorizado pelas partes)</option>
               </Select>
               <span className="mt-1 block text-xs text-slate-500">
                 {devolucaoPara === "PROPRIETARIO"
                   ? "O vendedor ainda não recebeu pela venda: a loja paga a ele quando o financiamento cair. O título sai no nome do proprietário, e os dados bancários abaixo são os dele."
-                  : "O comprador já pagou o vendedor e financiou para levantar o dinheiro — a devolução é dele."}
+                  : devolucaoPara === "TERCEIRO"
+                    ? "O dinheiro vai para a conta de outra pessoa, indicada pelo comprador e pelo vendedor. O contrato traz a autorização das duas partes e a quitação da loja; os dados abaixo são os do terceiro."
+                    : "O comprador já pagou o vendedor e financiou para levantar o dinheiro — a devolução é dele."}
               </span>
             </Field>
           ) : null}
@@ -922,6 +945,41 @@ export default function IntermediationForm({
             ? "Constam no contrato: a financeira deposita o valor financiado direto nesta conta do financiado."
             : `Constam no contrato: a loja fará a transferência da devolução ao ${quemRecebe} assim que a financeira pagar.`}
         </p>
+        {aoTerceiro ? (
+          <div className="rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+            <p className="mb-3 text-xs text-amber-800">
+              Titular da conta que recebe. O contrato sai com a <strong>autorização expressa</strong> do
+              comprador e do vendedor para o depósito nesta conta, com a quitação da loja, e com a
+              assinatura do terceiro.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Nome do terceiro (titular da conta)" required>
+                <Input
+                  name="devolucaoTerceiroNome"
+                  required
+                  defaultValue={initial?.devolucaoTerceiroNome ?? ""}
+                  placeholder="Nome completo ou razão social"
+                />
+              </Field>
+              <Field label="CPF/CNPJ do terceiro" required>
+                <Input
+                  name="devolucaoTerceiroDocumento"
+                  required
+                  inputMode="numeric"
+                  defaultValue={initial?.devolucaoTerceiroDocumento ?? ""}
+                  placeholder="000.000.000-00"
+                />
+              </Field>
+              <Field label="Vínculo / motivo (opcional)">
+                <Input
+                  name="devolucaoTerceiroVinculo"
+                  defaultValue={initial?.devolucaoTerceiroVinculo ?? ""}
+                  placeholder="Ex.: cônjuge do vendedor, credor do comprador"
+                />
+              </Field>
+            </div>
+          </div>
+        ) : null}
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Banco">
             <BankInput
