@@ -98,7 +98,9 @@ export default function PaymentQueueCard({
           ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
             // fila o apaga, em vez de deixar um título solto no a pagar.
             "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
-          : "Tirar este pré-lançamento da fila? O anexo continua no título.";
+          : r.kind === "financiamento" || r.kind === "retorno"
+            ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
+            : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
     setMsg(null);
     setRemovidas((prev) => [...prev, r.id]);
@@ -165,7 +167,7 @@ export default function PaymentQueueCard({
                   {r.supplierName ? `${r.supplierName} · ` : ""}
                   {r.direcao === "entrada" ? "entrou em " : "comprovante de "}
                   {formatDate(r.paidAt)} ·{" "}
-                  {r.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em "}
+                  {r.rotuloData ?? (r.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em ")}
                   {formatDate(r.dueDate)}
                 </p>
                 {r.kind === "combo" ? (
@@ -194,7 +196,7 @@ export default function PaymentQueueCard({
                     ))}
                   </ul>
                 ) : null}
-                {r.direcao === "entrada" && Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
+                {r.kind === "recebimento" && Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
                   <p className="mt-0.5 text-xs text-slate-500">
                     Recebimento parcial: o ok credita {formatCurrency(r.amount)} e o restante
                     continua a receber.
@@ -249,7 +251,7 @@ export default function PaymentQueueCard({
                 )}
                 {Math.abs(r.amount - r.tituloAmount) > 0.005 ? (
                   <p className="text-[11px] text-slate-400">
-                    {r.kind === "combo" ? "combo" : "título"} {formatCurrency(r.tituloAmount)}
+                    {r.rotuloValor ?? (r.kind === "combo" ? "combo" : "título")} {formatCurrency(r.tituloAmount)}
                   </p>
                 ) : null}
                 <button

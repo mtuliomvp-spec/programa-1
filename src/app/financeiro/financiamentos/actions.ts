@@ -11,11 +11,36 @@ import {
   reverseInsurance,
 } from "@/lib/finance";
 import { assertBooksBalanced } from "@/lib/books-health";
-import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
+import { assertCashboxOpen, getCashboxState, getCashboxWorkDate } from "@/lib/cashbox";
+import { formatDate, parseDateInput } from "@/lib/format";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCan } from "@/lib/guards";
 
-export type SettleResult = { ok: boolean; error?: string };
+export type SettleResult = { ok: boolean; error?: string; enfileirado?: boolean; data?: string };
+
+/**
+ * O crédito caiu num dia À FRENTE do movimento aberto? Então a baixa não pode
+ * sair agora (todo lançamento tem a data do caixa aberto): devolve a data para
+ * o repasse/retorno ir para a fila e esperar o caixa daquele dia. Mesmo dia ou
+ * antes devolve null — a baixa sai já, no caixa aberto, como sempre saiu.
+ *
+ * Com o caixa fechado, a referência é o último movimento: dá para informar o
+ * que caiu depois dele sem abrir o caixa.
+ */
+async function dataDaFila(dataCredito?: string): Promise<Date | null> {
+  if (!dataCredito || !/^\d{4}-\d{2}-\d{2}$/.test(dataCredito)) return null;
+  const data = parseDateInput(dataCredito);
+  const { open, session } = await getCashboxState();
+  const ref = session?.workDate ?? null;
+  const dia = (d: Date) => d.toISOString().slice(0, 10);
+  if (!ref || dia(data) > dia(ref)) return data;
+  if (!open) {
+    throw new Error(
+      `O caixa está fechado. Abra o caixa em "Contas e caixas" — ou informe uma data de crédito depois de ${formatDate(ref)} para deixar na fila.`,
+    );
+  }
+  return null;
+}
 
 function revalidateFinancing() {
   revalidatePath("/financeiro/financiamentos");
@@ -23,10 +48,21 @@ function revalidateFinancing() {
   revalidatePath("/");
 }
 
-export async function settleFinancingAction(saleId: string, accountId: string): Promise<SettleResult> {
+export async function settleFinancingAction(
+  saleId: string,
+  accountId: string,
+  dataCredito?: string,
+): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   try {
     await assertCan("financeiro", "receber");
+    const fila = await dataDaFila(dataCredito);
+    if (fila) {
+      const { enfileirarVenda } = await import("@/lib/payment-queue");
+      await enfileirarVenda({ tipo: "financiamento", saleId, data: fila, accountId });
+      revalidateFinancing();
+      return { ok: true, enfileirado: true, data: fila.toISOString() };
+    }
     await assertBooksBalanced();
     await assertCashboxOpen();
     // A baixa usa a data de trabalho do caixa aberto (como as demais baixas),
@@ -69,6 +105,7 @@ export async function settleReturnAction(
   saleId: string,
   accountId: string,
   actualAmount: number,
+  dataCredito?: string,
 ): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   if (!Number.isFinite(actualAmount) || actualAmount < 0) {
@@ -76,6 +113,13 @@ export async function settleReturnAction(
   }
   try {
     await assertCan("financeiro", "receber");
+    const fila = await dataDaFila(dataCredito);
+    if (fila) {
+      const { enfileirarVenda } = await import("@/lib/payment-queue");
+      await enfileirarVenda({ tipo: "retorno", saleId, data: fila, accountId, valor: actualAmount });
+      revalidateFinancing();
+      return { ok: true, enfileirado: true, data: fila.toISOString() };
+    }
     await assertBooksBalanced();
     await assertCashboxOpen();
     // Mesma regra da baixa do repasse: data de trabalho do caixa aberto.
@@ -84,6 +128,25 @@ export async function settleReturnAction(
     await settleReturn(saleId, accountId, actualAmount, date);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível receber o retorno." };
+  }
+  revalidateFinancing();
+  return { ok: true };
+}
+
+/**
+ * Tira da fila o repasse/retorno informado (engano de data, de conta, de
+ * valor): nada foi creditado, a venda volta a mostrar o "Receber".
+ */
+export async function tirarDaFilaAction(
+  saleId: string,
+  tipo: "financiamento" | "retorno",
+): Promise<SettleResult> {
+  try {
+    await assertCan("financeiro", "receber");
+    const { desenfileirarVenda } = await import("@/lib/payment-queue");
+    await desenfileirarVenda({ tipo, saleId });
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível tirar da fila." };
   }
   revalidateFinancing();
   return { ok: true };
