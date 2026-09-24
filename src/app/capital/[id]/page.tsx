@@ -16,6 +16,8 @@ import BeneficiaryParentSelect from "./BeneficiaryParentSelect";
 import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
 import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
+import { capitalPrelancado } from "@/lib/capital-prelancado";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 
@@ -158,6 +160,10 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   // passar pelas Movimentações (que são aportes/retiradas), então sem esta
   // lista um valor preso na aplicação — uma fatia assumida por substituição,
   // por exemplo — some do livre sem nenhum lugar onde conferir de onde veio.
+  // Crédito/débito já informado na fila do caixa: o banco já mexeu, o capital
+  // só mexe no ok do caixa do dia. Mostra o que vem e o saldo depois.
+  const prelancado = (await capitalPrelancado(beneficiary.id)).get(beneficiary.id) ?? null;
+
   const alocacoes = await prisma.investmentAllocation.findMany({
     where: { beneficiaryId: beneficiary.id },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
@@ -194,6 +200,49 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         />
         <StatCard label="Pró-labore pago" value={formatCurrency(proLabore)} />
       </div>
+
+      {prelancado ? (
+        <Card className="mb-4 border border-sky-200 bg-sky-50/60">
+          <CardHeader
+            title="⏳ Pré-lançado — esperando o ok do caixa"
+            description="O dinheiro já passou pelo banco; entra no capital quando o caixa do dia for aberto e o lançamento confirmado."
+          />
+          <div className="divide-y divide-sky-100 px-5 pb-4">
+            {prelancado.itens.map((i, k) => (
+              <div key={k} className="flex flex-wrap items-baseline justify-between gap-2 py-2 text-sm">
+                <div className="min-w-0">
+                  {verTodos ? (
+                    <Link href={i.href} className="text-blue-700 hover:underline">
+                      {i.description}
+                    </Link>
+                  ) : (
+                    <span className="text-slate-800">{i.description}</span>
+                  )}
+                  <span className="block text-xs text-slate-500">
+                    {i.kind === "APORTE" ? "Aporte" : "Retirada"} · banco em {formatDate(i.date)}
+                  </span>
+                </div>
+                <span
+                  className={`font-semibold tabular-nums ${i.kind === "APORTE" ? "text-emerald-600" : "text-rose-600"}`}
+                >
+                  {i.kind === "APORTE" ? "+" : "−"}
+                  {formatCurrency(i.amount)}
+                </span>
+              </div>
+            ))}
+            <div className="flex flex-wrap items-baseline justify-between gap-2 pt-3 text-sm">
+              <span className="font-medium text-slate-700">Saldo investido após o ok</span>
+              <span
+                className={`text-lg font-bold tabular-nums ${
+                  aportes - retiradas + prelancado.liquido >= 0 ? "text-emerald-700" : "text-rose-600"
+                }`}
+              >
+                {formatCurrency(aportes - retiradas + prelancado.liquido)}
+              </span>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {appliedTotal > 0 ? (
         <div className="mb-4">
