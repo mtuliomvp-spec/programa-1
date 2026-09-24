@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { receiveBatchAction, deleteReceivablesAction } from "./actions";
 import ReceivableRowActions from "./ReceivableRowActions";
 import DeleteReceivableButton from "./DeleteReceivableButton";
+import ConfirmButton from "@/components/ConfirmButton";
 
 type Account = { id: string; name: string };
 
@@ -113,15 +114,11 @@ export default function ReceivablesTable({
     });
   }
 
+  // A pergunta de confirmação é feita na tela (ConfirmButton): o confirm()
+  // nativo não abre em todo navegador, e aí o botão "não fazia nada".
   function remove() {
     const ids = [...selected];
     if (!ids.length) return;
-    if (
-      !confirm(
-        `Excluir ${ids.length} ${ids.length === 1 ? "título selecionado" : "títulos selecionados"}? Só valem os manuais e não recebidos.`,
-      )
-    )
-      return;
     setMsg(null);
     startRemove(async () => {
       const res = await deleteReceivablesAction(ids);
@@ -131,7 +128,7 @@ export default function ReceivablesTable({
       }
       setMsg(
         `${res.deleted} excluído(s)` +
-          (res.skipped > 0 ? ` · ${res.skipped} ignorado(s) (recebido ou de outra operação)` : ""),
+          (res.skipped > 0 ? ` · ${res.skipped} ignorado(s) (já recebido ou de venda — ajuste na venda)` : ""),
       );
       setSelected(new Set());
     });
@@ -306,14 +303,15 @@ export default function ReceivablesTable({
               </>
             ) : null}
             {canManage ? (
-              <button
-                type="button"
+              <ConfirmButton
                 disabled={removing || pending}
-                onClick={remove}
+                onConfirm={remove}
+                confirmLabel="Excluir"
+                question={`Excluir ${selected.size} ${selected.size === 1 ? "título selecionado" : "títulos selecionados"}? Título recebido ou de venda fica de fora; de recorrência, só esta parcela sai (as próximas continuam).`}
                 className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
               >
                 {removing ? "Excluindo..." : "Excluir selecionados"}
-              </button>
+              </ConfirmButton>
             ) : null}
             <button
               type="button"
