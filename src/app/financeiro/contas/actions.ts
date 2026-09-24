@@ -914,11 +914,57 @@ export async function confirmQueuedPaymentsAction(
     desenfileirarPagamento,
     desenfileirarCombo,
     desenfileirarRecebimento,
+    desenfileirarVenda,
+    vendaDaFila,
   } = await import("@/lib/payment-queue");
   const { payComboAction } = await import("@/app/financeiro/combos/actions");
-  const { receiveReceivable } = await import("@/lib/finance");
+  const { receiveReceivable, settleFinancing, settleReturn } = await import("@/lib/finance");
   let paid = 0;
   for (const id of ids) {
+    // Repasse/retorno da financeira: a baixa é a mesma do botão da tela
+    // Financiamentos, agora na data do caixa que alcançou o dia do crédito.
+    const venda = vendaDaFila(id);
+    if (venda) {
+      const sale = await prisma.sale.findUnique({
+        where: { id: venda.saleId },
+        select: {
+          financerSettledAt: true,
+          returnSettledAt: true,
+          returnNet: true,
+          pendingFinancingDate: true,
+          pendingFinancingAccountId: true,
+          pendingReturnDate: true,
+          pendingReturnAmount: true,
+          pendingReturnAccountId: true,
+        },
+      });
+      if (!sale) continue;
+      const financiamento = venda.tipo === "financiamento";
+      if (!(financiamento ? sale.pendingFinancingDate : sale.pendingReturnDate)) continue;
+      if (financiamento ? sale.financerSettledAt : sale.returnSettledAt) {
+        await desenfileirarVenda(venda);
+        continue;
+      }
+      const accountId =
+        accountByPayable[id] || (financiamento ? sale.pendingFinancingAccountId : sale.pendingReturnAccountId);
+      if (!accountId) {
+        return {
+          ok: false,
+          paid,
+          error: "Escolha a conta creditada dos pré-lançamentos que estão sem conta identificada.",
+        };
+      }
+      try {
+        if (financiamento) await settleFinancing(venda.saleId, accountId, date);
+        else await settleReturn(venda.saleId, accountId, sale.pendingReturnAmount ?? sale.returnNet, date);
+      } catch (e) {
+        return { ok: false, paid, error: e instanceof Error ? e.message : "Não foi possível receber." };
+      }
+      await desenfileirarVenda(venda);
+      paid += 1;
+      revalidatePath("/financeiro/financiamentos");
+      continue;
+    }
     const p = await prisma.payable.findUnique({
       where: { id },
       select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
@@ -1022,9 +1068,17 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
-  const { desenfileirarPagamento, desenfileirarCombo, desenfileirarRecebimento } = await import(
-    "@/lib/payment-queue"
-  );
+  const { desenfileirarPagamento, desenfileirarCombo, desenfileirarRecebimento, desenfileirarVenda, vendaDaFila } =
+    await import("@/lib/payment-queue");
+  // Repasse/retorno da financeira: só sai da fila — a venda volta a mostrar o
+  // "Receber" na tela Financiamentos.
+  const venda = vendaDaFila(id);
+  if (venda) {
+    await desenfileirarVenda(venda);
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/financeiro/financiamentos");
+    return { ok: true };
+  }
   // Mesmo id-de-título-combo-ou-recebimento do confirmar.
   //
   // AVULSO (nascido no movimento de caixa) é apagado em vez de voltar para a

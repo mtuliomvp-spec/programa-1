@@ -1102,6 +1102,14 @@ model Sale {
   returnSettledAt           DateTime?
   // Valor realmente pago pela financeira (pode diferir do programado returnNet)
   returnPaidAmount          Float?
+  // FILA DO CAIXA: o repasse/retorno já caiu no banco num dia À FRENTE do
+  // movimento aberto. Fica guardado (data do crédito, conta da empresa e, no
+  // retorno, o valor real) e a baixa só acontece no ok do caixa daquele dia.
+  pendingFinancingDate      DateTime?
+  pendingFinancingAccountId String?
+  pendingReturnDate         DateTime?
+  pendingReturnAmount       Float?
+  pendingReturnAccountId    String?
   // Comissão sobre o SEGURO vendido junto ao financiamento. Diferente do
   // retorno, não tem fórmula nem valor conhecido na venda: fica só marcada e
   // pendente (nada é lançado), e o valor entra quando o dinheiro cai.

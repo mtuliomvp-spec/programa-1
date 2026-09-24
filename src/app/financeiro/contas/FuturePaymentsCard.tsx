@@ -59,7 +59,9 @@ export default function FuturePaymentsCard({
           ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
             // fila o apaga, em vez de deixar um título solto no a pagar.
             "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
-          : "Tirar este pré-lançamento da fila? O anexo continua no título.";
+          : p.kind === "financiamento" || p.kind === "retorno"
+            ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
+            : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
     setErro(null);
     setRemovidas((prev) => [...prev, p.id]);
@@ -185,7 +187,7 @@ export default function FuturePaymentsCard({
                                 ? `${p.direcao === "entrada" ? "credita em" : "debita em"} ${p.accountName}`
                                 : "conta a escolher no ok"}
                               {" · "}
-                              {p.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em "}
+                              {p.rotuloData ?? (p.kind === "combo" || lote ? "mais antigo vencia em " : "vencia em ")}
                               {formatDate(p.dueDate)}
                             </p>
                             {p.note ? (
@@ -215,7 +217,7 @@ export default function FuturePaymentsCard({
                             )}
                             {Math.abs(p.amount - p.tituloAmount) > 0.005 ? (
                               <p className="text-[11px] text-slate-400">
-                                {p.kind === "combo" ? "combo" : "título"}{" "}
+                                {p.rotuloValor ?? (p.kind === "combo" ? "combo" : "título")}{" "}
                                 {formatCurrency(p.tituloAmount)}
                               </p>
                             ) : null}

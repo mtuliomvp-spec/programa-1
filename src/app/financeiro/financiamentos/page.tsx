@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
 import { retornoLabel } from "@/lib/retorno";
 import { Badge, Card, CardHeader, EmptyState, LinkButton, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -10,6 +10,8 @@ import FinancingSettleButton from "./FinancingSettleButton";
 import InsuranceSettleButton from "./InsuranceSettleButton";
 import ReverseSettleButton from "./ReverseSettleButton";
 import TrocarFinanceira from "./TrocarFinanceira";
+import QueuedSettleChip from "./QueuedSettleChip";
+import { getCashboxState } from "@/lib/cashbox";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +27,7 @@ export default async function FinanciamentosPage({
   // Corrigir a financeira é conserto de registro, não recebimento: pede a mesma
   // permissão de cancelar/refazer uma venda.
   const canTrocar = await userCan("vendas", "cancelar");
-  const [allSales, accounts] = await Promise.all([
+  const [allSales, accounts, cashbox] = await Promise.all([
     prisma.sale.findMany({
       where: { status: "CONCLUIDA", paymentMethod: "FINANCIADO" },
       orderBy: { saleDate: "desc" },
@@ -36,7 +38,12 @@ export default async function FinanciamentosPage({
       },
     }),
     getAccountsWithBalances(),
+    getCashboxState(),
   ]);
+  // Dia do movimento (aberto ou, fechado, o último): o crédito informado com
+  // data DEPOIS dele vai para a fila do caixa daquele dia.
+  const workDate = cashbox.session ? toDateInputValue(cashbox.session.workDate) : null;
+  const nomeConta = new Map(accounts.map((a) => [a.id, a.name]));
 
   // Busca livre + intervalo de data + faixa de valor financiado.
   const sales = allSales.filter(
@@ -109,7 +116,9 @@ export default async function FinanciamentosPage({
       <div className="mb-4 rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-sm text-blue-800">
         O valor financiado fica na conta da financeira. Quando a financeira pagar, clique em{" "}
         <strong>Receber (dar baixa)</strong> na linha do financiamento e escolha a conta da empresa —
-        o valor sai da financeira e entra no caixa automaticamente.
+        o valor sai da financeira e entra no caixa automaticamente. Caiu num dia{" "}
+        <strong>à frente do movimento</strong>? Informe a data do crédito: ele fica na fila e entra no
+        caixa daquele dia com um ok, em Contas e caixas.
       </div>
 
       <Card>
@@ -164,8 +173,17 @@ export default async function FinanciamentosPage({
                         <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
                         {canReceber ? <ReverseSettleButton saleId={s.id} mode="financing" /> : null}
                       </div>
+                    ) : s.pendingFinancingDate ? (
+                      <QueuedSettleChip
+                        saleId={s.id}
+                        tipo="financiamento"
+                        data={s.pendingFinancingDate.toISOString()}
+                        valor={s.financedAmount ?? 0}
+                        conta={s.pendingFinancingAccountId ? (nomeConta.get(s.pendingFinancingAccountId) ?? null) : null}
+                        podeTirar={canReceber}
+                      />
                     ) : s.financerAccountId && canReceber ? (
-                      <FinancingSettleButton saleId={s.id} accounts={companyAccounts} />
+                      <FinancingSettleButton saleId={s.id} accounts={companyAccounts} workDate={workDate} />
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
                     )}
@@ -190,10 +208,20 @@ export default async function FinanciamentosPage({
                             ) : null}
                             {canReceber ? <ReverseSettleButton saleId={s.id} mode="return" /> : null}
                           </>
+                        ) : s.pendingReturnDate ? (
+                          <QueuedSettleChip
+                            saleId={s.id}
+                            tipo="retorno"
+                            data={s.pendingReturnDate.toISOString()}
+                            valor={s.pendingReturnAmount ?? s.returnNet}
+                            conta={s.pendingReturnAccountId ? (nomeConta.get(s.pendingReturnAccountId) ?? null) : null}
+                            podeTirar={canReceber}
+                          />
                         ) : s.financerAccountId && canReceber ? (
                           <FinancingSettleButton
                             saleId={s.id}
                             accounts={companyAccounts}
+                            workDate={workDate}
                             mode="return"
                             label="Receber retorno"
                             programmedAmount={s.returnNet}

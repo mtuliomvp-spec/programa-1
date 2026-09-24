@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { retornoLabel } from "@/lib/retorno";
 
 /**
  * FILA DE ESPERA DO CAIXA.
@@ -352,7 +353,7 @@ export type PagamentoNaFila = {
    * todos os títulos deles juntos — a diferença é que o combo é um borderô
    * montado antes, e o lote nasce do comprovante único no ato do pagamento.
    */
-  kind: "titulo" | "combo" | "lote" | "recebimento";
+  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno";
   /**
    * Dinheiro que SAI (pagamento) ou que ENTRA (recebimento). É o que decide o
    * sinal na tela e o lado da baixa quando o ok é dado.
@@ -385,6 +386,13 @@ export type PagamentoNaFila = {
    * tirar da fila APAGA o lançamento, em vez de devolvê-lo para a lista.
    */
   avulso?: boolean;
+  /**
+   * Como a tela chama a data de referência ("vencia em" por padrão). O repasse
+   * e o retorno da financeira não vencem: a referência é a data da venda.
+   */
+  rotuloData?: string;
+  /** Como a tela chama o valor registrado, quando difere ("título" por padrão). */
+  rotuloValor?: string;
 };
 
 /** Campos do pré-lançamento que as duas listas (deste caixa e adiante) mostram. */
@@ -643,6 +651,179 @@ export async function desenfileirarRecebimento(receivableId: string) {
   });
 }
 
+/**
+ * REPASSE e RETORNO da financeira na fila. Não são títulos: a baixa deles é a
+ * transferência da conta da financeira para a conta da empresa. Então a fila
+ * fica na própria venda, e o id da linha diz qual das duas baixas ela é
+ * ("financiamento:<venda>" ou "retorno:<venda>") — o mesmo id serve para o ok
+ * e para o "tirar da fila".
+ */
+export type VendaNaFila = { tipo: "financiamento" | "retorno"; saleId: string };
+
+export function vendaDaFila(id: string): VendaNaFila | null {
+  const m = /^(financiamento|retorno):(.+)$/.exec(id);
+  return m ? { tipo: m[1] as VendaNaFila["tipo"], saleId: m[2] } : null;
+}
+
+/**
+ * Informa que a financeira já pagou (repasse ou retorno) num dia à frente do
+ * movimento. Valida o mesmo que a baixa validaria — é melhor recusar agora do
+ * que no ok, dias depois.
+ */
+export async function enfileirarVenda(input: {
+  tipo: "financiamento" | "retorno";
+  saleId: string;
+  data: Date;
+  accountId: string;
+  /** Retorno: o valor que a financeira pagou de fato. */
+  valor?: number;
+}) {
+  const sale = await prisma.sale.findUniqueOrThrow({
+    where: { id: input.saleId },
+    select: {
+      status: true,
+      financerAccountId: true,
+      financedAmount: true,
+      financerSettledAt: true,
+      returnNet: true,
+      returnSettledAt: true,
+    },
+  });
+  if (sale.status !== "CONCLUIDA") throw new Error("A venda não está concluída.");
+  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
+  if (sale.financerAccountId === input.accountId) {
+    throw new Error("Escolha uma conta da empresa (diferente da financeira).");
+  }
+  if (input.tipo === "financiamento") {
+    if (!sale.financedAmount || sale.financedAmount <= 0) throw new Error("Sem valor financiado a receber.");
+    if (sale.financerSettledAt) throw new Error("Este financiamento já foi recebido.");
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: { pendingFinancingDate: input.data, pendingFinancingAccountId: input.accountId },
+    });
+    return;
+  }
+  if (!sale.returnNet || sale.returnNet <= 0) throw new Error("Sem retorno a receber nesta venda.");
+  if (sale.returnSettledAt) throw new Error("O retorno desta venda já foi recebido.");
+  const valor = round2(input.valor ?? sale.returnNet);
+  if (!Number.isFinite(valor) || valor < 0) throw new Error("Informe um valor recebido válido.");
+  await prisma.sale.update({
+    where: { id: input.saleId },
+    data: { pendingReturnDate: input.data, pendingReturnAmount: valor, pendingReturnAccountId: input.accountId },
+  });
+}
+
+/** Tira o repasse/retorno da fila (sem creditar nada). */
+export async function desenfileirarVenda(v: VendaNaFila) {
+  await prisma.sale.update({
+    where: { id: v.saleId },
+    data:
+      v.tipo === "financiamento"
+        ? { pendingFinancingDate: null, pendingFinancingAccountId: null }
+        : { pendingReturnDate: null, pendingReturnAmount: null, pendingReturnAccountId: null },
+  });
+}
+
+type FiltroData = { not: null; lte?: Date; gt?: Date };
+
+/** Repasses e retornos informados cuja data do crédito cai em `quando`. */
+async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
+  const sales = await prisma.sale.findMany({
+    where: {
+      status: "CONCLUIDA",
+      OR: [
+        { financerSettledAt: null, pendingFinancingDate: quando },
+        { returnSettledAt: null, pendingReturnDate: quando },
+      ],
+    },
+    select: {
+      id: true,
+      saleDate: true,
+      financedAmount: true,
+      financerSettledAt: true,
+      financerName: true,
+      financerAccount: { select: { name: true } },
+      returnLevel: true,
+      returnNet: true,
+      returnSettledAt: true,
+      pendingFinancingDate: true,
+      pendingFinancingAccountId: true,
+      pendingReturnDate: true,
+      pendingReturnAmount: true,
+      pendingReturnAccountId: true,
+      customer: { select: { name: true } },
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+  if (sales.length === 0) return [];
+  const contaIds = [
+    ...new Set(
+      sales.flatMap((v) => [v.pendingFinancingAccountId, v.pendingReturnAccountId]).filter(Boolean) as string[],
+    ),
+  ];
+  const contas = new Map(
+    (
+      await prisma.financialAccount.findMany({ where: { id: { in: contaIds } }, select: { id: true, name: true } })
+    ).map((c) => [c.id, c.name]),
+  );
+  const dentro = (d: Date | null) =>
+    !!d && (!quando.lte || d <= quando.lte) && (!quando.gt || d > quando.gt);
+
+  const linhas: PagamentoNaFila[] = [];
+  for (const v of sales) {
+    const veiculo = `${v.vehicle.brand} ${v.vehicle.model} (${v.vehicle.plate})`;
+    const financeira = v.financerAccount?.name || v.financerName || "financeira";
+    const base = {
+      orderNumber: 0,
+      supplierName: `${financeira} · ${v.customer.name}`,
+      titulos: 1,
+      href: `/financeiro/financiamentos?q=${encodeURIComponent(v.vehicle.plate)}`,
+      dueDate: v.saleDate.toISOString(),
+      rotuloData: "venda em ",
+    };
+    if (!v.financerSettledAt && dentro(v.pendingFinancingDate)) {
+      const valor = v.financedAmount ?? 0;
+      linhas.push({
+        ...base,
+        id: `financiamento:${v.id}`,
+        kind: "financiamento",
+        direcao: "entrada",
+        description: `Repasse do financiamento · ${veiculo}`,
+        amount: valor,
+        tituloAmount: valor,
+        paidAt: v.pendingFinancingDate!.toISOString(),
+        accountId: v.pendingFinancingAccountId,
+        accountName: v.pendingFinancingAccountId ? (contas.get(v.pendingFinancingAccountId) ?? null) : null,
+        note: null,
+      });
+    }
+    if (!v.returnSettledAt && dentro(v.pendingReturnDate)) {
+      const valor = v.pendingReturnAmount ?? v.returnNet;
+      const dif = round2(valor - v.returnNet);
+      linhas.push({
+        ...base,
+        id: `retorno:${v.id}`,
+        kind: "retorno",
+        direcao: "entrada",
+        description: `${retornoLabel(v.returnLevel)} · Retorno · ${veiculo}`,
+        amount: valor,
+        tituloAmount: v.returnNet,
+        rotuloValor: "programado",
+        paidAt: v.pendingReturnDate!.toISOString(),
+        accountId: v.pendingReturnAccountId,
+        accountName: v.pendingReturnAccountId ? (contas.get(v.pendingReturnAccountId) ?? null) : null,
+        // A diferença não fica "a receber": a financeira zera e o que faltou ou
+        // sobrou vira ajuste administrativo, como na baixa direta.
+        note:
+          Math.abs(dif) > 0.005
+            ? `programado ${formatCurrency(v.returnNet)} · pago ${formatCurrency(valor)} (${dif > 0 ? "+" : "−"}${formatCurrency(Math.abs(dif))} vira ${dif > 0 ? "receita" : "despesa"} administrativa no ok)`
+            : null,
+      });
+    }
+  }
+  return linhas;
+}
+
 /** Fim do dia (23:59:59 UTC) da data de trabalho. */
 function fimDoDia(d: Date): Date {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59));
@@ -676,7 +857,7 @@ export type DiaAdiante = {
  */
 export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdiante[]> {
   const quando = workDate ? { gt: fimDoDia(workDate) } : { not: null };
-  const [rows, combos, recebimentos] = await Promise.all([
+  const [rows, combos, recebimentos, vendas] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
       orderBy: { pendingPaymentDate: "asc" },
@@ -692,6 +873,7 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
       orderBy: { pendingReceiptDate: "asc" },
       select: RECEBIMENTO_SELECT,
     }),
+    vendasNaFila(workDate ? { not: null, gt: fimDoDia(workDate) } : { not: null }),
   ]);
 
   const porDia = new Map<string, PagamentoNaFila[]>();
@@ -699,6 +881,7 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
     ...agruparLotes(rows),
     ...combos.map(comboToPagamento),
     ...recebimentos.map(toRecebimento),
+    ...vendas,
   ]) {
     const dia = p.paidAt.slice(0, 10);
     const lista = porDia.get(dia) ?? [];
@@ -741,7 +924,7 @@ export async function debitosPrelancados(): Promise<{
   /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
   semConta: number;
 }> {
-  const [titulos, combos, recebimentos, transferencias] = await Promise.all([
+  const [titulos, combos, recebimentos, transferencias, vendas] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
       select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
@@ -764,6 +947,29 @@ export async function debitosPrelancados(): Promise<{
     // banco. Não muda o TOTAL — sai de uma e entra na outra —, mas muda o
     // previsto de cada uma, que é o que o card da conta mostra.
     prisma.pendingTransfer.findMany({ select: { fromId: true, toId: true, amount: true } }),
+    // Repasse/retorno informado: sai da conta da financeira e entra na da
+    // empresa — como a transferência, muda o previsto das duas.
+    prisma.sale.findMany({
+      where: {
+        status: "CONCLUIDA",
+        OR: [
+          { financerSettledAt: null, pendingFinancingDate: { not: null } },
+          { returnSettledAt: null, pendingReturnDate: { not: null } },
+        ],
+      },
+      select: {
+        financerAccountId: true,
+        financedAmount: true,
+        financerSettledAt: true,
+        pendingFinancingDate: true,
+        pendingFinancingAccountId: true,
+        returnNet: true,
+        returnSettledAt: true,
+        pendingReturnDate: true,
+        pendingReturnAmount: true,
+        pendingReturnAccountId: true,
+      },
+    }),
   ]);
 
   const porConta = new Map<string, number>();
@@ -788,6 +994,17 @@ export async function debitosPrelancados(): Promise<{
     somar(t.fromId, -t.amount);
     somar(t.toId, t.amount);
   }
+  for (const v of vendas) {
+    if (!v.financerSettledAt && v.pendingFinancingDate && v.financerAccountId) {
+      somar(v.financerAccountId, -(v.financedAmount ?? 0));
+      somar(v.pendingFinancingAccountId, v.financedAmount ?? 0);
+    }
+    if (!v.returnSettledAt && v.pendingReturnDate && v.financerAccountId) {
+      // A financeira zera pelo PROGRAMADO; a empresa recebe o que foi pago.
+      somar(v.financerAccountId, -v.returnNet);
+      somar(v.pendingReturnAccountId, v.pendingReturnAmount ?? v.returnNet);
+    }
+  }
   return { porConta, semConta };
 }
 
@@ -799,7 +1016,7 @@ export async function debitosPrelancados(): Promise<{
 export async function pagamentosNaFila(workDate: Date | null): Promise<PagamentoNaFila[]> {
   if (!workDate) return [];
   const quando = { not: null, lte: fimDoDia(workDate) } as const;
-  const [rows, combos, recebimentos] = await Promise.all([
+  const [rows, combos, recebimentos, vendas] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: quando },
       orderBy: { pendingPaymentDate: "asc" },
@@ -815,11 +1032,13 @@ export async function pagamentosNaFila(workDate: Date | null): Promise<Pagamento
       orderBy: { pendingReceiptDate: "asc" },
       select: RECEBIMENTO_SELECT,
     }),
+    vendasNaFila({ not: null, lte: fimDoDia(workDate) }),
   ]);
   return [
     ...agruparLotes(rows),
     ...combos.map(comboToPagamento),
     ...recebimentos.map(toRecebimento),
+    ...vendas,
   ].sort((a, b) => a.paidAt.localeCompare(b.paidAt));
 }
 
@@ -829,7 +1048,7 @@ export async function contarPagamentosNaFila(workDate: Date | null): Promise<num
   const fim = new Date(
     Date.UTC(workDate.getUTCFullYear(), workDate.getUTCMonth(), workDate.getUTCDate(), 23, 59, 59),
   );
-  const [titulos, combos, recebimentos] = await Promise.all([
+  const [titulos, combos, recebimentos, vendas] = await Promise.all([
     prisma.payable.count({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null, lte: fim } },
     }),
@@ -842,8 +1061,9 @@ export async function contarPagamentosNaFila(workDate: Date | null): Promise<num
     prisma.receivable.count({
       where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null, lte: fim } },
     }),
+    vendasNaFila({ not: null, lte: fim }).then((l) => l.length),
   ]);
-  return titulos + combos + recebimentos;
+  return titulos + combos + recebimentos + vendas;
 }
 
 /**
