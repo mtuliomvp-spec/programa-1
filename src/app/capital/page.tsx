@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ensureCompanyBeneficiary } from "@/lib/company";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDate } from "@/lib/format";
+import { capitalPrelancado } from "@/lib/capital-prelancado";
 import { matchesSearch, inValueRange } from "@/lib/search";
 import { Badge, Card, EmptyState, PageHeader, StatCard, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import ReportToolbar from "@/components/ReportToolbar";
@@ -24,12 +25,15 @@ export default async function CapitalPage({
   const canManage = await userCan("administrativo", "capital");
   // A empresa dos Parâmetros sempre aparece como beneficiária própria
   await ensureCompanyBeneficiary();
-  const [beneficiaries, allocationsByBenef] = await Promise.all([
+  const [beneficiaries, allocationsByBenef, prelancado] = await Promise.all([
     prisma.capitalBeneficiary.findMany({
       include: { transactions: true },
       orderBy: [{ isCompany: "desc" }, { name: "asc" }],
     }),
     prisma.investmentAllocation.groupBy({ by: ["beneficiaryId"], _sum: { amount: true } }),
+    // O que a fila do caixa ainda vai mexer no capital (crédito já informado,
+    // esperando o ok do caixa do dia).
+    capitalPrelancado(),
   ]);
   const appliedByBenef = new Map(
     allocationsByBenef.map((a) => [a.beneficiaryId, Math.round((a._sum.amount ?? 0) * 100) / 100]),
@@ -73,8 +77,10 @@ export default async function CapitalPage({
   // Sócios com saldo ZERADO vão para uma seção recolhível (o usuário pode
   // ocultá-los). Qualquer movimentação tira o sócio do grupo automaticamente —
   // com saldo ≠ 0 ele volta para a lista normal.
-  const comSaldo = cards.filter((b) => Math.abs(b.saldo) >= 0.005);
-  const zerados = cards.filter((b) => Math.abs(b.saldo) < 0.005);
+  // Pré-lançado conta como movimentação: quem vai receber um aporte não pode
+  // ficar escondido entre os zerados.
+  const comSaldo = cards.filter((b) => Math.abs(b.saldo) >= 0.005 || prelancado.has(b.id));
+  const zerados = cards.filter((b) => Math.abs(b.saldo) < 0.005 && !prelancado.has(b.id));
 
   // RELATÓRIO (só na impressão/PDF): a tela mostra cards, que no papel viram
   // uma coluna estreita cheia de espaço vazio e um botão que ninguém clica no
@@ -129,6 +135,28 @@ export default async function CapitalPage({
             ) : null}
           </div>
         </div>
+        {prelancado.has(b.id) ? (
+          <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-sky-700">
+              ⏳ Pré-lançado · esperando o ok do caixa
+            </p>
+            {prelancado.get(b.id)!.itens.map((i, k) => (
+              <p key={k} className="text-xs text-sky-900">
+                <span className={i.kind === "APORTE" ? "font-semibold text-emerald-700" : "font-semibold text-rose-600"}>
+                  {i.kind === "APORTE" ? "+" : "−"}
+                  {formatCurrency(i.amount)}
+                </span>{" "}
+                {i.kind === "APORTE" ? "aporte" : "retirada"} · {formatDate(i.date)} · {i.description}
+              </p>
+            ))}
+            <p className="mt-1 text-xs text-sky-900">
+              Saldo investido após o ok:{" "}
+              <strong className={b.saldo + prelancado.get(b.id)!.liquido < 0 ? "text-rose-600" : ""}>
+                {formatCurrency(b.saldo + prelancado.get(b.id)!.liquido)}
+              </strong>
+            </p>
+          </div>
+        ) : null}
         {caucaoByParent.has(b.id) ? (
           <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-dashed border-amber-300 bg-amber-50 px-3 py-2">
             <div className="min-w-0">
