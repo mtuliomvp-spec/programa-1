@@ -192,6 +192,34 @@ export async function markPendingAction(id: string) {
  * recorrência — ajustar na origem). Remove também eventual movimentação de
  * capital vinculada. Excluir um PENDENTE não mexe no caixa.
  */
+/**
+ * Apaga títulos a receber já validados. Título de RECORRÊNCIA: a ocorrência (e
+ * o vencimento, para os antigos) vira "pulada" na recorrência — senão a geração
+ * automática recriaria o título na próxima abertura da tela.
+ */
+async function apagarRecebiveis(
+  rows: { id: string; recurringId: string | null; recurringPeriod: string | null; dueDate: Date }[],
+) {
+  const ids = rows.map((r) => r.id);
+  const pular = new Map<string, string[]>();
+  for (const r of rows) {
+    if (!r.recurringId) continue;
+    const lista = pular.get(r.recurringId) ?? [];
+    for (const k of [r.recurringPeriod, r.dueDate.toISOString().slice(0, 10)]) {
+      if (k && !lista.includes(k)) lista.push(k);
+    }
+    pular.set(r.recurringId, lista);
+  }
+  await prisma.$transaction([
+    // A movimentação de capital não tem cascade — sai junto com o título.
+    prisma.capitalTransaction.deleteMany({ where: { receivableId: { in: ids } } }),
+    prisma.receivable.deleteMany({ where: { id: { in: ids } } }),
+    ...[...pular.entries()].map(([recurringId, dias]) =>
+      prisma.recurringEntry.update({ where: { id: recurringId }, data: { skippedDays: { push: dias } } }),
+    ),
+  ]);
+}
+
 export async function deleteReceivableAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("financeiro", "criar");
@@ -200,19 +228,16 @@ export async function deleteReceivableAction(id: string): Promise<{ ok: boolean;
   }
   const r = await prisma.receivable.findUnique({
     where: { id },
-    select: { status: true, saleId: true, partSaleId: true, recurringId: true },
+    select: { id: true, status: true, saleId: true, partSaleId: true, recurringId: true, recurringPeriod: true, dueDate: true },
   });
   if (!r) return { ok: false, error: "Título não encontrado." };
   if (r.status === "RECEBIDO") {
     return { ok: false, error: "Título já recebido. Use Reverter antes de excluir." };
   }
-  if (r.saleId || r.partSaleId || r.recurringId) {
-    return { ok: false, error: "Este título vem de outra operação (venda/peça/recorrência). Ajuste na origem." };
+  if (r.saleId || r.partSaleId) {
+    return { ok: false, error: "Este título vem de uma venda (veículo/peça). Ajuste na venda." };
   }
-  await prisma.$transaction([
-    prisma.capitalTransaction.deleteMany({ where: { receivableId: id } }),
-    prisma.receivable.delete({ where: { id } }),
-  ]);
+  await apagarRecebiveis([r]);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
   revalidatePath("/financeiro/contas");
@@ -464,21 +489,16 @@ export async function deleteReceivablesAction(ids: string[]): Promise<DeleteRece
 
   const rows = await prisma.receivable.findMany({
     where: { id: { in: ids } },
-    select: { id: true, status: true, saleId: true, partSaleId: true, recurringId: true },
+    select: { id: true, status: true, saleId: true, partSaleId: true, recurringId: true, recurringPeriod: true, dueDate: true },
   });
-  const okIds = rows
-    .filter((r) => r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId && !r.recurringId)
-    .map((r) => r.id);
-  const deleted = okIds.length;
+  // Recorrência PODE ser excluída (como no Contas a pagar): a ocorrência vira
+  // "pulada" e a geração automática não a recria. Recebido e título de venda
+  // continuam de fora — esses se corrigem na origem.
+  const okRows = rows.filter((r) => r.status !== "RECEBIDO" && !r.saleId && !r.partSaleId);
+  const deleted = okRows.length;
   const skipped = ids.length - deleted;
 
-  if (okIds.length) {
-    await prisma.$transaction([
-      // A movimentação de capital não tem cascade — sai junto com o título.
-      prisma.capitalTransaction.deleteMany({ where: { receivableId: { in: okIds } } }),
-      prisma.receivable.deleteMany({ where: { id: { in: okIds } } }),
-    ]);
-  }
+  if (okRows.length) await apagarRecebiveis(okRows);
 
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
