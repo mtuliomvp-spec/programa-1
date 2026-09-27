@@ -479,3 +479,113 @@ export async function retirarComSubstituicao(input: {
     }
   });
 }
+
+/**
+ * Cobre o saldo LIVRE NEGATIVO de um sócio com a fatia aplicada dele.
+ *
+ * O sócio está com mais aplicado do que capital (livre < 0): ele deve à loja,
+ * e o dinheiro dele está preso na Aplicação. Outro sócio, com capital livre,
+ * ASSUME parte dessa fatia aplicada — o livre do substituto vira aplicado e o
+ * aplicado do devedor diminui, levando o livre dele de volta a zero.
+ *
+ * Nada passa pelo caixa: não há título nem retirada, e o saldo da Aplicação
+ * não muda (−X de um, +X do outro na mesma conta). Só muda de quem é a fatia.
+ * As duas pontas levam a mesma marca (`swapGroup`) para o "desfazer".
+ */
+export async function cobrirLivreNegativo(input: {
+  accountId: string; // conta Aplicação de onde sai a fatia do devedor
+  beneficiaryId: string; // sócio com livre negativo
+  substituteId: string; // quem assume a fatia
+  amount: number;
+  date: Date;
+  description?: string | null;
+}): Promise<{ amount: number }> {
+  const amount = round2(input.amount);
+  if (!(amount > 0)) throw new Error("Informe um valor maior que zero.");
+  if (!input.accountId) throw new Error("Escolha a aplicação de onde sai a fatia.");
+  if (!input.substituteId) throw new Error("Escolha o sócio que vai assumir a fatia.");
+  if (input.substituteId === input.beneficiaryId) {
+    throw new Error("Quem assume a fatia precisa ser outro sócio.");
+  }
+
+  const [beneficiary, substitute, livreDevedor, aplicadoNaConta, livreSubstituto] = await Promise.all([
+    prisma.capitalBeneficiary.findUniqueOrThrow({ where: { id: input.beneficiaryId }, select: { name: true } }),
+    prisma.capitalBeneficiary.findUniqueOrThrow({ where: { id: input.substituteId }, select: { name: true } }),
+    freeCapitalOf(input.beneficiaryId),
+    appliedOf(input.accountId, input.beneficiaryId),
+    freeCapitalOf(input.substituteId),
+  ]);
+  const devido = round2(-livreDevedor);
+  if (devido <= 0.005) throw new Error(`${beneficiary.name} não está com saldo livre negativo.`);
+  if (amount > devido + 0.005) {
+    throw new Error(
+      `O saldo livre negativo de ${beneficiary.name} é ${formatBRL(devido)}: cubra no máximo esse valor.`,
+    );
+  }
+  if (amount > aplicadoNaConta + 0.005) {
+    throw new Error(
+      `${beneficiary.name} tem ${formatBRL(aplicadoNaConta)} aplicado nesta conta — escolha um valor até esse ou outra aplicação.`,
+    );
+  }
+  if (amount > livreSubstituto + 0.005) {
+    throw new Error(
+      `${substitute.name} tem só ${formatBRL(Math.max(0, livreSubstituto))} de capital livre para assumir ${formatBRL(amount)}.`,
+    );
+  }
+
+  const swapGroup = `cob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const obs = input.description?.trim() ? ` — ${input.description.trim()}` : "";
+  await prisma.$transaction(async (tx) => {
+    await assertIsInvestment(tx as unknown as typeof prisma, input.accountId);
+    await tx.investmentAllocation.create({
+      data: {
+        accountId: input.accountId,
+        beneficiaryId: input.beneficiaryId,
+        kind: "SUBSTITUICAO",
+        amount: -amount,
+        date: input.date,
+        description: `Saldo livre negativo coberto: fatia assumida por ${substitute.name}${obs}`,
+        swapGroup,
+      },
+    });
+    await tx.investmentAllocation.create({
+      data: {
+        accountId: input.accountId,
+        beneficiaryId: input.substituteId,
+        kind: "SUBSTITUICAO",
+        amount,
+        date: input.date,
+        description: `Assumiu a fatia aplicada de ${beneficiary.name} (cobertura do saldo livre negativo)${obs}`,
+        swapGroup,
+      },
+    });
+  });
+  return { amount };
+}
+
+/**
+ * Desfaz uma cobertura: apaga as duas pontas da troca. Recusa se quem assumiu
+ * já não tem a fatia na conta (resgatou/passou adiante) — apagar deixaria o
+ * aplicado dele negativo.
+ */
+export async function desfazerCobertura(swapGroup: string): Promise<void> {
+  const pontas = await prisma.investmentAllocation.findMany({
+    where: { swapGroup },
+    select: { id: true, accountId: true, beneficiaryId: true, amount: true, payableId: true },
+  });
+  if (pontas.length !== 2 || pontas.some((p) => p.payableId)) {
+    throw new Error("Cobertura não encontrada.");
+  }
+  const assumiu = pontas.find((p) => p.amount > 0)!;
+  const aplicado = await appliedOf(assumiu.accountId, assumiu.beneficiaryId);
+  if (aplicado + 0.005 < assumiu.amount) {
+    throw new Error(
+      "Quem assumiu a fatia já não tem esse valor aplicado nesta conta (resgatou ou repassou) — não dá para desfazer.",
+    );
+  }
+  await prisma.investmentAllocation.deleteMany({ where: { swapGroup } });
+}
+
+function formatBRL(v: number): string {
+  return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}

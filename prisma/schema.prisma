@@ -1658,10 +1658,15 @@ model InvestmentAllocation {
   transferId    String?
   receivableId  String?
   payableId     String?
+  // Cobertura de saldo livre negativo: as duas pontas da troca de dono da
+  // fatia (−X do devedor, +X de quem assumiu) levam a mesma marca, para o
+  // "desfazer" apagar o par inteiro. Não há dinheiro nem título por trás.
+  swapGroup     String?
   createdAt     DateTime           @default(now())
 
   @@index([accountId])
   @@index([beneficiaryId])
+  @@index([swapGroup])
   @@map("investment_allocations")
 }
 
