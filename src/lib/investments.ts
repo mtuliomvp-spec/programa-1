@@ -488,9 +488,11 @@ export async function retirarComSubstituicao(input: {
  * ASSUME parte dessa fatia aplicada — o livre do substituto vira aplicado e o
  * aplicado do devedor diminui, levando o livre dele de volta a zero.
  *
- * Nada passa pelo caixa: não há título nem retirada, e o saldo da Aplicação
+ * Nada passa pelo caixa: não há retirada nem aporte, e o saldo da Aplicação
  * não muda (−X de um, +X do outro na mesma conta). Só muda de quem é a fatia.
- * As duas pontas levam a mesma marca (`swapGroup`) para o "desfazer".
+ * Para ficar REGISTRADO no livro caixa, a troca gera um par contábil na conta
+ * de Aplicação: uma entrada e uma saída do mesmo valor (fora do Lucro/
+ * Prejuízo). Tudo leva a mesma marca (`swapGroup`) para o "desfazer".
  */
 export async function cobrirLivreNegativo(input: {
   accountId: string; // conta Aplicação de onde sai a fatia do devedor
@@ -535,8 +537,19 @@ export async function cobrirLivreNegativo(input: {
 
   const swapGroup = `cob_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
   const obs = input.description?.trim() ? ` — ${input.description.trim()}` : "";
+  const capitalCenterId = await structuralCenterId("CAPITAL");
   await prisma.$transaction(async (tx) => {
     await assertIsInvestment(tx as unknown as typeof prisma, input.accountId);
+    await criarParNoLivroCaixa(tx as unknown as typeof prisma, {
+      swapGroup,
+      accountId: input.accountId,
+      amount,
+      date: input.date,
+      devedor: beneficiary.name,
+      substituto: substitute.name,
+      capitalCenterId,
+      obs: input.description?.trim() || null,
+    });
     await tx.investmentAllocation.create({
       data: {
         accountId: input.accountId,
@@ -583,7 +596,103 @@ export async function desfazerCobertura(swapGroup: string): Promise<void> {
       "Quem assumiu a fatia já não tem esse valor aplicado nesta conta (resgatou ou repassou) — não dá para desfazer.",
     );
   }
-  await prisma.investmentAllocation.deleteMany({ where: { swapGroup } });
+  // O par do livro caixa sai junto (entrada e saída iguais: o saldo não muda).
+  await prisma.$transaction([
+    prisma.payable.deleteMany({ where: { capitalCoverGroup: swapGroup } }),
+    prisma.receivable.deleteMany({ where: { capitalCoverGroup: swapGroup } }),
+    prisma.investmentAllocation.deleteMany({ where: { swapGroup } }),
+  ]);
+}
+
+/**
+ * Par contábil da cobertura no livro caixa: entrada (quem assume) e saída (a
+ * fatia do devedor) do MESMO valor, na conta de Aplicação — o saldo não muda.
+ * Categoria OUTROS no centro Capital, marcado com `capitalCoverGroup`: o
+ * Lucro/Prejuízo ignora os dois (não é receita nem despesa).
+ */
+async function criarParNoLivroCaixa(
+  tx: typeof prisma,
+  i: {
+    swapGroup: string;
+    accountId: string;
+    amount: number;
+    date: Date;
+    devedor: string;
+    substituto: string;
+    capitalCenterId: string | null;
+    obs: string | null;
+  },
+) {
+  const rotulo = "Cobertura de capital (sem movimento de caixa)";
+  const nota =
+    `Cobertura do saldo livre negativo de ${i.devedor}: ${i.substituto} assumiu a fatia aplicada. ` +
+    "Entrada e saída iguais na mesma conta — registro contábil, sem dinheiro entrando ou saindo." +
+    (i.obs ? ` ${i.obs}` : "");
+  await tx.receivable.create({
+    data: {
+      description: `Cobertura de saldo livre negativo — ${i.substituto} assume a fatia aplicada de ${i.devedor}`,
+      category: "OUTROS",
+      amount: i.amount,
+      dueDate: i.date,
+      receivedDate: i.date,
+      status: "RECEBIDO",
+      accountId: i.accountId,
+      costCenterId: i.capitalCenterId,
+      notes: nota,
+      capitalCoverGroup: i.swapGroup,
+    },
+  });
+  await tx.payable.create({
+    data: {
+      description: `Cobertura de saldo livre negativo — fatia aplicada de ${i.devedor} passa a ${i.substituto}`,
+      category: "OUTROS",
+      categoryLabel: rotulo,
+      amount: i.amount,
+      dueDate: i.date,
+      paymentDate: i.date,
+      status: "PAGO",
+      accountId: i.accountId,
+      costCenterId: i.capitalCenterId,
+      notes: nota,
+      capitalCoverGroup: i.swapGroup,
+    },
+  });
+}
+
+/**
+ * Lança no livro caixa o par de uma cobertura feita ANTES de o par existir.
+ * Usa a data do caixa aberto (todo lançamento tem a data do caixa).
+ */
+export async function registrarParDaCobertura(swapGroup: string, date: Date): Promise<void> {
+  const [pontas, jaTem] = await Promise.all([
+    prisma.investmentAllocation.findMany({
+      where: { swapGroup },
+      select: {
+        accountId: true,
+        amount: true,
+        description: true,
+        beneficiary: { select: { name: true } },
+      },
+    }),
+    prisma.payable.count({ where: { capitalCoverGroup: swapGroup } }),
+  ]);
+  if (pontas.length !== 2) throw new Error("Cobertura não encontrada.");
+  if (jaTem > 0) throw new Error("Esta cobertura já está registrada no livro caixa.");
+  const devedor = pontas.find((p) => p.amount < 0)!;
+  const assumiu = pontas.find((p) => p.amount > 0)!;
+  const capitalCenterId = await structuralCenterId("CAPITAL");
+  await prisma.$transaction(async (tx) => {
+    await criarParNoLivroCaixa(tx as unknown as typeof prisma, {
+      swapGroup,
+      accountId: assumiu.accountId,
+      amount: round2(assumiu.amount),
+      date,
+      devedor: devedor.beneficiary.name,
+      substituto: assumiu.beneficiary.name,
+      capitalCenterId,
+      obs: null,
+    });
+  });
 }
 
 function formatBRL(v: number): string {

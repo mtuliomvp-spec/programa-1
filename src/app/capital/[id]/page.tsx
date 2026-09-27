@@ -17,6 +17,8 @@ import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
 import CoverNegativeFreeForm from "./CoverNegativeFreeForm";
 import UndoCoverButton from "./UndoCoverButton";
+import RegisterCoverPairButton from "./RegisterCoverPairButton";
+import { getCashboxState } from "@/lib/cashbox";
 import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
 import { capitalPrelancado } from "@/lib/capital-prelancado";
 import Link from "next/link";
@@ -165,8 +167,10 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   // Crédito/débito já informado na fila do caixa: o banco já mexeu, o capital
   // só mexe no ok do caixa do dia. Mostra o que vem e o saldo depois.
   const prelancado = (await capitalPrelancado(beneficiary.id)).get(beneficiary.id) ?? null;
+  const cashbox = await getCashboxState();
+  const caixaData = cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : null;
 
-  const alocacoes = await prisma.investmentAllocation.findMany({
+  const alocacoesRaw = await prisma.investmentAllocation.findMany({
     where: { beneficiaryId: beneficiary.id },
     orderBy: [{ date: "desc" }, { createdAt: "desc" }],
     select: {
@@ -179,6 +183,18 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
       account: { select: { id: true, name: true } },
     },
   });
+  // Coberturas já registradas no livro caixa (as antigas não têm o par ainda).
+  const gruposComPar = new Set(
+    (
+      await prisma.payable.findMany({
+        where: {
+          capitalCoverGroup: { in: alocacoesRaw.map((a) => a.swapGroup).filter((g): g is string => !!g) },
+        },
+        select: { capitalCoverGroup: true },
+      })
+    ).map((p) => p.capitalCoverGroup),
+  );
+  const alocacoes = alocacoesRaw;
 
   return (
     <div>
@@ -288,7 +304,12 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
                     {a.account?.name ? (
                       <span className="block text-xs text-slate-400">{a.account.name}</span>
                     ) : null}
-                    {a.swapGroup && canManage ? <UndoCoverButton swapGroup={a.swapGroup} /> : null}
+                    {a.swapGroup && canManage ? (
+                      <>
+                        {!gruposComPar.has(a.swapGroup) ? <RegisterCoverPairButton swapGroup={a.swapGroup} /> : null}
+                        <UndoCoverButton swapGroup={a.swapGroup} />
+                      </>
+                    ) : null}
                   </Td>
                   <Td
                     className={`text-right font-medium tabular-nums ${
@@ -346,7 +367,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
             devido={Math.round(-freeCapital * 100) / 100}
             appliedAccounts={appliedAccounts}
             substitutes={substitutes}
-            today={toDateInputValue(new Date())}
+            caixaData={caixaData}
           />
         </div>
       ) : null}

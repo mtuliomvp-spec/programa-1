@@ -26,6 +26,7 @@ export default function ReceivableRowActions({
   hasVehicle = false,
   canFixDate = false,
   receivedDateInput = null,
+  cobertura = false,
   queued = null,
 }: {
   id: string;
@@ -43,6 +44,8 @@ export default function ReceivableRowActions({
   canFixDate?: boolean;
   /** Data atual do recebimento (yyyy-mm-dd), para preencher o campo. */
   receivedDateInput?: string | null;
+  /** Par contábil da cobertura de capital: sem Reverter/corrigir por aqui. */
+  cobertura?: boolean;
   /** Já informado que entrou: espera o caixa alcançar o dia para creditar. */
   queued?: { date: string; amount: number; proof: boolean } | null;
 }) {
@@ -73,6 +76,16 @@ export default function ReceivableRowActions({
   // Sem permissão de baixa: nenhum controle de receber/reverter aparece.
   if (!canReceber) return null;
 
+  if (status === "RECEBIDO" && cobertura) {
+    return (
+      <span
+        className="text-xs text-amber-700"
+        title="Registro de cobertura de capital: desfaz-se pelo “Desfazer cobertura”, na ficha do sócio"
+      >
+        cobertura de capital
+      </span>
+    );
+  }
   if (status === "RECEBIDO") {
     return (
       <div className="flex items-center justify-end gap-3">

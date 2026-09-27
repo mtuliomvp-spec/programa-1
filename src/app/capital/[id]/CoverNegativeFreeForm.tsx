@@ -22,7 +22,7 @@ export default function CoverNegativeFreeForm({
   devido,
   appliedAccounts,
   substitutes,
-  today,
+  caixaData,
 }: {
   beneficiaryId: string;
   beneficiaryName: string;
@@ -30,7 +30,8 @@ export default function CoverNegativeFreeForm({
   devido: number;
   appliedAccounts: AppliedAccount[];
   substitutes: Substitute[];
-  today: string;
+  /** Data do caixa aberto (dd/mm/aaaa) — a do par no livro caixa. Null = caixa fechado. */
+  caixaData: string | null;
 }) {
   const [state, submit, pending] = useActionState(cobrirLivreNegativoAction, {} as CapitalFormState);
   const [open, setOpen] = useState(false);
@@ -54,7 +55,8 @@ export default function CoverNegativeFreeForm({
             {beneficiaryName} está com <strong>{formatCurrency(devido)}</strong> de livre negativo (mais
             aplicado do que capital). Outro sócio, com capital livre, <strong>assume parte da fatia
             aplicada</strong>: o livre dele vira aplicado e o livre de {beneficiaryName} volta a zero. Não sai
-            dinheiro do caixa.
+            dinheiro do caixa — o livro caixa recebe um par (entrada e saída iguais na conta de Aplicação) só
+            para registro.
           </p>
         </div>
         <button
@@ -115,10 +117,18 @@ export default function CoverNegativeFreeForm({
                 onValueChange={setValor}
               />
             </Field>
-            <Field label="Data" required>
-              <Input name="date" type="date" defaultValue={today} required />
-            </Field>
+            <div className="flex flex-col gap-1 text-sm">
+              <span className="font-medium text-slate-700">Data</span>
+              <span className="flex h-10 items-center rounded-lg bg-white px-3 text-slate-700">
+                {caixaData ? `${caixaData} (caixa)` : "caixa fechado"}
+              </span>
+            </div>
           </div>
+          {!caixaData ? (
+            <p className="text-xs text-rose-600">
+              Abra o caixa em Contas e caixas: o par do livro caixa leva a data do caixa aberto.
+            </p>
+          ) : null}
           <Field label="Observação">
             <Input name="description" placeholder="Opcional" />
           </Field>
@@ -143,7 +153,7 @@ export default function CoverNegativeFreeForm({
               ) : null}
             </div>
           ) : null}
-          <Button type="submit" disabled={pending || candidatos.length === 0} className="w-full">
+          <Button type="submit" disabled={pending || candidatos.length === 0 || !caixaData} className="w-full">
             {pending ? "Registrando…" : "Confirmar cobertura"}
           </Button>
         </form>
