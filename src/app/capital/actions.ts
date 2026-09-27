@@ -21,7 +21,7 @@ const beneficiarySchema = z.object({
   notes: z.string().optional(),
 });
 
-export type CapitalFormState = { error?: string };
+export type CapitalFormState = { error?: string; message?: string };
 
 export async function createBeneficiaryAction(
   _prev: CapitalFormState,
@@ -310,6 +310,56 @@ export async function withdrawWithSubstituteAction(
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");
   return {};
+}
+
+/**
+ * Cobre o saldo livre negativo do sócio: outro sócio assume parte da fatia
+ * aplicada dele. Sem dinheiro no caixa — só troca o dono da fatia.
+ */
+export async function cobrirLivreNegativoAction(
+  _prev: CapitalFormState,
+  formData: FormData,
+): Promise<CapitalFormState> {
+  const beneficiaryId = String(formData.get("beneficiaryId") || "");
+  const substituteId = String(formData.get("substituteId") || "");
+  const date = parseDateInput(String(formData.get("date") || ""));
+  let coberto = 0;
+  try {
+    await assertCan("administrativo", "capital");
+    const { assertMonthOpen } = await import("@/lib/monthly-closing");
+    await assertMonthOpen(date);
+    const { cobrirLivreNegativo } = await import("@/lib/investments");
+    const r = await cobrirLivreNegativo({
+      accountId: String(formData.get("accountId") || ""),
+      beneficiaryId,
+      substituteId,
+      amount: Number(formData.get("amount") || 0),
+      date,
+      description: String(formData.get("description") || "") || null,
+    });
+    coberto = r.amount;
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível cobrir o saldo." };
+  }
+  revalidatePath(`/capital/${beneficiaryId}`);
+  revalidatePath(`/capital/${substituteId}`);
+  revalidatePath("/capital");
+  return {
+    message: `Coberto: ${coberto.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} da fatia aplicada mudou de dono.`,
+  };
+}
+
+/** Desfaz uma cobertura de saldo livre negativo (apaga as duas pontas). */
+export async function desfazerCoberturaAction(swapGroup: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+    const { desfazerCobertura } = await import("@/lib/investments");
+    await desfazerCobertura(swapGroup);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível desfazer." };
+  }
+  revalidatePath("/capital", "layout");
+  return { ok: true };
 }
 
 export type ContabilizarResult = { ok: boolean; error?: string; message?: string };

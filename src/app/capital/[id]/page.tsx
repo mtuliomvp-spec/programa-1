@@ -15,6 +15,8 @@ import BeneficiaryUserLink from "./BeneficiaryUserLink";
 import BeneficiaryParentSelect from "./BeneficiaryParentSelect";
 import LinkedBeneficiaries from "./LinkedBeneficiaries";
 import SubstitutionWithdrawForm from "./SubstitutionWithdrawForm";
+import CoverNegativeFreeForm from "./CoverNegativeFreeForm";
+import UndoCoverButton from "./UndoCoverButton";
 import { hasModuleAccess, isAdminRole } from "@/lib/permissions";
 import { capitalPrelancado } from "@/lib/capital-prelancado";
 import Link from "next/link";
@@ -173,6 +175,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
       amount: true,
       date: true,
       description: true,
+      swapGroup: true,
       account: { select: { id: true, name: true } },
     },
   });
@@ -285,6 +288,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
                     {a.account?.name ? (
                       <span className="block text-xs text-slate-400">{a.account.name}</span>
                     ) : null}
+                    {a.swapGroup && canManage ? <UndoCoverButton swapGroup={a.swapGroup} /> : null}
                   </Td>
                   <Td
                     className={`text-right font-medium tabular-nums ${
@@ -329,6 +333,19 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
             parentId={beneficiary.id}
             childrenList={childrenList}
             eligible={eligibleChildren}
+            today={toDateInputValue(new Date())}
+          />
+        </div>
+      ) : null}
+
+      {appliedTotal > 0 && canManage && freeCapital < -0.005 ? (
+        <div className="mb-4">
+          <CoverNegativeFreeForm
+            beneficiaryId={beneficiary.id}
+            beneficiaryName={beneficiary.name}
+            devido={Math.round(-freeCapital * 100) / 100}
+            appliedAccounts={appliedAccounts}
+            substitutes={substitutes}
             today={toDateInputValue(new Date())}
           />
         </div>
