@@ -52,6 +52,8 @@ export type PayableRow = {
   accountName: string | null;
   /** Data do pagamento (yyyy-mm-dd) quando já pago, para corrigir. */
   paymentDateInput: string | null;
+  /** Par contábil da cobertura de capital: desfaz-se na ficha do sócio. */
+  cobertura?: boolean;
   recurring: boolean;
   // Combo de pagamento em que o título está (montado/solicitado por um usuário).
   combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
@@ -409,14 +411,22 @@ export default function PayablesTable({
                         Editar
                       </Link>
                     ) : null}
-                    {p.status === "PAGO" && canFixDate && p.paymentDateInput ? (
+                    {p.status === "PAGO" && p.cobertura ? (
+                      <span
+                        className="text-xs text-amber-700"
+                        title="Registro de cobertura de capital: desfaz-se pelo “Desfazer cobertura”, na ficha do sócio"
+                      >
+                        cobertura de capital
+                      </span>
+                    ) : null}
+                    {p.status === "PAGO" && !p.cobertura && canFixDate && p.paymentDateInput ? (
                       <FixDateButton
                         currentDate={p.paymentDateInput}
                         kind="pagamento"
                         onSave={(d) => correctPaymentDateAction(p.id, d)}
                       />
                     ) : null}
-                    {p.status === "PAGO" && canPagar ? (
+                    {p.status === "PAGO" && p.cobertura ? null : p.status === "PAGO" && canPagar ? (
                       <button
                         type="button"
                         disabled={reverting}

@@ -29,6 +29,8 @@ export type ReceivableRow = {
   hasVehicle: boolean;
   /** Data do recebimento (yyyy-mm-dd) quando já recebido, para corrigir. */
   receivedDateInput: string | null;
+  /** Par contábil da cobertura de capital: desfaz-se na ficha do sócio. */
+  cobertura?: boolean;
   /**
    * Entrada já informada: o dinheiro caiu na conta e o crédito espera o
    * movimento do caixa alcançar o dia (Contas e caixas).
@@ -237,6 +239,7 @@ export default function ReceivablesTable({
                       canFixDate={canFixDate}
                       receivedDateInput={r.receivedDateInput}
                       queued={r.queued}
+                      cobertura={r.cobertura}
                     />
                     {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>

@@ -108,6 +108,7 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         vehicleId: null, // idem para contas manuais ligadas a veículos
         saleId: null, // comissão de venda entra por competência (abaixo)
         id: { notIn: retiradaPayableIds }, // retirada de capital não é despesa
+        capitalCoverGroup: null, // par contábil da cobertura de capital: não é despesa
       },
       select: { id: true, amount: true, paymentDate: true, category: true },
     }),
@@ -131,6 +132,8 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         vehicleId: null,
         receivedDate: { gte: rangeStart, lt: rangeEnd },
         id: { notIn: aporteReceivableIds },
+        // Par contábil da cobertura de saldo livre negativo: registro, não receita.
+        capitalCoverGroup: null,
       },
       select: { amount: true, receivedDate: true },
     }),
@@ -378,6 +381,8 @@ async function profitLossStatement(
         vehicleId: null,
         saleId: null,
         id: { notIn: retiradaPayableIds },
+        // Par contábil da cobertura de saldo livre negativo: registro, não despesa.
+        capitalCoverGroup: null,
       },
       select: {
         id: true,
@@ -420,6 +425,8 @@ async function profitLossStatement(
         vehicleId: null,
         receivedDate: { gte: rangeStart, lt: rangeEnd },
         id: { notIn: aporteReceivableIds },
+        // Par contábil da cobertura de saldo livre negativo: registro, não receita.
+        capitalCoverGroup: null,
       },
       select: { id: true, amount: true, receivedDate: true, description: true },
     }),

@@ -1285,6 +1285,11 @@ model Payable {
   // (a conta de luz que chegou com outra data) sem o título renascer, e mudar o
   // dia da recorrência não cria um segundo título do mesmo mês.
   recurringPeriod      String?
+  // Registro no livro caixa de uma COBERTURA de saldo livre negativo (a fatia
+  // aplicada trocou de dono): entrada e saída iguais na conta de Aplicação,
+  // fora do Lucro/Prejuízo. Mesma marca do par de alocações (swapGroup) —
+  // só sai junto com o "Desfazer cobertura".
+  capitalCoverGroup    String?
   // Solicitação de compra que gerou este título (espelho da aprovação).
   purchaseRequestId    String?
   purchaseRequest      PurchaseRequest?    @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
@@ -1486,6 +1491,11 @@ model Receivable {
   recurring            RecurringEntry?     @relation(fields: [recurringId], references: [id], onDelete: SetNull)
   // Ocorrência da recorrência (mesma ideia do Payable.recurringPeriod).
   recurringPeriod      String?
+  // Registro no livro caixa de uma COBERTURA de saldo livre negativo (a fatia
+  // aplicada trocou de dono): entrada e saída iguais na conta de Aplicação,
+  // fora do Lucro/Prejuízo. Mesma marca do par de alocações (swapGroup) —
+  // só sai junto com o "Desfazer cobertura".
+  capitalCoverGroup    String?
   // Competência/referência do que o título cobra ("08/2026"). Informativa: a
   // receita continua entrando pelo regime de caixa, na data do recebimento.
   referencePeriod      String?

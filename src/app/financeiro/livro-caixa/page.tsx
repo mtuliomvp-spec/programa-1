@@ -185,6 +185,9 @@ export default async function LivroCaixaPage({
     // Baixa de título (entrada recebida ou saída paga): permite corrigir o dia.
     // Transferência entre contas não entra — ali a data é do próprio lançamento.
     fixable?: { kind: "entrada" | "saida"; id: string; dateInput: string };
+    // Par contábil da cobertura de capital: registro sem dinheiro, preso à
+    // cobertura — sem estorno/correção por aqui (desfaz-se na ficha do sócio).
+    cobertura?: boolean;
   };
 
   const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
@@ -216,9 +219,12 @@ export default async function LivroCaixaPage({
       account: r.account?.name ?? null,
       kind: "entrada" as const,
       amount: r.amount,
-      fixable: { kind: "entrada", id: r.id, dateInput: toDateInputValue(r.receivedDate!) } as const,
+      cobertura: !!r.capitalCoverGroup,
+      fixable: r.capitalCoverGroup
+        ? undefined
+        : ({ kind: "entrada", id: r.id, dateInput: toDateInputValue(r.receivedDate!) } as const),
       deletable:
-        !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null
+        !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null && !r.capitalCoverGroup
           ? ({ kind: "entrada", id: r.id, avulso: r.avulso } as const)
           : undefined,
     })),
@@ -233,9 +239,12 @@ export default async function LivroCaixaPage({
       kind: "saida" as const,
       amount: p.amount,
       href: `/financeiro/a-pagar/${p.id}/ordem`,
-      fixable: { kind: "saida", id: p.id, dateInput: toDateInputValue(p.paymentDate!) } as const,
+      cobertura: !!p.capitalCoverGroup,
+      fixable: p.capitalCoverGroup
+        ? undefined
+        : ({ kind: "saida", id: p.id, dateInput: toDateInputValue(p.paymentDate!) } as const),
       deletable:
-        !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId
+        !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId && !p.capitalCoverGroup
           ? ({ kind: "saida", id: p.id, avulso: p.avulso } as const)
           : undefined,
     })),
@@ -525,6 +534,14 @@ export default async function LivroCaixaPage({
                       ) : null}
                       {m.deletable && canCriar ? (
                         <DeleteCashEntryButton kind={m.deletable.kind} id={m.deletable.id} avulso={m.deletable.avulso} />
+                      ) : null}
+                      {m.cobertura ? (
+                        <span
+                          className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                          title="Desfaz-se pelo “Desfazer cobertura”, na ficha do sócio (Capital dos sócios)"
+                        >
+                          cobertura de capital
+                        </span>
                       ) : null}
                     </span>
                     {m.notes ? (

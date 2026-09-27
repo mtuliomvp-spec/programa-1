@@ -322,10 +322,15 @@ export async function cobrirLivreNegativoAction(
 ): Promise<CapitalFormState> {
   const beneficiaryId = String(formData.get("beneficiaryId") || "");
   const substituteId = String(formData.get("substituteId") || "");
-  const date = parseDateInput(String(formData.get("date") || ""));
   let coberto = 0;
   try {
     await assertCan("administrativo", "capital");
+    // Gera o par no livro caixa: mesmas travas de qualquer lançamento, e a
+    // data é a do caixa aberto.
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    const { getCashboxWorkDate } = await import("@/lib/cashbox");
+    const date = await getCashboxWorkDate();
     const { assertMonthOpen } = await import("@/lib/monthly-closing");
     await assertMonthOpen(date);
     const { cobrirLivreNegativo } = await import("@/lib/investments");
@@ -344,12 +349,35 @@ export async function cobrirLivreNegativoAction(
   revalidatePath(`/capital/${beneficiaryId}`);
   revalidatePath(`/capital/${substituteId}`);
   revalidatePath("/capital");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/contas");
   return {
     message: `Coberto: ${coberto.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })} da fatia aplicada mudou de dono.`,
   };
 }
 
-/** Desfaz uma cobertura de saldo livre negativo (apaga as duas pontas). */
+/** Lança no livro caixa o par de uma cobertura feita antes de o par existir. */
+export async function registrarParCoberturaAction(swapGroup: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("administrativo", "capital");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    const { getCashboxWorkDate } = await import("@/lib/cashbox");
+    const date = await getCashboxWorkDate();
+    const { assertMonthOpen } = await import("@/lib/monthly-closing");
+    await assertMonthOpen(date);
+    const { registrarParDaCobertura } = await import("@/lib/investments");
+    await registrarParDaCobertura(swapGroup, date);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível registrar." };
+  }
+  revalidatePath("/capital", "layout");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/contas");
+  return { ok: true };
+}
+
+/** Desfaz uma cobertura de saldo livre negativo (apaga as duas pontas e o par do livro caixa). */
 export async function desfazerCoberturaAction(swapGroup: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCan("administrativo", "capital");
@@ -359,6 +387,8 @@ export async function desfazerCoberturaAction(swapGroup: string): Promise<{ ok: 
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível desfazer." };
   }
   revalidatePath("/capital", "layout");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/financeiro/contas");
   return { ok: true };
 }
 

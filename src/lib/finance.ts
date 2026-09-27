@@ -2354,7 +2354,19 @@ async function payablePaid(id: string, paymentDate: Date, accountId?: string | n
   return updated;
 }
 
+/** Par contábil da cobertura de capital só sai inteiro, pelo "Desfazer cobertura". */
+const COBERTURA_PRESA = "Este lançamento é o registro de uma cobertura de capital (a fatia aplicada trocou de dono). Para desfazer, use \"Desfazer cobertura\" na ficha do sócio, em Capital dos sócios.";
+
+async function assertNaoEhCobertura(kind: "payable" | "receivable", id: string) {
+  const row =
+    kind === "payable"
+      ? await prisma.payable.findUnique({ where: { id }, select: { capitalCoverGroup: true } })
+      : await prisma.receivable.findUnique({ where: { id }, select: { capitalCoverGroup: true } });
+  if (row?.capitalCoverGroup) throw new Error(COBERTURA_PRESA);
+}
+
 export async function markPayablePending(id: string) {
+  await assertNaoEhCobertura("payable", id);
   const updated = await prisma.payable.update({
     where: { id },
     data: { status: "PENDENTE", paymentDate: null, accountId: null },
@@ -2432,6 +2444,7 @@ export async function settleReceivableFromCapital(
 }
 
 export async function markReceivablePending(id: string) {
+  await assertNaoEhCobertura("receivable", id);
   const updated = await prisma.receivable.update({
     where: { id },
     data: { status: "PENDENTE", receivedDate: null, accountId: null },
@@ -3636,6 +3649,7 @@ export async function createCashEntry(input: {
  * (devem ser revertidas na própria origem).
  */
 export async function deleteCashEntry(kind: "entrada" | "saida", id: string) {
+  await assertNaoEhCobertura(kind === "entrada" ? "receivable" : "payable", id);
   if (kind === "entrada") {
     const r = await prisma.receivable.findUnique({
       where: { id },
@@ -3704,11 +3718,11 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
   const [receivables, payables] = await Promise.all([
     prisma.receivable.findMany({
       where: { status: "RECEBIDO", receivedDate: range },
-      select: { id: true, description: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true },
+      select: { id: true, description: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true, capitalCoverGroup: true },
     }),
     prisma.payable.findMany({
       where: { status: "PAGO", paymentDate: range },
-      select: { id: true, description: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true },
+      select: { id: true, description: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true, capitalCoverGroup: true },
     }),
   ]);
 
@@ -3718,7 +3732,8 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
 
   // Recebíveis: avulso apaga; título comum estorna; origem é pulada.
   for (const r of receivables) {
-    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null) {
+    // Par da cobertura de capital: não é baixa — desfaz-se pela ficha do sócio.
+    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null || r.capitalCoverGroup) {
       pulados++;
       puladosDescricoes.push(r.description);
       continue;
@@ -3736,7 +3751,7 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
 
   // Pagáveis: mesma regra (origem = veículo/peça/recorrência/consórcio/funcionário).
   for (const p of payables) {
-    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId) {
+    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId || p.capitalCoverGroup) {
       pulados++;
       puladosDescricoes.push(p.description);
       continue;
