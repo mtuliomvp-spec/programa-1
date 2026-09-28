@@ -110,6 +110,7 @@ const accountSchema = z.object({
   bankName: z.string().optional(),
   agency: z.string().optional(),
   accountNumber: z.string().optional(),
+  pixKey: z.string().optional(),
   initialBalance: z.coerce.number().default(0),
   isDefault: z.coerce.boolean().optional(),
   isInvestment: z.coerce.boolean().optional(),
@@ -159,6 +160,7 @@ export async function createAccountAction(
         bankName: data.bankName || null,
         agency: data.agency || null,
         accountNumber: data.accountNumber || null,
+        pixKey: data.pixKey?.trim() || null,
         initialBalance: isInvestment ? 0 : data.initialBalance,
         isDefault,
         isInvestment,
@@ -285,6 +287,7 @@ export async function updateAccountAction(
       bankName: data.bankName?.trim() || null,
       agency: data.agency?.trim() || null,
       accountNumber: data.accountNumber?.trim() || null,
+      pixKey: data.pixKey?.trim() || null,
       initialBalance: novoSaldo,
       investmentMaturity:
         conta.isInvestment && data.investmentMaturity ? parseDateInput(data.investmentMaturity) : null,

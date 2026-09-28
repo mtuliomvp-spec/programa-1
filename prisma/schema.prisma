@@ -208,6 +208,8 @@ model FinancialAccount {
   bankName            String?
   agency              String?
   accountNumber       String?
+  // Chave PIX da conta: entra nos dados bancários copiados/enviados (WhatsApp).
+  pixKey              String?
   initialBalance      Float                  @default(0)
   isDefault           Boolean                @default(false)
   active              Boolean                @default(true)

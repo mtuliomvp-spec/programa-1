@@ -17,6 +17,8 @@ import AccountForm from "./AccountForm";
 import TransferForm from "./TransferForm";
 import InformarTransferencia from "./InformarTransferencia";
 import PendingTransfersCard from "./PendingTransfersCard";
+import ShareBankDataButton from "./ShareBankDataButton";
+import { getCompany } from "@/lib/company";
 import AccountRowActions from "./AccountRowActions";
 import DeleteTransferButton from "./DeleteTransferButton";
 
@@ -86,7 +88,10 @@ export default async function ContasPage({
     // Titular verdadeiro de cada conta (quando é de um sócio, não da MVP).
     prisma.financialAccount.findMany({
       where: { ownerBeneficiaryId: { not: null } },
-      select: { id: true, ownerBeneficiary: { select: { name: true } } },
+      select: {
+        id: true,
+        ownerBeneficiary: { select: { name: true, user: { select: { document: true } } } },
+      },
     }),
     prisma.capitalBeneficiary.findMany({
       where: { isCompany: false },
@@ -95,6 +100,31 @@ export default async function ContasPage({
     }),
   ]);
   const ownerByAccount = new Map(owners.map((o) => [o.id, o.ownerBeneficiary?.name ?? null]));
+  const ownerDocByAccount = new Map(owners.map((o) => [o.id, o.ownerBeneficiary?.user?.document ?? null]));
+
+  // Dados bancários para copiar/enviar (WhatsApp): só conta de banco de
+  // verdade, com número. O titular é o sócio dono da conta, quando há, ou a
+  // própria empresa.
+  const company = await getCompany();
+  const dadosBancarios = (a: (typeof accounts)[number]): string | null => {
+    if (a.structural || a.isInvestment || a.type === "CAIXA" || a.type === "FINANCEIRA") return null;
+    if (!a.accountNumber) return null;
+    const titular = ownerByAccount.get(a.id) ?? company.razaoSocial;
+    const doc = ownerByAccount.get(a.id) ? ownerDocByAccount.get(a.id) : company.cnpj;
+    const docDigits = (doc ?? "").replace(/\D/g, "");
+    const docLabel = docDigits.length === 14 ? "CNPJ" : docDigits.length === 11 ? "CPF" : "CPF/CNPJ";
+    return [
+      "*Dados bancários*",
+      a.bankName ? `Banco: ${a.bankName}` : null,
+      a.agency ? `Agência: ${a.agency}` : null,
+      `${a.type === "POUPANCA" ? "Conta poupança" : "Conta corrente"}: ${a.accountNumber}`,
+      `Titular: ${titular}`,
+      doc ? `${docLabel}: ${doc}` : null,
+      a.pixKey ? `PIX: ${a.pixKey}` : null,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
 
   // Sinais/entradas antecipadas aguardando crédito cuja data de depósito já
   // chegou (<= data de trabalho do caixa aberto): viram um aviso para creditar.
@@ -186,7 +216,8 @@ export default async function ContasPage({
   const renderAccountCard = (a: (typeof accounts)[number]) => (
     <Card key={a.id} className={`px-5 py-4 ${!a.active ? "opacity-60" : ""}`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href={`/financeiro/contas/${a.id}`} className="group min-w-0">
+        <div className="min-w-0">
+        <Link href={`/financeiro/contas/${a.id}`} className="group block min-w-0">
           <p className="flex flex-wrap items-center gap-2 font-semibold text-slate-900 group-hover:text-blue-700">
             {a.isInvestment ? "📈" : a.type === "BANCO" ? "🏦" : a.type === "POUPANCA" ? "🐷" : a.type === "FINANCEIRA" ? "🏢" : "💵"} {a.name}
             <Badge tone={a.isInvestment ? "success" : "default"}>{a.isInvestment ? "Aplicação" : typeLabel[a.type]}</Badge>
@@ -213,6 +244,12 @@ export default async function ContasPage({
             </p>
           ) : null}
         </Link>
+        {dadosBancarios(a) ? (
+          <div data-no-pdf>
+            <ShareBankDataButton texto={dadosBancarios(a)!} />
+          </div>
+        ) : null}
+        </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
             <p className="text-xs uppercase tracking-wide text-slate-400">Saldo</p>

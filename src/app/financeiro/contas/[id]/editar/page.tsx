@@ -29,6 +29,7 @@ export default async function EditarContaPage({ params }: { params: Promise<{ id
         bankName: true,
         agency: true,
         accountNumber: true,
+        pixKey: true,
         initialBalance: true,
         isInvestment: true,
         investmentMaturity: true,
@@ -81,6 +82,7 @@ export default async function EditarContaPage({ params }: { params: Promise<{ id
                 bankName: conta.bankName,
                 agency: conta.agency,
                 accountNumber: conta.accountNumber,
+                pixKey: conta.pixKey,
                 initialBalance: conta.initialBalance,
                 isInvestment: conta.isInvestment,
                 investmentMaturity: conta.investmentMaturity
