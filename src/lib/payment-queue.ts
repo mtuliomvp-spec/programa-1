@@ -29,8 +29,10 @@ const digitos = (v: string | null | undefined) => (v ?? "").replace(/\D/g, "");
  * "205986-7" e o cadastro pode ter "205986" (ou o contrário).
  */
 function mesmoNumero(a: string | null | undefined, b: string | null | undefined): boolean {
-  const x = digitos(a);
-  const y = digitos(b);
+  // Zeros à esquerda não mudam o número: o cadastro tem "01000353-4" e o
+  // comprovante imprime "1000353-4" — é a mesma conta.
+  const x = digitos(a).replace(/^0+/, "");
+  const y = digitos(b).replace(/^0+/, "");
   if (!x || !y) return false;
   if (x === y) return true;
   return x.slice(0, -1) === y || y.slice(0, -1) === x;
@@ -1107,4 +1109,60 @@ export async function prepararBaixaDaFila(payableId: string, workDate: Date) {
     where: { id: payableId },
     data: { amount: round2(valor), notes, discountAmount: null, discountUntil: null },
   });
+}
+
+/** Aviso gravado quando a conta do comprovante não foi reconhecida. */
+const AVISO_CONTA_NAO_BATE = /^conta debitada "([^"]+)" não bate com nenhuma conta cadastrada — escolha a conta ao confirmar$/;
+
+/**
+ * Tenta de novo identificar a conta dos pré-lançamentos que entraram na fila
+ * SEM conta ("não bate com nenhuma conta cadastrada"). A conta pode ter sido
+ * cadastrada/corrigida depois, ou a comparação ter melhorado (ex.: o cadastro
+ * com zero à esquerda, "01000353-4", contra "1000353-4" no comprovante). Achou:
+ * grava a conta e tira o aviso; não achou: deixa como está.
+ */
+export async function reidentificarContasDaFila(): Promise<number> {
+  const semConta = { pendingPaymentDate: { not: null }, pendingPaymentAccountId: null, pendingPaymentNote: { contains: "não bate com nenhuma conta cadastrada" } };
+  const [titulos, combos] = await Promise.all([
+    prisma.payable.findMany({
+      where: { status: { not: "PAGO" }, ...semConta },
+      select: { id: true, pendingPaymentNote: true },
+    }),
+    prisma.paymentCombo.findMany({
+      where: { status: { notIn: ["PAGO", "CANCELADO"] }, ...semConta },
+      select: { id: true, pendingPaymentNote: true },
+    }),
+  ]);
+  if (titulos.length === 0 && combos.length === 0) return 0;
+
+  const resolver = async (nota: string | null) => {
+    const partes = (nota ?? "").split(" · ");
+    const aviso = partes.map((p) => AVISO_CONTA_NAO_BATE.exec(p)).find(Boolean);
+    if (!aviso) return null;
+    const accountId = await contaDoComprovante({ contaDebitada: aviso[1] });
+    if (!accountId) return null;
+    const resto = partes.filter((p) => !AVISO_CONTA_NAO_BATE.test(p)).join(" · ");
+    return { accountId, nota: resto || null };
+  };
+
+  let corrigidos = 0;
+  for (const t of titulos) {
+    const r = await resolver(t.pendingPaymentNote);
+    if (!r) continue;
+    await prisma.payable.update({
+      where: { id: t.id },
+      data: { pendingPaymentAccountId: r.accountId, pendingPaymentNote: r.nota },
+    });
+    corrigidos += 1;
+  }
+  for (const c of combos) {
+    const r = await resolver(c.pendingPaymentNote);
+    if (!r) continue;
+    await prisma.paymentCombo.update({
+      where: { id: c.id },
+      data: { pendingPaymentAccountId: r.accountId, pendingPaymentNote: r.nota },
+    });
+    corrigidos += 1;
+  }
+  return corrigidos;
 }

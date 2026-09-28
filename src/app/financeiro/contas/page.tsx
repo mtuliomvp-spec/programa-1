@@ -136,9 +136,12 @@ export default async function ContasPage({
   // Fila de espera: pagamentos cujo comprovante já chegou e que esperavam o
   // movimento alcançar o dia. Com o caixa aberto neste dia, eles podem ser
   // confirmados aqui mesmo.
-  const { pagamentosNaFila, pagamentosAdiante, debitosPrelancados } = await import(
+  const { pagamentosNaFila, pagamentosAdiante, debitosPrelancados, reidentificarContasDaFila } = await import(
     "@/lib/payment-queue"
   );
+  // Pré-lançamento que entrou sem conta ("não bate com nenhuma conta"): tenta
+  // de novo antes de mostrar — a conta pode ter sido cadastrada depois.
+  await reidentificarContasDaFila();
   const workDate = cashbox.open && cashbox.session ? cashbox.session.workDate : null;
   // Pagos em dias À FRENTE do movimento (pagou hoje, o caixa ainda está em
   // ontem): o dinheiro já saiu do banco, então a tela mostra o total por dia —
