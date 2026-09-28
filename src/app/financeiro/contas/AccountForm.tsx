@@ -16,6 +16,7 @@ export type AccountFormInitial = {
   bankName: string | null;
   agency: string | null;
   accountNumber: string | null;
+  pixKey: string | null;
   initialBalance: number;
   isInvestment: boolean;
   investmentMaturity: string | null; // yyyy-mm-dd
@@ -142,6 +143,16 @@ export default function AccountForm({
             de pagamento — vale mantê-los certos.
           </p>
         ) : null}
+      </Field>
+      <Field label="Chave PIX (opcional)">
+        <Input
+          name="pixKey"
+          placeholder="CNPJ, e-mail, telefone ou chave aleatória"
+          defaultValue={initial?.pixKey ?? ""}
+        />
+        <p className="mt-1 text-xs text-slate-400">
+          Vai junto nos dados bancários que você copia ou envia pelo WhatsApp.
+        </p>
       </Field>
       {beneficiaries.length > 0 ? (
         <Field label="Titular da conta">

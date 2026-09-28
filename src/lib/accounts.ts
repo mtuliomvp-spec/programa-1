@@ -180,6 +180,7 @@ export type AccountWithBalance = {
   bankName: string | null;
   agency: string | null;
   accountNumber: string | null;
+  pixKey: string | null;
   isDefault: boolean;
   isInvestment: boolean;
   /** Até quando a aplicação rende (só faz sentido com isInvestment). */
@@ -235,6 +236,7 @@ async function accountsWithBalances(): Promise<AccountWithBalance[]> {
       bankName: account.bankName,
       agency: account.agency,
       accountNumber: account.accountNumber,
+      pixKey: account.pixKey,
       isDefault: account.isDefault,
       isInvestment: account.isInvestment,
       investmentMaturity: account.investmentMaturity,
