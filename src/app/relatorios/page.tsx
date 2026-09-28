@@ -31,6 +31,12 @@ const REPORTS = [
     description: "Para onde o dinheiro da loja está indo: compras, operação, comissões",
   },
   {
+    href: "/relatorios/fluxos",
+    icon: "🧮",
+    title: "Fluxos por conta financeira",
+    description: "Total do período por sócio, placa e categoria em cada conta — para alimentar outro sistema",
+  },
+  {
     href: "/financeiro/fluxo-caixa",
     icon: "💰",
     title: "Fluxo de caixa",
