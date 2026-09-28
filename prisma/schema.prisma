@@ -1259,6 +1259,12 @@ model Payable {
   // ela que faz as telas da fila mostrarem uma linha só, com o total do boleto,
   // que abre nos títulos que ela cobre.
   pendingPaymentBatch     String?
+  // "Já paguei" PARCIAL: o comprovante cobre só uma parte. No ok do caixa o
+  // título é desmembrado (a parte paga é baixada, o saldo segue a pagar).
+  pendingPaymentPartial   Boolean           @default(false)
+  // Parte de um PAGAMENTO PARCIAL: o título de onde ela saiu (o que ficou com o
+  // saldo). No combo, a parte que sai do combo volta a se juntar a ele.
+  partialOfId             String?
   amount               Float
   dueDate              DateTime
   paymentDate          DateTime?

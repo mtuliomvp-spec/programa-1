@@ -119,7 +119,15 @@ export async function solicitarSaqueAction(
 
 /** Joga títulos (não pagos e sem combo) para dentro de um combo ABERTO ou
  * SOLICITADO (enquanto não for pago, o borderô ainda pode ser ajustado). */
-export async function addPayablesToComboAction(comboId: string, ids: string[]): Promise<{ ok: boolean; added: number; error?: string }> {
+export async function addPayablesToComboAction(
+  comboId: string,
+  ids: string[],
+  /**
+   * Pagamento PARCIAL por título (id → valor): o título é desmembrado e só a
+   * parte entra no combo; o saldo continua a pagar fora dele, mesmo nº.
+   */
+  parciais: Record<string, number> = {},
+): Promise<{ ok: boolean; added: number; error?: string }> {
   try {
     await assertCan("combos", "criar");
   } catch (e) {
@@ -132,11 +140,43 @@ export async function addPayablesToComboAction(comboId: string, ids: string[]): 
   if (combo.status !== "ABERTO" && combo.status !== "SOLICITADO") {
     return { ok: false, added: 0, error: "Este combo já foi finalizado." };
   }
+  // Parciais primeiro: valida todos antes de desmembrar qualquer um, para não
+  // deixar metade feita se um deles não puder.
+  const idsParciais = ids.filter((id) => (parciais[id] ?? 0) > 0);
+  if (idsParciais.length) {
+    const { assertPodeParcial } = await import("@/lib/finance");
+    const rows = await prisma.payable.findMany({
+      where: { id: { in: idsParciais } },
+      select: { id: true, description: true, amount: true, status: true, paymentComboId: true, cardInvoice: true, category: true },
+    });
+    for (const r of rows) {
+      try {
+        assertPodeParcial(r);
+      } catch (e) {
+        return { ok: false, added: 0, error: `${r.description}: ${e instanceof Error ? e.message : "não aceita parcial."}` };
+      }
+      const v = Math.round((parciais[r.id] ?? 0) * 100) / 100;
+      if (v >= r.amount - 0.005) {
+        return {
+          ok: false,
+          added: 0,
+          error: `${r.description}: o parcial tem de ser menor que o título (${formatCurrency(r.amount)}). Para o valor todo, deixe o campo vazio.`,
+        };
+      }
+    }
+  }
+  const { desmembrarPagamentoParcial } = await import("@/lib/finance");
+  const paraOCombo: string[] = [];
+  for (const id of ids) {
+    const v = parciais[id] ?? 0;
+    paraOCombo.push(v > 0 ? await desmembrarPagamentoParcial(id, v) : id);
+  }
   const res = await prisma.payable.updateMany({
-    where: { id: { in: ids }, status: { not: "PAGO" }, paymentComboId: null },
+    where: { id: { in: paraOCombo }, status: { not: "PAGO" }, paymentComboId: null },
     data: { paymentComboId: comboId },
   });
   revalidate(comboId);
+  revalidatePath("/financeiro/a-pagar");
   return { ok: true, added: res.count };
 }
 
@@ -159,7 +199,11 @@ export async function removePayableFromComboAction(payableId: string): Promise<R
     return { ok: false, error: "O combo já foi finalizado." };
   }
   await prisma.payable.update({ where: { id: payableId }, data: { paymentComboId: null } });
+  // Parte de pagamento parcial: volta a se juntar ao saldo de onde saiu.
+  const { reunirParteParcial } = await import("@/lib/finance");
+  await reunirParteParcial(payableId);
   revalidate(p.paymentComboId);
+  revalidatePath("/financeiro/a-pagar");
   return { ok: true };
 }
 
@@ -511,6 +555,15 @@ export async function cancelComboAction(comboId: string): Promise<Result> {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   if (combo.status === "PAGO") return { ok: false, error: "Combo já pago — não pode ser cancelado." };
+  // Partes de pagamento parcial do combo: voltam a se juntar aos títulos de
+  // origem depois de soltas (em vez de ficarem títulos de "parcial" soltos).
+  const partes =
+    combo.tipo === "SAQUE"
+      ? []
+      : await prisma.payable.findMany({
+          where: { paymentComboId: comboId, status: { not: "PAGO" }, partialOfId: { not: null } },
+          select: { id: true },
+        });
   await prisma.$transaction([
     // SAQUE: o título só existia por causa do pedido — some junto. Soltá-lo no
     // Contas a pagar deixaria uma retirada pendente que alguém poderia pagar
@@ -520,6 +573,11 @@ export async function cancelComboAction(comboId: string): Promise<Result> {
       : prisma.payable.updateMany({ where: { paymentComboId: comboId }, data: { paymentComboId: null } }),
     prisma.paymentCombo.update({ where: { id: comboId }, data: { status: "CANCELADO" } }),
   ]);
+  if (partes.length) {
+    const { reunirParteParcial } = await import("@/lib/finance");
+    for (const parte of partes) await reunirParteParcial(parte.id);
+    revalidatePath("/financeiro/a-pagar");
+  }
   revalidate(comboId);
   return { ok: true };
 }

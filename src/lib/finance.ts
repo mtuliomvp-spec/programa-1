@@ -3878,3 +3878,119 @@ export async function correctPaymentDate(
     return { movedCapital: cap.count > 0, movedVehicleCost: cost.count > 0 };
   });
 }
+
+/**
+ * Desmembra um título para PAGAMENTO PARCIAL: o original fica com o SALDO
+ * (segue pendente, mesmo nº) e nasce um título novo com o VALOR PAGO, ainda
+ * pendente — quem chama faz a baixa dele. O novo herda o destino contábil
+ * (veículo, sócio do capital, fornecedor, categoria, vendedor, funcionário),
+ * então retirada de capital, custo de veículo etc. saem corretos pela parte
+ * paga; os rastreadores de origem (recorrência, solicitação de compra…) ficam
+ * no saldo. Não vale para fatura de cartão nem compra de veículo (o valor
+ * desses vem de outra origem), nem para título de combo.
+ *
+ * Usado pelo "Pagar parcial" (baixa na hora) e pelo "Já paguei" parcial (a
+ * baixa acontece no ok do caixa do dia).
+ */
+export async function desmembrarPagamentoParcial(id: string, amountToPay: number): Promise<string> {
+  const p = await prisma.payable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      amount: true,
+      description: true,
+      category: true,
+      categoryLabel: true,
+      documentNumber: true,
+      dueDate: true,
+      vehicleId: true,
+      saleId: true,
+      supplierId: true,
+      costCenterId: true,
+      capitalBeneficiaryId: true,
+      beneficiaryUserId: true,
+      employeeId: true,
+      notes: true,
+      cardInvoice: true,
+      paymentComboId: true,
+    },
+  });
+  if (!p) throw new Error("Título não encontrado.");
+  assertPodeParcial(p);
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const amount = round2(amountToPay);
+  const total = round2(p.amount);
+  if (!(amount > 0)) throw new Error("Informe um valor válido para pagar.");
+  if (amount >= total) {
+    throw new Error(`Para pagar o total use "Pagar título". O parcial deve ser menor que ${brl(total)}.`);
+  }
+  const remaining = round2(total - amount);
+
+  return prisma.$transaction(async (tx) => {
+    await tx.payable.update({ where: { id }, data: { amount: remaining } });
+    const child = await tx.payable.create({
+      data: {
+        description: `${p.description} (pagamento parcial)`,
+        category: p.category,
+        categoryLabel: p.categoryLabel,
+        documentNumber: p.documentNumber,
+        amount,
+        dueDate: p.dueDate,
+        status: "PENDENTE",
+        vehicleId: p.vehicleId,
+        saleId: p.saleId,
+        supplierId: p.supplierId,
+        costCenterId: p.costCenterId,
+        capitalBeneficiaryId: p.capitalBeneficiaryId,
+        beneficiaryUserId: p.beneficiaryUserId,
+        employeeId: p.employeeId,
+        notes: p.notes,
+        // De onde a parte saiu: no combo, se ela sair do combo, volta a se
+        // juntar ao saldo (em vez de ficar um título solto de "parcial").
+        partialOfId: id,
+      },
+      select: { id: true },
+    });
+    return child.id;
+  });
+}
+
+/**
+ * Junta de volta ao título de origem a PARTE de um pagamento parcial que não
+ * foi paga (ex.: tirada do combo ou combo cancelado). O saldo volta ao valor de
+ * antes e a parte some. Se a origem já foi paga ou está em outro combo, não
+ * dá para juntar: a parte só fica solta (devolve false).
+ */
+export async function reunirParteParcial(parteId: string): Promise<boolean> {
+  const parte = await prisma.payable.findUnique({
+    where: { id: parteId },
+    select: { partialOfId: true, amount: true, status: true, pendingPaymentDate: true },
+  });
+  if (!parte?.partialOfId || parte.status === "PAGO" || parte.pendingPaymentDate) return false;
+  const origem = await prisma.payable.findUnique({
+    where: { id: parte.partialOfId },
+    select: { status: true, amount: true, paymentComboId: true },
+  });
+  if (!origem || origem.status === "PAGO" || origem.paymentComboId) return false;
+  await prisma.$transaction([
+    prisma.payable.update({
+      where: { id: parte.partialOfId },
+      data: { amount: Math.round((origem.amount + parte.amount) * 100) / 100 },
+    }),
+    prisma.payable.delete({ where: { id: parteId } }),
+  ]);
+  return true;
+}
+
+/** Regras do pagamento parcial — as mesmas no "Pagar parcial" e no "Já paguei". */
+export function assertPodeParcial(p: {
+  status: string;
+  paymentComboId: string | null;
+  cardInvoice: boolean;
+  category: string;
+}) {
+  if (p.status === "PAGO") throw new Error("Título já pago.");
+  if (p.paymentComboId) throw new Error("Título está num combo de pagamento. Remova-o do combo antes.");
+  if (p.cardInvoice) throw new Error("Fatura de cartão não pode ser paga parcialmente por aqui.");
+  if (p.category === "COMPRA_VEICULO") throw new Error("Título de compra de veículo não permite pagamento parcial.");
+}

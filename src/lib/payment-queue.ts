@@ -288,6 +288,12 @@ export async function enfileirarPagamento(input: {
    * do grupo em que estava.
    */
   lote?: string | null;
+  /**
+   * Pagamento PARCIAL: o valor informado é só uma parte do título. No ok o
+   * título é desmembrado — a parte paga é baixada e o saldo segue a pagar —,
+   * em vez de o valor do comprovante substituir o do título.
+   */
+  parcial?: boolean;
 }) {
   await prisma.payable.update({
     where: { id: input.payableId },
@@ -297,6 +303,7 @@ export async function enfileirarPagamento(input: {
       pendingPaymentAccountId: input.accountId,
       pendingPaymentNote: input.nota,
       pendingPaymentBatch: input.lote ?? null,
+      pendingPaymentPartial: Boolean(input.parcial),
     },
   });
 }
@@ -343,6 +350,7 @@ export async function desenfileirarPagamento(payableId: string) {
       pendingPaymentAccountId: null,
       pendingPaymentNote: null,
       pendingPaymentBatch: null,
+      pendingPaymentPartial: false,
     },
   });
 }
@@ -410,6 +418,7 @@ const FILA_SELECT = {
   pendingPaymentAccountId: true,
   pendingPaymentAccount: { select: { name: true } },
   pendingPaymentBatch: true,
+  pendingPaymentPartial: true,
   avulso: true,
   supplier: { select: { name: true } },
 } as const;
@@ -426,6 +435,7 @@ type FilaRow = {
   pendingPaymentAccountId: string | null;
   pendingPaymentAccount: { name: string } | null;
   pendingPaymentBatch: string | null;
+  pendingPaymentPartial: boolean;
   avulso: boolean;
   supplier: { name: string } | null;
 };
@@ -448,6 +458,8 @@ function toPagamento(p: FilaRow): PagamentoNaFila {
     accountName: p.pendingPaymentAccount?.name ?? null,
     note: p.pendingPaymentNote,
     avulso: p.avulso,
+    // Parcial: o valor da linha é a parte paga; o título mostra o total.
+    rotuloValor: p.pendingPaymentPartial ? "título (parcial)" : undefined,
   };
 }
 

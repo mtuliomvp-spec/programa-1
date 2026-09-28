@@ -970,7 +970,16 @@ export async function confirmQueuedPaymentsAction(
     }
     const p = await prisma.payable.findUnique({
       where: { id },
-      select: { id: true, status: true, pendingPaymentAccountId: true, pendingPaymentDate: true },
+      select: {
+        id: true,
+        status: true,
+        amount: true,
+        pendingPaymentAccountId: true,
+        pendingPaymentDate: true,
+        pendingPaymentAmount: true,
+        pendingPaymentPartial: true,
+        pendingPaymentNote: true,
+      },
     });
     // A fila mistura títulos avulsos, COMBOS e RECEBIMENTOS: o id que não é de
     // título a pagar é de um dos outros dois (ids são cuid, não se cruzam). O
@@ -1045,6 +1054,41 @@ export async function confirmQueuedPaymentsAction(
         paid,
         error: "Escolha a conta debitada dos pré-lançamentos que estão sem conta identificada.",
       };
+    }
+    // "Já paguei" PARCIAL: desmembra agora — a parte paga é baixada e o saldo
+    // segue a pagar, no mesmo título (mesmo nº). O comprovante vai com a parte
+    // paga, que é o que ele comprova.
+    if (
+      p.pendingPaymentPartial &&
+      p.pendingPaymentAmount != null &&
+      p.pendingPaymentAmount < p.amount - 0.005
+    ) {
+      const { desmembrarPagamentoParcial } = await import("@/lib/finance");
+      let parteId: string;
+      try {
+        parteId = await desmembrarPagamentoParcial(id, p.pendingPaymentAmount);
+      } catch (e) {
+        return { ok: false, paid, error: e instanceof Error ? e.message : "Não foi possível pagar a parte." };
+      }
+      const obs = [
+        `Pagamento parcial informado pelo "Já paguei" (comprovante de ${p.pendingPaymentDate.toLocaleDateString("pt-BR", { timeZone: "UTC" })}, baixado no caixa de ${date.toLocaleDateString("pt-BR", { timeZone: "UTC" })}).`,
+        p.pendingPaymentNote ? `Conferência do comprovante: ${p.pendingPaymentNote}.` : null,
+      ]
+        .filter(Boolean)
+        .join(" ");
+      await prisma.payableAttachment.updateMany({
+        where: { payableId: id, kind: "COMPROVANTE" },
+        data: { payableId: parteId },
+      });
+      const parte = await prisma.payable.findUnique({ where: { id: parteId }, select: { notes: true } });
+      await prisma.payable.update({
+        where: { id: parteId },
+        data: { notes: [parte?.notes?.trim() || null, obs].filter(Boolean).join(" — ") },
+      });
+      await markPayablePaid(parteId, date, accountId);
+      await desenfileirarPagamento(id);
+      paid += 1;
+      continue;
     }
     await prepararBaixaDaFila(id, date);
     await markPayablePaid(id, date, accountId);
