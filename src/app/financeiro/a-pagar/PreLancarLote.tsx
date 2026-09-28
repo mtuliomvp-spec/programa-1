@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Input } from "@/components/ui";
+import MoneyInput from "@/components/MoneyInput";
 import { formatCurrency } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
@@ -71,6 +72,12 @@ export default function PreLancarLote({
   const [conf, setConf] = useState<ConferenciaLote | null>(null);
   const [lendo, startLer] = useTransition();
   const [pending, start] = useTransition();
+  // Parcial (um título só): o comprovante paga uma parte, o resto fica a pagar.
+  const umTitulo = ids.length === 1;
+  const [parcial, setParcial] = useState(false);
+  const [valorParcial, setValorParcial] = useState(0);
+  // Remonta o campo de valor quando o comprovante sugere um (key muda).
+  const [sugestao, setSugestao] = useState<number | null>(null);
 
   /** Lê o comprovante na hora do anexo: o usuário confere antes de confirmar. */
   function conferir() {
@@ -100,6 +107,10 @@ export default function PreLancarLote({
       fd.set("ids", ids.join(","));
       fd.set("date", data);
       fd.set("accountId", accountId);
+      if (umTitulo && parcial) {
+        fd.set("parcial", "1");
+        fd.set("valorParcial", String(valorParcial));
+      }
       const file = fileRef.current?.files?.[0];
       if (file) fd.set("file", await resizeImageToJpeg(file));
       if (senha) fd.set("senha", senha);
@@ -112,7 +123,9 @@ export default function PreLancarLote({
       // Os avisos da conferência vão junto da mensagem: o painel se fecha com a
       // seleção, e eles não podem sumir com ele.
       onDone(
-        `${r.enfileirados} título(s) pré-lançado(s) para ${dataBr(data)}` +
+        (umTitulo && parcial
+          ? `Pagamento parcial de ${formatCurrency(valorParcial)} pré-lançado para ${dataBr(data)}`
+          : `${r.enfileirados} título(s) pré-lançado(s) para ${dataBr(data)}`) +
           (r.attached ? " com o comprovante anexado" : "") +
           ". Confirme em Contas e caixas quando o movimento chegar no dia." +
           (r.avisos?.length ? ` ⚠️ Confira: ${r.avisos.join("; ")}.` : ""),
@@ -124,7 +137,13 @@ export default function PreLancarLote({
   // A conta do comprovante é outra: o pagamento sairia da conta errada.
   const contaDiverge = Boolean(conf?.ok && conf.accountId && conf.accountId !== accountId);
   const contaConfere = Boolean(conf?.ok && conf.accountId && conf.accountId === accountId);
-  const valorDiverge = Boolean(conf?.ok && conf.valor != null && Math.abs(conf.valor - total) > 0.01);
+  const esperado = umTitulo && parcial ? valorParcial : total;
+  const valorDiverge = Boolean(conf?.ok && conf.valor != null && Math.abs(conf.valor - esperado) > 0.01);
+  // Comprovante MENOR que o título (um só): provavelmente pagou só uma parte.
+  const pareceParcial = Boolean(
+    umTitulo && !parcial && conf?.ok && conf.valor != null && conf.valor > 0 && conf.valor < total - 0.01,
+  );
+  const parcialInvalido = umTitulo && parcial && (!(valorParcial > 0) || valorParcial >= total - 0.005);
   const pedeSenha = Boolean(res?.senhaNecessaria || conf?.senhaNecessaria);
 
   return (
@@ -139,6 +158,31 @@ export default function PreLancarLote({
         {total > 0 ? ` (somam ${formatCurrency(total)})` : ""}. A baixa acontece quando o movimento
         de caixa daquele dia for aberto e confirmado.
       </p>
+
+      {umTitulo ? (
+        <label className="mt-2 flex items-center gap-2 text-sm text-emerald-900">
+          <input
+            type="checkbox"
+            checked={parcial}
+            onChange={(e) => setParcial(e.target.checked)}
+            className="h-4 w-4 rounded border-slate-300"
+          />
+          Pagamento parcial — paguei só uma parte (o restante continua a pagar)
+        </label>
+      ) : null}
+      {umTitulo && parcial ? (
+        <p className="mt-1 text-xs text-emerald-800">
+          Título de {formatCurrency(total)}
+          {valorParcial > 0 && valorParcial < total
+            ? ` · pago agora ${formatCurrency(valorParcial)} · continua a pagar ${formatCurrency(Math.round((total - valorParcial) * 100) / 100)}`
+            : ""}
+          . No ok do caixa, a parte paga vira um título baixado (com o comprovante) e o saldo segue
+          pendente, com o mesmo número.
+          {parcialInvalido && valorParcial > 0 ? (
+            <span className="block text-rose-600">O valor pago tem de ser menor que o título.</span>
+          ) : null}
+        </p>
+      ) : null}
 
       <div className="mt-2 flex flex-wrap items-end gap-3">
         <label className="flex flex-col gap-1 text-xs text-slate-600">
@@ -169,7 +213,18 @@ export default function PreLancarLote({
             className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
           />
         </label>
-        <Button type="button" onClick={confirmar} disabled={pending || lendo || !ids.length}>
+        {umTitulo && parcial ? (
+          <label className="flex flex-col gap-1 text-xs text-slate-600">
+            Valor pago agora
+            <MoneyInput
+              key={sugestao ?? "vazio"}
+              name="valorParcialVisivel"
+              defaultValue={sugestao}
+              onValueChange={setValorParcial}
+            />
+          </label>
+        ) : null}
+        <Button type="button" onClick={confirmar} disabled={pending || lendo || !ids.length || parcialInvalido}>
           {pending ? "Pré-lançando…" : "Confirmar o pagamento"}
         </Button>
       </div>
@@ -216,11 +271,38 @@ export default function PreLancarLote({
         </p>
       ) : null}
 
-      {valorDiverge ? (
+      {pareceParcial ? (
+        <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-900">
+          O comprovante é de <strong>{formatCurrency(conf!.valor!)}</strong>, menor que o título (
+          {formatCurrency(total)}). Pagou só uma parte?{" "}
+          <button
+            type="button"
+            onClick={() => {
+              setParcial(true);
+              setSugestao(conf!.valor!);
+              setValorParcial(conf!.valor!);
+            }}
+            className="font-semibold underline"
+          >
+            Marcar como pagamento parcial de {formatCurrency(conf!.valor!)}
+          </button>
+        </div>
+      ) : null}
+
+      {valorDiverge && !pareceParcial ? (
         <p className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-          ⚠️ O comprovante é de {formatCurrency(conf!.valor!)} e os títulos selecionados somam{" "}
-          {formatCurrency(total)}. Se o pagamento cobre outros títulos, selecione-os também antes de
-          confirmar.
+          {umTitulo && parcial ? (
+            <>
+              ⚠️ O comprovante é de {formatCurrency(conf!.valor!)} e você informou{" "}
+              {formatCurrency(valorParcial)} como pago agora — confira o valor.
+            </>
+          ) : (
+            <>
+              ⚠️ O comprovante é de {formatCurrency(conf!.valor!)} e os títulos selecionados somam{" "}
+              {formatCurrency(total)}. Se o pagamento cobre outros títulos, selecione-os também antes de
+              confirmar.
+            </>
+          )}
         </p>
       ) : null}
 

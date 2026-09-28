@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { normalizeSearch } from "@/lib/search";
 import { Button, Input } from "@/components/ui";
 import SearchSelect from "@/components/SearchSelect";
+import MoneyInput from "@/components/MoneyInput";
 import { addPayablesToComboAction, removePayableFromComboAction } from "../actions";
 
 type Row = {
@@ -32,6 +33,8 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   const [veiculo, setVeiculo] = useState("");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  // Pagamento PARCIAL por título (opcional): só essa parte entra no combo.
+  const [parciais, setParciais] = useState<Record<string, number>>({});
 
   const supplierOptions = distinct(available.map((r) => r.supplierName));
   const beneficiaryOptions = distinct(available.map((r) => r.beneficiaryName));
@@ -51,12 +54,16 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
     if (!ids.length) return;
     setMsg(null);
     start(async () => {
-      const r = await addPayablesToComboAction(comboId, ids);
+      const soSelecionados = Object.fromEntries(
+        Object.entries(parciais).filter(([id, v]) => selected.has(id) && v > 0),
+      );
+      const r = await addPayablesToComboAction(comboId, ids, soSelecionados);
       if (!r.ok) {
         setMsg(r.error || "Não foi possível adicionar.");
         return;
       }
       setSelected(new Set());
+      setParciais({});
       router.refresh();
     });
   }
@@ -84,7 +91,9 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   }
 
   const subtitle = (r: Row) => [r.supplierName || r.beneficiaryName, r.vehicleLabel].filter(Boolean).join(" · ") || "—";
-  const selectedTotal = available.filter((r) => selected.has(r.id)).reduce((s, r) => s + r.amount, 0);
+  const selectedTotal = available
+    .filter((r) => selected.has(r.id))
+    .reduce((s, r) => s + ((parciais[r.id] ?? 0) > 0 ? parciais[r.id] : r.amount), 0);
 
   return (
     <div>
@@ -144,7 +153,30 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
                 {/* Data em linha própria: não é cortada pelo truncate do fornecedor. */}
                 <span className="block text-xs text-slate-400">vence {formatDate(r.dueDate)}</span>
               </span>
-              <span className="tabular-nums text-slate-700">{formatCurrency(r.amount)}</span>
+              <span className="flex flex-col items-end gap-1">
+                <span className="tabular-nums text-slate-700">{formatCurrency(r.amount)}</span>
+                {selected.has(r.id) ? (
+                  <label className="flex items-center gap-1 text-[11px] text-slate-500">
+                    pagar só
+                    <span className="w-28">
+                      <MoneyInput
+                        name={`parcial-${r.id}`}
+                        placeholder="valor todo"
+                        onValueChange={(v) => setParciais((prev) => ({ ...prev, [r.id]: v }))}
+                      />
+                    </span>
+                  </label>
+                ) : null}
+                {selected.has(r.id) && (parciais[r.id] ?? 0) > 0 ? (
+                  <span
+                    className={`text-[11px] ${parciais[r.id] >= r.amount - 0.005 ? "text-rose-600" : "text-slate-500"}`}
+                  >
+                    {parciais[r.id] >= r.amount - 0.005
+                      ? "tem de ser menor que o título"
+                      : `resta ${formatCurrency(Math.round((r.amount - parciais[r.id]) * 100) / 100)} a pagar`}
+                  </span>
+                ) : null}
+              </span>
               <Link
                 href={`/financeiro/a-pagar/${r.id}/editar?returnTo=${encodeURIComponent(`/financeiro/combos/${comboId}`)}`}
                 target="_blank"

@@ -5,7 +5,7 @@ import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays , correctPaymentDate } from "@/lib/finance";
+import { desmembrarPagamentoParcial, markPayablePaid, markPayablePending, createManualPayable, createInstallmentPayables, updateManualPayable, isVehiclePurchase, resolveSupplierByName, splitInstallments, addMonths, addDays , correctPaymentDate } from "@/lib/finance";
 import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
@@ -314,75 +314,12 @@ export async function payPartialAction(
     return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
   }
 
-  const p = await prisma.payable.findUnique({
-    where: { id },
-    select: {
-      status: true,
-      amount: true,
-      description: true,
-      category: true,
-      categoryLabel: true,
-      documentNumber: true,
-      dueDate: true,
-      vehicleId: true,
-      saleId: true,
-      supplierId: true,
-      costCenterId: true,
-      capitalBeneficiaryId: true,
-      beneficiaryUserId: true,
-      employeeId: true,
-      notes: true,
-      cardInvoice: true,
-      paymentComboId: true,
-    },
-  });
-  if (!p) return { ok: false, error: "Título não encontrado." };
-  if (p.status === "PAGO") return { ok: false, error: "Título já pago." };
-  if (p.paymentComboId) {
-    return { ok: false, error: "Título está num combo de pagamento. Remova-o do combo antes." };
+  let paidId: string;
+  try {
+    paidId = await desmembrarPagamentoParcial(id, amountToPay);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível pagar parcialmente." };
   }
-  if (p.cardInvoice) {
-    return { ok: false, error: "Fatura de cartão não pode ser paga parcialmente por aqui." };
-  }
-  if (p.category === "COMPRA_VEICULO") {
-    return { ok: false, error: "Título de compra de veículo não permite pagamento parcial." };
-  }
-
-  const amount = round2(amountToPay);
-  const total = round2(p.amount);
-  if (!(amount > 0)) return { ok: false, error: "Informe um valor válido para pagar." };
-  if (amount >= total) {
-    return { ok: false, error: `Para pagar o total use "Pagar título". O parcial deve ser menor que ${brl(total)}.` };
-  }
-  const remaining = round2(total - amount);
-
-  // Reduz o original ao saldo e cria a parte paga (destino contábil copiado; sem
-  // rastreadores de origem). Baixa a parte paga fora da transação (markPayablePaid
-  // roda os próprios syncs/transação de capital, cartão e solicitação).
-  const paidId = await prisma.$transaction(async (tx) => {
-    await tx.payable.update({ where: { id }, data: { amount: remaining } });
-    const child = await tx.payable.create({
-      data: {
-        description: `${p.description} (pagamento parcial)`,
-        category: p.category,
-        categoryLabel: p.categoryLabel,
-        documentNumber: p.documentNumber,
-        amount,
-        dueDate: p.dueDate,
-        status: "PENDENTE",
-        vehicleId: p.vehicleId,
-        saleId: p.saleId,
-        supplierId: p.supplierId,
-        costCenterId: p.costCenterId,
-        capitalBeneficiaryId: p.capitalBeneficiaryId,
-        beneficiaryUserId: p.beneficiaryUserId,
-        employeeId: p.employeeId,
-        notes: p.notes,
-      },
-      select: { id: true },
-    });
-    return child.id;
-  });
 
   await markPayablePaid(paidId, date, accountId);
 
@@ -3139,6 +3076,8 @@ export async function preLancarPagamentoEmLoteAction(
       discountAmount: true,
       discountUntil: true,
       paymentComboId: true,
+      category: true,
+      cardInvoice: true,
     },
   });
   const pagaveis = rows.filter((p) => p.status !== "PAGO" && !p.paymentComboId);
@@ -3169,6 +3108,31 @@ export async function preLancarPagamentoEmLoteAction(
       ? round2(p.amount - p.discountAmount)
       : p.amount;
   const total = round2(pagaveis.reduce((s, p) => s + valorDe(p), 0));
+
+  // PARCIAL (um título só): o comprovante paga uma parte; o resto continua a
+  // pagar. Mesmas regras do "Pagar parcial" — valem já aqui, e não só no ok.
+  const parcial = String(formData.get("parcial") || "") === "1";
+  let valorParcial = 0;
+  if (parcial) {
+    if (pagaveis.length !== 1) {
+      return { ok: false, error: "Pagamento parcial é de um título só — selecione apenas ele." };
+    }
+    try {
+      const { assertPodeParcial } = await import("@/lib/finance");
+      assertPodeParcial(pagaveis[0]);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Este título não aceita pagamento parcial." };
+    }
+    valorParcial = round2(Number(formData.get("valorParcial") || 0));
+    if (!(valorParcial > 0)) return { ok: false, error: "Informe quanto foi pago." };
+    if (valorParcial >= pagaveis[0].amount - 0.005) {
+      return {
+        ok: false,
+        error: `O parcial tem de ser menor que o título (${formatCurrencyBR(pagaveis[0].amount)}). Pagou tudo? Desmarque "pagamento parcial".`,
+      };
+    }
+  }
+  const esperado = parcial ? valorParcial : total;
 
   // Comprovante (opcional): fica em todos os títulos e é conferido de leve.
   let attached = false;
@@ -3224,9 +3188,11 @@ export async function preLancarPagamentoEmLoteAction(
     try {
       const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
       const lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
-      if (lido?.valor != null && Math.abs(lido.valor - total) > 0.005) {
+      if (lido?.valor != null && Math.abs(lido.valor - esperado) > 0.005) {
         avisos.push(
-          `o comprovante mostra ${formatCurrencyBR(lido.valor)} e os títulos somam ${formatCurrencyBR(total)}`,
+          parcial
+            ? `o comprovante mostra ${formatCurrencyBR(lido.valor)} e você informou ${formatCurrencyBR(valorParcial)} como pago`
+            : `o comprovante mostra ${formatCurrencyBR(lido.valor)} e os títulos somam ${formatCurrencyBR(total)}`,
         );
       }
       if (lido?.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) && lido.data !== dataTexto) {
@@ -3251,15 +3217,25 @@ export async function preLancarPagamentoEmLoteAction(
   // A marca do lote é o que faz a fila do caixa mostrar os títulos numa linha
   // só, com o total do boleto. Título sozinho não vira lote.
   const lote = pagaveis.length > 1 ? `lote_${randomUUID()}` : null;
-  const nota = avisos.length ? avisos.join(" · ") : null;
+  // A linha do parcial vai na nota da fila (quem dá o ok vê), mas não é aviso
+  // de conferência — não volta no "Confira" da tela.
+  const notas = parcial
+    ? [
+        `pagamento parcial: ${formatCurrencyBR(valorParcial)} de ${formatCurrencyBR(pagaveis[0].amount)} — ` +
+          `o restante (${formatCurrencyBR(round2(pagaveis[0].amount - valorParcial))}) continua a pagar`,
+        ...avisos,
+      ]
+    : avisos;
+  const nota = notas.length ? notas.join(" · ") : null;
   for (const p of pagaveis) {
     await enfileirarPagamento({
       payableId: p.id,
       data: dataPagamento,
-      valor: valorDe(p),
+      valor: parcial ? valorParcial : valorDe(p),
       accountId,
       nota,
       lote,
+      parcial,
     });
   }
 
