@@ -1091,7 +1091,12 @@ export async function confirmQueuedPaymentsAction(
       continue;
     }
     await prepararBaixaDaFila(id, date);
-    await markPayablePaid(id, date, accountId);
+    try {
+      await markPayablePaid(id, date, accountId);
+    } catch (e) {
+      // Ex.: devolução de sinal antes de o sinal ser creditado.
+      return { ok: false, paid, error: e instanceof Error ? e.message : "Não foi possível baixar o título." };
+    }
     await desenfileirarPagamento(id);
     paid += 1;
   }

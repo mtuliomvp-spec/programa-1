@@ -20,6 +20,7 @@ export default function DevolverSinal({
   amount,
   accounts,
   contaDoSinal,
+  aguardandoCredito = false,
 }: {
   receivableId: string;
   vehicleId: string;
@@ -27,12 +28,17 @@ export default function DevolverSinal({
   accounts: Account[];
   /** Nome da conta em que o sinal entrou (sugestão para a devolução). */
   contaDoSinal: string | null;
+  /**
+   * O sinal ainda não foi creditado (o caixa não chegou no dia do depósito):
+   * a devolução fica a pagar (Já paguei) e sai depois do crédito; sem retenção.
+   */
+  aguardandoCredito?: boolean;
 }) {
   const router = useRouter();
   const [aberto, setAberto] = useState(false);
   const [reter, setReter] = useState(false);
   const [retido, setRetido] = useState(0);
-  const [pagarAgora, setPagarAgora] = useState(true);
+  const [pagarAgora, setPagarAgora] = useState(!aguardandoCredito);
   const [accountId, setAccountId] = useState(
     accounts.find((a) => a.name === contaDoSinal)?.id ?? accounts[0]?.id ?? "",
   );
@@ -84,7 +90,14 @@ export default function DevolverSinal({
         um pagamento ao cliente, na data do caixa aberto.
       </p>
 
-      <label className="mt-2 flex items-center gap-2 text-xs text-slate-700">
+      {aguardandoCredito ? (
+        <p className="mt-2 rounded-md bg-amber-50 px-2 py-1.5 text-xs text-amber-800">
+          Este sinal ainda <strong>aguarda crédito</strong> (depósito à frente do caixa). A devolução vai
+          para o <strong>Contas a pagar</strong>: lá, use o <strong>“Já paguei”</strong> com a data e o
+          comprovante da devolução. No caixa, confirme primeiro o crédito do sinal e depois a devolução.
+        </p>
+      ) : null}
+      <label className={`mt-2 flex items-center gap-2 text-xs text-slate-700 ${aguardandoCredito ? "hidden" : ""}`}>
         <input
           type="checkbox"
           checked={reter}
@@ -108,7 +121,7 @@ export default function DevolverSinal({
       </p>
       {invalido ? <p className="text-xs text-rose-600">O valor retido não pode passar do sinal.</p> : null}
 
-      {devolver > 0.005 ? (
+      {devolver > 0.005 && !aguardandoCredito ? (
         <div className="mt-2 flex flex-wrap items-end gap-3">
           <label className="flex items-center gap-2 text-xs text-slate-700">
             <input

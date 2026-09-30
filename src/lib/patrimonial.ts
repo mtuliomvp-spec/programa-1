@@ -73,6 +73,7 @@ async function patrimonialStats(
         partId: true,
         consortiumId: true,
         category: true,
+        sinalGroup: true,
         vehicle: { select: { status: true } },
       },
     }),
@@ -83,6 +84,8 @@ async function patrimonialStats(
         saleId: true,
         partSaleId: true,
         vehicleId: true,
+        sinalGroup: true,
+        sinalParContabil: true,
         vehicle: { select: { status: true } },
       },
     }),
@@ -138,6 +141,14 @@ async function patrimonialStats(
   let veiculosAPagarPosVenda = 0;
   let pecasAPagar = 0;
   let comissoesAPagar = 0;
+  // Devolução de um sinal que ainda NÃO foi creditado (o dinheiro não entrou no
+  // caixa): a dívida com o cliente só passa a existir quando o sinal entra.
+  // Antes disso ela não pesa — senão a equação cairia pelo valor do sinal.
+  const sinaisDevolvidosPendentes = new Set(
+    receivables
+      .filter((r) => r.sinalGroup && !r.sinalParContabil && isPend(r.status))
+      .map((r) => r.sinalGroup as string),
+  );
 
   for (const p of payables) {
     if (p.status === "PAGO") {
@@ -182,7 +193,7 @@ async function patrimonialStats(
       // Devolução ao cliente ainda não paga: o dinheiro está no caixa mas é do
       // cliente, então entra na equação subtraindo (quando for paga, sai do
       // caixa e o efeito já está refletido — não conta duas vezes).
-      if (p.category === "DEVOLUCAO_CLIENTE") {
+      if (p.category === "DEVOLUCAO_CLIENTE" && !(p.sinalGroup && sinaisDevolvidosPendentes.has(p.sinalGroup))) {
         devolucoesClientes += p.amount;
       }
       // Devolução ao proprietário do consignado ainda não paga: o dinheiro da

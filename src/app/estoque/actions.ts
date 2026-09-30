@@ -158,12 +158,15 @@ export async function creditVehicleAdvanceAction(
     select: {
       status: true,
       vehicleId: true,
+      sinalVehicleId: true,
       saleId: true,
       dueDate: true,
       vehicle: { select: { status: true } },
     },
   });
-  if (!r || r.status !== "PENDENTE" || !r.vehicleId || r.saleId) {
+  // Sinal já DEVOLVIDO antes do crédito (sinalVehicleId): o dinheiro entrou do
+  // mesmo jeito e precisa ser creditado — depois dele a devolução pode sair.
+  if (!r || r.status !== "PENDENTE" || (!r.vehicleId && !r.sinalVehicleId) || r.saleId) {
     return { ok: false, error: "Sinal pendente não encontrado." };
   }
   // Veículo já vendido: o sinal deveria ter sido creditado antes da venda (o
@@ -189,7 +192,7 @@ export async function creditVehicleAdvanceAction(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível creditar o sinal." };
   }
-  revalidatePath(`/estoque/${r.vehicleId}`);
+  revalidatePath(`/estoque/${r.vehicleId ?? r.sinalVehicleId}`);
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/livro-caixa");
