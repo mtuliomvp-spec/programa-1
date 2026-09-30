@@ -188,6 +188,8 @@ export default async function LivroCaixaPage({
     // Par contábil da cobertura de capital: registro sem dinheiro, preso à
     // cobertura — sem estorno/correção por aqui (desfaz-se na ficha do sócio).
     cobertura?: boolean;
+    /** Peça da devolução de um sinal: desfaz-se na ficha do veículo. */
+    sinal?: boolean;
   };
 
   const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
@@ -220,11 +222,12 @@ export default async function LivroCaixaPage({
       kind: "entrada" as const,
       amount: r.amount,
       cobertura: !!r.capitalCoverGroup,
-      fixable: r.capitalCoverGroup
+      sinal: !!r.sinalGroup,
+      fixable: r.capitalCoverGroup || r.sinalGroup
         ? undefined
         : ({ kind: "entrada", id: r.id, dateInput: toDateInputValue(r.receivedDate!) } as const),
       deletable:
-        !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null && !r.capitalCoverGroup
+        !r.saleId && !r.partSaleId && !r.recurringId && r.installmentNumber == null && !r.capitalCoverGroup && !r.sinalGroup
           ? ({ kind: "entrada", id: r.id, avulso: r.avulso } as const)
           : undefined,
     })),
@@ -240,11 +243,12 @@ export default async function LivroCaixaPage({
       amount: p.amount,
       href: `/financeiro/a-pagar/${p.id}/ordem`,
       cobertura: !!p.capitalCoverGroup,
-      fixable: p.capitalCoverGroup
+      sinal: p.sinalParContabil,
+      fixable: p.capitalCoverGroup || p.sinalParContabil
         ? undefined
         : ({ kind: "saida", id: p.id, dateInput: toDateInputValue(p.paymentDate!) } as const),
       deletable:
-        !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId && !p.capitalCoverGroup
+        !p.vehicleId && !p.partId && !p.recurringId && !p.consortiumId && !p.employeeId && !p.capitalCoverGroup && !p.sinalParContabil
           ? ({ kind: "saida", id: p.id, avulso: p.avulso } as const)
           : undefined,
     })),
@@ -541,6 +545,14 @@ export default async function LivroCaixaPage({
                           title="Desfaz-se pelo “Desfazer cobertura”, na ficha do sócio (Capital dos sócios)"
                         >
                           cobertura de capital
+                        </span>
+                      ) : null}
+                      {m.sinal ? (
+                        <span
+                          className="whitespace-nowrap rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800"
+                          title="Desfaz-se pelo “Desfazer devolução”, na ficha do veículo (Estoque)"
+                        >
+                          devolução de sinal
                         </span>
                       ) : null}
                     </span>

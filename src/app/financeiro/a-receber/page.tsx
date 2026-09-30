@@ -60,6 +60,7 @@ export default async function ContasAReceberPage({
           partSaleId: true,
           recurringId: true,
           capitalCoverGroup: true,
+          sinalGroup: true,
           vehicleId: true,
           // Desconto concedido vira custo pós-venda do carro da venda.
           sale: { select: { vehicleId: true } },
@@ -125,6 +126,7 @@ export default async function ContasAReceberPage({
     hasVehicle: Boolean(r.vehicleId ?? r.sale?.vehicleId),
     receivedDateInput: r.receivedDate ? toDateInputValue(r.receivedDate) : null,
     cobertura: Boolean(r.capitalCoverGroup),
+    sinalDevolvido: Boolean(r.sinalGroup),
     // Entrada já informada: espera o movimento do caixa alcançar o dia.
     queued: r.pendingReceiptDate
       ? {

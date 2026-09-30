@@ -31,6 +31,8 @@ export type ReceivableRow = {
   receivedDateInput: string | null;
   /** Par contábil da cobertura de capital: desfaz-se na ficha do sócio. */
   cobertura?: boolean;
+  /** Sinal devolvido (ou o par da parte retida): desfaz-se no veículo. */
+  sinalDevolvido?: boolean;
   /**
    * Entrada já informada: o dinheiro caiu na conta e o crédito espera o
    * movimento do caixa alcançar o dia (Contas e caixas).
@@ -240,6 +242,7 @@ export default function ReceivablesTable({
                       receivedDateInput={r.receivedDateInput}
                       queued={r.queued}
                       cobertura={r.cobertura}
+                      sinalDevolvido={r.sinalDevolvido}
                     />
                     {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>

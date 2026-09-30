@@ -76,6 +76,7 @@ export default async function ContasAPagarPage({
           paymentDate: true,
           recurringId: true,
           capitalCoverGroup: true,
+          sinalParContabil: true,
           saleId: true,
           purchaseRequestId: true,
           capitalBeneficiaryId: true,
@@ -265,6 +266,7 @@ export default async function ContasAPagarPage({
     recurring: Boolean(p.recurringId),
     // Par contábil da cobertura de capital: sem Reverter/corrigir por aqui.
     cobertura: Boolean(p.capitalCoverGroup),
+    sinalAcerto: p.sinalParContabil,
     // Combo de pagamento: sinaliza que alguém montou/solicitou o pagamento.
     combo: p.paymentCombo
       ? {

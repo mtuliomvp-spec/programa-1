@@ -54,6 +54,8 @@ export type PayableRow = {
   paymentDateInput: string | null;
   /** Par contábil da cobertura de capital: desfaz-se na ficha do sócio. */
   cobertura?: boolean;
+  /** Par contábil da parte retida de um sinal: desfaz-se no veículo. */
+  sinalAcerto?: boolean;
   recurring: boolean;
   // Combo de pagamento em que o título está (montado/solicitado por um usuário).
   combo: { id: string; name: string; status: "ABERTO" | "SOLICITADO" | "PAGO" | "CANCELADO"; userName: string | null } | null;
@@ -411,6 +413,11 @@ export default function PayablesTable({
                         Editar
                       </Link>
                     ) : null}
+                    {p.status === "PAGO" && p.sinalAcerto ? (
+                      <span className="text-xs text-amber-700" title="Desfaz-se pelo “Desfazer devolução”, na ficha do veículo">
+                        devolução de sinal
+                      </span>
+                    ) : null}
                     {p.status === "PAGO" && p.cobertura ? (
                       <span
                         className="text-xs text-amber-700"
@@ -419,14 +426,14 @@ export default function PayablesTable({
                         cobertura de capital
                       </span>
                     ) : null}
-                    {p.status === "PAGO" && !p.cobertura && canFixDate && p.paymentDateInput ? (
+                    {p.status === "PAGO" && !p.cobertura && !p.sinalAcerto && canFixDate && p.paymentDateInput ? (
                       <FixDateButton
                         currentDate={p.paymentDateInput}
                         kind="pagamento"
                         onSave={(d) => correctPaymentDateAction(p.id, d)}
                       />
                     ) : null}
-                    {p.status === "PAGO" && p.cobertura ? null : p.status === "PAGO" && canPagar ? (
+                    {p.status === "PAGO" && (p.cobertura || p.sinalAcerto) ? null : p.status === "PAGO" && canPagar ? (
                       <button
                         type="button"
                         disabled={reverting}

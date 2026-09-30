@@ -1298,6 +1298,12 @@ model Payable {
   // fora do Lucro/Prejuízo. Mesma marca do par de alocações (swapGroup) —
   // só sai junto com o "Desfazer cobertura".
   capitalCoverGroup    String?
+  // DEVOLUÇÃO DE SINAL (venda que não aconteceu): todas as peças da devolução
+  // levam a mesma marca — o sinal original, o título da devolução e o par
+  // contábil da parte retida. `sinalParContabil` marca o par do Banco Neutro
+  // (a parte retida vira receita administrativa), que só sai pelo desfazer.
+  sinalGroup           String?
+  sinalParContabil     Boolean             @default(false)
   // Solicitação de compra que gerou este título (espelho da aprovação).
   purchaseRequestId    String?
   purchaseRequest      PurchaseRequest?    @relation("PayablePurchaseRequest", fields: [purchaseRequestId], references: [id], onDelete: SetNull)
@@ -1504,6 +1510,15 @@ model Receivable {
   // fora do Lucro/Prejuízo. Mesma marca do par de alocações (swapGroup) —
   // só sai junto com o "Desfazer cobertura".
   capitalCoverGroup    String?
+  // DEVOLUÇÃO DE SINAL (venda que não aconteceu): todas as peças da devolução
+  // levam a mesma marca — o sinal original, o título da devolução e o par
+  // contábil da parte retida. `sinalParContabil` marca o par do Banco Neutro
+  // (a parte retida vira receita administrativa), que só sai pelo desfazer.
+  sinalGroup           String?
+  sinalParContabil     Boolean             @default(false)
+  // Sinal devolvido: o veículo a que ele pertencia (o vínculo vehicleId sai,
+  // para ele deixar de contar como sinal; este guarda a história).
+  sinalVehicleId       String?
   // Competência/referência do que o título cobra ("08/2026"). Informativa: a
   // receita continua entrando pelo regime de caixa, na data do recebimento.
   referencePeriod      String?

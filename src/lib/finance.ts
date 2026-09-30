@@ -2357,12 +2357,30 @@ async function payablePaid(id: string, paymentDate: Date, accountId?: string | n
 /** Par contábil da cobertura de capital só sai inteiro, pelo "Desfazer cobertura". */
 const COBERTURA_PRESA = "Este lançamento é o registro de uma cobertura de capital (a fatia aplicada trocou de dono). Para desfazer, use \"Desfazer cobertura\" na ficha do sócio, em Capital dos sócios.";
 
+/** Peças da devolução de sinal: só saem pelo "Desfazer devolução" do veículo. */
+const DEVOLUCAO_SINAL_PRESA =
+  'Este lançamento faz parte da devolução de um sinal. Para desfazer, use "Desfazer devolução" na ficha do veículo (Estoque).';
+
 async function assertNaoEhCobertura(kind: "payable" | "receivable", id: string) {
-  const row =
-    kind === "payable"
-      ? await prisma.payable.findUnique({ where: { id }, select: { capitalCoverGroup: true } })
-      : await prisma.receivable.findUnique({ where: { id }, select: { capitalCoverGroup: true } });
+  if (kind === "payable") {
+    const row = await prisma.payable.findUnique({
+      where: { id },
+      select: { capitalCoverGroup: true, sinalParContabil: true },
+    });
+    if (row?.capitalCoverGroup) throw new Error(COBERTURA_PRESA);
+    // O título da DEVOLUÇÃO pode voltar a pendente (reverter o pagamento); só
+    // o par contábil da parte retida fica preso.
+    if (row?.sinalParContabil) throw new Error(DEVOLUCAO_SINAL_PRESA);
+    return;
+  }
+  const row = await prisma.receivable.findUnique({
+    where: { id },
+    select: { capitalCoverGroup: true, sinalGroup: true },
+  });
   if (row?.capitalCoverGroup) throw new Error(COBERTURA_PRESA);
+  // Sinal devolvido (e o par da parte retida): o recebimento aconteceu de
+  // verdade; desfazê-lo só pelo veículo.
+  if (row?.sinalGroup) throw new Error(DEVOLUCAO_SINAL_PRESA);
 }
 
 export async function markPayablePending(id: string) {
@@ -3718,11 +3736,11 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
   const [receivables, payables] = await Promise.all([
     prisma.receivable.findMany({
       where: { status: "RECEBIDO", receivedDate: range },
-      select: { id: true, description: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true, capitalCoverGroup: true },
+      select: { id: true, description: true, avulso: true, saleId: true, partSaleId: true, recurringId: true, installmentNumber: true, capitalCoverGroup: true, sinalGroup: true },
     }),
     prisma.payable.findMany({
       where: { status: "PAGO", paymentDate: range },
-      select: { id: true, description: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true, capitalCoverGroup: true },
+      select: { id: true, description: true, avulso: true, vehicleId: true, partId: true, recurringId: true, consortiumId: true, employeeId: true, capitalCoverGroup: true, sinalParContabil: true },
     }),
   ]);
 
@@ -3733,7 +3751,7 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
   // Recebíveis: avulso apaga; título comum estorna; origem é pulada.
   for (const r of receivables) {
     // Par da cobertura de capital: não é baixa — desfaz-se pela ficha do sócio.
-    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null || r.capitalCoverGroup) {
+    if (r.saleId || r.partSaleId || r.recurringId || r.installmentNumber != null || r.capitalCoverGroup || r.sinalGroup) {
       pulados++;
       puladosDescricoes.push(r.description);
       continue;
@@ -3751,7 +3769,7 @@ export async function revertCashboxBaixas(workDate: Date): Promise<{
 
   // Pagáveis: mesma regra (origem = veículo/peça/recorrência/consórcio/funcionário).
   for (const p of payables) {
-    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId || p.capitalCoverGroup) {
+    if (p.vehicleId || p.partId || p.recurringId || p.consortiumId || p.employeeId || p.capitalCoverGroup || p.sinalParContabil) {
       pulados++;
       puladosDescricoes.push(p.description);
       continue;
@@ -3993,4 +4011,197 @@ export function assertPodeParcial(p: {
   if (p.paymentComboId) throw new Error("Título está num combo de pagamento. Remova-o do combo antes.");
   if (p.cardInvoice) throw new Error("Fatura de cartão não pode ser paga parcialmente por aqui.");
   if (p.category === "COMPRA_VEICULO") throw new Error("Título de compra de veículo não permite pagamento parcial.");
+}
+
+// ---------------------------------------------------------------------------
+// Devolução de sinal (venda que não aconteceu)
+// ---------------------------------------------------------------------------
+
+/**
+ * DEVOLVE um sinal já creditado de um veículo cuja venda não aconteceu.
+ *
+ * O sinal original fica onde está no livro caixa (o dinheiro entrou naquele
+ * dia) — só deixa de ser "sinal do veículo": o vínculo sai (vehicleId) e fica
+ * guardado em `sinalVehicleId`. A partir daí:
+ *  - o que volta ao cliente vira um título a pagar "Devolução de sinal"
+ *    (DEVOLUCAO_CLIENTE — não é despesa): pago agora pela conta escolhida ou
+ *    deixado no Contas a pagar (dá para usar o "Já paguei");
+ *  - a parte RETIDA pela loja (desistência) vira RECEITA ADMINISTRATIVA na data
+ *    da devolução, por um par contábil no Banco Neutro — o dinheiro já está no
+ *    caixa desde o depósito, então não entra de novo.
+ * Equação: o sinal deixa de subtrair (+X), a devolução pendente/paga tira X−R,
+ * e o Lucro/Prejuízo ganha R — os dois andam juntos.
+ */
+export async function devolverSinal(input: {
+  receivableId: string;
+  /** Quanto a loja retém (0 = devolução integral). */
+  valorRetido: number;
+  /** Data do caixa aberto. */
+  date: Date;
+  /** Pagar a devolução agora por esta conta; null = deixar a pagar. */
+  pagarPelaConta: string | null;
+  obs?: string | null;
+}): Promise<{ payableId: string | null; devolvido: number; retido: number }> {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const r = await prisma.receivable.findUnique({
+    where: { id: input.receivableId },
+    select: {
+      id: true,
+      amount: true,
+      status: true,
+      saleId: true,
+      vehicleId: true,
+      sinalGroup: true,
+      notes: true,
+      receivedDate: true,
+      customer: { select: { name: true } },
+      vehicle: { select: { brand: true, model: true, plate: true, status: true } },
+    },
+  });
+  if (!r || !r.vehicleId || !r.vehicle || r.saleId) throw new Error("Este título não é um sinal de veículo.");
+  if (r.status !== "RECEBIDO") {
+    throw new Error("Este sinal ainda não foi creditado — se o dinheiro não entrou, basta excluí-lo.");
+  }
+  if (r.sinalGroup) throw new Error("Este sinal já foi devolvido.");
+  if (r.vehicle.status === "VENDIDO") throw new Error("O veículo já foi vendido — o sinal entrou na venda.");
+
+  const total = round2(r.amount);
+  const retido = round2(Math.max(0, input.valorRetido || 0));
+  if (retido > total + 0.005) throw new Error(`A loja não pode reter mais que o sinal (${brl(total)}).`);
+  const devolvido = round2(total - retido);
+
+  const veiculo = `${r.vehicle.brand} ${r.vehicle.model} (${r.vehicle.plate})`;
+  const cliente = r.customer?.name ?? null;
+  const grupo = `sinal_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const quando = formatDate(input.date);
+  const obs = input.obs?.trim() ? ` ${input.obs.trim()}` : "";
+  const [veiculosCenterId, adminCenterId, neutroId] = await Promise.all([
+    structuralCenterId("VEICULOS"),
+    structuralCenterId("ADMINISTRATIVO"),
+    retido > 0.005 ? getNeutralAccountId() : Promise.resolve(null),
+  ]);
+
+  const payableId = await prisma.$transaction(async (tx) => {
+    await tx.receivable.update({
+      where: { id: r.id },
+      data: {
+        vehicleId: null,
+        sinalVehicleId: r.vehicleId,
+        sinalGroup: grupo,
+        notes: [
+          r.notes?.trim() || null,
+          `Sinal ${retido > 0.005 ? (devolvido > 0.005 ? "devolvido em parte" : "retido pela loja") : "devolvido"} em ${quando} — venda não concretizada` +
+            (retido > 0.005 ? ` (retido ${brl(retido)} como receita administrativa).` : "."),
+        ]
+          .filter(Boolean)
+          .join(" — "),
+      },
+    });
+    let devolucaoId: string | null = null;
+    if (devolvido > 0.005) {
+      const d = await tx.payable.create({
+        data: {
+          description: `Devolução de sinal${cliente ? ` - ${cliente}` : ""} - ${veiculo}`,
+          category: "DEVOLUCAO_CLIENTE",
+          categoryLabel: "Devolução de sinal",
+          amount: devolvido,
+          dueDate: input.date,
+          status: "PENDENTE",
+          costCenterId: veiculosCenterId,
+          notes:
+            `Devolução do sinal recebido em ${r.receivedDate ? formatDate(r.receivedDate) : "—"} — venda do ${veiculo} não concretizada.` +
+            (retido > 0.005 ? ` A loja reteve ${brl(retido)} (receita administrativa).` : "") +
+            obs,
+          sinalGroup: grupo,
+        },
+        select: { id: true },
+      });
+      devolucaoId = d.id;
+    }
+    if (retido > 0.005) {
+      // Par contábil no Banco Neutro: o dinheiro retido já está no caixa desde
+      // o depósito; aqui ele só troca de natureza (adiantamento → receita).
+      await tx.receivable.create({
+        data: {
+          description: `Sinal retido (venda não concretizada)${cliente ? ` - ${cliente}` : ""} - ${veiculo}`,
+          category: "OUTROS",
+          amount: retido,
+          dueDate: input.date,
+          receivedDate: input.date,
+          status: "RECEBIDO",
+          accountId: neutroId,
+          costCenterId: adminCenterId,
+          notes: `Parte do sinal retida pela loja por desistência da compra.${obs}`,
+          sinalGroup: grupo,
+          sinalParContabil: true,
+        },
+      });
+      await tx.payable.create({
+        data: {
+          description: `Sinal retido — baixa do adiantamento${cliente ? ` - ${cliente}` : ""} - ${veiculo}`,
+          category: "DEVOLUCAO_CLIENTE",
+          categoryLabel: "Sinal retido (acerto)",
+          amount: retido,
+          dueDate: input.date,
+          paymentDate: input.date,
+          status: "PAGO",
+          accountId: neutroId,
+          costCenterId: adminCenterId,
+          notes: "Par contábil: o valor retido deixa de ser adiantamento do cliente e vira receita da loja.",
+          sinalGroup: grupo,
+          sinalParContabil: true,
+        },
+      });
+    }
+    return devolucaoId;
+  });
+
+  if (payableId && input.pagarPelaConta) {
+    await markPayablePaid(payableId, input.date, input.pagarPelaConta);
+  }
+  return { payableId, devolvido, retido };
+}
+
+/**
+ * Desfaz a devolução de um sinal: a devolução (ainda não paga) e o par da parte
+ * retida somem, e o sinal volta a ser sinal do veículo. Paga a devolução, é
+ * preciso reverter o pagamento antes (Contas a pagar).
+ */
+export async function desfazerDevolucaoSinal(receivableId: string): Promise<void> {
+  const r = await prisma.receivable.findUnique({
+    where: { id: receivableId },
+    select: { id: true, sinalGroup: true, sinalVehicleId: true, sinalParContabil: true, notes: true },
+  });
+  if (!r?.sinalGroup || r.sinalParContabil || !r.sinalVehicleId) throw new Error("Devolução não encontrada.");
+  const [devolucao, veiculo] = await Promise.all([
+    prisma.payable.findFirst({
+      where: { sinalGroup: r.sinalGroup, sinalParContabil: false },
+      select: { status: true, pendingPaymentDate: true, paymentComboId: true },
+    }),
+    prisma.vehicle.findUnique({ where: { id: r.sinalVehicleId }, select: { status: true } }),
+  ]);
+  if (devolucao?.status === "PAGO") {
+    throw new Error("A devolução já foi paga — reverta o pagamento no Contas a pagar antes de desfazer.");
+  }
+  if (devolucao?.paymentComboId) throw new Error("A devolução está num combo — tire-a do combo antes.");
+  if (!veiculo || veiculo.status === "VENDIDO") {
+    throw new Error("O veículo já foi vendido — o sinal não pode voltar para ele.");
+  }
+  const notas = (r.notes ?? "")
+    .split(" — ")
+    .filter((t) => !/^Sinal (devolvido|devolvido em parte|retido pela loja) em /.test(t))
+    .join(" — ");
+  await prisma.$transaction([
+    prisma.payable.deleteMany({ where: { sinalGroup: r.sinalGroup } }),
+    prisma.receivable.deleteMany({ where: { sinalGroup: r.sinalGroup, sinalParContabil: true } }),
+    prisma.receivable.update({
+      where: { id: r.id },
+      data: {
+        vehicleId: r.sinalVehicleId,
+        sinalVehicleId: null,
+        sinalGroup: null,
+        notes: notas || null,
+      },
+    }),
+  ]);
 }

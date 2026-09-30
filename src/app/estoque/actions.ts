@@ -197,6 +197,77 @@ export async function creditVehicleAdvanceAction(
   return { ok: true };
 }
 
+/**
+ * Devolve um sinal já creditado (a venda não aconteceu). Devolução integral
+ * por padrão; a parte que a loja retiver vira receita administrativa. A
+ * devolução pode ser paga agora (conta escolhida) ou ficar no Contas a pagar.
+ */
+export async function devolverSinalAction(input: {
+  receivableId: string;
+  vehicleId: string;
+  valorRetido: number;
+  pagarAgora: boolean;
+  accountId: string;
+  obs: string;
+}): Promise<{ ok: boolean; error?: string; message?: string }> {
+  try {
+    await assertCan("estoque", "sinal");
+    if (input.pagarAgora) await assertCan("financeiro", "pagar");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    const date = await getCashboxWorkDate();
+    const { assertMonthOpen } = await import("@/lib/monthly-closing");
+    await assertMonthOpen(date);
+    if (input.pagarAgora && !input.accountId) throw new Error("Escolha a conta de onde sai a devolução.");
+    const { devolverSinal } = await import("@/lib/finance");
+    const r = await devolverSinal({
+      receivableId: input.receivableId,
+      valorRetido: input.valorRetido,
+      date,
+      pagarPelaConta: input.pagarAgora ? input.accountId : null,
+      obs: input.obs || null,
+    });
+    revalidatePath(`/estoque/${input.vehicleId}`);
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/financeiro/livro-caixa");
+    revalidatePath("/");
+    const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    return {
+      ok: true,
+      message:
+        (r.devolvido > 0
+          ? input.pagarAgora
+            ? `Devolução de ${brl(r.devolvido)} paga.`
+            : `Devolução de ${brl(r.devolvido)} lançada no Contas a pagar.`
+          : "Sinal retido integralmente pela loja.") +
+        (r.retido > 0 ? ` ${brl(r.retido)} retido como receita administrativa.` : ""),
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível devolver o sinal." };
+  }
+}
+
+/** Desfaz a devolução de um sinal (enquanto a devolução não foi paga). */
+export async function desfazerDevolucaoSinalAction(
+  receivableId: string,
+  vehicleId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "sinal");
+    const { desfazerDevolucaoSinal } = await import("@/lib/finance");
+    await desfazerDevolucaoSinal(receivableId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível desfazer." };
+  }
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 export async function deleteVehicleAdvanceAction(id: string, vehicleId: string) {
   await assertCan("estoque", "sinal");
   // Só remove sinal ainda não vinculado a uma venda (pendente ou já creditado —
