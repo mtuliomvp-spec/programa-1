@@ -970,10 +970,12 @@ export async function registerVehicleAdvance(input: {
 export async function creditVehicleAdvance(receivableId: string, creditDate: Date) {
   const r = await prisma.receivable.findUniqueOrThrow({
     where: { id: receivableId },
-    select: { status: true, vehicleId: true, saleId: true, accountId: true },
+    select: { status: true, vehicleId: true, sinalVehicleId: true, saleId: true, accountId: true },
   });
   if (r.status !== "PENDENTE") throw new Error("Este sinal já foi creditado.");
-  if (!r.vehicleId || r.saleId) throw new Error("Este título não é um sinal pendente.");
+  // Sinal já devolvido (sinalVehicleId) também é creditado: o dinheiro entrou
+  // de fato no dia do depósito, e a devolução sai depois dele.
+  if ((!r.vehicleId && !r.sinalVehicleId) || r.saleId) throw new Error("Este título não é um sinal pendente.");
   const accountId = r.accountId ?? (await getDefaultAccountId());
   await markReceivableReceived(receivableId, creditDate, accountId);
 }
@@ -2328,6 +2330,21 @@ async function descontoNaBaixa(
 }
 
 async function payablePaid(id: string, paymentDate: Date, accountId?: string | null) {
+  // Devolução de sinal: só sai depois de o sinal ENTRAR. Pagar antes deixaria
+  // o caixa sem o dinheiro que está sendo devolvido (e o farol vermelho até o
+  // crédito do sinal ser confirmado).
+  const sinal = await prisma.payable.findUnique({ where: { id }, select: { sinalGroup: true, sinalParContabil: true } });
+  if (sinal?.sinalGroup && !sinal.sinalParContabil) {
+    const pendente = await prisma.receivable.findFirst({
+      where: { sinalGroup: sinal.sinalGroup, sinalParContabil: false, status: { in: ["PENDENTE", "ATRASADO"] } },
+      select: { dueDate: true },
+    });
+    if (pendente) {
+      throw new Error(
+        `Confirme antes o crédito do sinal (depósito de ${formatDate(pendente.dueDate)}, em Contas e caixas) — a devolução só sai depois de o sinal entrar.`,
+      );
+    }
+  }
   const account = accountId ?? (await getDefaultAccountId());
   const desconto = await descontoNaBaixa(id, paymentDate);
   const updated = await prisma.payable.update({
@@ -4054,15 +4071,25 @@ export async function devolverSinal(input: {
       sinalGroup: true,
       notes: true,
       receivedDate: true,
+      dueDate: true,
       customer: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true, status: true } },
     },
   });
   if (!r || !r.vehicleId || !r.vehicle || r.saleId) throw new Error("Este título não é um sinal de veículo.");
-  if (r.status !== "RECEBIDO") {
-    throw new Error("Este sinal ainda não foi creditado — se o dinheiro não entrou, basta excluí-lo.");
-  }
   if (r.sinalGroup) throw new Error("Este sinal já foi devolvido.");
+  // Sinal ainda AGUARDANDO CRÉDITO (o dinheiro entrou no banco, o caixa ainda
+  // não chegou no dia): pode ser devolvido, mas a devolução fica a pagar (use o
+  // "Já paguei") e só sai depois do crédito; retenção, só com o sinal creditado.
+  const aguardandoCredito = r.status !== "RECEBIDO";
+  if (aguardandoCredito && (input.valorRetido || 0) > 0.005) {
+    throw new Error("Para a loja reter uma parte, confirme antes o crédito do sinal.");
+  }
+  if (aguardandoCredito && input.pagarPelaConta) {
+    throw new Error(
+      'O sinal ainda não foi creditado: a devolução fica no Contas a pagar — use o "Já paguei" com a data em que o dinheiro voltou.',
+    );
+  }
   if (r.vehicle.status === "VENDIDO") throw new Error("O veículo já foi vendido — o sinal entrou na venda.");
 
   const total = round2(r.amount);
@@ -4109,7 +4136,7 @@ export async function devolverSinal(input: {
           status: "PENDENTE",
           costCenterId: veiculosCenterId,
           notes:
-            `Devolução do sinal recebido em ${r.receivedDate ? formatDate(r.receivedDate) : "—"} — venda do ${veiculo} não concretizada.` +
+            `Devolução do sinal ${r.receivedDate ? `recebido em ${formatDate(r.receivedDate)}` : `depositado em ${formatDate(r.dueDate)}`} — venda do ${veiculo} não concretizada.` +
             (retido > 0.005 ? ` A loja reteve ${brl(retido)} (receita administrativa).` : "") +
             obs,
           sinalGroup: grupo,

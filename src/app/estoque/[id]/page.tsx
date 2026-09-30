@@ -299,7 +299,15 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   const sinaisDevolvidos = inStock
     ? await prisma.receivable.findMany({
         where: { sinalVehicleId: id, sinalParContabil: false },
-        select: { id: true, amount: true, receivedDate: true, sinalGroup: true, customer: { select: { name: true } } },
+        select: {
+          id: true,
+          amount: true,
+          status: true,
+          receivedDate: true,
+          dueDate: true,
+          sinalGroup: true,
+          customer: { select: { name: true } },
+        },
         orderBy: { createdAt: "desc" },
       })
     : [];
@@ -577,11 +585,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   return {
                     id: r.id,
                     amount: r.amount,
-                    date: r.receivedDate ?? new Date(),
+                    date: r.receivedDate ?? r.dueDate,
                     customerName: r.customer?.name ?? null,
                     devolvido: dev?.amount ?? 0,
                     retido: retidosSinal.find((x) => x.sinalGroup === r.sinalGroup)?.amount ?? 0,
                     devolucaoPaga: dev ? dev.status === "PAGO" : null,
+                    sinalPendente: r.status !== "RECEBIDO",
                   };
                 })}
               />

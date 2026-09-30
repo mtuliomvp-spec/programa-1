@@ -134,13 +134,17 @@ export default async function ContasPage({
           where: {
             status: "PENDENTE",
             saleId: null,
-            vehicleId: { not: null },
             category: "VENDA_VEICULO",
             dueDate: { lte: cashbox.session.workDate },
-            // Só veículo ainda em estoque: o abatimento do sinal na venda usa
-            // recebíveis já RECEBIDOS, então creditar depois de vendido ficaria
-            // solto (sem casar com a venda). Fica pendente até ser tratado.
-            vehicle: { status: { not: "VENDIDO" } },
+            OR: [
+              // Só veículo ainda em estoque: o abatimento do sinal na venda usa
+              // recebíveis já RECEBIDOS, então creditar depois de vendido ficaria
+              // solto (sem casar com a venda). Fica pendente até ser tratado.
+              { vehicleId: { not: null }, vehicle: { status: { not: "VENDIDO" } } },
+              // Sinal já DEVOLVIDO antes do crédito: o dinheiro entrou mesmo
+              // assim — credita, e depois a devolução pode ser paga.
+              { vehicleId: null, sinalVehicleId: { not: null }, sinalParContabil: false },
+            ],
           },
           include: {
             vehicle: { select: { brand: true, model: true, plate: true } },
@@ -157,7 +161,9 @@ export default async function ContasPage({
     accountName: r.account?.name ?? null,
     vehicleLabel: r.vehicle
       ? `${r.vehicle.brand} ${r.vehicle.model} · ${r.vehicle.plate}`
-      : null,
+      : r.sinalVehicleId
+        ? `${r.description.replace(/^Sinal \/ entrada antecipada - /, "")} (já devolvido — credite para liberar a devolução)`
+        : null,
     customerName: r.customer?.name ?? null,
   }));
 

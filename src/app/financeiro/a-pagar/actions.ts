@@ -360,7 +360,13 @@ export async function payBatchAction(
   }
   let paid = 0;
   for (const id of ids) {
-    await markPayablePaid(id, date, accountId);
+    try {
+      await markPayablePaid(id, date, accountId);
+    } catch (e) {
+      // Ex.: devolução de sinal antes de o sinal ser creditado.
+      revalidatePath("/financeiro/a-pagar");
+      return { ok: false, paid, error: e instanceof Error ? e.message : "Não foi possível pagar." };
+    }
     paid += 1;
   }
   revalidatePath("/financeiro/a-pagar");

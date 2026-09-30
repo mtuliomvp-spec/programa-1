@@ -34,6 +34,8 @@ type Devolvido = {
   retido: number;
   /** Situação do título da devolução: null = tudo retido (sem título). */
   devolucaoPaga: boolean | null;
+  /** O sinal devolvido ainda aguarda o crédito no caixa. */
+  sinalPendente?: boolean;
 };
 
 export default function VehicleAdvance({
@@ -145,7 +147,7 @@ export default function VehicleAdvance({
                   </ConfirmButton>
                 </div>
               ) : null}
-              {canManage && a.status === "RECEBIDO" ? (
+              {canManage ? (
                 <div className="basis-full">
                   <DevolverSinal
                     receivableId={a.id}
@@ -153,6 +155,7 @@ export default function VehicleAdvance({
                     amount={a.amount}
                     accounts={accounts}
                     contaDoSinal={a.accountName}
+                    aguardandoCredito={a.status !== "RECEBIDO"}
                   />
                 </div>
               ) : null}
@@ -183,6 +186,7 @@ export default function VehicleAdvance({
                       ? `devolvido ${formatCurrency(d.devolvido)} — ${d.devolucaoPaga ? "pago" : "no Contas a pagar"}`
                       : "retido integralmente pela loja"}
                     {d.retido > 0.005 && d.devolvido > 0.005 ? ` · retido ${formatCurrency(d.retido)} (receita administrativa)` : ""}
+                    {d.sinalPendente ? " · sinal ainda aguardando crédito no caixa" : ""}
                   </span>
                 </span>
                 {canManage && !d.devolucaoPaga ? (
