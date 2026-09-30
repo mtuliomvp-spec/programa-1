@@ -294,6 +294,28 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         }),
       ])
     : [[], [], []];
+  // Sinais devolvidos deste veículo (histórico): a devolução e a parte retida
+  // de cada um, pela marca da devolução.
+  const sinaisDevolvidos = inStock
+    ? await prisma.receivable.findMany({
+        where: { sinalVehicleId: id, sinalParContabil: false },
+        select: { id: true, amount: true, receivedDate: true, sinalGroup: true, customer: { select: { name: true } } },
+        orderBy: { createdAt: "desc" },
+      })
+    : [];
+  const gruposDevolucao = sinaisDevolvidos.map((r) => r.sinalGroup).filter((g): g is string => !!g);
+  const [devolucoesSinal, retidosSinal] = gruposDevolucao.length
+    ? await Promise.all([
+        prisma.payable.findMany({
+          where: { sinalGroup: { in: gruposDevolucao }, sinalParContabil: false },
+          select: { sinalGroup: true, amount: true, status: true },
+        }),
+        prisma.receivable.findMany({
+          where: { sinalGroup: { in: gruposDevolucao }, sinalParContabil: true },
+          select: { sinalGroup: true, amount: true },
+        }),
+      ])
+    : [[], []];
 
   // Custos custeados pelo capital de um sócio ficam FORA do custo/margem do carro
   // (são do sócio, dono do resultado — viram retirada, não custo da loja). Eles
@@ -550,6 +572,18 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   status: r.status === "RECEBIDO" ? ("RECEBIDO" as const) : ("PENDENTE" as const),
                   proofAttachmentId: r.proofAttachmentId,
                 }))}
+                devolvidos={sinaisDevolvidos.map((r) => {
+                  const dev = devolucoesSinal.find((p) => p.sinalGroup === r.sinalGroup);
+                  return {
+                    id: r.id,
+                    amount: r.amount,
+                    date: r.receivedDate ?? new Date(),
+                    customerName: r.customer?.name ?? null,
+                    devolvido: dev?.amount ?? 0,
+                    retido: retidosSinal.find((x) => x.sinalGroup === r.sinalGroup)?.amount ?? 0,
+                    devolucaoPaga: dev ? dev.status === "PAGO" : null,
+                  };
+                })}
               />
             </Card>
           ) : null}

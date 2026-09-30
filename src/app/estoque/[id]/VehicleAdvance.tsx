@@ -4,7 +4,14 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { Badge, Button, Field, Input, Select } from "@/components/ui";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
-import { registerVehicleAdvanceAction, deleteVehicleAdvanceAction, type AdvanceFormState } from "../actions";
+import {
+  registerVehicleAdvanceAction,
+  deleteVehicleAdvanceAction,
+  desfazerDevolucaoSinalAction,
+  type AdvanceFormState,
+} from "../actions";
+import ConfirmButton from "@/components/ConfirmButton";
+import DevolverSinal from "./DevolverSinal";
 
 type Account = { id: string; name: string };
 type Customer = { id: string; name: string };
@@ -17,20 +24,35 @@ type Advance = {
   status: "PENDENTE" | "RECEBIDO";
   proofAttachmentId: string | null;
 };
+/** Sinal já devolvido (a venda não aconteceu): histórico, com o desfazer. */
+type Devolvido = {
+  id: string;
+  amount: number;
+  date: Date;
+  customerName: string | null;
+  devolvido: number;
+  retido: number;
+  /** Situação do título da devolução: null = tudo retido (sem título). */
+  devolucaoPaga: boolean | null;
+};
 
 export default function VehicleAdvance({
   vehicleId,
   accounts,
   customers,
   advances,
+  devolvidos = [],
   canManage = true,
 }: {
   vehicleId: string;
   accounts: Account[];
   customers: Customer[];
   advances: Advance[];
+  devolvidos?: Devolvido[];
   canManage?: boolean;
 }) {
+  const [desfazendo, startDesfazer] = useTransition();
+  const [erroDesfazer, setErroDesfazer] = useState<string | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const [show, setShow] = useState(false);
   const [preparing, setPreparing] = useState(false);
@@ -73,7 +95,7 @@ export default function VehicleAdvance({
       {advances.length > 0 ? (
         <ul className="divide-y divide-slate-100">
           {advances.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-3 px-5 py-3">
+            <li key={a.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-5 py-3">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-800">{formatCurrency(a.amount)}</p>
                 <p className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-400">
@@ -106,22 +128,33 @@ export default function VehicleAdvance({
                 ) : null}
               </div>
               {canManage ? (
-                <button
-                  type="button"
-                  disabled={deleting}
-                  onClick={() => {
-                    const msg =
+                <div className="flex flex-col items-end gap-1">
+                  {/* Pergunta na tela (o confirm do navegador não abre em todo celular). */}
+                  <ConfirmButton
+                    disabled={deleting}
+                    confirmLabel="Excluir"
+                    question={
                       a.status === "RECEBIDO"
-                        ? "Excluir este sinal? O valor creditado será estornado da conta."
-                        : "Excluir este sinal pendente?";
-                    if (confirm(msg)) {
-                      startDelete(() => deleteVehicleAdvanceAction(a.id, vehicleId));
+                        ? "Excluir só se foi lançado por ENGANO: o valor some da conta como se nunca tivesse entrado. Se o cliente desistiu e o dinheiro volta para ele, use “Devolver”."
+                        : "Excluir este sinal pendente?"
                     }
-                  }}
-                  className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
-                >
-                  Excluir
-                </button>
+                    onConfirm={() => startDelete(() => deleteVehicleAdvanceAction(a.id, vehicleId))}
+                    className="text-xs font-medium text-rose-600 hover:underline disabled:opacity-50"
+                  >
+                    Excluir
+                  </ConfirmButton>
+                </div>
+              ) : null}
+              {canManage && a.status === "RECEBIDO" ? (
+                <div className="basis-full">
+                  <DevolverSinal
+                    receivableId={a.id}
+                    vehicleId={vehicleId}
+                    amount={a.amount}
+                    accounts={accounts}
+                    contaDoSinal={a.accountName}
+                  />
+                </div>
               ) : null}
             </li>
           ))}
@@ -135,6 +168,46 @@ export default function VehicleAdvance({
           Nenhum sinal registrado. Ao fechar a venda, o sinal é abatido do valor a pagar do cliente.
         </p>
       )}
+
+      {devolvidos.length > 0 ? (
+        <div className="border-t border-slate-100 px-5 py-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Sinais devolvidos</p>
+          <ul className="mt-1 divide-y divide-slate-100">
+            {devolvidos.map((d) => (
+              <li key={d.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
+                <span className="text-slate-700">
+                  {formatCurrency(d.amount)} de {formatDate(d.date)}
+                  {d.customerName ? ` · ${d.customerName}` : ""}
+                  <span className="block text-xs text-slate-500">
+                    {d.devolvido > 0.005
+                      ? `devolvido ${formatCurrency(d.devolvido)} — ${d.devolucaoPaga ? "pago" : "no Contas a pagar"}`
+                      : "retido integralmente pela loja"}
+                    {d.retido > 0.005 && d.devolvido > 0.005 ? ` · retido ${formatCurrency(d.retido)} (receita administrativa)` : ""}
+                  </span>
+                </span>
+                {canManage && !d.devolucaoPaga ? (
+                  <ConfirmButton
+                    disabled={desfazendo}
+                    confirmLabel="Desfazer"
+                    question="Desfazer a devolução? O valor volta a ser sinal deste veículo e o título da devolução some."
+                    onConfirm={() =>
+                      startDesfazer(async () => {
+                        setErroDesfazer(null);
+                        const r = await desfazerDevolucaoSinalAction(d.id, vehicleId);
+                        if (!r.ok) setErroDesfazer(r.error || "Não foi possível desfazer.");
+                      })
+                    }
+                    className="text-xs font-medium text-slate-500 hover:text-rose-600 hover:underline"
+                  >
+                    ↩︎ Desfazer devolução
+                  </ConfirmButton>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          {erroDesfazer ? <p className="text-xs text-rose-600">{erroDesfazer}</p> : null}
+        </div>
+      ) : null}
 
       <div className={`border-t border-slate-100 px-5 py-4 ${canManage ? "" : "hidden"}`}>
         {show ? (

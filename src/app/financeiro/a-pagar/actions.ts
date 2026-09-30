@@ -688,6 +688,7 @@ export async function createManualPayableAction(
 /** Campos que indicam que o título veio de outra operação (ajustar na origem). */
 const ORIGIN_SELECT = {
   status: true,
+  sinalGroup: true,
   vehicleId: true,
   partId: true,
   recurringId: true,
@@ -714,6 +715,7 @@ const ORIGIN_SELECT_DETALHE = {
  */
 function motivoDaRecusa(p: {
   status: string;
+  sinalGroup?: string | null;
   partId: string | null;
   consortiumId: string | null;
   employeeId: string | null;
@@ -724,6 +726,9 @@ function motivoDaRecusa(p: {
 }): { texto: string; href: string | null } | null {
   if (p.status === "PAGO") {
     return { texto: "está pago — reverta a baixa antes de excluir", href: null };
+  }
+  if (p.sinalGroup) {
+    return { texto: 'é a devolução de um sinal — use "Desfazer devolução" na ficha do veículo', href: null };
   }
   if (p.purchaseRequestId) {
     const num = p.purchaseRequest
@@ -754,6 +759,7 @@ function motivoDaRecusa(p: {
 
 function originBlockReason(p: {
   status: string;
+  sinalGroup?: string | null;
   vehicleId: string | null;
   partId: string | null;
   recurringId: string | null;
@@ -763,6 +769,8 @@ function originBlockReason(p: {
   purchaseRequestId: string | null;
 }): string | null {
   if (p.status === "PAGO") return "pago";
+  // Devolução de sinal: some junto com as outras peças, pelo veículo.
+  if (p.sinalGroup) return "origem";
   // Veículo é permitido excluir (remove o custo do veículo junto). Recorrência
   // não pago também pode: o dia excluído vira "pulado" na recorrência (não
   // regenera). Consórcio se regenera; venda/peça/espelho têm origem própria.
