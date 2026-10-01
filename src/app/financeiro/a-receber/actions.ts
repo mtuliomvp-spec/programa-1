@@ -684,6 +684,13 @@ export async function informarRecebimentoAction(
     accountId: d.accountId,
     nota: avisos.join(" · ") || null,
   });
+  // Parcial: a parte que caiu vira um título próprio na fila (com o
+  // comprovante) e o saldo fica livre — dá para informar o resto por outra
+  // conta, com outro "Já caiu".
+  if (d.amount < receivable.amount - 0.005) {
+    const { separarRecebimentoParcialDaFila } = await import("@/lib/finance");
+    await separarRecebimentoParcialDaFila(d.receivableId);
+  }
 
   revalidatePath("/financeiro/a-receber");
   revalidatePath(`/financeiro/a-receber/${d.receivableId}/editar`);
@@ -707,6 +714,9 @@ export async function desfazerRecebimentoInformadoAction(
   const { desenfileirarRecebimento } = await import("@/lib/payment-queue");
   await desenfileirarRecebimento(receivableId);
   await prisma.receivableAttachment.deleteMany({ where: { receivableId, kind: "COMPROVANTE" } });
+  // Parte de um recebimento parcial: volta a se juntar ao saldo.
+  const { reunirParteRecebivel } = await import("@/lib/finance");
+  await reunirParteRecebivel(receivableId);
   revalidatePath("/financeiro/a-receber");
   revalidatePath(`/financeiro/a-receber/${receivableId}/editar`);
   revalidatePath("/financeiro/contas");
