@@ -23,6 +23,10 @@ export default async function ContasAReceberPage({
   searchParams: Promise<{ status?: string; q?: string; de?: string; ate?: string; min?: string; max?: string; vendas?: string; p?: string }>;
 }) {
   await requireModule("financeiro");
+  // "Já caiu" parcial do jeito antigo (o título inteiro preso esperando só uma
+  // parte): separa a parte na fila e deixa o saldo livre para outro "Já caiu".
+  const { separarRecebimentosParciaisDaFila } = await import("@/lib/finance");
+  await separarRecebimentosParciaisDaFila();
   const { status: statusFilter, q: qParam, de, ate, min, max, vendas, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
   const [canReceber, canManage, canEditOnly, canDiscount, canFixDate] = await Promise.all([

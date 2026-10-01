@@ -178,6 +178,10 @@ export default async function ContasPage({
   // Pré-lançamento que entrou sem conta ("não bate com nenhuma conta"): tenta
   // de novo antes de mostrar — a conta pode ter sido cadastrada depois.
   await reidentificarContasDaFila();
+  // "Já caiu" parcial do jeito antigo (o título inteiro preso esperando só uma
+  // parte): separa a parte, e o saldo fica livre para outro "Já caiu".
+  const { separarRecebimentosParciaisDaFila } = await import("@/lib/finance");
+  await separarRecebimentosParciaisDaFila();
   const workDate = cashbox.open && cashbox.session ? cashbox.session.workDate : null;
   // Pagos em dias À FRENTE do movimento (pagou hoje, o caixa ainda está em
   // ontem): o dinheiro já saiu do banco, então a tela mostra o total por dia —

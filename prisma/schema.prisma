@@ -1519,6 +1519,10 @@ model Receivable {
   // Sinal devolvido: o veículo a que ele pertencia (o vínculo vehicleId sai,
   // para ele deixar de contar como sinal; este guarda a história).
   sinalVehicleId       String?
+  // Parte de um RECEBIMENTO PARCIAL informado ("Já caiu" por menos que o
+  // título): o título de onde saiu (o que ficou com o saldo). Tirada da fila,
+  // a parte volta a se juntar a ele.
+  partialOfId          String?
   // Competência/referência do que o título cobra ("08/2026"). Informativa: a
   // receita continua entrando pelo regime de caixa, na data do recebimento.
   referencePeriod      String?

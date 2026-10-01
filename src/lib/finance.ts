@@ -4232,3 +4232,153 @@ export async function desfazerDevolucaoSinal(receivableId: string): Promise<void
     }),
   ]);
 }
+
+// ---------------------------------------------------------------------------
+// Recebimento parcial informado ("Já caiu" por menos que o título)
+// ---------------------------------------------------------------------------
+
+/**
+ * Separa a PARTE informada de um título a receber: nasce um título próprio,
+ * pendente, com o valor que caiu (é ele que entra na fila do caixa), e o
+ * original fica com o SALDO — livre para outro "Já caiu", por outra conta.
+ * A parte herda tudo o que define o título na contabilidade (venda, veículo,
+ * peça, sócio do capital, cliente, centro de custo), para a equação e o
+ * Lucro/Prejuízo não mudarem com a divisão.
+ */
+export async function desmembrarRecebimentoParcial(id: string, valor: number): Promise<string> {
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const r = await prisma.receivable.findUniqueOrThrow({ where: { id } });
+  if (r.status === "RECEBIDO") throw new Error("Título já recebido.");
+  const parte = round2(valor);
+  if (!(parte > 0) || parte >= r.amount - 0.005) {
+    throw new Error("A parte informada tem de ser menor que o título.");
+  }
+  return prisma.$transaction(async (tx) => {
+    await tx.receivable.update({ where: { id }, data: { amount: round2(r.amount - parte) } });
+    const filho = await tx.receivable.create({
+      data: {
+        description: `${r.description} - Pagamento parcial`,
+        documentNumber: r.documentNumber,
+        category: r.category,
+        categoryLabel: r.categoryLabel,
+        amount: parte,
+        dueDate: r.dueDate,
+        status: "PENDENTE",
+        customerId: r.customerId,
+        saleId: r.saleId,
+        vehicleId: r.vehicleId,
+        partSaleId: r.partSaleId,
+        installmentNumber: r.installmentNumber,
+        totalInstallments: r.totalInstallments,
+        referencePeriod: r.referencePeriod,
+        costCenterId: r.costCenterId,
+        capitalBeneficiaryId: r.capitalBeneficiaryId,
+        accountId: r.accountId,
+        avulso: r.avulso,
+        partialOfId: id,
+      },
+      select: { id: true },
+    });
+    return filho.id;
+  });
+}
+
+/**
+ * Junta de volta ao título de origem a PARTE de um recebimento parcial que não
+ * foi recebida (o "já caiu" foi desfeito ou tirado da fila). Se a origem já
+ * foi recebida, a parte fica solta (devolve false).
+ */
+export async function reunirParteRecebivel(parteId: string): Promise<boolean> {
+  const parte = await prisma.receivable.findUnique({
+    where: { id: parteId },
+    select: { partialOfId: true, amount: true, status: true, pendingReceiptDate: true },
+  });
+  if (!parte?.partialOfId || parte.status === "RECEBIDO" || parte.pendingReceiptDate) return false;
+  const origem = await prisma.receivable.findUnique({
+    where: { id: parte.partialOfId },
+    select: { status: true, amount: true },
+  });
+  if (!origem || origem.status === "RECEBIDO") return false;
+  await prisma.$transaction([
+    prisma.receivable.update({
+      where: { id: parte.partialOfId },
+      data: { amount: Math.round((origem.amount + parte.amount) * 100) / 100 },
+    }),
+    prisma.receivable.delete({ where: { id: parteId } }),
+  ]);
+  return true;
+}
+
+/**
+ * Corrige os "já caiu" PARCIAIS que entraram na fila do jeito antigo — o título
+ * inteiro preso esperando só uma parte, sem deixar informar o resto: separa a
+ * parte (com o comprovante e a nota) num título próprio na fila e devolve o
+ * saldo ao original, livre. Roda nas telas que mostram a fila.
+ */
+export async function separarRecebimentosParciaisDaFila(): Promise<number> {
+  const presos = await prisma.receivable.findMany({
+    where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null }, pendingReceiptAmount: { not: null } },
+    select: { id: true, amount: true, pendingReceiptAmount: true },
+  });
+  let separados = 0;
+  for (const r of presos) {
+    if (r.pendingReceiptAmount == null || r.pendingReceiptAmount >= r.amount - 0.005) continue;
+    if (await separarRecebimentoParcialDaFila(r.id)) separados += 1;
+  }
+  return separados;
+}
+
+/**
+ * Um título na fila por MENOS que o seu valor: a parte informada (com o
+ * comprovante e a nota) vira um título próprio na fila e o original fica com
+ * o saldo, fora da fila — livre para outro "Já caiu". Devolve o id da parte,
+ * ou null se não havia o que separar.
+ */
+export async function separarRecebimentoParcialDaFila(id: string): Promise<string | null> {
+  const r = await prisma.receivable.findUnique({
+    where: { id },
+    select: {
+      status: true,
+      amount: true,
+      pendingReceiptDate: true,
+      pendingReceiptAmount: true,
+      pendingReceiptAccountId: true,
+      pendingReceiptNote: true,
+    },
+  });
+  if (
+    !r ||
+    r.status === "RECEBIDO" ||
+    !r.pendingReceiptDate ||
+    r.pendingReceiptAmount == null ||
+    r.pendingReceiptAmount >= r.amount - 0.005
+  ) {
+    return null;
+  }
+  const parteId = await desmembrarRecebimentoParcial(id, r.pendingReceiptAmount);
+  await prisma.$transaction([
+    prisma.receivableAttachment.updateMany({
+      where: { receivableId: id, kind: "COMPROVANTE" },
+      data: { receivableId: parteId },
+    }),
+    prisma.receivable.update({
+      where: { id: parteId },
+      data: {
+        pendingReceiptDate: r.pendingReceiptDate,
+        pendingReceiptAmount: r.pendingReceiptAmount,
+        pendingReceiptAccountId: r.pendingReceiptAccountId,
+        pendingReceiptNote: r.pendingReceiptNote,
+      },
+    }),
+    prisma.receivable.update({
+      where: { id },
+      data: {
+        pendingReceiptDate: null,
+        pendingReceiptAmount: null,
+        pendingReceiptAccountId: null,
+        pendingReceiptNote: null,
+      },
+    }),
+  ]);
+  return parteId;
+}

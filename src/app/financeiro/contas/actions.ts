@@ -1177,18 +1177,25 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
         partSaleId: true,
         recurringId: true,
         installmentNumber: true,
+        partialOfId: true,
       },
     });
     if (recebimento) {
+      // Parte de um recebimento parcial NÃO é apagada: volta a se juntar ao
+      // título de onde saiu (apagar tiraria o valor do saldo).
       const semOrigem =
         !recebimento.saleId &&
         !recebimento.partSaleId &&
         !recebimento.recurringId &&
+        !recebimento.partialOfId &&
         recebimento.installmentNumber == null;
       if (recebimento.avulso && recebimento.status !== "RECEBIDO" && semOrigem) {
         await prisma.receivable.delete({ where: { id } });
       } else {
         await desenfileirarRecebimento(id);
+        // Parte de um recebimento parcial: volta a se juntar ao saldo.
+        const { reunirParteRecebivel } = await import("@/lib/finance");
+        await reunirParteRecebivel(id);
       }
       revalidatePath("/financeiro/livro-caixa");
     } else {
