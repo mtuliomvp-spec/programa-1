@@ -90,6 +90,10 @@ export type LeituraComprovante = {
   accountName?: string | null;
   /** Quem recebeu — vira o fornecedor sugerido. */
   beneficiario?: string | null;
+  /** O outro lado, do ponto de vista da loja: quem pagou (entrada) ou quem recebeu (saída). */
+  contraparte?: string | null;
+  /** O comprovante é entre contas da própria loja (pagador e recebedor somos nós). */
+  avisoSentido?: string | null;
   /** Descrição sugerida (o usuário ajusta). */
   descricao?: string | null;
   /** PIX, TED, DOC, TRANSFERENCIA, BOLETO… */
@@ -365,9 +369,29 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     return { ok: false, error: "Não achei um comprovante neste arquivo. Confira se é o documento certo." };
   }
 
-  // ENTRADA (Pix recebido, depósito): a conta da loja é a CREDITADA — a conta
-  // do outro lado, a debitada, é do pagador e não está no nosso cadastro.
-  const entrada = String(lido.sentido || "").toUpperCase() === "ENTRADA";
+  // De que lado a LOJA está. O "sentido" que a leitura devolve é o de quem
+  // emitiu o comprovante: o Pix que o cliente ENVIOU para a loja vem como
+  // "saída" (para ele) — para nós é ENTRADA. Então manda quem recebeu e quem
+  // pagou: recebedor = a empresa → entrada; pagador = a empresa → saída.
+  const { beneficiarioConfere } = await import("@/lib/payment-queue");
+  const { getCompany } = await import("@/lib/company");
+  const empresa = await getCompany();
+  const partesDaLoja = [
+    { nome: empresa.razaoSocial, documento: empresa.cnpj },
+    { nome: empresa.nomeFantasia, documento: empresa.cnpj },
+  ];
+  const ehDaLoja = (nome?: string | null, documento?: string | null) =>
+    (nome || documento) ? beneficiarioConfere({ nome, documento }, { partes: partesDaLoja }).bate === true : false;
+  const paraLoja = ehDaLoja(lido.beneficiario, lido.documentoBeneficiario);
+  const daLoja = ehDaLoja(lido.pagador, lido.documentoPagador);
+  let entrada = String(lido.sentido || "").toUpperCase() === "ENTRADA";
+  let avisoSentido: string | null = null;
+  if (paraLoja && !daLoja) entrada = true;
+  else if (daLoja && !paraLoja) entrada = false;
+  else if (paraLoja && daLoja) {
+    avisoSentido =
+      'Pagador e recebedor são a própria loja: é uma transferência entre contas — lance em "Contas e caixas → Transferência entre contas" (ou "Já transferi"), não como entrada/saída.';
+  }
   const { contaDoComprovante } = await import("@/lib/payment-queue");
   const accountId = await contaDoComprovante(
     entrada
@@ -408,7 +432,8 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
           entrada ? "entrada" : "saida",
           lido.valor,
           parseDateInput(dataIso),
-          lido.beneficiario ?? null,
+          // O outro lado: quem pagou (entrada) ou quem recebeu (saída).
+          (entrada ? lido.pagador : lido.beneficiario) ?? null,
         )
       : null;
 
@@ -420,7 +445,9 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     accountId,
     accountName: conta?.name ?? null,
     beneficiario: lido.beneficiario ?? null,
-    descricao: (lido.descricao || lido.beneficiario || "").trim() || null,
+    contraparte: (entrada ? lido.pagador : lido.beneficiario) ?? null,
+    avisoSentido,
+    descricao: (lido.descricao || (entrada ? lido.pagador : lido.beneficiario) || "").trim() || null,
     formaPagamento: lido.formaPagamento ?? null,
     fluxo,
     categoria,

@@ -285,8 +285,8 @@ export default function CashEntryForm({
               {leitura.kind === "entrada" ? "entrada de " : leitura.kind === "saida" ? "saída de " : ""}
               {leitura.valor != null ? formatCurrency(leitura.valor) : "valor"}
               {leitura.data ? ` em ${formatDate(leitura.data)}` : ""}
-              {leitura.beneficiario
-                ? ` · ${leitura.kind === "entrada" ? "de" : "pago a"} ${leitura.beneficiario}`
+              {leitura.contraparte ?? leitura.beneficiario
+                ? ` · ${leitura.kind === "entrada" ? "de" : "pago a"} ${leitura.contraparte ?? leitura.beneficiario}`
                 : ""}
               .{" "}
               {leitura.fluxo || leitura.categoria
@@ -299,6 +299,11 @@ export default function CashEntryForm({
             para pré-lançar de vários lugares. Não bloqueia — só avisa antes,
             que é quando ainda dá para desistir.
           */}
+          {leitura?.ok && leitura.avisoSentido ? (
+            <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+              ⚠️ {leitura.avisoSentido}
+            </p>
+          ) : null}
           {leitura?.ok && leitura.duplicado ? (
             <p className="mt-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               ⚠️ Já existe um lançamento igual — <strong>{leitura.duplicado.descricao}</strong>, em{" "}
