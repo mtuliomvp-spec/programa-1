@@ -32,6 +32,11 @@ const receiptSchema = z.object({
   // CPF/CNPJ (ou chave Pix que seja CPF/CNPJ) de quem RECEBEU: confere com o
   // documento do fornecedor de forma muito mais segura que o nome.
   documentoBeneficiario: z.string().nullable().optional(),
+  // QUEM PAGOU (o titular da conta debitada) — com o recebedor, diz de que
+  // lado a LOJA está: o comprovante de um Pix que o cliente ENVIOU para a loja
+  // é "saída" para ele e ENTRADA para nós.
+  pagador: z.string().nullable().optional(),
+  documentoPagador: z.string().nullable().optional(),
   // Como o dinheiro saiu: PIX, TED, DOC, TRANSFERENCIA, BOLETO ou OUTRO.
   formaPagamento: z.string().nullable().optional(),
   // Para que lado o dinheiro andou na conta do titular do comprovante: SAIDA
@@ -73,6 +78,8 @@ const RECEIPTS_JSON_SCHEMA = {
           "contaDebitada",
           "beneficiario",
           "documentoBeneficiario",
+          "pagador",
+          "documentoPagador",
           "formaPagamento",
           "sentido",
           "bancoDestino",
@@ -117,6 +124,16 @@ const RECEIPTS_JSON_SCHEMA = {
             description:
               "CPF/CNPJ de QUEM RECEBEU, só dígitos e SOMENTE quando completo (o mascarado com asteriscos vai null). Chave Pix que seja um CPF/CNPJ vale como documento",
           },
+          pagador: {
+            type: ["string", "null"],
+            description:
+              "nome de QUEM PAGOU (titular da conta debitada), como impresso. Em Pix é o bloco 'Pagador'/'Origem'",
+          },
+          documentoPagador: {
+            type: ["string", "null"],
+            description:
+              "CPF/CNPJ de QUEM PAGOU, só dígitos e SOMENTE quando completo (o mascarado com asteriscos vai null)",
+          },
           formaPagamento: {
             type: ["string", "null"],
             description:
@@ -157,7 +174,7 @@ const SYSTEM_PROMPT =
   "VALOR TOTAL pago (número, ponto decimal), a DATA do pagamento (AAAA-MM-DD) e uma descrição curta " +
   "(convênio, beneficiário ou tributo — ex.: 'SEFAZ MA - IPVA', 'Pagamento de título — Fulano'). " +
   "Devolva também DE ONDE saiu o dinheiro (banco, agência e conta DEBITADAS — o pagador, nunca o " +
-  "favorecido), QUEM RECEBEU (beneficiário/favorecido/recebedor/cedente) com o CPF/CNPJ dele e a " +
+  "favorecido) e QUEM PAGOU (nome e CPF/CNPJ do pagador), QUEM RECEBEU (beneficiário/favorecido/recebedor/cedente) com o CPF/CNPJ dele e a " +
   "conta dele (banco/agência/conta DE DESTINO), a FORMA (Pix, TED, DOC, transferência, boleto) e o " +
   "SENTIDO — SAIDA quando o comprovante é de pagamento/envio, ENTRADA quando é de recebimento " +
   "('Pix recebido', depósito, crédito). " +
