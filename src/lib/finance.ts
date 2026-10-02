@@ -933,6 +933,8 @@ export async function applyPartToVehicle(input: {
  */
 export async function registerVehicleAdvance(input: {
   vehicleId: string;
+  /** Descrição própria (Contas a receber); vazio = "Sinal / entrada antecipada - carro". */
+  description?: string | null;
   amount: number;
   depositDate: Date;
   accountId: string;
@@ -944,7 +946,9 @@ export async function registerVehicleAdvance(input: {
   const vehicle = await prisma.vehicle.findUniqueOrThrow({ where: { id: input.vehicleId } });
   return prisma.receivable.create({
     data: {
-      description: `Sinal / entrada antecipada - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+      description:
+        input.description?.trim() ||
+        `Sinal / entrada antecipada - ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
       category: "VENDA_VEICULO",
       amount: input.amount,
       // Vencimento = data do depósito (é quando o valor "existe"); o crédito no
