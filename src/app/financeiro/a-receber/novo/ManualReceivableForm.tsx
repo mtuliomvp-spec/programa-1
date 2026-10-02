@@ -10,15 +10,22 @@ import { toDateInputValue } from "@/lib/format";
 type Customer = { id: string; name: string };
 type CostCenter = { id: string; name: string };
 type Beneficiary = { id: string; name: string };
+type VehicleOption = { id: string; label: string };
+type AccountOption = { id: string; name: string };
 
 export default function ManualReceivableForm({
   customers,
   costCenters,
   beneficiaries,
+  vehicles = [],
+  accounts = [],
 }: {
   customers: Customer[];
   costCenters: CostCenter[];
   beneficiaries: Beneficiary[];
+  /** Carros em estoque (fluxo Veículos = entrada/sinal do carro). */
+  vehicles?: VehicleOption[];
+  accounts?: AccountOption[];
 }) {
   const [state, formAction, pending] = useActionState(createManualReceivableAction, {} as ManualReceivableState);
   const [alreadyReceived, setAlreadyReceived] = useState(false);
@@ -27,6 +34,7 @@ export default function ManualReceivableForm({
   // no capital de ninguém.
   const [flow, setFlow] = useState("ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
+  const isVeiculo = flow === "VEICULOS";
 
   return (
     <form action={formAction} className="space-y-4">
@@ -54,9 +62,9 @@ export default function ManualReceivableForm({
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
         </Field>
         <Field label="Fluxo (obra estrutural)">
-          {/* Sem veículo nesta tela: "Veículos" viraria Administrativo. */}
+          {/* Veículos: entrada (sinal) de um carro em estoque — pede o carro. */}
           <Select name="structuralKey" value={flow} onChange={(e) => setFlow(e.target.value)}>
-            {STRUCTURAL_FLOWS.filter((f) => f.key !== "VEICULOS").map((f) => (
+            {STRUCTURAL_FLOWS.map((f) => (
               <option key={f.key} value={f.key}>
                 {f.name}
               </option>
@@ -78,8 +86,36 @@ export default function ManualReceivableForm({
             </p>
           </Field>
         ) : null}
+        {isVeiculo ? (
+          <>
+            <Field label="Veículo" required>
+              <Select name="vehicleId" defaultValue="" required>
+                <option value="">Selecione o veículo</option>
+                {vehicles.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <Field label="Conta em que vai cair" required>
+              <Select name="accountId" defaultValue={accounts[0]?.id ?? ""} required>
+                {accounts.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            <p className="text-xs text-slate-500 sm:col-span-2">
+              Vira a <strong>entrada (sinal) do veículo</strong>: aparece na ficha do carro como
+              &quot;Aguardando crédito&quot;, o caixa pede o crédito no dia do vencimento e, ao fechar a
+              venda, o valor é abatido do que o cliente tem a pagar. Não conta como receita.
+            </p>
+          </>
+        ) : null}
         <Field label="Centro de custo (obra, imóvel...)">
-          <Select name="costCenterId" defaultValue="">
+          <Select name="costCenterId" defaultValue="" disabled={isVeiculo}>
             <option value="">Nenhum (usa o fluxo acima)</option>
             {costCenters.map((c) => (
               <option key={c.id} value={c.id}>

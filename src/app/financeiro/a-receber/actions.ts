@@ -257,6 +257,9 @@ const manualSchema = z.object({
   capitalBeneficiaryId: z.string().optional(),
   notes: z.string().optional(),
   alreadyReceived: z.coerce.boolean().optional(),
+  // Fluxo VEÍCULOS: entrada (sinal) de um carro em estoque e a conta em que cai.
+  vehicleId: z.string().optional(),
+  accountId: z.string().optional(),
 });
 
 export type ManualReceivableState = { error?: string };
@@ -288,6 +291,49 @@ export async function createManualReceivableAction(
   const isCapital = d.structuralKey === "CAPITAL";
   if (isCapital && !d.capitalBeneficiaryId) {
     return { error: "Escolha o sócio (beneficiário) do fluxo Capital." };
+  }
+
+  // Fluxo VEÍCULOS: é a ENTRADA (sinal) de um carro em estoque — o mesmo
+  // registro da ficha do veículo. Fica ligado ao carro (não é receita: é
+  // adiantamento do cliente), o caixa pede o crédito no dia do vencimento e,
+  // no fechamento da venda, o valor é abatido do que o cliente tem a pagar.
+  if (d.structuralKey === "VEICULOS") {
+    if (!d.vehicleId) return { error: "Escolha o veículo da entrada." };
+    if (!d.accountId) return { error: "Escolha a conta em que o valor vai cair." };
+    const carro = await prisma.vehicle.findUnique({
+      where: { id: d.vehicleId },
+      select: { status: true, intermediation: true },
+    });
+    if (!carro || carro.intermediation) return { error: "Veículo não encontrado no estoque." };
+    if (carro.status === "VENDIDO") {
+      return { error: "Este veículo já foi vendido — o que falta receber dele está nos títulos da venda." };
+    }
+    const vencimento = parseDateInput(d.dueDate);
+    let workDate: Date | null = null;
+    if (d.alreadyReceived) {
+      workDate = await getCashboxWorkDate();
+      if (vencimento.toISOString().slice(0, 10) > workDate.toISOString().slice(0, 10)) {
+        return {
+          error: "A data é depois do caixa aberto: desmarque \"Já foi recebido\" — o caixa pede o crédito nesse dia.",
+        };
+      }
+    }
+    const { registerVehicleAdvance, creditVehicleAdvance } = await import("@/lib/finance");
+    const sinal = await registerVehicleAdvance({
+      vehicleId: d.vehicleId,
+      description: d.description,
+      amount: d.amount,
+      depositDate: vencimento,
+      accountId: d.accountId,
+      customerId: d.customerId || null,
+      notes: d.notes || null,
+    });
+    if (workDate) await creditVehicleAdvance(sinal.id, workDate);
+    revalidatePath("/financeiro/a-receber");
+    revalidatePath("/financeiro/contas");
+    revalidatePath(`/estoque/${d.vehicleId}`);
+    revalidatePath("/");
+    redirect("/financeiro/a-receber");
   }
 
   await createManualReceivable({
