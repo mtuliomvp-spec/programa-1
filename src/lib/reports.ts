@@ -134,6 +134,11 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         id: { notIn: aporteReceivableIds },
         // Par contábil da cobertura de saldo livre negativo: registro, não receita.
         capitalCoverGroup: null,
+        // SINAL DEVOLVIDO não é receita: era adiantamento do cliente e voltou
+        // para ele. Sem o vínculo com o carro (sai na devolução), um sinal
+        // lançado como entrada "Outros" do movimento de caixa passava a contar
+        // como outra receita. Só a parte RETIDA (o par contábil) é receita.
+        OR: [{ sinalGroup: null }, { sinalParContabil: true }],
       },
       select: { amount: true, receivedDate: true },
     }),
@@ -427,6 +432,11 @@ async function profitLossStatement(
         id: { notIn: aporteReceivableIds },
         // Par contábil da cobertura de saldo livre negativo: registro, não receita.
         capitalCoverGroup: null,
+        // SINAL DEVOLVIDO não é receita: era adiantamento do cliente e voltou
+        // para ele. Sem o vínculo com o carro (sai na devolução), um sinal
+        // lançado como entrada "Outros" do movimento de caixa passava a contar
+        // como outra receita. Só a parte RETIDA (o par contábil) é receita.
+        OR: [{ sinalGroup: null }, { sinalParContabil: true }],
       },
       select: { id: true, amount: true, receivedDate: true, description: true },
     }),

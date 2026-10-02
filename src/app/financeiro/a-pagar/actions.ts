@@ -359,8 +359,11 @@ export async function payBatchAction(
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
   }
   let paid = 0;
+  const { creditarSinalDaDevolucao } = await import("@/lib/finance");
   for (const id of ids) {
     try {
+      // Devolução de sinal: credita antes o sinal que ainda espera o caixa.
+      await creditarSinalDaDevolucao(id, date);
       await markPayablePaid(id, date, accountId);
     } catch (e) {
       // Ex.: devolução de sinal antes de o sinal ser creditado.

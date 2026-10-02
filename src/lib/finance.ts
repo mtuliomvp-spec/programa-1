@@ -4382,3 +4382,33 @@ export async function separarRecebimentoParcialDaFila(id: string): Promise<strin
   ]);
   return parteId;
 }
+
+/**
+ * Antes de baixar a DEVOLUÇÃO de um sinal, credita o sinal que ainda espera o
+ * caixa — se o dia do depósito já chegou. Confirmar a devolução é dizer que o
+ * dinheiro entrou e voltou; exigir um clique à parte só para o crédito travava
+ * a fila ("confirme antes o crédito do sinal"). Se o sinal também estava na
+ * fila (o "Já caiu"), entra pela conta informada ali. Depósito ainda no futuro:
+ * não credita, e a baixa da devolução continua recusada.
+ */
+export async function creditarSinalDaDevolucao(payableId: string, date: Date): Promise<boolean> {
+  const p = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: { sinalGroup: true, sinalParContabil: true },
+  });
+  if (!p?.sinalGroup || p.sinalParContabil) return false;
+  const sinal = await prisma.receivable.findFirst({
+    where: { sinalGroup: p.sinalGroup, sinalParContabil: false, status: { in: ["PENDENTE", "ATRASADO"] } },
+    select: { id: true, dueDate: true, accountId: true, pendingReceiptAccountId: true },
+  });
+  if (!sinal) return false;
+  const dia = (d: Date) => d.toISOString().slice(0, 10);
+  if (dia(sinal.dueDate) > dia(date)) return false;
+  const conta = sinal.pendingReceiptAccountId ?? sinal.accountId ?? (await getDefaultAccountId());
+  await markReceivableReceived(sinal.id, date, conta);
+  await prisma.receivable.update({
+    where: { id: sinal.id },
+    data: { pendingReceiptDate: null, pendingReceiptAmount: null, pendingReceiptAccountId: null, pendingReceiptNote: null },
+  });
+  return true;
+}

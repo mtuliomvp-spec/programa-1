@@ -921,7 +921,15 @@ export async function confirmQueuedPaymentsAction(
     vendaDaFila,
   } = await import("@/lib/payment-queue");
   const { payComboAction } = await import("@/app/financeiro/combos/actions");
-  const { receiveReceivable, settleFinancing, settleReturn } = await import("@/lib/finance");
+  const { receiveReceivable, settleFinancing, settleReturn, creditarSinalDaDevolucao } = await import(
+    "@/lib/finance"
+  );
+  // ENTRADAS primeiro: o dinheiro que entrou no dia vem antes do que saiu —
+  // ex.: o crédito de um sinal antes da devolução dele.
+  const recebiveisNaLista = new Set(
+    (await prisma.receivable.findMany({ where: { id: { in: ids } }, select: { id: true } })).map((r) => r.id),
+  );
+  ids = [...ids.filter((id) => recebiveisNaLista.has(id)), ...ids.filter((id) => !recebiveisNaLista.has(id))];
   let paid = 0;
   for (const id of ids) {
     // Repasse/retorno da financeira: a baixa é a mesma do botão da tela
@@ -1092,6 +1100,8 @@ export async function confirmQueuedPaymentsAction(
     }
     await prepararBaixaDaFila(id, date);
     try {
+      // Devolução de sinal: credita antes o sinal que ainda espera o caixa.
+      await creditarSinalDaDevolucao(id, date);
       await markPayablePaid(id, date, accountId);
     } catch (e) {
       // Ex.: devolução de sinal antes de o sinal ser creditado.
