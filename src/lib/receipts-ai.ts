@@ -15,6 +15,17 @@ import { recordAiUsage } from "@/lib/ai-usage";
  * JSON Schema, mesmo mapeamento de erros).
  */
 
+/**
+ * Campo de texto que no JSON pedido à IA é string SIMPLES ("" quando não há):
+ * a API limita a 16 os campos com tipo união (string|null), e o comprovante
+ * passou disso ao ganhar o pagador. Aqui o vazio volta a ser null.
+ */
+const textoOuNulo = z
+  .string()
+  .nullable()
+  .optional()
+  .transform((v) => (v && v.trim() ? v.trim() : null));
+
 const receiptSchema = z.object({
   pagina: z.number().int(),
   valor: z.number().nullable(),
@@ -35,14 +46,14 @@ const receiptSchema = z.object({
   // QUEM PAGOU (o titular da conta debitada) — com o recebedor, diz de que
   // lado a LOJA está: o comprovante de um Pix que o cliente ENVIOU para a loja
   // é "saída" para ele e ENTRADA para nós.
-  pagador: z.string().nullable().optional(),
-  documentoPagador: z.string().nullable().optional(),
+  pagador: textoOuNulo,
+  documentoPagador: textoOuNulo,
   // Como o dinheiro saiu: PIX, TED, DOC, TRANSFERENCIA, BOLETO ou OUTRO.
-  formaPagamento: z.string().nullable().optional(),
+  formaPagamento: textoOuNulo,
   // Para que lado o dinheiro andou na conta do titular do comprovante: SAIDA
   // (pagamento, "Pix enviado") ou ENTRADA ("Pix recebido", depósito). Quem
   // lança pelo movimento de caixa não precisa dizer de novo o que o papel diz.
-  sentido: z.string().nullable().optional(),
+  sentido: textoOuNulo,
   // Para ONDE o dinheiro foi (o recebedor) — é a conta creditada, que importa
   // quando o comprovante é de dinheiro que ENTROU.
   bancoDestino: z.string().nullable().optional(),
@@ -125,24 +136,24 @@ const RECEIPTS_JSON_SCHEMA = {
               "CPF/CNPJ de QUEM RECEBEU, só dígitos e SOMENTE quando completo (o mascarado com asteriscos vai null). Chave Pix que seja um CPF/CNPJ vale como documento",
           },
           pagador: {
-            type: ["string", "null"],
+            type: "string",
             description:
-              "nome de QUEM PAGOU (titular da conta debitada), como impresso. Em Pix é o bloco 'Pagador'/'Origem'",
+              "nome de QUEM PAGOU (titular da conta debitada), como impresso. Em Pix é o bloco 'Pagador'/'Origem'. \"\" (vazio) quando não aparece",
           },
           documentoPagador: {
-            type: ["string", "null"],
+            type: "string",
             description:
-              "CPF/CNPJ de QUEM PAGOU, só dígitos e SOMENTE quando completo (o mascarado com asteriscos vai null)",
+              "CPF/CNPJ de QUEM PAGOU, só dígitos e SOMENTE quando completo; \"\" (vazio) quando mascarado ou ausente",
           },
           formaPagamento: {
-            type: ["string", "null"],
+            type: "string",
             description:
-              "como o dinheiro saiu: exatamente PIX, TED, DOC, TRANSFERENCIA (entre contas do mesmo banco), BOLETO ou OUTRO",
+              "como o dinheiro saiu: exatamente PIX, TED, DOC, TRANSFERENCIA (entre contas do mesmo banco), BOLETO ou OUTRO; \"\" (vazio) se não der para saber",
           },
           sentido: {
-            type: ["string", "null"],
+            type: "string",
             description:
-              "para que lado o dinheiro andou na conta do titular do comprovante: exatamente SAIDA (pagamento, 'Pix enviado', 'transferência enviada') ou ENTRADA ('Pix recebido', depósito, crédito recebido)",
+              "para que lado o dinheiro andou na conta do titular do comprovante: exatamente SAIDA (pagamento, 'Pix enviado', 'transferência enviada') ou ENTRADA ('Pix recebido', depósito, crédito recebido); \"\" (vazio) se não der para saber",
           },
           bancoDestino: {
             type: ["string", "null"],
