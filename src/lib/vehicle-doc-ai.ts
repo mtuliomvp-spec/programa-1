@@ -20,26 +20,36 @@ import { recordAiUsage } from "@/lib/ai-usage";
  * Mesma chave do Parecer IA e mesmo molde de `src/lib/crlv-ai.ts`.
  */
 
+/**
+ * Campo que no JSON pedido à IA é string SIMPLES ("" quando não consta): a API
+ * aceita no máximo 16 campos com tipo união (string|null) e este documento
+ * passava disso — a leitura era recusada. Aqui o vazio volta a ser null.
+ */
+const textoOuNulo = z
+  .string()
+  .nullable()
+  .transform((v) => (v && v.trim() ? v.trim() : null));
+
 const docSchema = z.object({
   documento: z.string().nullable(),
   proprietario: z.string().nullable(),
   cpfCnpj: z.string().nullable(),
-  telefone: z.string().nullable(),
+  telefone: textoOuNulo,
   endereco: z.string().nullable(),
   placa: z.string().nullable(),
   renavam: z.string().nullable(),
   chassi: z.string().nullable(),
   marca: z.string().nullable(),
   modelo: z.string().nullable(),
-  versao: z.string().nullable(),
+  versao: textoOuNulo,
   anoFabricacao: z.number().int().nullable(),
   anoModelo: z.number().int().nullable(),
-  cor: z.string().nullable(),
-  combustivel: z.string().nullable(),
-  transmissao: z.string().nullable(),
-  exercicio: z.string().nullable(),
+  cor: textoOuNulo,
+  combustivel: textoOuNulo,
+  transmissao: textoOuNulo,
+  exercicio: textoOuNulo,
   /** NF: número da nota (só para a descrição do anexo). */
-  numeroNota: z.string().nullable(),
+  numeroNota: textoOuNulo,
   /** NF: montadora/concessionária que emitiu a nota (consta no contrato). */
   emitente: z.string().nullable(),
 });
@@ -84,7 +94,7 @@ const DOC_JSON_SCHEMA = {
       type: ["string", "null"],
       description: "CPF/CNPJ do dono (destinatário na NF), só dígitos; null se mascarado/incompleto",
     },
-    telefone: { type: ["string", "null"], description: "telefone do dono/destinatário, se constar" },
+    telefone: { type: "string", description: "telefone do dono/destinatário, se constar; \"\" (vazio) se não constar" },
     endereco: {
       type: ["string", "null"],
       description: "endereço do dono/destinatário em uma linha: rua, número, complemento, bairro, cidade - UF, CEP (o que constar)",
@@ -94,14 +104,14 @@ const DOC_JSON_SCHEMA = {
     chassi: { type: ["string", "null"], description: "os 17 caracteres do VIN, sem espaços" },
     marca: { type: ["string", "null"], description: "só a marca, ex. VW, FIAT, HONDA" },
     modelo: { type: ["string", "null"], description: "modelo sem a marca, ex. VIRTUS, POLO TRACK" },
-    versao: { type: ["string", "null"], description: "versão/acabamento quando constar, ex. CL AC, EXL CVT" },
+    versao: { type: "string", description: "versão/acabamento quando constar, ex. CL AC, EXL CVT; \"\" (vazio) se não constar" },
     anoFabricacao: { type: ["integer", "null"] },
     anoModelo: { type: ["integer", "null"] },
-    cor: { type: ["string", "null"], description: "descrição da cor, ex. BRANCO CRISTAL" },
-    combustivel: { type: ["string", "null"], description: "ex. Álcool/Gasolina (sem o código numérico)" },
-    transmissao: { type: ["string", "null"], description: "Manual ou Automático, se constar" },
-    exercicio: { type: ["string", "null"], description: "CRLV: ano do exercício, 4 dígitos; NF: null" },
-    numeroNota: { type: ["string", "null"], description: "NF: número da nota fiscal; CRLV: null" },
+    cor: { type: "string", description: "descrição da cor, ex. BRANCO CRISTAL; \"\" (vazio) se não constar" },
+    combustivel: { type: "string", description: "ex. Álcool/Gasolina (sem o código numérico); \"\" (vazio) se não constar" },
+    transmissao: { type: "string", description: "Manual ou Automático, se constar; \"\" (vazio) se não constar" },
+    exercicio: { type: "string", description: "CRLV: ano do exercício, 4 dígitos; NF: null; \"\" (vazio) se não constar" },
+    numeroNota: { type: "string", description: "NF: número da nota fiscal; CRLV: null; \"\" (vazio) se não constar" },
     emitente: {
       type: ["string", "null"],
       description:
