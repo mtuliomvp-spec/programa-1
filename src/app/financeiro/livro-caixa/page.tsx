@@ -18,11 +18,13 @@ import FixEntryDateButton from "./FixEntryDateButton";
 
 export const dynamic = "force-dynamic";
 
-function parseMonth(value: string | undefined): { year: number; month: number } {
+function parseMonth(
+  value: string | undefined,
+  padrao: Date,
+): { year: number; month: number } {
   const match = value?.match(/^(\d{4})-(\d{2})$/);
   if (match) return { year: Number(match[1]), month: Number(match[2]) - 1 };
-  const now = new Date();
-  return { year: now.getUTCFullYear(), month: now.getUTCMonth() };
+  return { year: padrao.getUTCFullYear(), month: padrao.getUTCMonth() };
 }
 
 export default async function LivroCaixaPage({
@@ -32,7 +34,15 @@ export default async function LivroCaixaPage({
 }) {
   await requireModule("financeiro");
   const params = await searchParams;
-  const { year, month } = parseMonth(params.mes);
+  // Mês que a tela abre: o do CAIXA ABERTO — com o movimento ainda em 29/09, o
+  // calendário já em outubro mostrava um mês vazio e escondia setembro, que é
+  // onde os lançamentos estão. Filtrando por período ("De"), abre no mês dele.
+  const caixaAtual = await getCashboxState();
+  const deParam = params.de && /^\d{4}-\d{2}-\d{2}$/.test(params.de) ? new Date(`${params.de}T12:00:00.000Z`) : null;
+  const padrao = deParam ?? (caixaAtual.session?.workDate ?? new Date());
+  // Com "De" preenchido ele manda: o filtro envia junto o mês que estava na
+  // tela, e escolher datas de setembro olhando outubro dava "nenhum lançamento".
+  const { year, month } = parseMonth(deParam ? undefined : params.mes, padrao);
   const accountFilter = params.conta || "";
   const q = (params.q || "").trim();
   const { min, max, de, ate } = params;
