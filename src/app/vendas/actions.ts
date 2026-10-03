@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
-import { cancelVehicleSale } from "@/lib/finance";
+import { cancelVehicleSale, corrigirSinaisForaDaVenda } from "@/lib/finance";
+import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan, userCanAny } from "@/lib/guards";
@@ -99,4 +100,30 @@ export async function cancelSaleAction(id: string) {
     redirect(`/vendas/pre-vendas/${reopenedPreSaleId}?reaberta=1`);
   }
   redirect(`/vendas/${id}`);
+}
+
+/**
+ * Venda que tratou como "recebido à vista" um sinal que ainda aguardava
+ * crédito: o sinal passa a ser da venda (continua a receber) e o "À vista"
+ * diminui o mesmo valor.
+ */
+export async function corrigirSinaisForaDaVendaAction(saleId: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("vendas", "registrar");
+    await assertBooksBalanced();
+    const venda = await prisma.sale.findUnique({ where: { id: saleId }, select: { saleDate: true } });
+    if (!venda) return { ok: false, error: "Venda não encontrada." };
+    await assertMonthOpen(venda.saleDate);
+    await corrigirSinaisForaDaVenda(saleId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível corrigir." };
+  }
+  revalidatePath(`/vendas/${saleId}`);
+  revalidatePath("/vendas");
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
+  revalidatePath("/estoque");
+  revalidatePath("/");
+  return { ok: true };
 }

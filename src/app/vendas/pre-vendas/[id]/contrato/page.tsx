@@ -21,7 +21,8 @@ export default async function ContratoPreVendaPage({ params }: { params: Promise
       : Promise.resolve(null),
     prisma.receivable.aggregate({
       _sum: { amount: true },
-      where: { vehicleId: pre.vehicleId, saleId: null, status: "RECEBIDO" },
+      // Inclui o sinal que ainda aguarda crédito: na venda ele entra como a receber.
+      where: { vehicleId: pre.vehicleId, saleId: null, status: { in: ["RECEBIDO", "PENDENTE", "ATRASADO"] }, sinalGroup: null },
     }),
   ]);
   if (!vehicle || !customer) notFound();

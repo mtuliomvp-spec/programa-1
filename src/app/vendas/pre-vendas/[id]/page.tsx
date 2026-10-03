@@ -67,7 +67,8 @@ export default async function PreVendaFichaPage({
       : Promise.resolve(null),
     prisma.receivable.aggregate({
       _sum: { amount: true },
-      where: { vehicleId: pre.vehicleId, saleId: null, status: "RECEBIDO" },
+      // Inclui o sinal que ainda aguarda crédito: na venda ele entra como a receber.
+      where: { vehicleId: pre.vehicleId, saleId: null, status: { in: ["RECEBIDO", "PENDENTE", "ATRASADO"] }, sinalGroup: null },
     }),
   ]);
 
@@ -191,7 +192,7 @@ export default async function PreVendaFichaPage({
             ))}
             <p><span className="text-slate-500">Data:</span> {formatDate(pre.saleDate)}</p>
             <p><span className="text-slate-500">Forma de pagamento:</span> {paymentLabel[pre.paymentMethod]}</p>
-            {sinal > 0 ? <p><span className="text-slate-500">Sinal já recebido:</span> {money(sinal)}</p> : null}
+            {sinal > 0 ? <p><span className="text-slate-500">Sinal / entrada:</span> {money(sinal)}</p> : null}
           </div>
         </section>
 
@@ -260,7 +261,7 @@ export default async function PreVendaFichaPage({
           <div className="space-y-1 text-sm">
             <Row label="Valor da venda" value={total} />
             {tiLiquido > 0 ? <Row label="(−) Entrada da troca" value={tiLiquido} /> : null}
-            {sinal > 0 ? <Row label="(−) Sinal já recebido" value={sinal} /> : null}
+            {sinal > 0 ? <Row label="(−) Sinal / entrada antecipada" value={sinal} /> : null}
             {pre.paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
               <Row
                 label={`(−) Financiado pelo banco${financedAlreadyIn ? " (já recebido — no sinal)" : ""}`}

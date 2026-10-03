@@ -5,6 +5,8 @@ import { parseReferrals } from "@/lib/referrals";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CancelSaleButton from "./CancelSaleButton";
 import { userCan } from "@/lib/guards";
+import { sinaisForaDaVenda } from "@/lib/finance";
+import CorrigirSinalButton from "./CorrigirSinalButton";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +33,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
 
   // Só quem tem a permissão "Cancelar venda" vê o botão (a ação também é
   // bloqueada no servidor).
-  const canCancel = await userCan("vendas", "cancelar");
+  const [canCancel, canRegistrar, foraDaVenda] = await Promise.all([
+    userCan("vendas", "cancelar"),
+    userCan("vendas", "registrar"),
+    sinaisForaDaVenda(id),
+  ]);
 
   const totalRecebido = sale.receivables.filter((r) => r.status === "RECEBIDO").reduce((s, r) => s + r.amount, 0);
   const referrals = parseReferrals(sale.referrals);
@@ -84,6 +90,37 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
           <p className="mt-2 text-xl font-semibold text-emerald-600">{formatCurrency(totalRecebido)}</p>
         </Card>
       </div>
+
+      {foraDaVenda ? (
+        <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          <p className="font-semibold">
+            Sinal de {formatCurrency(foraDaVenda.total)} ficou fora desta venda
+          </p>
+          <p className="mt-1">
+            {foraDaVenda.sinais.some((s) => s.status !== "RECEBIDO")
+              ? "O sinal ainda aguardava crédito quando a venda foi fechada, e não foi abatido."
+              : "O sinal foi creditado depois do fechamento da venda e não foi abatido."}{" "}
+            {foraDaVenda.aVista
+              ? `Por isso o restante saiu como "À vista" recebido em ${formatDate(
+                  foraDaVenda.aVista.receivedDate ?? sale.saleDate,
+                )} (${formatCurrency(foraDaVenda.aVista.amount)}), contando o sinal duas vezes.`
+              : ""}
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-xs">
+            {foraDaVenda.sinais.map((s) => (
+              <li key={s.id}>
+                {s.description} · {formatCurrency(s.amount)} · {recLabel[s.status]}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs">
+            A correção liga o sinal à venda (se pendente, ele continua <strong>a receber</strong>{" "}e é
+            creditado pelo &quot;Já caiu&quot; quando o dinheiro entrar) e diminui o &quot;À vista&quot; em{" "}
+            {formatCurrency(foraDaVenda.total)}.
+          </p>
+          {canRegistrar && foraDaVenda.aVista ? <CorrigirSinalButton saleId={sale.id} /> : null}
+        </div>
+      ) : null}
 
       {sale.returnLevel > 0 && sale.returnNet > 0 ? (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50/60 px-5 py-3 text-sm text-emerald-800">

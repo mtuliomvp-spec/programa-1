@@ -140,10 +140,11 @@ export default async function NovaVendaPage({
     .map((b) => b.userId)
     .filter((id): id is string => !!id);
 
-  // Sinais / entradas antecipadas já recebidas por veículo (abatidas na venda).
+  // Sinais / entradas antecipadas por veículo (abatidas na venda) — inclusive os
+  // que ainda aguardam crédito: entram na venda como a receber.
   const advanceRows = await prisma.receivable.groupBy({
     by: ["vehicleId"],
-    where: { saleId: null, status: "RECEBIDO", vehicleId: { in: vehicles.map((v) => v.id) } },
+    where: { saleId: null, status: { in: ["RECEBIDO", "PENDENTE", "ATRASADO"] }, sinalGroup: null, vehicleId: { in: vehicles.map((v) => v.id) } },
     _sum: { amount: true },
   });
   const advances: Record<string, number> = {};
