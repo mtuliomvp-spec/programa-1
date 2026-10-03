@@ -19,9 +19,10 @@ export default async function ContratoVendaPage({ params }: { params: Promise<{ 
   const ti = sale.tradeInVehicle;
   const tiLiquido = ti ? Math.max(0, round2(ti.purchasePrice - ti.payoffAmount - ti.debtsAmount)) : 0;
 
-  // Sinal já recebido (adiantamentos), pelo mesmo critério da ordem de venda.
+  // Sinal (adiantamentos), pelo mesmo critério da ordem de venda — inclusive o
+  // que ainda aguarda crédito: é dinheiro do cliente para este carro.
   const sinal = sale.receivables
-    .filter((r) => r.status === "RECEBIDO" && r.description.toLowerCase().includes("sinal"))
+    .filter((r) => r.description.toLowerCase().includes("sinal"))
     .reduce((s, r) => s + r.amount, 0);
 
   const total = sale.totalAmount;

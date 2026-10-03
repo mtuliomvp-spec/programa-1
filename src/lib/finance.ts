@@ -1400,10 +1400,25 @@ async function vehicleSale(input: {
       where: { vehicleId: input.vehicleId, saleId: null, status: "RECEBIDO" },
       select: { id: true, amount: true },
     });
-    const advanceTotal = advances.reduce((s, a) => s + a.amount, 0);
-    if (advances.length > 0) {
+    // Sinal AINDA AGUARDANDO CRÉDITO (o cliente depositou, o caixa não chegou
+    // no dia): também é dinheiro do cliente para este carro. Entra na venda
+    // como A RECEBER (continua pendente, é creditado quando o caixa chegar no
+    // dia) e abate do que falta cobrar — antes ele ficava de fora, e numa venda
+    // à vista o restante saía como "recebido na hora", sem ninguém receber.
+    const advancesPendentes = await tx.receivable.findMany({
+      where: {
+        vehicleId: input.vehicleId,
+        saleId: null,
+        status: { in: ["PENDENTE", "ATRASADO"] },
+        sinalGroup: null,
+      },
+      select: { id: true, amount: true },
+    });
+    const advanceTotal =
+      advances.reduce((s, a) => s + a.amount, 0) + advancesPendentes.reduce((s, a) => s + a.amount, 0);
+    if (advances.length > 0 || advancesPendentes.length > 0) {
       await tx.receivable.updateMany({
-        where: { id: { in: advances.map((a) => a.id) } },
+        where: { id: { in: [...advances, ...advancesPendentes].map((a) => a.id) } },
         data: { saleId: sale.id },
       });
     }
@@ -1863,6 +1878,71 @@ async function vehicleSale(input: {
 
     return sale;
   });
+}
+
+/**
+ * Sinais do veículo que ficaram FORA da venda: o cliente depositou, mas o
+ * sinal ainda aguardava crédito no fechamento, e as versões antigas só
+ * abatiam os sinais já creditados. Numa venda à vista, o valor saiu como
+ * "À vista" recebido na hora (no caixa, sem ninguém receber), e o sinal
+ * ficou solto, sem venda. Devolução de sinal (sinalGroup) não entra.
+ */
+export async function sinaisForaDaVenda(saleId: string) {
+  const sale = await prisma.sale.findUnique({
+    where: { id: saleId },
+    select: { status: true, vehicleId: true },
+  });
+  if (!sale || sale.status !== "CONCLUIDA") return null;
+  const [sinais, aVista] = await Promise.all([
+    prisma.receivable.findMany({
+      where: { vehicleId: sale.vehicleId, saleId: null, sinalGroup: null },
+      select: { id: true, amount: true, status: true, dueDate: true, description: true },
+    }),
+    prisma.receivable.findFirst({
+      where: { saleId, status: "RECEBIDO", description: { endsWith: " - À vista" } },
+      select: { id: true, amount: true, receivedDate: true, reconciledAt: true },
+    }),
+  ]);
+  if (sinais.length === 0) return null;
+  const total = Math.round(sinais.reduce((s, r) => s + r.amount, 0) * 100) / 100;
+  return { sinais, total, aVista };
+}
+
+/**
+ * Corrige a venda (vide `sinaisForaDaVenda`): o sinal solto passa a ser da
+ * venda — pendente, ele continua A RECEBER e é creditado pelo "Já caiu" —, e o
+ * "À vista" recebido na hora diminui o mesmo valor (some se zerar).
+ * Equação: o caixa cai X e os veículos a receber sobem X; o Lucro/Prejuízo
+ * (valor da venda) não muda.
+ */
+export async function corrigirSinaisForaDaVenda(saleId: string) {
+  const fora = await sinaisForaDaVenda(saleId);
+  if (!fora) throw new Error("Esta venda não tem sinal fora dela.");
+  const { sinais, total, aVista } = fora;
+  if (!aVista) {
+    throw new Error("A venda não tem um recebimento à vista para abater o sinal — ajuste manualmente.");
+  }
+  if (aVista.reconciledAt) {
+    throw new Error("O recebimento à vista já foi conciliado com o extrato — desfaça a conciliação antes.");
+  }
+  if (total > aVista.amount + 0.005) {
+    throw new Error(
+      `O sinal (${total.toFixed(2)}) passa do recebimento à vista (${aVista.amount.toFixed(2)}) — ajuste manualmente.`,
+    );
+  }
+  await prisma.$transaction(async (tx) => {
+    await tx.receivable.updateMany({
+      where: { id: { in: sinais.map((s) => s.id) }, saleId: null },
+      data: { saleId },
+    });
+    const resto = Math.round((aVista.amount - total) * 100) / 100;
+    if (resto < 0.005) {
+      await tx.receivable.delete({ where: { id: aVista.id } });
+    } else {
+      await tx.receivable.update({ where: { id: aVista.id }, data: { amount: resto } });
+    }
+  });
+  return { total, aVistaReceivedDate: aVista.receivedDate };
 }
 
 /**

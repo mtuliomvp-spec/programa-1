@@ -818,9 +818,9 @@ export default function SaleForm({
 
       {sinal > 0 ? (
         <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-          💰 Sinal / entrada antecipada já recebido deste veículo:{" "}
+          💰 Sinal / entrada antecipada deste veículo (recebido ou aguardando crédito):{" "}
           <strong>{formatCurrency(sinal)}</strong>. Será <strong>abatido</strong> automaticamente do
-          que o cliente tem a pagar ao fechar a venda.
+          que o cliente tem a pagar ao fechar a venda (o que ainda aguarda crédito continua a receber).
         </div>
       ) : null}
 
@@ -1070,7 +1070,7 @@ export default function SaleForm({
                 <div className="space-y-1">
                   <SummaryRow label="Valor da venda" value={total} />
                   {tiLiquido > 0 ? <SummaryRow label="(−) Entrada da troca" value={tiLiquido} /> : null}
-                  {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
+                  {sinal > 0 ? <SummaryRow label="(−) Sinal / entrada antecipada" value={sinal} /> : null}
                   <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
                   <SummaryRow
                     label="= Devolução ao cliente → Contas a Pagar"
@@ -1270,7 +1270,7 @@ export default function SaleForm({
               <div className="mt-3 space-y-1">
                 <SummaryRow label="Valor da venda" value={total} />
                 <SummaryRow label="(−) Entrada da troca" value={tiLiquido} />
-                {sinal > 0 ? <SummaryRow label="(−) Sinal já recebido" value={sinal} /> : null}
+                {sinal > 0 ? <SummaryRow label="(−) Sinal / entrada antecipada" value={sinal} /> : null}
                 {paymentMethod === "FINANCIADO" && financedTyped > 0 ? (
                   <SummaryRow label="(−) Financiado pelo banco" value={financedTyped} />
                 ) : null}
