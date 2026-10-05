@@ -932,16 +932,36 @@ export async function pagamentosAdiante(workDate: Date | null): Promise<DiaAdian
  * valor deles, e a diferença do comprovante fica no aviso, para ser corrigida
  * antes do ok).
  */
+export type ItemPrelancado = {
+  accountId: string | null;
+  /** Data em que passou pelo banco (pagamento, depósito, transferência). */
+  data: Date | null;
+  descricao: string;
+  /** Negativo debita a conta, positivo credita. */
+  valor: number;
+  href: string | null;
+};
+
 export async function debitosPrelancados(): Promise<{
   /** accountId → saldo do pré-lançado: negativo debita, positivo credita. */
   porConta: Map<string, number>;
   /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
   semConta: number;
+  /** Item a item (para conferir o previsto com o extrato do banco). */
+  itens: ItemPrelancado[];
 }> {
+  const veiculoSel = { select: { plate: true, brand: true, model: true } } as const;
   const [titulos, combos, recebimentos, transferencias, vendas, sinais] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
-      select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        pendingPaymentDate: true,
+        pendingPaymentAmount: true,
+        pendingPaymentAccountId: true,
+      },
     }),
     prisma.paymentCombo.findMany({
       where: {
@@ -949,6 +969,9 @@ export async function debitosPrelancados(): Promise<{
         pendingPaymentDate: { not: null },
       },
       select: {
+        id: true,
+        name: true,
+        pendingPaymentDate: true,
         pendingPaymentAccountId: true,
         pendingPaymentAmount: true,
         payables: { where: { status: { not: "PAGO" } }, select: { amount: true } },
@@ -956,12 +979,28 @@ export async function debitosPrelancados(): Promise<{
     }),
     prisma.receivable.findMany({
       where: { status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null } },
-      select: { amount: true, pendingReceiptAmount: true, pendingReceiptAccountId: true },
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        pendingReceiptDate: true,
+        pendingReceiptAmount: true,
+        pendingReceiptAccountId: true,
+      },
     }),
     // Transferência informada ("já transferi"): o dinheiro já mudou de conta no
     // banco. Não muda o TOTAL — sai de uma e entra na outra —, mas muda o
     // previsto de cada uma, que é o que o card da conta mostra.
-    prisma.pendingTransfer.findMany({ select: { fromId: true, toId: true, amount: true } }),
+    prisma.pendingTransfer.findMany({
+      select: {
+        fromId: true,
+        toId: true,
+        amount: true,
+        date: true,
+        from: { select: { name: true } },
+        to: { select: { name: true } },
+      },
+    }),
     // Repasse/retorno informado: sai da conta da financeira e entra na da
     // empresa — como a transferência, muda o previsto das duas.
     prisma.sale.findMany({
@@ -973,6 +1012,8 @@ export async function debitosPrelancados(): Promise<{
         ],
       },
       select: {
+        id: true,
+        vehicle: veiculoSel,
         financerAccountId: true,
         financedAmount: true,
         financerSettledAt: true,
@@ -1001,22 +1042,36 @@ export async function debitosPrelancados(): Promise<{
         dueDate: { lte: new Date(new Date().setUTCHours(23, 59, 59, 999)) },
         OR: [{ vehicleId: { not: null } }, { sinalVehicleId: { not: null } }],
       },
-      select: { amount: true, accountId: true },
+      select: { id: true, description: true, amount: true, accountId: true, dueDate: true, vehicleId: true },
     }),
   ]);
 
   const porConta = new Map<string, number>();
   let semConta = 0;
-  const somar = (accountId: string | null, valor: number) => {
+  const itens: ItemPrelancado[] = [];
+  const somar = (
+    accountId: string | null,
+    valor: number,
+    item: { data: Date | null; descricao: string; href: string | null },
+  ) => {
+    itens.push({ accountId, valor: round2(valor), ...item });
     if (!accountId) {
       semConta = round2(semConta + valor);
       return;
     }
     porConta.set(accountId, round2((porConta.get(accountId) ?? 0) + valor));
   };
+  const placa = (v: { plate: string; brand: string; model: string } | null) =>
+    v ? `${v.brand} ${v.model} (${v.plate})` : "veículo";
   // Saídas entram negativas e entradas positivas: o que a tela mostra é o
   // efeito líquido no saldo da conta quando o caixa alcançar esses dias.
-  for (const t of titulos) somar(t.pendingPaymentAccountId, -(t.pendingPaymentAmount ?? t.amount));
+  for (const t of titulos) {
+    somar(t.pendingPaymentAccountId, -(t.pendingPaymentAmount ?? t.amount), {
+      data: t.pendingPaymentDate,
+      descricao: `Já paguei · ${t.description}`,
+      href: `/financeiro/a-pagar/${t.id}/ordem`,
+    });
+  }
   // Combo: o valor INFORMADO no comprovante (o mesmo da fila) — com
   // abatimento no capital ou pagamento parcial, ele é menor que a soma dos
   // títulos, e a soma debitava a conta a mais.
@@ -1024,28 +1079,44 @@ export async function debitosPrelancados(): Promise<{
     somar(
       c.pendingPaymentAccountId,
       -(c.pendingPaymentAmount ?? round2(c.payables.reduce((s, p) => s + p.amount, 0))),
+      { data: c.pendingPaymentDate, descricao: `Combo ${c.name}`, href: `/financeiro/combos/${c.id}` },
     );
   }
-  for (const r of sinais) somar(r.accountId, r.amount);
+  for (const r of sinais) {
+    somar(r.accountId, r.amount, {
+      data: r.dueDate,
+      descricao: `Sinal aguardando crédito · ${r.description}`,
+      href: r.vehicleId ? `/estoque/${r.vehicleId}` : null,
+    });
+  }
   for (const r of recebimentos) {
-    somar(r.pendingReceiptAccountId, r.pendingReceiptAmount ?? r.amount);
+    somar(r.pendingReceiptAccountId, r.pendingReceiptAmount ?? r.amount, {
+      data: r.pendingReceiptDate,
+      descricao: `Já caiu · ${r.description}`,
+      href: `/financeiro/a-receber`,
+    });
   }
   for (const t of transferencias) {
-    somar(t.fromId, -t.amount);
-    somar(t.toId, t.amount);
+    const item = { data: t.date, descricao: `Transferência ${t.from.name} → ${t.to.name}`, href: null };
+    somar(t.fromId, -t.amount, item);
+    somar(t.toId, t.amount, item);
   }
   for (const v of vendas) {
+    const href = `/vendas/${v.id}`;
     if (!v.financerSettledAt && v.pendingFinancingDate && v.financerAccountId) {
-      somar(v.financerAccountId, -(v.financedAmount ?? 0));
-      somar(v.pendingFinancingAccountId, v.financedAmount ?? 0);
+      const item = { data: v.pendingFinancingDate, descricao: `Repasse do financiamento · ${placa(v.vehicle)}`, href };
+      somar(v.financerAccountId, -(v.financedAmount ?? 0), item);
+      somar(v.pendingFinancingAccountId, v.financedAmount ?? 0, item);
     }
     if (!v.returnSettledAt && v.pendingReturnDate && v.financerAccountId) {
       // A financeira zera pelo PROGRAMADO; a empresa recebe o que foi pago.
-      somar(v.financerAccountId, -v.returnNet);
-      somar(v.pendingReturnAccountId, v.pendingReturnAmount ?? v.returnNet);
+      const item = { data: v.pendingReturnDate, descricao: `Retorno da financeira · ${placa(v.vehicle)}`, href };
+      somar(v.financerAccountId, -v.returnNet, item);
+      somar(v.pendingReturnAccountId, v.pendingReturnAmount ?? v.returnNet, item);
     }
   }
-  return { porConta, semConta };
+  itens.sort((a, b) => (a.data?.getTime() ?? 0) - (b.data?.getTime() ?? 0));
+  return { porConta, semConta, itens };
 }
 
 /**

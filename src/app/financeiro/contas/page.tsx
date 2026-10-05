@@ -259,6 +259,51 @@ export default async function ContasPage({
             <ShareBankDataButton texto={dadosBancarios(a)!} />
           </div>
         ) : null}
+        {/* Composição do pré-lançado: item a item, para conferir o previsto
+            com o extrato do banco. */}
+        {prelancado.itens.some((i) => i.accountId === a.id) ? (
+          <details data-no-pdf className="mt-1 text-xs">
+            <summary className="cursor-pointer font-medium text-blue-700 hover:underline">
+              🔎 Conferir o previsto ({prelancado.itens.filter((i) => i.accountId === a.id).length} pré-lançados)
+            </summary>
+            <div className="mt-2 max-w-xl rounded-lg border border-slate-200 bg-slate-50 p-3">
+              <div className="flex justify-between gap-3 border-b border-slate-200 pb-1 text-slate-600">
+                <span>Saldo no sistema{workDate ? ` (caixa em ${formatDate(workDate)})` : ""}</span>
+                <span className="tabular-nums">{formatCurrency(a.balance)}</span>
+              </div>
+              {prelancado.itens
+                .filter((i) => i.accountId === a.id)
+                .map((i, n) => (
+                  <div key={n} className="flex justify-between gap-3 py-1">
+                    <span className="min-w-0 text-slate-700">
+                      <span className="text-slate-400">{i.data ? formatDate(i.data) : "—"}</span>{" "}
+                      {i.href ? (
+                        <Link href={i.href} className="hover:text-blue-700 hover:underline">
+                          {i.descricao}
+                        </Link>
+                      ) : (
+                        i.descricao
+                      )}
+                    </span>
+                    <span className={`shrink-0 tabular-nums ${i.valor < 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                      {i.valor < 0 ? `−${formatCurrency(-i.valor)}` : `+${formatCurrency(i.valor)}`}
+                    </span>
+                  </div>
+                ))}
+              <div className="flex justify-between gap-3 border-t border-slate-200 pt-1 font-semibold text-slate-800">
+                <span>Previsto</span>
+                <span className="tabular-nums">
+                  {formatCurrency(a.balance + (prelancado.porConta.get(a.id) ?? 0))}
+                </span>
+              </div>
+              <p className="mt-2 text-[11px] leading-snug text-slate-500">
+                O previsto deve bater com o saldo do banco hoje. Se não bater, a diferença é movimento do banco que
+                não foi informado (tarifa, débito automático, PIX sem comprovante, lançamento ainda não feito) ou
+                um item desta lista que não passou por esta conta.
+              </p>
+            </div>
+          </details>
+        ) : null}
         </div>
         <div className="flex items-center gap-4">
           <div className="text-right">
