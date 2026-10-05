@@ -938,7 +938,7 @@ export async function debitosPrelancados(): Promise<{
   /** Pré-lançado cuja conta ainda não foi identificada (sai de alguma conta). */
   semConta: number;
 }> {
-  const [titulos, combos, recebimentos, transferencias, vendas] = await Promise.all([
+  const [titulos, combos, recebimentos, transferencias, vendas, sinais] = await Promise.all([
     prisma.payable.findMany({
       where: { status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
       select: { amount: true, pendingPaymentAmount: true, pendingPaymentAccountId: true },
@@ -950,6 +950,7 @@ export async function debitosPrelancados(): Promise<{
       },
       select: {
         pendingPaymentAccountId: true,
+        pendingPaymentAmount: true,
         payables: { where: { status: { not: "PAGO" } }, select: { amount: true } },
       },
     }),
@@ -984,6 +985,24 @@ export async function debitosPrelancados(): Promise<{
         pendingReturnAccountId: true,
       },
     }),
+    // Sinal / entrada antecipada AGUARDANDO CRÉDITO: o cliente já depositou
+    // na conta (data do depósito = vencimento), só o caixa ainda não chegou
+    // no dia. É dinheiro que já está no banco, como um recebimento informado.
+    prisma.receivable.findMany({
+      where: {
+        status: { in: ["PENDENTE", "ATRASADO"] },
+        category: "VENDA_VEICULO",
+        pendingReceiptDate: null,
+        accountId: { not: null },
+        // Já ligado a uma venda, é um título a receber da venda: entra no
+        // previsto quando for informado ("Já caiu"), como os demais.
+        saleId: null,
+        // Depósito até hoje (as datas são gravadas ao meio-dia UTC).
+        dueDate: { lte: new Date(new Date().setUTCHours(23, 59, 59, 999)) },
+        OR: [{ vehicleId: { not: null } }, { sinalVehicleId: { not: null } }],
+      },
+      select: { amount: true, accountId: true },
+    }),
   ]);
 
   const porConta = new Map<string, number>();
@@ -998,9 +1017,16 @@ export async function debitosPrelancados(): Promise<{
   // Saídas entram negativas e entradas positivas: o que a tela mostra é o
   // efeito líquido no saldo da conta quando o caixa alcançar esses dias.
   for (const t of titulos) somar(t.pendingPaymentAccountId, -(t.pendingPaymentAmount ?? t.amount));
+  // Combo: o valor INFORMADO no comprovante (o mesmo da fila) — com
+  // abatimento no capital ou pagamento parcial, ele é menor que a soma dos
+  // títulos, e a soma debitava a conta a mais.
   for (const c of combos) {
-    somar(c.pendingPaymentAccountId, -round2(c.payables.reduce((s, p) => s + p.amount, 0)));
+    somar(
+      c.pendingPaymentAccountId,
+      -(c.pendingPaymentAmount ?? round2(c.payables.reduce((s, p) => s + p.amount, 0))),
+    );
   }
+  for (const r of sinais) somar(r.accountId, r.amount);
   for (const r of recebimentos) {
     somar(r.pendingReceiptAccountId, r.pendingReceiptAmount ?? r.amount);
   }
