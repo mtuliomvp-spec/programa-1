@@ -1275,3 +1275,65 @@ export async function reidentificarContasDaFila(): Promise<number> {
   }
   return corrigidos;
 }
+
+/** Aviso de conta não reconhecida (qualquer das duas formas). */
+const AVISO_CONTA = /escolha a conta ao confirmar$/;
+
+/**
+ * Define a conta de um pré-lançamento que entrou na fila SEM conta (o
+ * comprovante não a identificou). Antes isso só era possível no ok do caixa —
+ * e até lá o previsto da conta não contava o pagamento. Tira o aviso da conta.
+ */
+export async function definirContaDaFila(
+  kind: PagamentoNaFila["kind"],
+  ids: string[],
+  accountId: string,
+): Promise<void> {
+  const conta = await prisma.financialAccount.findUnique({
+    where: { id: accountId },
+    select: { active: true, isInvestment: true },
+  });
+  if (!conta || !conta.active || conta.isInvestment) throw new Error("Conta inválida.");
+  const semAviso = (nota: string | null) =>
+    (nota ?? "")
+      .split(" · ")
+      .filter((p) => p && !AVISO_CONTA.test(p))
+      .join(" · ") || null;
+
+  if (kind === "titulo" || kind === "lote") {
+    const titulos = await prisma.payable.findMany({
+      where: { id: { in: ids }, status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
+      select: { id: true, pendingPaymentNote: true },
+    });
+    for (const t of titulos) {
+      await prisma.payable.update({
+        where: { id: t.id },
+        data: { pendingPaymentAccountId: accountId, pendingPaymentNote: semAviso(t.pendingPaymentNote) },
+      });
+    }
+  } else if (kind === "combo") {
+    const combos = await prisma.paymentCombo.findMany({
+      where: { id: { in: ids }, status: { notIn: ["PAGO", "CANCELADO"] }, pendingPaymentDate: { not: null } },
+      select: { id: true, pendingPaymentNote: true },
+    });
+    for (const c of combos) {
+      await prisma.paymentCombo.update({
+        where: { id: c.id },
+        data: { pendingPaymentAccountId: accountId, pendingPaymentNote: semAviso(c.pendingPaymentNote) },
+      });
+    }
+  } else if (kind === "recebimento") {
+    const recebimentos = await prisma.receivable.findMany({
+      where: { id: { in: ids }, status: { not: "RECEBIDO" }, pendingReceiptDate: { not: null } },
+      select: { id: true, pendingReceiptNote: true },
+    });
+    for (const r of recebimentos) {
+      await prisma.receivable.update({
+        where: { id: r.id },
+        data: { pendingReceiptAccountId: accountId, pendingReceiptNote: semAviso(r.pendingReceiptNote) },
+      });
+    }
+  } else {
+    throw new Error("Repasse/retorno já tem conta definida.");
+  }
+}
