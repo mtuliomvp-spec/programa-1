@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Badge, Button, Card, CardHeader, Select } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
-import { confirmQueuedPaymentsAction, dismissQueuedPaymentAction } from "./actions";
+import { confirmQueuedPaymentsAction, dismissQueuedPaymentAction, definirContaDaFilaAction } from "./actions";
 import type { PagamentoNaFila } from "@/lib/payment-queue";
 
 /** Os ids de título que a linha carrega — o lote devolve todos os que cobre. */
@@ -211,7 +211,17 @@ export default function PaymentQueueCard({
                     <Select
                       className="h-9 w-56"
                       value={contas[r.id] ?? ""}
-                      onChange={(e) => setContas((p) => ({ ...p, [r.id]: e.target.value }))}
+                      onChange={(e) => {
+                        const accountId = e.target.value;
+                        setContas((p) => ({ ...p, [r.id]: accountId }));
+                        // Grava já no pré-lançamento: o previsto da conta
+                        // passa a contar com ele, mesmo sem o ok agora.
+                        if (accountId && r.kind !== "financiamento" && r.kind !== "retorno") {
+                          void definirContaDaFilaAction({ kind: r.kind, ids: idsDaLinha(r), accountId }).then(() =>
+                            router.refresh(),
+                          );
+                        }
+                      }}
                     >
                       <option value="">Escolha a conta…</option>
                       {accounts.map((a) => (

@@ -377,6 +377,9 @@ export default async function ContasPage({
           dias={adiante}
           workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
           canPagar={canPagar}
+          accounts={accounts
+            .filter((a) => a.active && !a.isInvestment)
+            .map((a) => ({ id: a.id, name: a.name }))}
         />
         {/* Transferências entre contas já feitas no banco, esperando o dia. */}
         <PendingTransfersCard

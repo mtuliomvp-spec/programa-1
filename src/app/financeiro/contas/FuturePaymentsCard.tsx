@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Card, CardHeader } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { dismissQueuedPaymentAction } from "./actions";
+import DefinirContaFila from "./DefinirContaFila";
 import type { DiaAdiante, PagamentoNaFila } from "@/lib/payment-queue";
 
 /** Os ids de título que a linha carrega — o lote devolve todos os que cobre. */
@@ -32,11 +33,14 @@ export default function FuturePaymentsCard({
   dias,
   workDateLabel,
   canPagar,
+  accounts = [],
 }: {
   dias: DiaAdiante[];
   /** Data do movimento aberto; vazio quando não há caixa aberto. */
   workDateLabel: string;
   canPagar: boolean;
+  /** Contas para escolher a do pré-lançamento que entrou sem conta. */
+  accounts?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   // O primeiro dia já abre: normalmente é "hoje", o que a pessoa quer ver.
@@ -192,6 +196,14 @@ export default function FuturePaymentsCard({
                             </p>
                             {p.note ? (
                               <p className="mt-1 text-xs font-medium text-amber-700">⚠ {p.note}</p>
+                            ) : null}
+                            {canPagar && !p.accountId && p.kind !== "financiamento" && p.kind !== "retorno" ? (
+                              <DefinirContaFila
+                                kind={p.kind}
+                                ids={idsDaLinha(p)}
+                                direcao={p.direcao}
+                                accounts={accounts}
+                              />
                             ) : null}
                           </div>
                           <div className="text-right">

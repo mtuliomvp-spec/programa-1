@@ -1218,3 +1218,27 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
   revalidatePath("/financeiro/combos");
   return { ok: true };
 }
+
+/**
+ * Escolhe a conta de um pré-lançamento da fila que entrou sem conta — sem
+ * esperar o ok do caixa, para o previsto da conta já contar com ele.
+ */
+export async function definirContaDaFilaAction(input: {
+  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno";
+  ids: string[];
+  accountId: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["financeiro", "pagar"],
+      ["financeiro", "editar"],
+    ]);
+    if (!input.accountId || input.ids.length === 0) return { ok: false, error: "Escolha a conta." };
+    const { definirContaDaFila } = await import("@/lib/payment-queue");
+    await definirContaDaFila(input.kind, input.ids, input.accountId);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível definir a conta." };
+  }
+  revalidatePath("/financeiro/contas");
+  return { ok: true };
+}
