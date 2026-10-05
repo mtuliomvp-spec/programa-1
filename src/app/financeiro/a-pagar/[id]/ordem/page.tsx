@@ -15,6 +15,7 @@ import SetSupplierForm from "./SetSupplierForm";
 import ReadReceiptAi from "../../ReadReceiptAi";
 import PayableAttachments from "./PayableAttachments";
 import CopyBarcode from "@/components/CopyBarcode";
+import CopyPixKey from "@/components/CopyPixKey";
 import { formatBarcodeLine } from "@/lib/barcode-line";
 
 export const dynamic = "force-dynamic";
@@ -291,8 +292,9 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
         <Section title="Dados para pagamento">
           {hasBankData ? (
             pagamentoRows
-              .filter(([label]) => label !== "Linha digitável")
-              .map(([label, value]) => <Row key={label} label={label} value={value} strong={label.startsWith("Chave PIX") && !!bene?.pixKey} />)
+              // A chave PIX (quando há) vai num bloco próprio, com botão de copiar.
+              .filter(([label]) => label !== "Linha digitável" && !(label.startsWith("Chave PIX") && bene?.pixKey))
+              .map(([label, value]) => <Row key={label} label={label} value={value} />)
           ) : (
             <p className="py-1.5 text-sm text-amber-700">
               Dados bancários não cadastrados.{" "}
@@ -305,6 +307,11 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
               )}
             </p>
           )}
+          {hasBankData && bene?.pixKey ? (
+            <div className="mt-2">
+              <CopyPixKey value={bene.pixKey} label={pixLabel} tipo={bene.pixKeyType} />
+            </div>
+          ) : null}
           {payable.barcode ? (
             <div className="mt-2">
               <CopyBarcode value={payable.barcode} />

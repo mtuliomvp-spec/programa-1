@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import CopyBarcode from "@/components/CopyBarcode";
+import CopyPixKey from "@/components/CopyPixKey";
 import PrintButton from "@/components/PrintButton";
 import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
@@ -258,14 +259,21 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                   </>
                 ) : null}
                 {combo.payoutMethod !== "conta" ? (
-                  <Row
-                    label={
-                      bene?.pixKeyType
-                        ? `Chave PIX (${{ cpf: "CPF", cnpj: "CNPJ", telefone: "Telefone", email: "E-mail", aleatoria: "Aleatória" }[bene.pixKeyType] || bene.pixKeyType})`
-                        : "Chave PIX"
-                    }
-                    value={bene?.pixKey || "—"}
-                  />
+                  bene?.pixKey ? (
+                    <div className="my-1.5">
+                      <CopyPixKey
+                        value={bene.pixKey}
+                        tipo={bene.pixKeyType}
+                        label={
+                          bene.pixKeyType
+                            ? `Chave PIX (${{ cpf: "CPF", cnpj: "CNPJ", telefone: "Telefone", email: "E-mail", aleatoria: "Aleatória" }[bene.pixKeyType] || bene.pixKeyType})`
+                            : "Chave PIX"
+                        }
+                      />
+                    </div>
+                  ) : (
+                    <Row label="Chave PIX" value="—" />
+                  )
                 ) : null}
               </>
             ) : (
