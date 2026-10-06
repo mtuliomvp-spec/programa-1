@@ -1162,9 +1162,21 @@ async function applyTransferQuote(input: {
     };
   }
 
+  // CANCELAMENTO (a venda não deu certo e a ATPV-e foi cancelada): o
+  // despachante cobra o serviço, mas o carro NÃO vai ser transferido — o
+  // "Cliente" do recibo é quem desistiu, não o novo dono.
+  const cancelamento = /cancel/i.test([q.observacao ?? "", ...q.itens.map((i) => i.descricao)].join(" "));
+
   // Para quem o veículo será transferido (campo "Cliente").
   const cliente = (q.cliente || "").trim();
-  if (cliente) {
+  if (cancelamento) {
+    if (vehicle.transferToName) {
+      await prisma.vehicle.update({ where: { id: vehicle.id }, data: { transferToName: null } });
+    }
+    filled.push(
+      `orçamento de CANCELAMENTO da ATPV-e${cliente ? ` (cliente ${cliente})` : ""}: o veículo não será transferido`,
+    );
+  } else if (cliente) {
     const { houseNameKeys, isOwnName } = await import("@/lib/doc-owner");
     const paraLoja = isOwnName(cliente, await houseNameKeys());
     const novo = paraLoja ? null : cliente;
@@ -1232,6 +1244,35 @@ async function applyTransferQuote(input: {
   const vencimento = dataRecibo && dataRecibo.getTime() > hoje.getTime() ? dataRecibo : hoje;
   const destino = cliente && !filled.some((f) => f.includes("nome da loja")) ? ` para ${cliente}` : "";
   const linhas = itens.map((i) => `${i.descricao}: ${brl(i.valor)}`).join(" · ");
+
+  // Cancelamento da ATPV-e: o serviço do despachante é custo do PRÓPRIO carro
+  // (a venda foi desfeita, ele segue no estoque) — nunca ajusta o título de
+  // transferência de uma venda.
+  if (cancelamento && !vehicle.intermediation) {
+    const repetidoCanc = await prisma.vehicleCost.findFirst({
+      where: { vehicleId: vehicle.id, description: { contains: "cancelamento", mode: "insensitive" }, amount: total },
+      select: { id: true },
+    });
+    if (repetidoCanc) {
+      warnings.push(`Já existe um custo de cancelamento de ${brl(total)} neste veículo — o título não foi lançado de novo.`);
+      return { filled, warnings };
+    }
+    await addVehicleCostWithPayable({
+      vehicleId: vehicle.id,
+      description: `Cancelamento da ATPV-e (venda desfeita${cliente ? ` — ${cliente}` : ""}) — despachante${despachante ? ` ${despachante}` : ""}`,
+      category: "DOCUMENTACAO",
+      amount: total,
+      date: hoje,
+      alreadyPaid: false,
+      dueDate: vencimento,
+      installments: 1,
+      supplierId,
+      notes: `Lançado da leitura do orçamento do despachante (anexo ${input.attachmentId}): cancelamento da ATPV-e de uma venda que não aconteceu — o veículo não é transferido.${linhas ? ` Linhas: ${linhas}.` : ""}`,
+    });
+    filled.push(`título de ${brl(total)} lançado no Contas a pagar${despachante ? ` (${despachante})` : ""} como custo do veículo (cancelamento)`);
+    if (itens.length) filled.push(`linhas: ${linhas}`);
+    return { filled, warnings };
+  }
 
   // Veículo VENDIDO com a transferência já RESERVADA na venda (título
   // "Transferência DETRAN" criado no registro da venda, reconhecido por

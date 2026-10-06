@@ -203,7 +203,8 @@ export default function VehicleTransferQuote({
           <p className="mt-1 text-xs text-slate-500">
             Ao anexar, a IA lê o recibo do despachante e lança o título da transferência no Contas a
             pagar (fornecedor = despachante). O campo “Cliente” do recibo diz para quem o veículo será
-            transferido.
+            transferido. Recibo de <strong>cancelamento da ATPV-e</strong> (venda desfeita, “CANCELAMENTO” na
+            OBS.) também vale: o título entra como custo do carro e ele não fica marcado para transferência.
           </p>
         </Field>
         {pending ? (
