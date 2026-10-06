@@ -30,6 +30,9 @@ const quoteSchema = z.object({
   data: z.string().nullable(),
   itens: z.array(itemSchema),
   total: z.number().nullable(),
+  // Texto do campo OBS. ("" quando vazio). String pura, sem união com null:
+  // o limite de parâmetros com união da saída estruturada é baixo.
+  observacao: z.string().default(""),
 });
 
 export type OrcamentoTransferencia = z.infer<typeof quoteSchema>;
@@ -48,6 +51,7 @@ const QUOTE_JSON_SCHEMA = {
     "data",
     "itens",
     "total",
+    "observacao",
   ],
   properties: {
     despachanteNome: { type: ["string", "null"], description: "nome/razão social do despachante que emitiu o recibo (cabeçalho)" },
@@ -72,6 +76,10 @@ const QUOTE_JSON_SCHEMA = {
       },
     },
     total: { type: ["number", "null"], description: "valor escrito na linha TOTAL, em reais" },
+    observacao: {
+      type: "string",
+      description: "texto escrito no campo OBS. (ex.: CANCELAMENTO); string vazia se não houver",
+    },
   },
 } as const;
 
@@ -83,6 +91,8 @@ const SYSTEM_PROMPT =
   "3) A tabela tem uma linha por tipo de serviço (TRANSFERÊNCIA, REG. DE GRAVAME, SERVIÇO, MUDANÇA DE UF, TAXA DE VISTORIA etc.). " +
   "Devolva SOMENTE as linhas com valor escrito na coluna da direita, com o valor em reais. Valores manuscritos como '185,00', '185.00' ou '185oo' significam 185 reais. " +
   "4) TOTAL é o valor escrito na linha TOTAL. Confira: a soma das linhas deve bater com o total; se não bater, mantenha o que está escrito. " +
+  "Linha OBS. com valor escrito (ex.: 'OBS.: CANCELAMENTO 208,00') também é uma linha: descricao = o texto da OBS. " +
+  "O texto da OBS. vai também em observacao. " +
   "5) PLACA: só letras e números. DATA: DD/MM/AAAA, completando o ano com 4 dígitos (ex.: 05/09/26 → 05/09/2026). " +
   "6) Não invente nada: o que não conseguir ler vai null. Responda somente com o JSON pedido.";
 
