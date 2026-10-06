@@ -83,3 +83,26 @@ export function isSamePlate(a: string | null | undefined, b: string | null | und
   const kb = plateIdentityKey(b);
   return !!ka && ka === kb;
 }
+
+/** Letras que a escrita à mão confunde com números (e o caminho inverso). */
+const PARECE_DIGITO: Record<string, string> = { O: "0", Q: "0", D: "0", U: "0", I: "1", L: "1", Z: "2", S: "5", G: "6", B: "8" };
+const PARECE_LETRA: Record<string, string> = { "0": "O", "1": "I", "2": "Z", "5": "S", "6": "G", "8": "B" };
+
+/**
+ * Placa LIDA DE UM PAPEL ESCRITO À MÃO (recibo do despachante): o "0" cortado
+ * vira "Q" ou "O", o "1" vira "I"... Corrige pela posição — as três primeiras
+ * são sempre letras; a 4ª, a 6ª e a 7ª são sempre números (antiga e Mercosul) —
+ * e compara como `isSamePlate`. A 5ª (letra na Mercosul, número na antiga)
+ * fica como veio.
+ */
+export function isSamePlateManuscrita(lida: string | null | undefined, placa: string | null | undefined): boolean {
+  const corrigir = (v: string | null | undefined) => {
+    const k = plateKey(v);
+    if (k.length !== 7) return k;
+    return k
+      .split("")
+      .map((c, i) => (i < 3 ? (PARECE_LETRA[c] ?? c) : i === 4 ? c : (PARECE_DIGITO[c] ?? c)))
+      .join("");
+  };
+  return isSamePlate(corrigir(lida), corrigir(placa));
+}

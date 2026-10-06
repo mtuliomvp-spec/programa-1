@@ -29,7 +29,7 @@ import {
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { parseDateInput } from "@/lib/format";
 import { parseDebtItems } from "@/lib/vehicle-debts";
-import { plateKey, plateIdentityKey, plateVariants } from "@/lib/plate";
+import { plateKey, plateIdentityKey, plateVariants, isSamePlateManuscrita } from "@/lib/plate";
 import { structuralCenterId } from "@/lib/structural";
 
 /**
@@ -1152,7 +1152,8 @@ async function applyTransferQuote(input: {
 
   // Placa do recibo × veículo (quando o recibo traz placa legível).
   const placaLida = plateKey(q.placa);
-  if (placaLida && plateIdentityKey(placaLida) !== plateIdentityKey(vehicle.plate)) {
+  // Recibo escrito à mão: "TCPQF63" (o 0 cortado lido como Q) é o TCP0F63.
+  if (placaLida && !isSamePlateManuscrita(placaLida, vehicle.plate)) {
     return {
       filled,
       warnings: [
