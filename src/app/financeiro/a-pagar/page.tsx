@@ -181,11 +181,21 @@ export default async function ContasAPagarPage({
     .map(([value, label]) => ({ value, label }))
     .sort((a, b) => a.label.localeCompare(b.label, "pt-BR"));
 
+  // Fim do dia de HOJE no horário de Brasília (as datas são gravadas ao
+  // meio-dia UTC): o limite do "Não pago até hoje".
+  const hojeBr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Sao_Paulo" });
+  const fimDeHoje = new Date(`${hojeBr}T23:59:59.999Z`);
   const filtered = withStatus.filter((p) => {
     if (inSolicitedCombo(p)) return false;
-    // "NAO_PAGO" agrupa pendente + atrasado: é tudo que ainda tem de ser pago.
-    // "TODOS" inclui os pagos, então não servia para essa pergunta.
+    // "NAO_PAGO" agrupa pendente + atrasado ATÉ HOJE: o que já venceu ou vence
+    // hoje e ainda não foi pago. Os pendentes de vencimento futuro ficam de
+    // fora (para eles, "Pendente"). "TODOS" inclui os pagos, então não servia.
     if (statusFilter === "NAO_PAGO") {
+      if (p.effective === "PAGO") return false;
+      if (p.dueDate > fimDeHoje) return false;
+    } else if (statusFilter === "ABERTO") {
+      // Em aberto: TUDO o que não foi pago, inclusive a vencer (o "falta R$ X"
+      // do estoque leva para cá).
       if (p.effective === "PAGO") return false;
     } else if (statusFilter && statusFilter !== "TODOS" && p.effective !== statusFilter) {
       return false;
@@ -440,9 +450,10 @@ export default async function ContasAPagarPage({
           <>
             <label className="flex flex-col gap-0.5 text-xs text-slate-500">
               Status
-              <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 h-11 w-44">
+              <Select name="status" defaultValue={statusFilter || "TODOS"} className="mt-0.5 h-11 w-52">
                 <option value="TODOS">Todos os status</option>
-                <option value="NAO_PAGO">Não pago (pendente + atrasado)</option>
+                <option value="NAO_PAGO">Não pago até hoje (vence hoje + atrasado)</option>
+                <option value="ABERTO">Em aberto (todos, inclusive a vencer)</option>
                 <option value="PENDENTE">Pendente</option>
                 <option value="ATRASADO">Atrasado</option>
                 <option value="PAGO">Pago</option>
