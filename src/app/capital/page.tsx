@@ -23,6 +23,8 @@ export default async function CapitalPage({
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canManage = await userCan("administrativo", "capital");
+  // Cadastrar sócio tem permissão própria.
+  const canSocios = await userCan("administrativo", "socios");
   // A empresa dos Parâmetros sempre aparece como beneficiária própria
   await ensureCompanyBeneficiary();
   const [beneficiaries, allocationsByBenef, prelancado] = await Promise.all([
@@ -314,7 +316,7 @@ export default async function CapitalPage({
           )}
         </div>
 
-        {canManage ? (
+        {canSocios ? (
           <Card className="h-fit print:hidden">
             <div className="border-b border-slate-100 px-5 py-4">
               <h2 className="text-base font-semibold text-slate-900">Novo beneficiário</h2>

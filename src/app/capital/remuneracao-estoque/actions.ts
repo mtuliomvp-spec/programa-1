@@ -25,7 +25,7 @@ export async function runStockInterestAction(
   formData: FormData,
 ): Promise<StockInterestFormState> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "remuneracao");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -82,7 +82,7 @@ export async function reverseStockInterestAction(
   runDate: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "remuneracao");
     await assertMonthOpen(new Date(runDate));
     await reverseStockInterest(runId);
   } catch (e) {

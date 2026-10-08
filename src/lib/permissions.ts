@@ -29,6 +29,9 @@ export const MODULES: ModuleConfig[] = [
       VER,
       { acao: "criar", label: "Cadastrar veículo" },
       EDITAR,
+      { acao: "km", label: "Editar quilometragem" },
+      { acao: "situacao", label: "Mudar situação no estoque (reservar / voltar ao estoque)" },
+      { acao: "renave", label: "Renave: preencher dados e ler a NF-e" },
       EXCLUIR,
       { acao: "custos", label: "Lançar custos" },
       { acao: "sinal", label: "Registrar sinal / entrada antecipada" },
@@ -104,13 +107,23 @@ export const MODULES: ModuleConfig[] = [
       VER,
       { acao: "criar", label: "Lançar conta a pagar/receber" },
       { acao: "editar", label: "Editar títulos lançados" },
+      { acao: "excluir", label: "Excluir títulos (a pagar / a receber)" },
       { acao: "pagar", label: "Registrar pagamento (baixa)" },
       { acao: "receber", label: "Registrar recebimento (baixa)" },
+      // Desfazer uma baixa já feita é correção, não operação do dia a dia.
+      { acao: "estornar", label: "Estornar baixa (reverter pagamento/recebimento, repasse, retorno, seguro)" },
+      { acao: "livrocaixa", label: "Livro caixa: lançar e excluir lançamentos" },
+      { acao: "recorrentes", label: "Recorrentes: cadastrar, editar e gerar" },
+      { acao: "categorias", label: "Categorias: criar, renomear e excluir" },
+      { acao: "comunicacaovenda", label: "Comunicação de venda (faturas SICOVE)" },
       // Perdoar valor é diferente de receber: o que sobra vira custo/perda.
       { acao: "desconto", label: "Dar desconto (baixar diferença como perda)" },
       // Mexer na data de uma baixa já feita é correção contábil, não operação.
       { acao: "corrigirdata", label: "Corrigir data de um pagamento/recebimento já feito" },
-      { acao: "contas", label: "Gerenciar contas/transferências" },
+      { acao: "contas", label: "Cadastrar e editar contas financeiras" },
+      { acao: "caixa", label: "Abrir, fechar e estornar o caixa do dia" },
+      { acao: "transferir", label: "Transferir entre contas" },
+      { acao: "aplicacoes", label: "Aplicações: aplicar, resgatar e lançar rendimento" },
       { acao: "conciliar", label: "Conciliação bancária" },
       // Os três botões de ARQUIVO do Contas a pagar. Ficam fora do "lançar"
       // porque cada um traz documento de fora e lança em lote: quem digita um
@@ -138,7 +151,9 @@ export const MODULES: ModuleConfig[] = [
     acoes: [
       VER,
       { acao: "folha", label: "Folha de pagamento" },
-      { acao: "capital", label: "Capital dos sócios" },
+      { acao: "capital", label: "Capital dos sócios: lançar aportes/retiradas, coberturas e contabilizar" },
+      { acao: "socios", label: "Capital: cadastrar sócio, renomear, agrupar, pró-labore e fechamento" },
+      { acao: "remuneracao", label: "Remuneração de estoque: calcular e estornar" },
       { acao: "combustiveis", label: "Combustíveis" },
       { acao: "consorcios", label: "Consórcios" },
       { acao: "centros", label: "Centros de custo" },

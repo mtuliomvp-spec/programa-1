@@ -22,7 +22,7 @@ export async function openCashboxAction(workDate?: string): Promise<{ ok: boolea
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "caixa");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -60,7 +60,7 @@ export async function revertCashboxAction(): Promise<{
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "caixa");
     await assertCashboxOpen();
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Bloqueado." };
@@ -94,7 +94,7 @@ export async function closeCashboxAction(): Promise<{ ok: boolean; error?: strin
   const user = await getSessionUser();
   if (!user) return { ok: false, error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "caixa");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -447,7 +447,7 @@ export async function createTransferAction(
   formData: FormData,
 ): Promise<ContaFormState> {
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "transferir");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -599,7 +599,7 @@ export async function lerComprovanteTransferenciaAction(
   formData: FormData,
 ): Promise<LeituraTransferencia> {
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "transferir");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -690,7 +690,7 @@ export async function lerComprovanteTransferenciaAction(
 export async function preLancarTransferenciaAction(formData: FormData): Promise<ContaFormState> {
   const user = await getSessionUser();
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "transferir");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -786,7 +786,7 @@ export async function confirmarTransferenciaPendenteAction(
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "transferir");
     await assertBooksBalanced();
     await assertCashboxOpen();
   } catch (e) {
@@ -833,7 +833,7 @@ export async function descartarTransferenciaPendenteAction(
   id: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "transferir");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -843,7 +843,7 @@ export async function descartarTransferenciaPendenteAction(
 }
 
 export async function deleteTransferAction(id: string) {
-  await assertCan("financeiro", "contas");
+  await assertCan("financeiro", "transferir");
   await prisma.accountTransfer.delete({ where: { id } });
   revalidatePath("/financeiro/contas");
   revalidatePath("/financeiro/livro-caixa");

@@ -565,7 +565,7 @@ export async function correctPaymentDateAction(
 }
 
 export async function markPendingAction(id: string) {
-  await assertCan("financeiro", "pagar");
+  await assertCan("financeiro", "estornar");
   await markPayablePending(id);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -1190,7 +1190,7 @@ export type DeletePayablesResult = {
 export async function deletePayablesAction(ids: string[]): Promise<DeletePayablesResult> {
   if (!ids.length) return { ok: false, deleted: 0, skipped: 0, error: "Selecione ao menos um título." };
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "excluir");
   } catch (e) {
     return { ok: false, deleted: 0, skipped: 0, error: e instanceof Error ? e.message : "Sem permissão." };
   }

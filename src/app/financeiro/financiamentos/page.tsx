@@ -24,6 +24,8 @@ export default async function FinanciamentosPage({
   const { q: qParam, de, ate, min, max } = await searchParams;
   const q = (qParam || "").trim();
   const canReceber = await userCan("financeiro", "receber");
+  // Estornar uma baixa já feita tem permissão própria.
+  const canEstornar = await userCan("financeiro", "estornar");
   // Corrigir a financeira é conserto de registro, não recebimento: pede a mesma
   // permissão de cancelar/refazer uma venda.
   const canTrocar = await userCan("vendas", "cancelar");
@@ -171,7 +173,7 @@ export default async function FinanciamentosPage({
                     {s.financerSettledAt ? (
                       <div className="flex flex-col items-end gap-0.5">
                         <Badge tone="success">Recebido {formatDate(s.financerSettledAt)}</Badge>
-                        {canReceber ? <ReverseSettleButton saleId={s.id} mode="financing" /> : null}
+                        {canEstornar ? <ReverseSettleButton saleId={s.id} mode="financing" /> : null}
                       </div>
                     ) : s.pendingFinancingDate ? (
                       <QueuedSettleChip
@@ -206,7 +208,7 @@ export default async function FinanciamentosPage({
                                 </span>
                               </span>
                             ) : null}
-                            {canReceber ? <ReverseSettleButton saleId={s.id} mode="return" /> : null}
+                            {canEstornar ? <ReverseSettleButton saleId={s.id} mode="return" /> : null}
                           </>
                         ) : s.pendingReturnDate ? (
                           <QueuedSettleChip
@@ -244,7 +246,7 @@ export default async function FinanciamentosPage({
                                 : ""}
                             </span>
                             <Badge tone="success">Recebido {formatDate(s.insuranceSettledAt)}</Badge>
-                            {canReceber ? <ReverseSettleButton saleId={s.id} mode="insurance" /> : null}
+                            {canEstornar ? <ReverseSettleButton saleId={s.id} mode="insurance" /> : null}
                           </>
                         ) : (
                           <>

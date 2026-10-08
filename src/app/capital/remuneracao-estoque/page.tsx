@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function RemuneracaoEstoquePage() {
   await requireModule("administrativo", "/capital/meu");
   await ensureCompanyBeneficiary();
-  const canManage = await userCan("administrativo", "capital");
+  const canManage = await userCan("administrativo", "remuneracao");
   const [vehicles, beneficiaries, history, cashbox] = await Promise.all([
     stockVehiclesForInterest(),
     prisma.capitalBeneficiary.findMany({

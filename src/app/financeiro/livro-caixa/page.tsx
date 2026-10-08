@@ -67,7 +67,7 @@ export default async function LivroCaixaPage({
   // Data de trabalho do caixa aberto: novos lançamentos ficam travados nela.
   const cashbox = await getCashboxState();
   const cashboxWorkDate = cashbox.open ? cashbox.session?.workDate ?? null : null;
-  const canCriar = await userCan("financeiro", "criar");
+  const canCriar = await userCan("financeiro", "livrocaixa");
   const canFixDate = await userCan("financeiro", "corrigirdata");
 
   const [paidBefore, receivedBefore, paidMonth, receivedMonth, accounts, transfers, suppliers, stockVehicles, parts, categoryOptions, incomeCategoryOptions, beneficiaries, customers, health] =
@@ -386,7 +386,7 @@ export default async function LivroCaixaPage({
         {!canCriar ? (
           <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600 print:hidden">
             Seu perfil <strong>consulta</strong> o movimento de caixa, mas não lança nele. Para
-            lançar, peça a permissão <strong>Financeiro › Lançar conta a pagar/receber</strong> (em
+            lançar, peça a permissão <strong>Financeiro › Livro caixa: lançar e excluir lançamentos</strong> (em
             Usuários › Perfis).
           </p>
         ) : health.blockingOk ? (

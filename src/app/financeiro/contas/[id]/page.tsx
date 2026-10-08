@@ -66,6 +66,8 @@ export default async function AccountStatementPage({
   if (!account) notFound();
 
   const canContas = await userCan("financeiro", "contas");
+  // Aplicar / resgatar / rendimento: permissão própria.
+  const canAplicacoes = await userCan("financeiro", "aplicacoes");
   const bal = balances.find((b) => b.id === id);
 
   // Conta de Aplicação: mostra a razão do capital por sócio + operações.
@@ -126,7 +128,7 @@ export default async function AccountStatementPage({
           applied={applied}
           beneficiaries={beneficiaries}
           sourceAccounts={sourceAccounts}
-          canManage={canContas}
+          canManage={canAplicacoes}
           today={toDateInputValue(new Date())}
         />
       </div>

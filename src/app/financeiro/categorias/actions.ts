@@ -20,7 +20,7 @@ function revalidate() {
 /** Cadastra uma nova categoria custom (sempre → OUTROS na lógica). */
 export async function createCategoryAction(name: string, kind: CategoriaKind): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "categorias");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -45,7 +45,7 @@ export async function createCategoryAction(name: string, kind: CategoriaKind): P
  */
 export async function renameCategoryAction(id: string, newName: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "categorias");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -86,7 +86,7 @@ export async function renameCategoryAction(id: string, newName: string): Promise
 /** Exclui uma categoria custom. Categorias de sistema são protegidas. */
 export async function deleteCategoryAction(id: string): Promise<Result> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "categorias");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }

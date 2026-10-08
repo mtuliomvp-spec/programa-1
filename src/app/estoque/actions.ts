@@ -560,7 +560,7 @@ export async function updateVehicleAction(
 }
 
 export async function setVehicleStatusAction(id: string, status: "ESTOQUE" | "RESERVADO") {
-  await assertCan("estoque", "editar");
+  await assertCan("estoque", "situacao");
   await prisma.vehicle.update({ where: { id }, data: { status } });
   revalidarTelasDeVeiculo();
   revalidatePath(`/estoque/${id}`);
@@ -2712,7 +2712,7 @@ export async function saveVehicleRenaveAction(
   formData: FormData,
 ): Promise<RenaveFormState> {
   try {
-    await assertCan("estoque", "editar");
+    await assertCan("estoque", "renave");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2847,7 +2847,7 @@ export async function readVehicleNfeAction(input: {
   mimeType?: string;
 }): Promise<NfeLidaResult> {
   try {
-    await assertCan("estoque", "editar");
+    await assertCan("estoque", "renave");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2974,4 +2974,29 @@ export async function readVehicleNfeAction(input: {
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a nota." };
   }
+}
+
+/**
+ * Atualiza SÓ a quilometragem do veículo (permissão própria "Editar
+ * quilometragem" — quem edita o veículo inteiro também pode).
+ */
+export async function updateVehicleKmAction(
+  vehicleId: string,
+  km: number,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCanAny([
+      ["estoque", "km"],
+      ["estoque", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!Number.isFinite(km) || km < 0 || km > 5_000_000) return { ok: false, error: "Quilometragem inválida." };
+  const v = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!v) return { ok: false, error: "Veículo não encontrado." };
+  await prisma.vehicle.update({ where: { id: vehicleId }, data: { km: Math.round(km) } });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidarTelasDeVeiculo();
+  return { ok: true };
 }

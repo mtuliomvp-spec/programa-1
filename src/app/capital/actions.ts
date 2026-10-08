@@ -28,7 +28,7 @@ export async function createBeneficiaryAction(
   formData: FormData,
 ): Promise<CapitalFormState> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "socios");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -142,7 +142,7 @@ export async function renameBeneficiaryAction(
   name: string,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "socios");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -202,7 +202,7 @@ export async function setBeneficiaryParentAction(
   parentId: string | null,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "socios");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -240,7 +240,7 @@ export async function setProLaboreAction(
   proLabore: number,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "socios");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -263,7 +263,7 @@ export async function toggleIncludeClosingAction(
   include: boolean,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("administrativo", "capital");
+    await assertCan("administrativo", "socios");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }

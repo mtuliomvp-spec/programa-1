@@ -50,6 +50,8 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
   if (!beneficiary) notFound();
 
   const canManage = await userCan("administrativo", "capital");
+  // Cadastro do sócio (nome, grupo, pró-labore, fechamento): permissão própria.
+  const canSocios = await userCan("administrativo", "socios");
   const sessionUser = await getSessionUser();
   // Sem o Administrativo, só com "Meu capital": abre apenas o beneficiário
   // ligado ao próprio usuário — o capital dos outros sócios não aparece.
@@ -384,9 +386,9 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
-      {!beneficiary.isCompany && (canManage || isAdmin) ? (
+      {!beneficiary.isCompany && (canSocios || isAdmin) ? (
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {canManage ? (
+          {canSocios ? (
             <BeneficiaryNameForm
               beneficiaryId={beneficiary.id}
               initial={beneficiary.name}
@@ -400,7 +402,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
               currentUserId={beneficiary.userId}
             />
           ) : null}
-          {canManage && !isParent ? (
+          {canSocios && !isParent ? (
             <BeneficiaryParentSelect
               beneficiaryId={beneficiary.id}
               parents={eligibleParents}
@@ -410,7 +412,7 @@ export default async function BeneficiarioPage({ params }: { params: Promise<{ i
         </div>
       ) : null}
 
-      {!beneficiary.isCompany && canManage ? (
+      {!beneficiary.isCompany && canSocios ? (
         <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <ProLaboreForm beneficiaryId={beneficiary.id} initial={beneficiary.proLabore} />
           <IncludeClosingToggle

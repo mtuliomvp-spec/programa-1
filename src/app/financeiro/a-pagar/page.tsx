@@ -44,13 +44,15 @@ export default async function ContasAPagarPage({
   // `vendidos=1` era o nome antigo do primeiro desses filtros e segue valendo.
   const painel = painelBucketOf(painelParam ?? vendidos);
   const q = (qParam || "").trim();
-  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly, canFixDate] = await Promise.all([
+  const [canPagar, canManage, canCombo, canPayCombo, canEditOnly, canFixDate, canExcluir, canEstornar] = await Promise.all([
     userCan("financeiro", "pagar"),
     userCan("financeiro", "criar"),
     userCan("combos", "criar"),
     userCan("combos", "aprovar"),
     userCan("financeiro", "editar"),
     userCan("financeiro", "corrigirdata"),
+    userCan("financeiro", "excluir"),
+    userCan("financeiro", "estornar"),
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
@@ -541,7 +543,7 @@ export default async function ContasAPagarPage({
                 Marque um ou vários títulos, escolha a conta e pague de uma vez (em lote).
               </p>
             ) : null}
-            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} cashboxDate={cashboxDate} openCombos={openCombos} substitutionData={substitutionData} />
+            <PayablesTable rows={pageRows} accounts={accounts} canPagar={canPagar} canFixDate={canFixDate} canManage={canManage} canEdit={canEdit} canCombo={canCombo} canExcluir={canExcluir} canEstornar={canEstornar} cashboxDate={cashboxDate} openCombos={openCombos} substitutionData={substitutionData} />
             {pageCount > 1 ? (
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 print:hidden">
                 <p className="text-xs text-slate-500">
