@@ -168,6 +168,12 @@ export default async function ContasPage({
   }));
 
   const canContas = await userCan("financeiro", "contas");
+  // Granulares: abrir/fechar o caixa, transferir entre contas e aplicar.
+  const [canCaixa, canTransferir, canAplicacoes] = await Promise.all([
+    userCan("financeiro", "caixa"),
+    userCan("financeiro", "transferir"),
+    userCan("financeiro", "aplicacoes"),
+  ]);
   const canPagar = await userCan("financeiro", "pagar");
   // Fila de espera: pagamentos cujo comprovante já chegou e que esperavam o
   // movimento alcançar o dia. Com o caixa aberto neste dia, eles podem ser
@@ -206,7 +212,7 @@ export default async function ContasPage({
     .filter((a) => !a.isInvestment)
     .sort((a, b) => Number(a.structural) - Number(b.structural));
   const neutro = accounts.find((a) => a.structural) ?? null;
-  const podeTransferir = canContas && transferiveis.length >= 2;
+  const podeTransferir = canTransferir && transferiveis.length >= 2;
   // A financeira é tratada como uma conta real: entra no saldo total como as
   // demais (o valor financiado fica nela até a financeira transferir).
   const totalBalance = active.reduce((s, a) => s + a.balance, 0);
@@ -338,7 +344,7 @@ export default async function ContasPage({
           </div>
           {/* data-no-pdf: os botões de ação ficam fora do PDF de saldos. */}
           <div data-no-pdf className="flex items-center gap-4">
-            {a.isInvestment && a.active && canContas ? (
+            {a.isInvestment && a.active && canAplicacoes ? (
               <LinkButton href={`/financeiro/contas/${a.id}`} className="whitespace-nowrap">
                 📈 Aplicar
               </LinkButton>
@@ -369,7 +375,7 @@ export default async function ContasPage({
           open={cashbox.open}
           session={cashbox.session}
           history={cashboxHistory}
-          canManage={canContas}
+          canManage={canCaixa}
           pendingAdvances={pendingAdvances}
         />
         <BooksHealthChecks health={health} />
@@ -397,7 +403,7 @@ export default async function ContasPage({
             podeConfirmar: workDate != null && t.date.getTime() <= workDate.getTime(),
           }))}
           workDateLabel={cashbox.open && cashbox.session ? formatDate(cashbox.session.workDate) : ""}
-          canConfirmar={canContas}
+          canConfirmar={canTransferir}
         />
         <PaymentQueueCard
           rows={fila}
@@ -517,7 +523,7 @@ export default async function ContasPage({
                         </Td>
                         <Td className="text-right tabular-nums">{formatCurrency(t.amount)}</Td>
                         <Td>
-                          {canContas ? <DeleteTransferButton id={t.id} /> : null}
+                          {canTransferir ? <DeleteTransferButton id={t.id} /> : null}
                         </Td>
                       </Tr>
                     ))}
@@ -528,14 +534,16 @@ export default async function ContasPage({
           </div>
         </div>
 
-        {canContas ? (
+        {canContas || podeTransferir ? (
           <div className="space-y-4 print:hidden">
-            <Card>
-              <CardHeader title="Nova conta" />
-              <div className="p-5">
-                <AccountForm beneficiaries={beneficiaries} />
-              </div>
-            </Card>
+            {canContas ? (
+              <Card>
+                <CardHeader title="Nova conta" />
+                <div className="p-5">
+                  <AccountForm beneficiaries={beneficiaries} />
+                </div>
+              </Card>
+            ) : null}
             {podeTransferir ? (
               <div id="transferir" className="scroll-mt-4">
                 <Card>

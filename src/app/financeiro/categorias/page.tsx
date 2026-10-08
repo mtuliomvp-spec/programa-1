@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 
 export default async function CategoriasPage() {
   await requireModule("financeiro");
-  await requireAction("financeiro", "criar");
+  await requireAction("financeiro", "categorias");
   const [despesa, receita] = await Promise.all([
     listCategories("DESPESA"),
     listCategories("RECEITA"),

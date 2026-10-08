@@ -61,7 +61,7 @@ export async function createRecurringAction(
   formData: FormData,
 ): Promise<RecurringFormState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "recorrentes");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -171,7 +171,7 @@ export async function updateRecurringAction(
   formData: FormData,
 ): Promise<RecurringFormState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "recorrentes");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -270,13 +270,13 @@ export async function updateRecurringAction(
 }
 
 export async function toggleRecurringAction(id: string, active: boolean) {
-  await assertCan("financeiro", "criar");
+  await assertCan("financeiro", "recorrentes");
   await prisma.recurringEntry.update({ where: { id }, data: { active } });
   revalidatePath("/financeiro/recorrentes");
 }
 
 export async function deleteRecurringAction(id: string) {
-  await assertCan("financeiro", "criar");
+  await assertCan("financeiro", "recorrentes");
   // as contas já geradas ficam no financeiro; apenas param de ser criadas
   await prisma.recurringEntry.delete({ where: { id } });
   revalidatePath("/financeiro/recorrentes");
@@ -289,7 +289,7 @@ export async function deleteRecurringAction(id: string) {
  */
 export async function generateNowAction(): Promise<{ ok: boolean; created?: number; error?: string }> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "recorrentes");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -354,7 +354,7 @@ function pareceGuiaDeImposto(texto: string): boolean {
  */
 export async function readRecurringDocumentAction(formData: FormData): Promise<LeituraRecorrencia> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "recorrentes");
   } catch (e) {
     return { ok: false, parcelas: [], avisos: [], error: e instanceof Error ? e.message : "Sem permissão." };
   }

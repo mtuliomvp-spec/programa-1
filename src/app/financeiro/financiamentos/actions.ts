@@ -80,7 +80,7 @@ export async function settleFinancingAction(
 /** Estorna a baixa do financiamento (correção — não passa pelas travas). */
 export async function reverseFinancingAction(saleId: string): Promise<SettleResult> {
   try {
-    await assertCan("financeiro", "receber");
+    await assertCan("financeiro", "estornar");
     await reverseFinancing(saleId);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar." };
@@ -92,7 +92,7 @@ export async function reverseFinancingAction(saleId: string): Promise<SettleResu
 /** Estorna a baixa do retorno (correção — não passa pelas travas). */
 export async function reverseReturnAction(saleId: string): Promise<SettleResult> {
   try {
-    await assertCan("financeiro", "receber");
+    await assertCan("financeiro", "estornar");
     await reverseReturn(saleId);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível estornar." };
@@ -182,7 +182,7 @@ export async function settleInsuranceAction(
 
 export async function reverseInsuranceAction(saleId: string): Promise<SettleResult> {
   try {
-    await assertCan("financeiro", "receber");
+    await assertCan("financeiro", "estornar");
     await assertBooksBalanced();
     await reverseInsurance(saleId);
   } catch (e) {

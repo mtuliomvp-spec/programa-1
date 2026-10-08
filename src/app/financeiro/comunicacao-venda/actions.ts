@@ -201,7 +201,7 @@ function conferirBoleto(
  */
 export async function conferirFaturaSicoveAction(formData: FormData): Promise<ConferenciaFatura> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "comunicacaovenda");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -375,7 +375,7 @@ export async function lancarFaltantesSicoveAction(
   itens: { numero: string; tipo: ServicoSicove; placa: string; enviadoEm: string | null }[],
 ): Promise<LancamentoEmLote> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "comunicacaovenda");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -520,7 +520,7 @@ export type UnificacaoFatura = {
  */
 export async function unificarFaturaSicoveAction(formData: FormData): Promise<UnificacaoFatura> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "comunicacaovenda");
     await assertCan("combos", "criar");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
@@ -715,7 +715,7 @@ export async function lancarComprovanteAvulsoAction(
   formData: FormData,
 ): Promise<ComprovanteAvulsoResult> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "comunicacaovenda");
   } catch (e) {
     return { ok: false, mensagem: e instanceof Error ? e.message : "Sem permissão." };
   }

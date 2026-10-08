@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  */
 export default async function ConferenciaFaturaPage() {
   await requireModule("financeiro");
-  await requireAction("financeiro", "criar");
+  await requireAction("financeiro", "comunicacaovenda");
   const company = await getCompany();
   const configurado = Boolean(company.sicoveFornecedor && company.sicoveComunicado);
 

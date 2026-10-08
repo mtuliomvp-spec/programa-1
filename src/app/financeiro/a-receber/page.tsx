@@ -29,12 +29,14 @@ export default async function ContasAReceberPage({
   await separarRecebimentosParciaisDaFila();
   const { status: statusFilter, q: qParam, de, ate, min, max, vendas, p: pParam } = await searchParams;
   const q = (qParam || "").trim();
-  const [canReceber, canManage, canEditOnly, canDiscount, canFixDate] = await Promise.all([
+  const [canReceber, canManage, canEditOnly, canDiscount, canFixDate, canExcluir, canEstornar] = await Promise.all([
     userCan("financeiro", "receber"),
     userCan("financeiro", "criar"),
     userCan("financeiro", "editar"),
     userCan("financeiro", "desconto"),
     userCan("financeiro", "corrigirdata"),
+    userCan("financeiro", "excluir"),
+    userCan("financeiro", "estornar"),
   ]);
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
@@ -245,6 +247,8 @@ export default async function ContasAReceberPage({
               canReceber={canReceber}
               canManage={canManage}
               canEdit={canEdit}
+              canExcluir={canExcluir}
+              canEstornar={canEstornar}
               canDiscount={canDiscount}
               canFixDate={canFixDate}
               cashboxDate={cashboxDate}

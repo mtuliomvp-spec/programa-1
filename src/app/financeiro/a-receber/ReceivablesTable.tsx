@@ -56,6 +56,8 @@ export default function ReceivablesTable({
   canReceber = true,
   canManage = false,
   canEdit,
+  canExcluir = false,
+  canEstornar = false,
   canDiscount = false,
   canFixDate = false,
   cashboxDate = null,
@@ -67,6 +69,10 @@ export default function ReceivablesTable({
   canReceber?: boolean;
   canManage?: boolean;
   canEdit?: boolean;
+  /** Excluir títulos (financeiro.excluir). */
+  canExcluir?: boolean;
+  /** Reverter recebimento (financeiro.estornar). */
+  canEstornar?: boolean;
   /** Pode quitar o título dando desconto na diferença. */
   canDiscount?: boolean;
   /** Pode corrigir a data de um recebimento já feito. */
@@ -144,7 +150,7 @@ export default function ReceivablesTable({
         <Thead>
           <Tr>
             <Th className="w-8">
-              {canReceber || canManage ? (
+              {canReceber || canManage || canExcluir ? (
                 <input
                   type="checkbox"
                   aria-label="Selecionar todas"
@@ -174,7 +180,7 @@ export default function ReceivablesTable({
             return (
               <Tr key={r.id} className={selected.has(r.id) ? "bg-blue-50/60" : undefined}>
                 <Td>
-                  {selectable && (canReceber || canManage) ? (
+                  {selectable && (canReceber || canManage || canExcluir) ? (
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${r.description}`}
@@ -236,6 +242,7 @@ export default function ReceivablesTable({
                       accounts={accounts}
                       beneficiaries={beneficiaries}
                       canReceber={canReceber}
+                      canEstornar={canEstornar}
                       canDiscount={canDiscount}
                       hasVehicle={r.hasVehicle}
                       canFixDate={canFixDate}
@@ -244,7 +251,7 @@ export default function ReceivablesTable({
                       cobertura={r.cobertura}
                       sinalDevolvido={r.sinalDevolvido}
                     />
-                    {canManage && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
+                    {canExcluir && r.editable ? <DeleteReceivableButton id={r.id} /> : null}
                   </div>
                 </Td>
               </Tr>
@@ -308,7 +315,7 @@ export default function ReceivablesTable({
                 </button>
               </>
             ) : null}
-            {canManage ? (
+            {canExcluir ? (
               <ConfirmButton
                 disabled={removing || pending}
                 onConfirm={remove}

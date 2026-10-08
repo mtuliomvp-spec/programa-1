@@ -22,6 +22,7 @@ export default function ReceivableRowActions({
   accounts,
   beneficiaries = [],
   canReceber = true,
+  canEstornar = false,
   canDiscount = false,
   hasVehicle = false,
   canFixDate = false,
@@ -37,6 +38,8 @@ export default function ReceivableRowActions({
   /** Sócios ativos — habilita receber abatendo do capital ("No capital"). */
   beneficiaries?: Account[];
   canReceber?: boolean;
+  /** Reverter um recebimento já feito (permissão granular financeiro.estornar). */
+  canEstornar?: boolean;
   /** Pode perdoar a diferença (baixar como custo/despesa) em vez de deixá-la pendente. */
   canDiscount?: boolean;
   /** Título ligado a um carro: a diferença vira custo pós-venda dele. */
@@ -76,8 +79,9 @@ export default function ReceivableRowActions({
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
 
-  // Sem permissão de baixa: nenhum controle de receber/reverter aparece.
-  if (!canReceber) return null;
+  // Sem permissão de baixa: nenhum controle de receber aparece (o reverter e a
+  // correção de data, de um título já recebido, têm permissões próprias).
+  if (!canReceber && status !== "RECEBIDO") return null;
 
   if (status === "RECEBIDO" && sinalDevolvido) {
     return (
@@ -109,14 +113,16 @@ export default function ReceivableRowActions({
             onSave={(d) => correctReceivedDateAction(id, d)}
           />
         ) : null}
-        <button
-          type="button"
-          disabled={pending}
-          onClick={() => startTransition(() => markPendingAction(id))}
-          className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
-        >
-          Reverter
-        </button>
+        {canEstornar ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => startTransition(() => markPendingAction(id))}
+            className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
+          >
+            Reverter
+          </button>
+        ) : null}
       </div>
     );
   }

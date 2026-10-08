@@ -5,6 +5,7 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import DeleteVehicleButton from "./DeleteVehicleButton";
 import VehicleStatusActions from "./VehicleStatusActions";
+import VehicleKm from "./VehicleKm";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
@@ -89,7 +90,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -107,6 +108,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "orcamento"),
       userCan("estoque", "boletos"),
       userCan("estoque", "transferencia"),
+      userCan("estoque", "km"),
+      userCan("estoque", "situacao"),
+      userCan("estoque", "renave"),
     ]);
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
@@ -432,7 +436,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
               <InfoItem label="Versão" value={vehicle.version || "-"} />
               <InfoItem label="Cor" value={vehicle.color || "-"} />
-              <InfoItem label="KM" value={`${vehicle.km.toLocaleString("pt-BR")} km`} />
+              <VehicleKm vehicleId={vehicle.id} km={vehicle.km} canEdit={canKm || canEditar} />
               <InfoItem label="Combustível" value={vehicle.fuel || "-"} />
               <InfoItem label="Câmbio" value={vehicle.transmission || "-"} />
               <InfoItem label="Chassi" value={vehicle.chassi || "-"} />
@@ -870,7 +874,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 diasAtpv={renaveDiasAtpv}
                 renaveOperando={detranOperando(renaveCompany.detranRenaveStatus)}
                 uf={renaveCompany.uf}
-                canEdit={canEditar}
+                canEdit={canRenave}
               />
             </Card>
           ) : null}
@@ -1039,7 +1043,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             </Card>
           ) : null}
 
-          {vehicle.status !== "VENDIDO" && canEditar ? (
+          {vehicle.status !== "VENDIDO" && canSituacao ? (
             <Card>
               <CardHeader title="Situação no estoque" />
               <div className="p-5">

@@ -37,7 +37,7 @@ export default async function RecorrentesPage({
   await ensureRecurringGenerated();
   const { q: qParam, min, max } = await searchParams;
   const q = (qParam || "").trim();
-  const canCriar = await userCan("financeiro", "criar");
+  const canCriar = await userCan("financeiro", "recorrentes");
 
   const allEntries = await prisma.recurringEntry.findMany({
     include: { supplier: true, customer: true, capitalBeneficiary: true },

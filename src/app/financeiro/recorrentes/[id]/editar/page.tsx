@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export default async function EditarRecorrenciaPage({ params }: { params: Promise<{ id: string }> }) {
   await requireModule("financeiro");
-  await requireAction("financeiro", "criar");
+  await requireAction("financeiro", "recorrentes");
   const { id } = await params;
 
   const entry = await prisma.recurringEntry.findUnique({

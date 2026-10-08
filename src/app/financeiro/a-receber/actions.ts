@@ -179,7 +179,7 @@ export async function correctReceivedDateAction(
 }
 
 export async function markPendingAction(id: string) {
-  await assertCan("financeiro", "receber");
+  await assertCan("financeiro", "estornar");
   await markReceivablePending(id);
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -222,7 +222,7 @@ async function apagarRecebiveis(
 
 export async function deleteReceivableAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "excluir");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -523,7 +523,7 @@ export async function deleteReceivablesAction(ids: string[]): Promise<DeleteRece
     return { ok: false, deleted: 0, skipped: 0, error: "Selecione ao menos um título." };
   }
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "excluir");
   } catch (e) {
     return {
       ok: false,

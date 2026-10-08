@@ -326,7 +326,7 @@ async function lancamentoIgual(
  */
 export async function lerComprovanteCaixaAction(formData: FormData): Promise<LeituraComprovante> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "livrocaixa");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -461,7 +461,7 @@ export async function createCashEntryAction(
   formData: FormData,
 ): Promise<CashEntryState> {
   try {
-    await assertCan("financeiro", "criar");
+    await assertCan("financeiro", "livrocaixa");
     await assertBooksBalanced();
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
@@ -686,7 +686,7 @@ export async function createCashEntryAction(
 }
 
 export async function deleteCashEntryAction(kind: "entrada" | "saida", id: string) {
-  await assertCan("financeiro", "criar");
+  await assertCan("financeiro", "livrocaixa");
   await deleteCashEntry(kind, id);
   revalidatePath("/financeiro/livro-caixa");
   revalidatePath("/financeiro/contas");

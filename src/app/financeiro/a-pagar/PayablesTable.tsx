@@ -93,6 +93,8 @@ export default function PayablesTable({
   canManage = false,
   canEdit,
   canCombo = false,
+  canExcluir = false,
+  canEstornar = false,
   cashboxDate = null,
   openCombos = [],
   substitutionData = {},
@@ -107,6 +109,10 @@ export default function PayablesTable({
   // vale o mesmo que canManage.
   canEdit?: boolean;
   canCombo?: boolean;
+  /** Excluir títulos (permissão granular financeiro.excluir). */
+  canExcluir?: boolean;
+  /** Reverter um pagamento já feito (permissão granular financeiro.estornar). */
+  canEstornar?: boolean;
   cashboxDate?: string | null;
   openCombos?: { id: string; name: string }[];
   // Por sócio com retirada de capital pendente: aplicações e substitutos, para
@@ -258,7 +264,7 @@ export default function PayablesTable({
         <Thead>
           <Tr>
             <Th className="w-8">
-              {canPagar || canManage ? (
+              {canPagar || canManage || canExcluir ? (
                 <input
                   type="checkbox"
                   aria-label="Selecionar todas"
@@ -291,7 +297,7 @@ export default function PayablesTable({
             return (
               <Tr key={p.id} className={selected.has(p.id) ? "bg-blue-50/60" : undefined}>
                 <Td>
-                  {selectable && (canPagar || canManage) ? (
+                  {selectable && (canPagar || canManage || canExcluir) ? (
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${p.description}`}
@@ -433,7 +439,7 @@ export default function PayablesTable({
                         onSave={(d) => correctPaymentDateAction(p.id, d)}
                       />
                     ) : null}
-                    {p.status === "PAGO" && (p.cobertura || p.sinalAcerto) ? null : p.status === "PAGO" && canPagar ? (
+                    {p.status === "PAGO" && (p.cobertura || p.sinalAcerto) ? null : p.status === "PAGO" && canEstornar ? (
                       <button
                         type="button"
                         disabled={reverting}
@@ -596,7 +602,7 @@ export default function PayablesTable({
                 </span>
               </label>
             ) : null}
-            {canManage ? (
+            {canExcluir ? (
               <button
                 type="button"
                 disabled={removing || pending}

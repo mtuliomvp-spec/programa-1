@@ -11,7 +11,7 @@ import { aplicar, registrarRendimento, resgatar } from "@/lib/investments";
 export type InvestFormState = { error?: string; ok?: boolean };
 
 async function guard(date: Date) {
-  await assertCan("financeiro", "contas");
+  await assertCan("financeiro", "aplicacoes");
   await assertBooksBalanced();
   await assertCashboxOpen();
   await assertMonthOpen(date);

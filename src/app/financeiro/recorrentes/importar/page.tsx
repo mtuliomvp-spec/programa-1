@@ -15,7 +15,7 @@ export const maxDuration = 300;
  */
 export default async function ImportarRecorrenciaPage() {
   await requireModule("financeiro");
-  await requireAction("financeiro", "criar");
+  await requireAction("financeiro", "recorrentes");
   const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
