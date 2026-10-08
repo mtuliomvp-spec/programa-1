@@ -89,7 +89,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -103,6 +103,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("vendas", "foto"),
       userCan("estoque", "lucro"),
       userCan("estoque", "sinal"),
+      userCan("estoque", "atpv"),
+      userCan("estoque", "orcamento"),
+      userCan("estoque", "boletos"),
+      userCan("estoque", "transferencia"),
     ]);
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
@@ -689,7 +693,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                         ? vehicle.sale.transferDoneAt.toISOString().slice(0, 10)
                         : ""
                     }
-                    canManage={canComunicacao || canEditar}
+                    canManage={canTransferencia || canEditar}
                     crlvOwner={crlvDoComprador ? vehicle.docOwnerName : null}
                     crlvDate={
                       crlvDoComprador && ultimoCrlv
@@ -709,7 +713,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                   <TransferInProgressSetting
                     vehicleId={vehicle.id}
                     initial={vehicle.transferInProgress}
-                    canManage={canComunicacao || canEditar}
+                    canManage={canTransferencia || canEditar}
                   />
                 </div>
 
@@ -831,7 +835,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               published={vehicle.published}
               inStock={vehicle.status === "ESTOQUE"}
               visitas={visitas}
-              canManage={canEditar}
+              // Quem posta na vitrine também anexa/troca/exclui as fotos.
+              canManage={canEditar || canPublicar}
               canPublish={canPublicar}
             />
           </Card>
@@ -881,7 +886,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <TransferInProgressSetting
                 vehicleId={vehicle.id}
                 initial={vehicle.transferInProgress}
-                canManage={canComunicacao || canEditar}
+                canManage={canTransferencia || canEditar}
               />
             </Card>
           ) : null}
@@ -893,7 +898,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleTransferQuote
               vehicleId={vehicle.id}
-              canManage={canComunicacao}
+              canManage={canOrcamento}
               transferToName={vehicle.transferToName}
               quotes={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
@@ -908,7 +913,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleAtpv
               vehicleId={vehicle.id}
-              canManage={canComunicacao}
+              canManage={canAtpv}
               atpvs={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description),
               )}
@@ -922,7 +927,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
             <VehicleBoletos
               vehicleId={vehicle.id}
-              canManage={canComunicacao}
+              canManage={canBoletos}
               boletos={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /^boleto/i.test(a.description),
               )}
