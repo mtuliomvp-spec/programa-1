@@ -16,7 +16,7 @@ export default function PendingCostLink({
   amountLabel: string;
 }) {
   const router = useRouter();
-  const go = () => router.push(`/financeiro/a-pagar?veiculo=${vehicleId}&status=NAO_PAGO`);
+  const go = () => router.push(`/financeiro/a-pagar?veiculo=${vehicleId}&status=ABERTO`);
   return (
     <span
       role="link"
