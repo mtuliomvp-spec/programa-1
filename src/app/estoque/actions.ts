@@ -27,6 +27,7 @@ import {
   avisoDeExclusaoDeCusto,
 } from "@/lib/monthly-closing";
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
+import { acoesDoAnexo } from "@/lib/vehicle-attachment-perm";
 import { parseDateInput } from "@/lib/format";
 import { parseDebtItems } from "@/lib/vehicle-debts";
 import { plateKey, plateIdentityKey, plateVariants, isSamePlateManuscrita } from "@/lib/plate";
@@ -579,7 +580,7 @@ export async function setSaleTransferDoneAction(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
-      ["estoque", "comunicacao"],
+      ["estoque", "transferencia"],
       ["estoque", "editar"],
     ]);
   } catch (e) {
@@ -613,7 +614,7 @@ export async function setVehicleTransferInProgressAction(
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
-      ["estoque", "comunicacao"],
+      ["estoque", "transferencia"],
       ["estoque", "editar"],
     ]);
   } catch (e) {
@@ -1598,7 +1599,7 @@ async function applyTransferQuote(input: {
  */
 export async function readTransferQuoteAttachmentAction(attachmentId: string): Promise<AttachmentState> {
   try {
-    await assertCan("estoque", "comunicacao");
+    await assertCan("estoque", "orcamento");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -1634,11 +1635,12 @@ export async function uploadVehicleAttachmentAction(
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
   // Só documentos comuns ou o CRLV passam por aqui (fotos têm ação própria).
-  // Cada tipo tem sua permissão granular: CRLV → estoque.crlv; documentos/
-  // comunicação de venda → estoque.comunicacao.
+  // Cada card tem sua permissão granular (CRLV, ATPV-e, orçamento de
+  // transferência, documentos do veículo), decidida pela descrição do anexo.
   const kind = String(formData.get("kind") || "") === "CRLV" ? "CRLV" : "DOCUMENTO";
   try {
-    await assertCan("estoque", kind === "CRLV" ? "crlv" : "comunicacao");
+    const descricaoPedida = String(formData.get("description") || "").trim() || "Comunicação de venda";
+    await assertCanAny(acoesDoAnexo(kind, descricaoPedida).map((a) => ["estoque", a] as ["estoque", string]));
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -1795,7 +1797,7 @@ export async function uploadVehicleBoletoAction(
   const user = await getSessionUser();
   if (!user) return { error: "Sessão expirada. Faça login novamente." };
   try {
-    await assertCan("estoque", "comunicacao");
+    await assertCan("estoque", "boletos");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2052,7 +2054,7 @@ export async function refazerDebitosVeiculoAction(
   vehicleId: string,
 ): Promise<{ ok: boolean; error?: string; message?: string }> {
   try {
-    await assertCan("estoque", "comunicacao");
+    await assertCan("estoque", "boletos");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2139,7 +2141,7 @@ export async function encerrarDebitosVeiculoAction(
   vehicleId: string,
 ): Promise<{ ok: boolean; error?: string; message?: string }> {
   try {
-    await assertCan("estoque", "comunicacao");
+    await assertCan("estoque", "boletos");
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2234,7 +2236,7 @@ export async function readCrlvAttachmentAction(attachmentId: string): Promise<At
  */
 export async function readAtpvAttachmentAction(attachmentId: string): Promise<AttachmentState> {
   try {
-    await assertCan("estoque", "comunicacao");
+    await assertCan("estoque", "atpv");
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2369,13 +2371,11 @@ export async function readAtpvAttachmentAction(attachmentId: string): Promise<At
 }
 
 export async function deleteVehicleAttachmentAction(id: string, vehicleId: string) {
-  // A permissão depende do tipo do anexo (a mesma ação serve fotos, documentos
-  // e CRLV): CRLV → estoque.crlv; documentos → estoque.comunicacao; fotos →
-  // estoque.editar.
-  const att = await prisma.vehicleAttachment.findUnique({ where: { id }, select: { kind: true } });
+  // A permissão depende do anexo (a mesma ação serve todos os cards): cada
+  // card tem a sua — vide acoesDoAnexo.
+  const att = await prisma.vehicleAttachment.findUnique({ where: { id }, select: { kind: true, description: true } });
   if (!att) return;
-  const action = att.kind === "CRLV" ? "crlv" : att.kind === "DOCUMENTO" ? "comunicacao" : "editar";
-  await assertCan("estoque", action);
+  await assertCanAny(acoesDoAnexo(att.kind, att.description).map((a) => ["estoque", a] as ["estoque", string]));
   await prisma.vehicleAttachment.deleteMany({ where: { id, vehicleId } });
   revalidatePath(`/estoque/${vehicleId}`);
   revalidarTelasDeVeiculo();
@@ -2430,7 +2430,11 @@ export async function uploadVehiclePhotosAction(
   formData: FormData,
 ): Promise<AttachmentState> {
   try {
-    await assertCan("estoque", "editar");
+    // Quem posta na vitrine também anexa as fotos (são o anúncio).
+    await assertCanAny([
+      ["estoque", "editar"],
+      ["estoque", "publicar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
@@ -2485,7 +2489,11 @@ export async function replaceVehiclePhotoAction(
   formData: FormData,
 ): Promise<AttachmentState> {
   try {
-    await assertCan("estoque", "editar");
+    // Quem posta na vitrine também anexa as fotos (são o anúncio).
+    await assertCanAny([
+      ["estoque", "editar"],
+      ["estoque", "publicar"],
+    ]);
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }

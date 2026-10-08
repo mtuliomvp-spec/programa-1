@@ -106,7 +106,14 @@ export default async function FinanciamentoTerceirosDetailPage({
   );
   // Anexar/ler documento do veículo é a mesma permissão da ficha do estoque —
   // é lá que as ações checam.
-  const canDocumentos = await userCan("estoque", "comunicacao");
+  // Cada card de documento com a sua permissão granular (como na ficha do veículo).
+  const [canDocumentos, canAtpv, canOrcamento, canTransferencia, canEditarEstoque] = await Promise.all([
+    userCan("estoque", "comunicacao"),
+    userCan("estoque", "atpv"),
+    userCan("estoque", "orcamento"),
+    userCan("estoque", "transferencia"),
+    userCan("estoque", "editar"),
+  ]);
   const ultimoCrlv = sale.vehicle.attachments.find((a) => a.kind === "CRLV") ?? null;
 
   const referrals = parseReferrals(sale.referrals);
@@ -291,7 +298,7 @@ export default async function FinanciamentoTerceirosDetailPage({
             <SaleTransferSetting
               saleId={sale.id}
               initialDone={sale.transferDoneAt ? sale.transferDoneAt.toISOString().slice(0, 10) : ""}
-              canManage={canDocumentos}
+              canManage={canTransferencia || canEditarEstoque}
               crlvOwner={doc.transferDoneByCrlv ? sale.vehicle.docOwnerName : null}
               crlvDate={
                 doc.transferDoneByCrlv && ultimoCrlv
@@ -309,7 +316,7 @@ export default async function FinanciamentoTerceirosDetailPage({
           <TransferInProgressSetting
             vehicleId={sale.vehicle.id}
             initial={sale.vehicle.transferInProgress}
-            canManage={canDocumentos}
+            canManage={canTransferencia || canEditarEstoque}
           />
         </div>
       </Card>
@@ -321,7 +328,7 @@ export default async function FinanciamentoTerceirosDetailPage({
         />
         <VehicleTransferQuote
           vehicleId={sale.vehicle.id}
-          canManage={canDocumentos}
+          canManage={canOrcamento}
           transferToName={sale.vehicle.transferToName}
           quotes={sale.vehicle.attachments.filter(
             (a) => a.kind === "DOCUMENTO" && ORCAMENTO_TRANSFERENCIA_RE.test(a.description),
@@ -336,7 +343,7 @@ export default async function FinanciamentoTerceirosDetailPage({
         />
         <VehicleAtpv
           vehicleId={sale.vehicle.id}
-          canManage={canDocumentos}
+          canManage={canAtpv}
           atpvs={sale.vehicle.attachments.filter(
             (a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description),
           )}

@@ -33,9 +33,13 @@ export const MODULES: ModuleConfig[] = [
       { acao: "custos", label: "Lançar custos" },
       { acao: "sinal", label: "Registrar sinal / entrada antecipada" },
       { acao: "debitos", label: "Consultar/importar débitos" },
-      { acao: "publicar", label: "Postar na vitrine" },
-      { acao: "comunicacao", label: "Anexar comunicação de venda / documentos" },
+      { acao: "publicar", label: "Postar na vitrine e anexar fotos" },
+      { acao: "comunicacao", label: "Anexar documentos do veículo (comunicação de venda e outros)" },
       { acao: "crlv", label: "Anexar CRLV" },
+      { acao: "atpv", label: "Anexar ATPV-e" },
+      { acao: "orcamento", label: "Anexar orçamento de transferência (despachante) e lançar o título" },
+      { acao: "boletos", label: "Anexar boletos e guias (IPVA, multas, quitação)" },
+      { acao: "transferencia", label: "Marcar processo de transferência (DETRAN) / transferência concluída" },
       // Preço de compra, custo total, margem e o resultado da venda na ficha.
       { acao: "lucro", label: "Ver resultado (lucro/prejuízo) do veículo" },
       // Separado do "lucro" de propósito: dá para liberar o custo na lista sem
