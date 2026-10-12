@@ -9,6 +9,7 @@ import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { structuralCenterId } from "@/lib/structural";
+import { getNeutralAccountId } from "@/lib/accounts";
 import { isAdminRole } from "@/lib/permissions";
 import { formatCurrency, formatDate } from "@/lib/format";
 
@@ -346,13 +347,23 @@ export async function payComboAction(comboId: string, accountId: string): Promis
       ? { id: previsto.beneficiaryId, name: previsto.beneficiaryName }
       : null;
 
-  // 1) Quita todos os títulos do combo na conta escolhida.
+  // Com abatimento, o combo passa pelo BANCO NEUTRO: o aporte não foi um
+  // depósito e os títulos não saíram inteiros do banco. Títulos e aporte vão
+  // para o neutro, e só o que de fato saiu do banco (total − abatimento) é uma
+  // transferência da conta escolhida para o neutro — que zera. Assim a conta
+  // mostra no livro caixa exatamente o que o extrato mostra.
+  const viaNeutro = abate > 0.005 && !!beneficiary;
+  const neutralId = viaNeutro ? await getNeutralAccountId() : null;
+  const contaDasBaixas = viaNeutro && neutralId ? neutralId : accountId;
+
+  // 1) Quita todos os títulos do combo (na conta escolhida, ou no neutro).
   for (const p of combo.payables) {
-    await markPayablePaid(p.id, date, accountId);
+    await markPayablePaid(p.id, date, contaDasBaixas);
   }
 
-  // 2) Abate o saldo devedor do beneficiário: aporte na mesma conta (o par
-  //    recebível↔capital é neutro e o DRE exclui o aporte pelo receivableId).
+  // 2) Abate o saldo devedor do beneficiário: aporte (o par recebível↔capital
+  //    é neutro e o DRE exclui o aporte pelo receivableId).
+  let transferId: string | null = null;
   if (abate > 0.005 && beneficiary) {
     const capitalCenterId = await structuralCenterId("CAPITAL");
     await prisma.$transaction(async (tx) => {
@@ -365,7 +376,7 @@ export async function payComboAction(comboId: string, accountId: string): Promis
           dueDate: date,
           receivedDate: date,
           status: "RECEBIDO",
-          accountId,
+          accountId: contaDasBaixas,
           capitalBeneficiaryId: beneficiary!.id,
         },
       });
@@ -379,6 +390,21 @@ export async function payComboAction(comboId: string, accountId: string): Promis
           receivableId: receivable.id,
         },
       });
+      // O que saiu do banco de verdade: conta escolhida → neutro.
+      const saiu = round2(total - abate);
+      if (neutralId && neutralId !== accountId && saiu > 0.005) {
+        const t = await tx.accountTransfer.create({
+          data: {
+            fromId: accountId,
+            toId: neutralId,
+            amount: saiu,
+            date,
+            description: `Pagamento do combo ${combo.name} — ${beneficiary!.name} (abatido ${formatCurrency(abate)} do saldo devedor)`,
+          },
+          select: { id: true },
+        });
+        transferId = t.id;
+      }
     });
   }
 
@@ -389,6 +415,8 @@ export async function payComboAction(comboId: string, accountId: string): Promis
       paidAt: date,
       accountId,
       capitalAbatement: abate,
+      abatementNeutro: viaNeutro,
+      abatementTransferId: transferId,
       // Pago é pago: se o combo estava pré-lançado (comprovante já lido), a
       // linha da fila do caixa sai junto — senão ficaria órfã pedindo um ok.
       pendingPaymentDate: null,
@@ -419,7 +447,17 @@ export async function desfazerAbatimentoDoComboAction(comboId: string): Promise<
   }
   const combo = await prisma.paymentCombo.findUnique({
     where: { id: comboId },
-    select: { status: true, name: true, userId: true, paidAt: true, capitalAbatement: true },
+    select: {
+      status: true,
+      name: true,
+      userId: true,
+      paidAt: true,
+      capitalAbatement: true,
+      accountId: true,
+      abatementNeutro: true,
+      abatementTransferId: true,
+      payables: { where: { status: "PAGO" }, select: { amount: true } },
+    },
   });
   if (!combo) return { ok: false, error: "Combo não encontrado." };
   if (combo.status !== "PAGO") return { ok: false, error: "Este combo não está pago." };
@@ -449,11 +487,37 @@ export async function desfazerAbatimentoDoComboAction(comboId: string): Promise<
     : null;
   if (!receivable) return { ok: false, error: "Não encontrei o aporte deste combo para desfazer." };
 
-  await prisma.$transaction([
-    prisma.capitalTransaction.deleteMany({ where: { receivableId: receivable.id } }),
-    prisma.receivable.delete({ where: { id: receivable.id } }),
-    prisma.paymentCombo.update({ where: { id: comboId }, data: { capitalAbatement: 0, payFull: true } }),
-  ]);
+  // Formato do Banco Neutro: sem o aporte, o que saiu do banco foi o TOTAL —
+  // a transferência conta→neutro passa a ser do valor integral (ou nasce, se o
+  // abatimento cobria tudo), e o neutro continua zerado.
+  const total = round2(combo.payables.reduce((s, p) => s + p.amount, 0));
+  const neutralId = combo.abatementNeutro ? await getNeutralAccountId() : null;
+  await prisma.$transaction(async (tx) => {
+    await tx.capitalTransaction.deleteMany({ where: { receivableId: receivable.id } });
+    await tx.receivable.delete({ where: { id: receivable.id } });
+    let transferId = combo.abatementTransferId;
+    if (combo.abatementNeutro && neutralId) {
+      if (transferId) {
+        await tx.accountTransfer.update({ where: { id: transferId }, data: { amount: total } });
+      } else if (combo.accountId && combo.accountId !== neutralId && total > 0.005) {
+        const t = await tx.accountTransfer.create({
+          data: {
+            fromId: combo.accountId,
+            toId: neutralId,
+            amount: total,
+            date: combo.paidAt ?? new Date(),
+            description: `Pagamento do combo ${combo.name}`,
+          },
+          select: { id: true },
+        });
+        transferId = t.id;
+      }
+    }
+    await tx.paymentCombo.update({
+      where: { id: comboId },
+      data: { capitalAbatement: 0, payFull: true, abatementTransferId: transferId },
+    });
+  });
   revalidate(comboId);
   return { ok: true };
 }
@@ -479,6 +543,7 @@ export async function revertComboPaymentAction(comboId: string): Promise<Result>
       userId: true,
       paidAt: true,
       capitalAbatement: true,
+      abatementTransferId: true,
       payables: { where: { status: "PAGO" }, select: { id: true } },
     },
   });
@@ -525,9 +590,22 @@ export async function revertComboPaymentAction(comboId: string): Promise<Result>
     }
   }
 
+  // Formato do Banco Neutro: a transferência conta→neutro sai junto (os
+  // títulos e o aporte já saíram do neutro acima — ele continua zerado).
+  if (combo.abatementTransferId) {
+    await prisma.accountTransfer.deleteMany({ where: { id: combo.abatementTransferId } });
+  }
+
   await prisma.paymentCombo.update({
     where: { id: comboId },
-    data: { status: "SOLICITADO", paidAt: null, accountId: null, capitalAbatement: 0 },
+    data: {
+      status: "SOLICITADO",
+      paidAt: null,
+      accountId: null,
+      capitalAbatement: 0,
+      abatementNeutro: false,
+      abatementTransferId: null,
+    },
   });
   revalidate(comboId);
   return { ok: true };
@@ -829,5 +907,102 @@ export async function removeComboReceiptAction(comboId: string): Promise<Result>
   await prisma.comboAttachment.deleteMany({ where: { comboId, kind: "COMPROVANTE" } });
   await desenfileirarCombo(comboId);
   revalidate(comboId);
+  return { ok: true };
+}
+
+/**
+ * Corrige um combo JÁ PAGO com abatimento, lançado no formato antigo (títulos
+ * e aporte na conta que pagou): passa para o formato do Banco Neutro — os
+ * títulos e o aporte vão para o neutro e o que de fato saiu do banco (total −
+ * abatimento) vira uma transferência da conta para o neutro, na data do
+ * pagamento. O saldo da conta, o neutro (zerado), o capital e o resultado não
+ * mudam — só o livro caixa da conta passa a bater com o extrato.
+ */
+export async function corrigirComboParaNeutroAction(comboId: string): Promise<Result> {
+  try {
+    await assertCan("combos", "aprovar");
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const combo = await prisma.paymentCombo.findUnique({
+    where: { id: comboId },
+    select: {
+      status: true,
+      name: true,
+      userId: true,
+      paidAt: true,
+      accountId: true,
+      capitalAbatement: true,
+      abatementNeutro: true,
+      payables: { where: { status: "PAGO" }, select: { id: true, amount: true, accountId: true, reconciledAt: true } },
+    },
+  });
+  if (!combo) return { ok: false, error: "Combo não encontrado." };
+  if (combo.status !== "PAGO" || combo.capitalAbatement <= 0.005) {
+    return { ok: false, error: "Só combo pago com abatimento de saldo devedor." };
+  }
+  if (combo.abatementNeutro) return { ok: false, error: "Este combo já está lançado pelo Banco Neutro." };
+  if (!combo.accountId || !combo.paidAt) return { ok: false, error: "Combo sem conta/data de pagamento." };
+  try {
+    await assertMonthOpen(combo.paidAt);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "O mês do pagamento já foi fechado." };
+  }
+  const neutralId = await getNeutralAccountId();
+  if (combo.accountId === neutralId) return { ok: false, error: "Este combo foi pago pelo próprio Banco Neutro." };
+
+  const beneficiary = combo.userId
+    ? await prisma.capitalBeneficiary.findUnique({ where: { userId: combo.userId }, select: { id: true } })
+    : null;
+  const aporte = beneficiary
+    ? await prisma.receivable.findFirst({
+        where: {
+          capitalBeneficiaryId: beneficiary.id,
+          status: "RECEBIDO",
+          amount: combo.capitalAbatement,
+          description: { startsWith: `Aporte p/ abater saldo devedor de capital (combo ${combo.name})` },
+        },
+        orderBy: { createdAt: "desc" },
+        select: { id: true, accountId: true, reconciledAt: true },
+      })
+    : null;
+  if (!aporte) return { ok: false, error: "Não encontrei o aporte deste combo." };
+  const titulos = combo.payables.filter((p) => p.accountId === combo.accountId);
+  if (titulos.length === 0) return { ok: false, error: "Os títulos deste combo não estão na conta do pagamento." };
+  if (aporte.reconciledAt || titulos.some((p) => p.reconciledAt)) {
+    return {
+      ok: false,
+      error: "Há lançamento deste combo conciliado com o extrato — desfaça a conciliação antes de corrigir.",
+    };
+  }
+
+  const total = round2(titulos.reduce((s, p) => s + p.amount, 0));
+  const saiu = round2(total - combo.capitalAbatement);
+  await prisma.$transaction(async (tx) => {
+    await tx.payable.updateMany({ where: { id: { in: titulos.map((p) => p.id) } }, data: { accountId: neutralId } });
+    await tx.receivable.update({ where: { id: aporte.id }, data: { accountId: neutralId } });
+    let transferId: string | null = null;
+    if (saiu > 0.005) {
+      const t = await tx.accountTransfer.create({
+        data: {
+          fromId: combo.accountId!,
+          toId: neutralId,
+          amount: saiu,
+          date: combo.paidAt!,
+          description: `Pagamento do combo ${combo.name} (abatido ${formatCurrency(combo.capitalAbatement)} do saldo devedor)`,
+        },
+        select: { id: true },
+      });
+      transferId = t.id;
+    }
+    await tx.paymentCombo.update({
+      where: { id: comboId },
+      data: { abatementNeutro: true, abatementTransferId: transferId },
+    });
+  });
+  revalidate(comboId);
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/financeiro/livro-caixa");
   return { ok: true };
 }

@@ -1385,6 +1385,13 @@ model PaymentCombo {
   // Quanto do total foi abatido no saldo devedor de capital do beneficiário
   // (vira aporte na baixa); o restante saiu em dinheiro. 0 = sem abatimento.
   capitalAbatement Float             @default(0)
+  // Combo com abatimento lançado pelo BANCO NEUTRO: os títulos e o aporte
+  // ficam no neutro, e o que de fato saiu do banco (total − abatimento) é uma
+  // transferência da conta escolhida para o neutro. Este é o id dela — some
+  // junto no "Reverter pagamento" e acompanha o "Desfazer abatimento".
+  abatementTransferId String?
+  // Lançado no formato do Banco Neutro (combos antigos: conta escolhida).
+  abatementNeutro  Boolean           @default(false)
   // Se true, paga o valor INTEGRAL ao beneficiário mesmo com saldo devedor
   // (não abate o capital). Default TRUE: o borderô costuma ser recebido
   // inteiro, e o abatimento — que vira aporte e devolve dinheiro à conta — só

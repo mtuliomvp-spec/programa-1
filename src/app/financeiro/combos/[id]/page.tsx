@@ -18,6 +18,7 @@ import ComboActions from "./ComboActions";
 import AddTitlesToCombo, { RemoveFromCombo } from "./AddTitlesToCombo";
 import PayFullToggle from "./PayFullToggle";
 import UndoAbatementButton from "./UndoAbatementButton";
+import CorrigirNeutroButton from "./CorrigirNeutroButton";
 import PayoutMethodPicker from "./PayoutMethodPicker";
 import ComboReceipt from "./ComboReceipt";
 import ReadReceiptAi from "../../a-pagar/ReadReceiptAi";
@@ -408,6 +409,19 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
                       amount={formatCurrency(abatimento)}
                       beneficiaryName={bene?.name}
                     />
+                  ) : null}
+                  {canPagar && !combo.abatementNeutro && combo.account ? (
+                    <CorrigirNeutroButton
+                      comboId={combo.id}
+                      conta={combo.account.name}
+                      saiu={formatCurrency(liquido)}
+                    />
+                  ) : null}
+                  {combo.abatementNeutro ? (
+                    <p className="mt-1 text-xs text-slate-500">
+                      Lançado pelo Banco Neutro: aporte e títulos no neutro; de {combo.account?.name ?? "a conta"} saiu só{" "}
+                      {formatCurrency(liquido)} (transferência).
+                    </p>
                   ) : null}
                 </>
               ) : combo.payFull && debtTotal > 0.005 ? (
