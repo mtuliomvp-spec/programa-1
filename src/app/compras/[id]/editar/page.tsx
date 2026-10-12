@@ -45,9 +45,12 @@ export default async function EditarSolicitacaoPage({
   const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
-      where: { status: "ESTOQUE", intermediation: false },
-      orderBy: { createdAt: "desc" },
-      select: { id: true, brand: true, model: true, plate: true },
+      // Inclui reservados e vendidos (gasto depois da venda: lavagem,
+      // transferência, revisão de garantia...), como no Contas a pagar; em
+      // estoque primeiro. Carro de terceiro (intermediação) fica de fora.
+      where: { intermediation: false },
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
     }),
     prisma.capitalBeneficiary.findMany({
       where: { active: true },
@@ -56,7 +59,10 @@ export default async function EditarSolicitacaoPage({
     }),
     listCategoryNames("DESPESA"),
   ]);
-  const vehicles = stockVehicles.map((v) => ({ id: v.id, label: `${v.brand} ${v.model} · ${v.plate}` }));
+  const vehicles = stockVehicles.map((v) => ({
+    id: v.id,
+    label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+  }));
 
   return (
     <div className="mx-auto max-w-2xl">
