@@ -80,6 +80,17 @@ export default async function FinanciamentoTerceirosDetailPage({
       },
       customer: true,
       financerAccount: true,
+      seller: { select: { name: true } },
+      // Títulos que a operação gerou (repasse, devolução, comissões, indicações,
+      // transferência): para ver, ao revisitar, o que já foi pago/recebido.
+      payables: {
+        select: { id: true, description: true, amount: true, status: true, dueDate: true, paymentDate: true },
+        orderBy: { dueDate: "asc" },
+      },
+      receivables: {
+        select: { id: true, description: true, amount: true, status: true, dueDate: true, receivedDate: true },
+        orderBy: { dueDate: "asc" },
+      },
     },
   });
   if (!sale || sale.saleType !== "FINANCIAMENTO_TERCEIROS") notFound();
@@ -169,6 +180,109 @@ export default async function FinanciamentoTerceirosDetailPage({
         </div>
       </Card>
 
+      {/* Tudo o que foi registrado na operação — para quem revisita a venda
+          depois (quem vendeu, contatos, retorno, indicações, observações). */}
+      <Card className="mb-4">
+        <CardHeader title="Dados da venda" />
+        <div className="grid grid-cols-1 gap-x-6 gap-y-1 p-5 text-sm sm:grid-cols-2">
+          <p><span className="text-slate-500">Operação nº:</span> {String(sale.orderNumber).padStart(4, "0")}</p>
+          <p>
+            <span className="text-slate-500">Situação:</span>{" "}
+            <Badge tone={canceled ? "danger" : "success"}>{canceled ? "Cancelada" : "Concluída"}</Badge>
+          </p>
+          <p>
+            <span className="text-slate-500">Vendedor:</span>{" "}
+            <strong>{sale.seller?.name || sale.sellerName || "—"}</strong>
+            {sale.commissionAmount > 0
+              ? ` · comissão ${formatCurrency(sale.commissionAmount)}${sale.commissionToCapital ? " (aplicada no capital)" : ""}`
+              : ""}
+          </p>
+          {sale.viaPaidTraffic ? (
+            <p><span className="text-slate-500">Origem:</span> Tráfego pago</p>
+          ) : null}
+          <p>
+            <span className="text-slate-500">Comprador:</span> {sale.customer.name}
+            {sale.customer.document ? ` · CPF/CNPJ ${sale.customer.document}` : ""}
+          </p>
+          <p>
+            <span className="text-slate-500">Contato do comprador:</span>{" "}
+            {[sale.customer.phone, sale.customer.email].filter(Boolean).join(" · ") || "—"}
+          </p>
+          <p>
+            <span className="text-slate-500">Contato do proprietário:</span> {sale.ownerPhone || "—"}
+          </p>
+          <p><span className="text-slate-500">Endereço do proprietário:</span> {sale.ownerAddress || "—"}</p>
+          {sale.installmentsInfoCount && sale.installmentsInfoAmount ? (
+            <p>
+              <span className="text-slate-500">Parcelas do financiamento:</span> {sale.installmentsInfoCount}×{" "}
+              {formatCurrency(sale.installmentsInfoAmount)}
+            </p>
+          ) : null}
+          {sale.buyerBankName || sale.buyerPixKey ? (
+            <p className="sm:col-span-2">
+              <span className="text-slate-500">Dados bancários para a devolução:</span>{" "}
+              {[
+                sale.buyerBankName,
+                sale.buyerBankAgency && `ag. ${sale.buyerBankAgency}`,
+                sale.buyerBankAccount && `conta ${sale.buyerBankAccount}`,
+                sale.buyerBankAccountType,
+                sale.buyerPixKey && `PIX ${sale.buyerPixKey}`,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
+          ) : null}
+          <p>
+            <span className="text-slate-500">Repasse da financeira:</span>{" "}
+            {sale.financerSettledAt ? `recebido em ${formatDate(sale.financerSettledAt)}` : "a receber"}
+          </p>
+          {sale.returnLevel > 0 || sale.returnNet > 0 ? (
+            <p>
+              <span className="text-slate-500">Retorno:</span>{" "}
+              {sale.returnLevel > 0 ? `R-${String(sale.returnLevel).padStart(2, "0")} · ` : ""}
+              {sale.returnSettledAt
+                ? `recebido em ${formatDate(sale.returnSettledAt)}${
+                    sale.returnPaidAmount != null ? ` (${formatCurrency(sale.returnPaidAmount)})` : ""
+                  }`
+                : "a receber"}
+            </p>
+          ) : null}
+          {sale.insuranceSold ? (
+            <p>
+              <span className="text-slate-500">Seguro:</span>{" "}
+              {formatCurrency(sale.insuranceAmount ?? 0)}
+              {sale.insuranceCommissionAmount > 0 ? ` · comissão ${formatCurrency(sale.insuranceCommissionAmount)}` : ""}
+              {sale.insuranceSettledAt ? ` · recebida em ${formatDate(sale.insuranceSettledAt)}` : " · a receber"}
+            </p>
+          ) : null}
+          <p>
+            <span className="text-slate-500">Veículo:</span>{" "}
+            {[
+              sale.vehicle.modelYear ? `${sale.vehicle.manufactureYear}/${sale.vehicle.modelYear}` : null,
+              sale.vehicle.color,
+              sale.vehicle.km ? `${sale.vehicle.km.toLocaleString("pt-BR")} km` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ") || "—"}
+          </p>
+          <p>
+            <span className="text-slate-500">Chassi / RENAVAM:</span> {sale.vehicle.chassi || "—"} /{" "}
+            {sale.vehicle.renavam || "—"}
+          </p>
+          {referrals.length > 0 ? (
+            <div className="sm:col-span-2">
+              <span className="text-slate-500">Indicações:</span>{" "}
+              {referrals.map((r) => `${r.name} (${formatCurrency(r.amount)})`).join(" · ")}
+            </div>
+          ) : null}
+          {sale.notes ? (
+            <p className="sm:col-span-2 whitespace-pre-line">
+              <span className="text-slate-500">Observações:</span> {sale.notes}
+            </p>
+          ) : null}
+        </div>
+      </Card>
+
       <Card>
         <CardHeader title="Financiamento" />
         <div className="p-5">
@@ -222,6 +336,41 @@ export default async function FinanciamentoTerceirosDetailPage({
           <Row label="Lucro sobre financiamento de terceiros" value={formatCurrency(netProfit)} tone="green" />
         </div>
       </Card>
+
+      {sale.payables.length > 0 || sale.receivables.length > 0 ? (
+        <Card className="mt-4">
+          <CardHeader
+            title="Títulos da operação"
+            description="O que a operação gerou no Contas a pagar e a receber, e o que já foi baixado"
+          />
+          <div className="divide-y divide-slate-100 px-5 py-2 text-sm">
+            {sale.receivables.map((r) => (
+              <div key={r.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                <span className="min-w-0 text-slate-700">📥 {r.description}</span>
+                <span className="flex items-center gap-2 tabular-nums">
+                  <span className="text-emerald-700">+{formatCurrency(r.amount)}</span>
+                  <Badge tone={r.status === "RECEBIDO" ? "success" : "warning"}>
+                    {r.status === "RECEBIDO" && r.receivedDate ? `recebido ${formatDate(r.receivedDate)}` : "a receber"}
+                  </Badge>
+                </span>
+              </div>
+            ))}
+            {sale.payables.map((pg) => (
+              <div key={pg.id} className="flex flex-wrap items-center justify-between gap-2 py-1.5">
+                <a href={`/financeiro/a-pagar/${pg.id}/ordem`} className="min-w-0 text-slate-700 hover:text-blue-700 hover:underline">
+                  📤 {pg.description}
+                </a>
+                <span className="flex items-center gap-2 tabular-nums">
+                  <span className="text-rose-600">−{formatCurrency(pg.amount)}</span>
+                  <Badge tone={pg.status === "PAGO" ? "success" : "warning"}>
+                    {pg.status === "PAGO" && pg.paymentDate ? `pago ${formatDate(pg.paymentDate)}` : `vence ${formatDate(pg.dueDate)}`}
+                  </Badge>
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       <PayoffCard
         className="mt-4"
