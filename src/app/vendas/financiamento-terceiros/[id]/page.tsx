@@ -25,6 +25,7 @@ import ClientPhotoCapture from "@/app/estoque/[id]/ClientPhotoCapture";
 import VehicleTransferQuote from "@/app/estoque/[id]/VehicleTransferQuote";
 import VehicleAtpv from "@/app/estoque/[id]/VehicleAtpv";
 import VehicleAttachments from "@/app/estoque/[id]/VehicleAttachments";
+import VehicleCrlv from "@/app/estoque/[id]/VehicleCrlv";
 import SaleTransferSetting from "@/app/estoque/[id]/SaleTransferSetting";
 import TransferInProgressSetting from "@/app/estoque/[id]/TransferInProgressSetting";
 
@@ -100,9 +101,18 @@ export default async function FinanciamentoTerceirosDetailPage({
     listIntermediationCrlvs(sale.vehicleId),
     houseNameKeys(),
   ]);
+  // CRLV que está em outra ficha do mesmo carro (vide listIntermediationCrlvs)
+  // também conta para o selo.
+  const anexosDoc = [
+    ...sale.vehicle.attachments,
+    ...crlvs
+      .filter((c) => !sale.vehicle.attachments.some((a) => a.id === c.id) && !c.description.startsWith(NOTA_VEICULO_PREFIX))
+      .map((c) => ({ ...c, kind: "CRLV" as const, mimeType: "", latitude: null, longitude: null, geoAccuracy: null, address: null })),
+  ];
   const doc = situacaoDocumental(
     {
       ...sale.vehicle,
+      attachments: anexosDoc,
       sale: {
         saleDate: sale.saleDate,
         transferDoneAt: sale.transferDoneAt,
@@ -118,12 +128,13 @@ export default async function FinanciamentoTerceirosDetailPage({
   // Anexar/ler documento do veículo é a mesma permissão da ficha do estoque —
   // é lá que as ações checam.
   // Cada card de documento com a sua permissão granular (como na ficha do veículo).
-  const [canDocumentos, canAtpv, canOrcamento, canTransferencia, canEditarEstoque] = await Promise.all([
+  const [canDocumentos, canAtpv, canOrcamento, canTransferencia, canEditarEstoque, canCrlv] = await Promise.all([
     userCan("estoque", "comunicacao"),
     userCan("estoque", "atpv"),
     userCan("estoque", "orcamento"),
     userCan("estoque", "transferencia"),
     userCan("estoque", "editar"),
+    userCan("estoque", "crlv"),
   ]);
   const ultimoCrlv = sale.vehicle.attachments.find((a) => a.kind === "CRLV") ?? null;
 
@@ -482,6 +493,20 @@ export default async function FinanciamentoTerceirosDetailPage({
           quotes={sale.vehicle.attachments.filter(
             (a) => a.kind === "DOCUMENTO" && ORCAMENTO_TRANSFERENCIA_RE.test(a.description),
           )}
+        />
+      </Card>
+
+      {/* CRLV do veículo: anexar/ler aqui mesmo (o da pré-venda aparece em
+          "Partes"); mesma permissão "Anexar CRLV" da ficha do estoque. */}
+      <Card className="mt-4">
+        <CardHeader
+          title="CRLV"
+          description="Anexe o CRLV do veículo (o lido na pré-venda já aparece aqui)"
+        />
+        <VehicleCrlv
+          vehicleId={sale.vehicleId}
+          canManage={canCrlv}
+          crlvs={crlvs.filter((c) => !c.description.startsWith(NOTA_VEICULO_PREFIX))}
         />
       </Card>
 

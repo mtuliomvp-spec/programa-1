@@ -6,7 +6,7 @@ import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCashDateIsWorkDate } from "@/lib/cashbox";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
-import { plateVariants } from "@/lib/plate";
+import { plateVariants, plateIdentityKey } from "@/lib/plate";
 import { placaExibicao } from "@/lib/vehicle-display";
 import { findCustomerByIdentity } from "@/lib/person-dedupe";
 import {
@@ -185,13 +185,32 @@ export const NOTA_VEICULO_PREFIX = "Nota fiscal do veículo (0 km)";
  * 0 km — os dois identificam o carro e o proprietário da operação.
  */
 export async function listIntermediationCrlvs(vehicleId: string) {
-  return prisma.vehicleAttachment.findMany({
-    where: {
-      vehicleId,
-      OR: [{ kind: "CRLV" }, { kind: "DOCUMENTO", description: { startsWith: NOTA_VEICULO_PREFIX } }],
-    },
+  const doc = { OR: [{ kind: "CRLV" as const }, { kind: "DOCUMENTO" as const, description: { startsWith: NOTA_VEICULO_PREFIX } }] };
+  const select = { id: true, description: true, filename: true, size: true, createdAt: true } as const;
+  const proprios = await prisma.vehicleAttachment.findMany({
+    where: { vehicleId, ...doc },
     orderBy: { createdAt: "desc" },
-    select: { id: true, description: true, filename: true, size: true, createdAt: true },
+    select,
+  });
+  if (proprios.length > 0) return proprios;
+  // Nenhum nesta ficha: o CRLV pode ter sido anexado em OUTRA ficha do mesmo
+  // carro (mesma placa — ex.: o veículo já passou pelo estoque, ou uma
+  // pré-venda anterior). É o mesmo documento: mostra de lá.
+  const v = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { plate: true } });
+  const chave = plateIdentityKey(v?.plate);
+  if (!chave) return proprios;
+  // A placa pode estar gravada com hífen/minúscula ou na forma antiga: busca
+  // pelas 3 letras e confere a identidade (antiga = Mercosul) aqui.
+  const candidatos = await prisma.vehicle.findMany({
+    where: { id: { not: vehicleId }, plate: { contains: chave.slice(0, 3), mode: "insensitive" } },
+    select: { id: true, plate: true },
+  });
+  const mesmos = candidatos.filter((c) => plateIdentityKey(c.plate) === chave).map((c) => c.id);
+  if (mesmos.length === 0) return proprios;
+  return prisma.vehicleAttachment.findMany({
+    where: { vehicleId: { in: mesmos }, ...doc },
+    orderBy: { createdAt: "desc" },
+    select,
   });
 }
 
