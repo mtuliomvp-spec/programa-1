@@ -6,6 +6,7 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, 
 import DeleteVehicleButton from "./DeleteVehicleButton";
 import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
+import VehicleCostRefund from "./VehicleCostRefund";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
@@ -56,6 +57,11 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     include: {
       supplier: true,
       payables: { orderBy: { dueDate: "asc" } },
+      // Reembolsos de custo (cliente devolve um gasto do carro).
+      costRefunds: {
+        select: { id: true, description: true, amount: true, status: true, dueDate: true, receivedDate: true },
+        orderBy: { createdAt: "asc" },
+      },
       costs: {
         include: {
           payable: {
@@ -562,6 +568,22 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 // cuja solicitação/título foram excluídos na raiz (payable sumiu).
                 orphan: !c.payable && isCompraCost(c),
                 dupAdvice: dupAdvice.get(c.id) ?? null,
+                refund: Boolean(c.receivableId),
+              }))}
+            />
+            <VehicleCostRefund
+              vehicleId={vehicle.id}
+              canManage={canCustos}
+              costs={vehicle.costs
+                .filter((c) => c.amount > 0 && !c.receivableId)
+                .map((c) => ({ id: c.id, description: c.description, amount: c.amount }))}
+              refunds={vehicle.costRefunds.map((r) => ({
+                id: r.id,
+                description: r.description,
+                amount: r.amount,
+                status: r.status,
+                dueDate: r.dueDate.toISOString(),
+                receivedDate: r.receivedDate ? r.receivedDate.toISOString() : null,
               }))}
             />
             {vehicle.status !== "VENDIDO" && canDebitos ? (

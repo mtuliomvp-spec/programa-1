@@ -35,6 +35,8 @@ type Cost = {
   // Recomendação no par duplicado (manual × solicitação de compra vivos):
   // "excluir" = este é o manual duplicado; "manter" = este veio da solicitação.
   dupAdvice?: "excluir" | "manter" | null;
+  /** Custo NEGATIVO de um reembolso recebido do cliente (sai revertendo o recebimento). */
+  refund?: boolean;
 };
 
 export default function VehicleCosts({
@@ -196,10 +198,17 @@ export default function VehicleCosts({
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-3">
-                  <span className="text-sm font-semibold text-slate-900">
+                  <span className={`text-sm font-semibold ${c.amount < 0 ? "text-emerald-700" : "text-slate-900"}`}>
                     {formatCurrency(c.amount)}
                   </span>
-                  {(!sold || c.postSale) && canManage ? (
+                  {c.refund ? (
+                    <span
+                      className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-800"
+                      title="Reembolso recebido do cliente: sai revertendo o recebimento em Contas a receber"
+                    >
+                      reembolso
+                    </span>
+                  ) : (!sold || c.postSale) && canManage ? (
                     <button
                       type="button"
                       disabled={deleting}

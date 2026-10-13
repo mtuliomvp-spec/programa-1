@@ -3014,3 +3014,82 @@ export async function updateVehicleKmAction(
   revalidarTelasDeVeiculo();
   return { ok: true };
 }
+
+/**
+ * REEMBOLSO DE CUSTO: o cliente vai devolver um gasto que a loja pagou pelo
+ * carro (ex.: vistoria cautelar). Lança o título a receber; o custo do carro
+ * só diminui quando ele for RECEBIDO (vide syncReembolsoDeCusto).
+ */
+export async function createCostRefundAction(input: {
+  vehicleId: string;
+  costId: string | null;
+  descricao: string;
+  valor: number;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "custos");
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const valor = Math.round(Number(input.valor) * 100) / 100;
+  const descricao = input.descricao.trim();
+  if (!(valor > 0)) return { ok: false, error: "Informe o valor do reembolso." };
+  if (!descricao) return { ok: false, error: "Descreva o custo reembolsado." };
+  const vehicle = await prisma.vehicle.findUnique({
+    where: { id: input.vehicleId },
+    select: { id: true, brand: true, model: true, plate: true, sale: { select: { customerId: true } } },
+  });
+  if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
+  const custo = input.costId
+    ? await prisma.vehicleCost.findFirst({
+        where: { id: input.costId, vehicleId: vehicle.id },
+        select: { category: true },
+      })
+    : null;
+  const hoje = await getCashboxWorkDate();
+  await prisma.receivable.create({
+    data: {
+      description: `Reembolso de custo: ${descricao} — ${vehicle.brand} ${vehicle.model} (${vehicle.plate})`,
+      category: "OUTROS",
+      amount: valor,
+      dueDate: hoje,
+      status: "PENDENTE",
+      customerId: vehicle.sale?.customerId ?? null,
+      costCenterId: await structuralCenterId("VEICULOS"),
+      costRefundVehicleId: vehicle.id,
+      costRefundCategory: custo?.category ?? "OUTROS",
+      notes: "Reembolso de um gasto do carro: quando recebido, reduz o custo do veículo.",
+    },
+  });
+  revalidatePath(`/estoque/${vehicle.id}`);
+  revalidatePath("/financeiro/a-receber");
+  return { ok: true };
+}
+
+/** Cancela um reembolso de custo ainda NÃO recebido (apaga o título). */
+export async function cancelCostRefundAction(
+  receivableId: string,
+  vehicleId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "custos");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const r = await prisma.receivable.findUnique({
+    where: { id: receivableId },
+    select: { status: true, costRefundVehicleId: true, pendingReceiptDate: true },
+  });
+  if (!r || r.costRefundVehicleId !== vehicleId) return { ok: false, error: "Reembolso não encontrado." };
+  if (r.status === "RECEBIDO") {
+    return { ok: false, error: "Já recebido — para desfazer, reverta o recebimento em Contas a receber." };
+  }
+  if (r.pendingReceiptDate) {
+    return { ok: false, error: "Está na fila do caixa (Já caiu) — tire da fila antes de cancelar." };
+  }
+  await prisma.receivable.delete({ where: { id: receivableId } });
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidatePath("/financeiro/a-receber");
+  return { ok: true };
+}

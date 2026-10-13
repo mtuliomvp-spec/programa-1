@@ -87,6 +87,8 @@ async function patrimonialStats(
         sinalGroup: true,
         sinalParContabil: true,
         vehicle: { select: { status: true } },
+        costRefundVehicleId: true,
+        costRefundVehicle: { select: { status: true } },
       },
     }),
     prisma.part.findMany({ select: { quantity: true, costPrice: true } }),
@@ -241,6 +243,19 @@ async function patrimonialStats(
   let sinaisRecebidos = 0;
   let contasAReceber = 0;
   for (const r of receivables) {
+    // REEMBOLSO DE CUSTO recebido de um carro ainda em estoque: o dinheiro
+    // entrou e o custo do carro diminuiu (custo negativo) — o estoque pago
+    // cai o mesmo valor. Carro já vendido: o custo negativo está na margem
+    // (Lucro/Prejuízo), nada a fazer aqui.
+    if (
+      r.status === "RECEBIDO" &&
+      r.costRefundVehicleId &&
+      r.costRefundVehicle &&
+      r.costRefundVehicle.status !== "VENDIDO"
+    ) {
+      estoqueVeiculosPago -= r.amount;
+      continue;
+    }
     // Sinal / entrada antecipada: recebido para um veículo AINDA em estoque,
     // sem venda fechada. É um adiantamento (o dinheiro entrou, mas a venda não
     // aconteceu), então compensa o caixa na equação até o fechamento.

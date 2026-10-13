@@ -97,6 +97,7 @@ export async function fluxosPorConta(de: Date, ate: Date): Promise<{
         vehicleId: true,
         vehicle: veiculoSel,
         sale: { select: { vehicle: veiculoSel } },
+        costRefundVehicle: veiculoSel,
         capitalBeneficiaryId: true,
         capitalBeneficiary: { select: { name: true } },
         capitalCoverGroup: true,
@@ -208,7 +209,7 @@ export async function fluxosPorConta(de: Date, ate: Date): Promise<{
     const conta = r.account?.name ?? "Sem conta";
     const categoria = RECEBER_LABEL[r.category] || r.category;
     const mov = movPorRecebivel.get(r.id);
-    const veiculo = r.vehicle ?? r.sale?.vehicle ?? null;
+    const veiculo = r.vehicle ?? r.sale?.vehicle ?? r.costRefundVehicle ?? null;
     const fluxo: StructuralKey =
       r.capitalBeneficiaryId || mov || r.capitalCoverGroup
         ? "CAPITAL"

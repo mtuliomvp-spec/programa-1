@@ -654,6 +654,11 @@ export async function deleteVehicleCost(costId: string) {
         "Este custo vem de um lançamento da fatura do cartão — exclua o lançamento dentro do título da fatura.",
       );
     }
+    if (cost.receivableId) {
+      throw new Error(
+        "Este é o reembolso recebido do cliente — ele sai revertendo o recebimento do título em Contas a receber.",
+      );
+    }
     await tx.vehicleCost.delete({ where: { id: costId } });
     // Peça do almoxarifado: as unidades voltam para o estoque.
     if (cost.partId && cost.partQuantity) {
@@ -687,6 +692,9 @@ export async function detachVehicleCost(costId: string) {
       throw new Error(
         "Este custo vem de um lançamento da fatura do cartão — ajuste o lançamento dentro do título da fatura.",
       );
+    }
+    if (cost.receivableId) {
+      throw new Error("Este é o reembolso recebido do cliente — ele não se desvincula do veículo.");
     }
     await tx.vehicleCost.delete({ where: { id: costId } });
     if (cost.partId && cost.partQuantity) {
@@ -2321,7 +2329,52 @@ export async function syncPayableCapital(payableId: string) {
 }
 
 /** Igual ao anterior, para títulos A RECEBER do fluxo Capital (APORTE ao receber). */
+/**
+ * REEMBOLSO DE CUSTO do veículo (Receivable.costRefundVehicleId): o custo do
+ * carro só diminui quando o dinheiro ENTRA. Recebido → nasce o custo negativo
+ * (mesma categoria do reembolsado; pós-venda se o carro já foi vendido);
+ * voltou a pendente → ele some. Chamado em toda baixa/estorno de recebível,
+ * pelo mesmo caminho do capital.
+ */
+async function syncReembolsoDeCusto(receivableId: string) {
+  const r = await prisma.receivable.findUnique({
+    where: { id: receivableId },
+    select: {
+      id: true,
+      status: true,
+      amount: true,
+      receivedDate: true,
+      dueDate: true,
+      description: true,
+      costRefundVehicleId: true,
+      costRefundCategory: true,
+      costRefundCost: { select: { id: true } },
+      costRefundVehicle: { select: { status: true } },
+    },
+  });
+  if (!r || !r.costRefundVehicleId) return;
+  if (r.status === "RECEBIDO") {
+    if (!r.costRefundCost) {
+      await prisma.vehicleCost.create({
+        data: {
+          vehicleId: r.costRefundVehicleId,
+          description: r.description,
+          category: r.costRefundCategory ?? "OUTROS",
+          amount: -r.amount,
+          date: r.receivedDate ?? r.dueDate,
+          postSale: r.costRefundVehicle?.status === "VENDIDO",
+          receivableId: r.id,
+          notes: "Reembolso recebido — reduz o custo do veículo.",
+        },
+      });
+    }
+  } else if (r.costRefundCost) {
+    await prisma.vehicleCost.delete({ where: { id: r.costRefundCost.id } });
+  }
+}
+
 export async function syncReceivableCapital(receivableId: string) {
+  await syncReembolsoDeCusto(receivableId);
   const r = await prisma.receivable.findUnique({
     where: { id: receivableId },
     select: {
@@ -2628,6 +2681,8 @@ export async function receiveReceivable(
         totalInstallments: r.totalInstallments,
         costCenterId: r.costCenterId,
         capitalBeneficiaryId: r.capitalBeneficiaryId,
+        costRefundVehicleId: r.costRefundVehicleId,
+        costRefundCategory: r.costRefundCategory,
         accountId: account,
         // A observação é do PAGAMENTO, então fica na parcela recebida.
         notes: obs,
@@ -4357,6 +4412,8 @@ export async function desmembrarRecebimentoParcial(id: string, valor: number): P
         referencePeriod: r.referencePeriod,
         costCenterId: r.costCenterId,
         capitalBeneficiaryId: r.capitalBeneficiaryId,
+        costRefundVehicleId: r.costRefundVehicleId,
+        costRefundCategory: r.costRefundCategory,
         accountId: r.accountId,
         avulso: r.avulso,
         partialOfId: id,

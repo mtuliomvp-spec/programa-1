@@ -681,6 +681,7 @@ model Vehicle {
   payables               Payable[]
   receivables            Receivable[]
   costs                  VehicleCost[]
+  costRefunds            Receivable[]  @relation("CostRefundVehicle")
   fuelEntries            FuelEntry[]
   attachments            VehicleAttachment[]
   showroomVisits         ShowroomVisit[]
@@ -879,6 +880,10 @@ model VehicleCost {
   partId               String?
   part                 Part?                 @relation(fields: [partId], references: [id])
   partQuantity         Int?
+  // Custo NEGATIVO de um reembolso recebido (Receivable.costRefundVehicleId):
+  // nasce e some com o recebimento do título.
+  receivableId         String?               @unique
+  receivable           Receivable?           @relation("CostRefundCost", fields: [receivableId], references: [id], onDelete: Cascade)
   createdAt            DateTime              @default(now())
 
   @@index([stockInterestRunId])
@@ -1530,6 +1535,16 @@ model Receivable {
   // título): o título de onde saiu (o que ficou com o saldo). Tirada da fila,
   // a parte volta a se juntar a ele.
   partialOfId          String?
+  // REEMBOLSO DE CUSTO do veículo: o cliente devolve um gasto que a loja fez
+  // pelo carro (ex.: vistoria cautelar). Não é receita nem sinal: quando é
+  // RECEBIDO, nasce um custo NEGATIVO no carro (VehicleCost.receivableId) e o
+  // custo dele volta ao que era. Sem vehicleId de propósito — com ele, o
+  // título viraria "sinal" do carro e seria abatido na venda.
+  costRefundVehicleId  String?
+  costRefundVehicle    Vehicle?            @relation("CostRefundVehicle", fields: [costRefundVehicleId], references: [id], onDelete: SetNull)
+  costRefundCost       VehicleCost?        @relation("CostRefundCost")
+  // Categoria do custo reembolsado (o custo negativo nasce nela).
+  costRefundCategory   CategoriaCustoVeiculo?
   // Competência/referência do que o título cobra ("08/2026"). Informativa: a
   // receita continua entrando pelo regime de caixa, na data do recebimento.
   referencePeriod      String?

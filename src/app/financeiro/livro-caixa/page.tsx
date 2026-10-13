@@ -96,6 +96,8 @@ export default async function LivroCaixaPage({
           capitalBeneficiary: { select: { name: true } },
           account: { select: { name: true } },
           vehicle: { select: { brand: true, model: true, plate: true } },
+          // Reembolso de custo: o carro cujo custo o recebimento reduz.
+          costRefundVehicle: { select: { brand: true, model: true, plate: true } },
         },
       }),
       prisma.financialAccount.findMany({
@@ -251,7 +253,7 @@ export default async function LivroCaixaPage({
       description: r.description,
       notes: r.notes,
       who: r.customer?.name || r.capitalBeneficiary?.name || "-",
-      vehicle: vehicleLabel(r.vehicle),
+      vehicle: vehicleLabel(r.vehicle ?? r.costRefundVehicle),
       account: r.account?.name ?? null,
       kind: "entrada" as const,
       amount: r.amount,
