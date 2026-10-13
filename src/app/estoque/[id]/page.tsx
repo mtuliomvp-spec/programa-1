@@ -34,7 +34,8 @@ import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { resumoDeVisitas } from "@/lib/showroom-visits";
-import { crlvNoNomeDoComprador, houseNameKeys, isOwnName } from "@/lib/doc-owner";
+import { crlvNoNomeDoComprador, houseNameKeys, isOwnName, sameParty } from "@/lib/doc-owner";
+import { nameKey } from "@/lib/person-keys";
 import QRCode from "qrcode";
 import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
@@ -199,9 +200,33 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   // completar). Valores como o painel aceita: só dígitos onde é número.
   const soDigitos = (s: string | null | undefined) => (s ? s.replace(/\D/g, "") || null : null);
   const vendedorEntrada = vehicle.supplier?.name ?? vehicle.docOwnerName ?? null;
+  // "Informa Entrada" do ControlStock: Placa → Documento do proprietário
+  // (CPF/CNPJ) → Número. Proprietário = em nome de quem o CRLV está; sem CRLV
+  // lido, o vendedor. Documento: o do fornecedor quando é a mesma pessoa, o
+  // CNPJ da loja quando já está no nome dela; senão falta (o CRLV não guarda).
+  const donoNome = vehicle.docOwnerName ?? vehicle.supplier?.name ?? null;
+  const donoEhLoja =
+    !!vehicle.docOwnerName &&
+    isOwnName(vehicle.docOwnerName, [nameKey(renaveCompany.razaoSocial), nameKey(renaveCompany.nomeFantasia)]);
+  const donoDoc = donoEhLoja
+    ? soDigitos(renaveCompany.cnpj)
+    : vehicle.supplier && (!vehicle.docOwnerName || sameParty(vehicle.docOwnerName, null, vehicle.supplier))
+      ? soDigitos(vehicle.supplier.document)
+      : null;
   const renaveCopiaEntrada: CampoRenave[] = [
     { rotulo: "Título do negócio", valor: tituloLabel[vehicle.renaveEntradaTitulo ?? tituloSugerido(vehicle)] },
     { rotulo: "Placa", valor: vehicle.plate || null },
+    { rotulo: "Proprietário (em nome de quem está o CRLV)", valor: donoNome, dica: "anexe o CRLV" },
+    {
+      rotulo: "Documento do proprietário",
+      valor: donoDoc ? (donoDoc.length === 14 ? "CNPJ" : "CPF") : null,
+      dica: "escolha CPF ou CNPJ conforme o CRLV",
+    },
+    {
+      rotulo: "Número do documento",
+      valor: donoDoc,
+      dica: donoEhLoja ? "CNPJ em Parâmetros da empresa" : "CPF/CNPJ de quem está no CRLV (cadastro do fornecedor)",
+    },
     { rotulo: "RENAVAM", valor: soDigitos(vehicle.renavam), dica: "Editar veículo" },
     { rotulo: "Chassi", valor: vehicle.chassi, dica: "Editar veículo" },
     { rotulo: "Marca / modelo", valor: [vehicle.brand, vehicle.model, vehicle.version].filter(Boolean).join(" ") },
