@@ -151,8 +151,9 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
         />
         {/* Títulos que nasceram de SOLICITAÇÕES DE COMPRA: todos de uma vez,
             uma solicitação específica (nº · solicitante) ou só os outros. */}
-        {requestOptions.length > 0 ? (
-          <SearchSelect
+        {/* Sempre visível (mesmo sem nenhum disponível): a solicitação só vira
+            título depois de APROVADA — o aviso abaixo explica o filtro vazio. */}
+        <SearchSelect
             name="filtroSolicitacao"
             value={solicitacao}
             onChange={setSolicitacao}
@@ -165,10 +166,13 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
             emptyLabel="Todas as origens"
             className="w-full sm:w-56"
           />
-        ) : null}
       </div>
       {shown.length === 0 ? (
-        <p className="px-1 py-3 text-sm text-slate-500">Nenhum título encontrado para o filtro.</p>
+        <p className="px-1 py-3 text-sm text-slate-500">
+          {solicitacao && solicitacao !== SEM_SOLICITACAO
+            ? "Nenhum título de solicitação de compra disponível. A solicitação só vira título a pagar depois de APROVADA (Solicitações de compra) — e título que já está em outro combo não aparece aqui."
+            : "Nenhum título encontrado para o filtro."}
+        </p>
       ) : (
         <ul className="max-h-80 divide-y divide-slate-100 overflow-auto rounded-lg border border-slate-200">
           {shown.map((r) => (

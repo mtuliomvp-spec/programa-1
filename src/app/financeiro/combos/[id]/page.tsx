@@ -159,7 +159,9 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
               vehicle: { select: { brand: true, model: true, plate: true } },
               purchaseRequest: { select: { seq: true, year: true, requestedBy: true } },
             },
-            take: 500,
+            // Folga para não cortar os de vencimento mais distante (os filtros e
+            // a busca são feitos na tela, sobre esta lista).
+            take: 2000,
           })
         ).map((p) => ({
           id: p.id,
