@@ -21,7 +21,6 @@ import {
   detranOperando,
   RENAVE_PRAZO_PADRAO,
   tituloLabel,
-  tituloSugerido,
 } from "@/lib/renave";
 import VehicleBoletos from "./VehicleBoletos";
 import TransferInProgressSetting from "./TransferInProgressSetting";
@@ -199,7 +198,6 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   // integradora pede, campo a campo (vazio = falta, com a dica de onde
   // completar). Valores como o painel aceita: só dígitos onde é número.
   const soDigitos = (s: string | null | undefined) => (s ? s.replace(/\D/g, "") || null : null);
-  const vendedorEntrada = vehicle.supplier?.name ?? vehicle.docOwnerName ?? null;
   // "Informa Entrada" do ControlStock: Placa → Documento do proprietário
   // (CPF/CNPJ) → Número. Proprietário = em nome de quem o CRLV está; sem CRLV
   // lido, o vendedor. Documento: o do fornecedor quando é a mesma pessoa, o
@@ -213,9 +211,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     : vehicle.supplier && (!vehicle.docOwnerName || sameParty(vehicle.docOwnerName, null, vehicle.supplier))
       ? soDigitos(vehicle.supplier.document)
       : null;
+  // Mesma ordem do "Informa Entrada": 1ª tela (placa + documento do
+  // proprietário) e, depois do "Avançar", o formulário completo.
   const renaveCopiaEntrada: CampoRenave[] = [
-    { rotulo: "Título do negócio", valor: tituloLabel[vehicle.renaveEntradaTitulo ?? tituloSugerido(vehicle)] },
-    { rotulo: "Placa", valor: vehicle.plate || null },
+    { secao: "1ª tela — antes do “Avançar”", rotulo: "Placa", valor: vehicle.plate || null },
     { rotulo: "Proprietário (em nome de quem está o CRLV)", valor: donoNome, dica: "anexe o CRLV" },
     {
       rotulo: "Documento do proprietário",
@@ -227,19 +226,23 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       valor: donoDoc,
       dica: donoEhLoja ? "CNPJ em Parâmetros da empresa" : "CPF/CNPJ de quem está no CRLV (cadastro do fornecedor)",
     },
-    { rotulo: "RENAVAM", valor: soDigitos(vehicle.renavam), dica: "Editar veículo" },
-    { rotulo: "Chassi", valor: vehicle.chassi, dica: "Editar veículo" },
-    { rotulo: "Marca / modelo", valor: [vehicle.brand, vehicle.model, vehicle.version].filter(Boolean).join(" ") },
-    { rotulo: "Ano fabricação / modelo", valor: `${vehicle.manufactureYear}/${vehicle.modelYear}` },
-    { rotulo: "Cor", valor: vehicle.color },
-    { rotulo: "Hodômetro (km)", valor: vehicle.km ? String(vehicle.km) : null, dica: "KM na ficha" },
-    { rotulo: "Data da entrada", valor: formatDate(vehicle.entryDate) },
+    { secao: "Depois do “Avançar”", rotulo: "Renavam", valor: soDigitos(vehicle.renavam), dica: "Editar veículo" },
+    {
+      rotulo: "Tipo Entrada",
+      valor: vehicle.consigned ? tituloLabel.CONSIGNACAO : "Solicitação de Entrada Veículo Próprio",
+    },
+    { rotulo: "Marca", valor: vehicle.brand || null },
+    { rotulo: "Modelo", valor: vehicle.model || null },
+    { rotulo: "Versão", valor: vehicle.version || null, dica: "Editar veículo" },
+    { rotulo: "Ano de fabricação", valor: vehicle.manufactureYear ? String(vehicle.manufactureYear) : null },
+    { rotulo: "Ano do modelo", valor: vehicle.modelYear ? String(vehicle.modelYear) : null },
+    { rotulo: "Número CRV", valor: soDigitos(vehicle.crvNumber), dica: "lido da ATPV-e (formulário do Renave)" },
+    { rotulo: "Código Segurança CRV", valor: soDigitos(vehicle.crvSecurityCode), dica: "lido da ATPV-e" },
     { rotulo: "Valor da compra", valor: vehicle.purchasePrice ? vehicle.purchasePrice.toFixed(2).replace(".", ",") : null },
-    { rotulo: "Vendedor (de quem a loja comprou)", valor: vendedorEntrada, dica: "fornecedor do veículo" },
-    { rotulo: "CPF/CNPJ do vendedor", valor: soDigitos(vehicle.supplier?.document), dica: "cadastro do fornecedor" },
-    { rotulo: "Nº do CRV", valor: soDigitos(vehicle.crvNumber), dica: "lido da ATPV-e (formulário do Renave)" },
-    { rotulo: "Código de segurança do CRV", valor: soDigitos(vehicle.crvSecurityCode), dica: "lido da ATPV-e" },
-    { rotulo: "Chave da NF-e de entrada", valor: soDigitos(vehicle.entryNfeKey), dica: "formulário do Renave (ler a NF-e)" },
+    { rotulo: "Data Entrada Estoque", valor: formatDate(vehicle.entryDate) },
+    { rotulo: "Hodômetro", valor: vehicle.km ? String(vehicle.km) : null, dica: "KM na ficha" },
+    { rotulo: "Data Hodômetro", valor: formatDate(vehicle.entryDate), dica: "dia em que o km foi lido" },
+    { rotulo: "Chave da Nota Fiscal", valor: soDigitos(vehicle.entryNfeKey), dica: "formulário do Renave (ler a NF-e)" },
   ];
   const cliente = vehicle.sale?.customer ?? null;
   const renaveCopiaSaida: CampoRenave[] | null = vehicle.sale
