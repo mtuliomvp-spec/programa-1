@@ -26,6 +26,47 @@ function humanSize(bytes: number): string {
 }
 
 /** Mensagens da leitura (o que foi lançado e os avisos), iguais às do CRLV. */
+/**
+ * A placa lida no recibo (escrito à mão) não é a do carro: o usuário digita a
+ * placa do veículo para confirmar que o recibo é dele, e a leitura se repete
+ * lançando o título.
+ */
+function ConfirmarPlaca({
+  state,
+  onConfirm,
+  busy,
+}: {
+  state: AttachmentState;
+  onConfirm: (attachmentId: string, placa: string) => void;
+  busy: boolean;
+}) {
+  const [placa, setPlaca] = useState("");
+  if (!state.placaDivergente || !state.attachmentId) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm">
+      <span className="text-xs text-slate-600">
+        Recibo diz <strong>{state.placaDivergente}</strong>. Digite a placa deste veículo para confirmar:
+      </span>
+      <input
+        value={placa}
+        onChange={(e) => setPlaca(e.target.value.toUpperCase())}
+        placeholder="ABC1D23"
+        maxLength={8}
+        aria-label="Placa do veículo"
+        className="h-8 w-28 rounded-lg border border-slate-300 px-2 font-mono text-sm uppercase"
+      />
+      <button
+        type="button"
+        disabled={busy || placa.replace(/[^A-Za-z0-9]/g, "").length < 7}
+        onClick={() => onConfirm(state.attachmentId!, placa)}
+        className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+      >
+        {busy ? "Lançando…" : "Confirmar placa e lançar"}
+      </button>
+    </div>
+  );
+}
+
 function Resultado({ state }: { state: AttachmentState }) {
   if (state.error) {
     return (
@@ -107,11 +148,11 @@ export default function VehicleTransferQuote({
     }
   }
 
-  function handleRead(id: string) {
+  function handleRead(id: string, placaConfirmada?: string) {
     setReadingId(id);
     setReadState({});
     startRead(async () => {
-      const r = await readTransferQuoteAttachmentAction(id);
+      const r = await readTransferQuoteAttachmentAction(id, placaConfirmada ?? null);
       setReadState(r);
       setReadingId(null);
     });
@@ -185,13 +226,25 @@ export default function VehicleTransferQuote({
         </ul>
       )}
 
-      {readState.ok || readState.error ? <div className="mb-4"><Resultado state={readState} /></div> : null}
+      {readState.ok || readState.error ? (
+        <div className="mb-4 space-y-2">
+          <Resultado state={readState} />
+          {canManage ? <ConfirmarPlaca state={readState} onConfirm={handleRead} busy={reading} /> : null}
+        </div>
+      ) : null}
 
       <form
         ref={formRef}
         className={`space-y-3 border-t border-slate-100 pt-4 ${canManage ? "" : "hidden"}`}
       >
-        <Resultado state={state} />
+        {/* Depois de uma releitura (ex.: placa confirmada), vale o resultado
+            dela — o do envio ficaria contradizendo. */}
+        {!(readState.ok || readState.error) ? (
+          <>
+            <Resultado state={state} />
+            <ConfirmarPlaca state={state} onConfirm={handleRead} busy={reading} />
+          </>
+        ) : null}
         <Field label="Arquivo do orçamento (PDF, imagem…)">
           <input
             type="file"

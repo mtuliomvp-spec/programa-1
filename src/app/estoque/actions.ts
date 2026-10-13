@@ -916,6 +916,10 @@ export type AttachmentState = {
   filled?: string[];
   /** Avisos da leitura (placa divergente, chassi duplicado, IA indisponível). */
   warnings?: string[];
+  /** Anexo lido (para repetir a leitura confirmando a placa). */
+  attachmentId?: string;
+  /** Orçamento: a placa LIDA não é a do veículo — o usuário pode confirmar. */
+  placaDivergente?: string;
 };
 
 
@@ -1097,6 +1101,18 @@ async function applyCrlvToVehicle(input: {
       filled.push(`transferência para o nome da loja concluída (CRLV em nome de ${proprietario})`);
     }
   }
+  // Em estoque, transferência aberta para um DESTINO nomeado (orçamento do
+  // despachante — ex.: da loja para o nome de um sócio, para receber na pessoa
+  // física): o CRLV no nome dele ENCERRA esse processo, e o carro fica livre
+  // para o próximo (a transferência ao comprador).
+  if (proprietario && vehicle.status !== "VENDIDO" && vehicle.transferToName) {
+    const { sameParty } = await import("@/lib/doc-owner");
+    if (sameParty(proprietario, crlv.cpfCnpj, { name: vehicle.transferToName, document: null })) {
+      data.transferToName = null;
+      data.transferInProgress = false;
+      filled.push(`transferência para ${proprietario} concluída (CRLV em nome dele)`);
+    }
+  }
 
   if (Object.keys(data).length) {
     await prisma.vehicle.update({ where: { id: input.vehicleId }, data });
@@ -1142,7 +1158,11 @@ async function applyTransferQuote(input: {
   attachmentId: string;
   buffer: Buffer;
   mimeType: string;
-}): Promise<{ filled: string[]; warnings: string[] }> {
+  /** Placa digitada pelo usuário confirmando que o recibo é deste carro
+   *  (a escrita à mão trocou letras/números de um jeito que não dá para
+   *  corrigir sozinho — ex.: ROA2C61 para o ROB2C61). */
+  placaConfirmada?: string | null;
+}): Promise<{ filled: string[]; warnings: string[]; placaDivergente?: string }> {
   const { extractTransferQuote } = await import("@/lib/transfer-quote-ai");
   const q = await extractTransferQuote(input.buffer.toString("base64"), input.mimeType);
 
@@ -1169,12 +1189,24 @@ async function applyTransferQuote(input: {
   const placaLida = plateKey(q.placa);
   // Recibo escrito à mão: "TCPQF63" (o 0 cortado lido como Q) é o TCP0F63.
   if (placaLida && !isSamePlateManuscrita(placaLida, vehicle.plate)) {
-    return {
-      filled,
-      warnings: [
-        `Este orçamento parece ser de outro carro (placa ${placaLida}, o veículo é ${vehicle.plate}). Nada foi lançado — o anexo continua salvo.`,
-      ],
-    };
+    const confirmada = (input.placaConfirmada || "").trim();
+    if (!confirmada) {
+      return {
+        filled,
+        warnings: [
+          `Este orçamento parece ser de outro carro (placa ${placaLida}, o veículo é ${vehicle.plate}). Nada foi lançado — o anexo continua salvo. Se o recibo é deste carro (placa escrita errada), digite a placa abaixo para confirmar.`,
+        ],
+        placaDivergente: placaLida,
+      };
+    }
+    if (plateIdentityKey(confirmada) !== plateIdentityKey(vehicle.plate)) {
+      return {
+        filled,
+        warnings: [`A placa digitada (${confirmada.toUpperCase()}) não é a deste veículo (${vehicle.plate}). Nada foi lançado.`],
+        placaDivergente: placaLida,
+      };
+    }
+    filled.push(`placa confirmada: o recibo diz ${placaLida}, é o ${vehicle.plate}`);
   }
 
   // CANCELAMENTO (a venda não deu certo e a ATPV-e foi cancelada): o
@@ -1193,12 +1225,29 @@ async function applyTransferQuote(input: {
     );
   } else if (cliente) {
     const { houseNameKeys, isOwnName } = await import("@/lib/doc-owner");
-    const paraLoja = isOwnName(cliente, await houseNameKeys());
+    const { nameKey } = await import("@/lib/person-keys");
+    // Para a LOJA (razão social/fantasia): não há destino a acompanhar. Para
+    // um SÓCIO (também "da casa"): é um processo de verdade — ex.: o carro sai
+    // do nome da empresa para o de um sócio, para receber na pessoa física —
+    // e o destino fica guardado até o CRLV no nome dele chegar.
+    const empresa = await prisma.companySettings.findUnique({
+      where: { id: "company" },
+      select: { razaoSocial: true, nomeFantasia: true },
+    });
+    const chavesLoja = [empresa?.razaoSocial, empresa?.nomeFantasia].map((n) => nameKey(n)).filter((k) => k.length >= 4);
+    const paraLoja = isOwnName(cliente, chavesLoja);
+    const paraSocio = !paraLoja && isOwnName(cliente, await houseNameKeys());
     const novo = paraLoja ? null : cliente;
     if (novo !== vehicle.transferToName) {
       await prisma.vehicle.update({ where: { id: vehicle.id }, data: { transferToName: novo } });
     }
-    filled.push(paraLoja ? `transferência para o nome da loja (cliente "${cliente}")` : `transferência para ${cliente}`);
+    filled.push(
+      paraLoja
+        ? `transferência para o nome da loja (cliente "${cliente}")`
+        : paraSocio
+          ? `transferência para o sócio ${cliente} (o processo se encerra quando o CRLV no nome dele for anexado)`
+          : `transferência para ${cliente}`,
+    );
   }
 
   // Valor: total escrito ou, faltando, a soma das linhas.
@@ -1611,7 +1660,11 @@ async function applyTransferQuote(input: {
  * Lê um orçamento de transferência JÁ anexado (botão "Ler e lançar" na ficha):
  * mesma regra do anexo novo, só muda de onde vêm os bytes.
  */
-export async function readTransferQuoteAttachmentAction(attachmentId: string): Promise<AttachmentState> {
+export async function readTransferQuoteAttachmentAction(
+  attachmentId: string,
+  /** Placa digitada confirmando que o recibo é deste carro (placa lida divergente). */
+  placaConfirmada?: string | null,
+): Promise<AttachmentState> {
   try {
     await assertCan("estoque", "orcamento");
   } catch (e) {
@@ -1631,11 +1684,18 @@ export async function readTransferQuoteAttachmentAction(attachmentId: string): P
       attachmentId: att.id,
       buffer: Buffer.from(att.data),
       mimeType: att.mimeType,
+      placaConfirmada: placaConfirmada ?? null,
     });
     revalidatePath(`/estoque/${att.vehicleId}`);
     revalidarTelasDeVeiculo();
     revalidatePath("/financeiro/a-pagar");
-    return { ok: true, filled: read.filled, warnings: read.warnings };
+    return {
+      ok: true,
+      filled: read.filled,
+      warnings: read.warnings,
+      attachmentId: att.id,
+      placaDivergente: read.placaDivergente,
+    };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível ler o orçamento." };
   }
@@ -1688,7 +1748,7 @@ export async function uploadVehicleAttachmentAction(
   // O CRLV é lido DEPOIS de o anexo estar salvo, e a leitura nunca derruba o
   // upload: se a IA falhar, o documento continua anexado e o usuário preenche
   // à mão. Por isso o try/catch só afeta a mensagem devolvida.
-  let read: { filled: string[]; warnings: string[] } = { filled: [], warnings: [] };
+  let read: { filled: string[]; warnings: string[]; placaDivergente?: string } = { filled: [], warnings: [] };
   if (kind === "CRLV") {
     try {
       read = await applyCrlvToVehicle({
@@ -1751,7 +1811,7 @@ export async function uploadVehicleAttachmentAction(
   // defasado até outra revalidação.
   revalidarTelasDeVeiculo();
   revalidatePath("/financeiro/a-pagar");
-  return { ok: true, filled: read.filled, warnings: read.warnings };
+  return { ok: true, filled: read.filled, warnings: read.warnings, attachmentId: attachment.id, placaDivergente: read.placaDivergente };
 }
 
 /**
