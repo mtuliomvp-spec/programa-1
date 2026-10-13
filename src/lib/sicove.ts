@@ -67,11 +67,21 @@ export function lerComprovanteSicove(buffer: Buffer): ComprovanteSicove | null {
   // próprio comunicado e faria um serviço de 24,90 ser cobrado como 11,90.
   const cancelamento =
     /COMPROVANTE DE CANCELAMENTO/i.test(limpo) || /CANCELAMENTO DE COMUNICA/i.test(limpo);
-  const numero = limpo.match(/n[úu]mero\s+(\d{2}\.\d{8}\/\d{2})/i)?.[1] ?? null;
+  // Nº do registro: "sob o número 55.00054580/26" no comunicado; o
+  // comprovante de CANCELAMENTO escreve diferente ("Número do registro:",
+  // "Nº:"), então aceita até 40 caracteres entre a palavra e o número e, por
+  // fim, o primeiro número no formato do registro em qualquer lugar.
+  const numero =
+    limpo.match(/n[úu]mero\s+(\d{2}\.\d{8}\/\d{2})/i)?.[1] ??
+    limpo.match(/(?:n[úu]mero|n[ºo°]|registro|protocolo)[^0-9]{0,40}(\d{2}\.\d{8}\/\d{2})/i)?.[1] ??
+    limpo.match(/\b(\d{2}\.\d{8}\/\d{2})\b/)?.[1] ??
+    null;
   const placa = limpo.match(/Placa:\s*([A-Z0-9]{7})/i)?.[1]?.toUpperCase() ?? null;
   const enviadoEm =
     dataBr(limpo.match(/Data de Envio Base Nacional:\s*([\d/]+)/i)?.[1]) ??
-    dataBr(limpo.match(/Data da Venda:\s*([\d/]+)/i)?.[1]);
+    dataBr(limpo.match(/Data da Venda:\s*([\d/]+)/i)?.[1]) ??
+    // Comprovante de CANCELAMENTO: a data é a do cancelamento.
+    dataBr(limpo.match(/Dt\.?\s*Cancelamento:\s*([\d/]+)/i)?.[1]);
 
   return { tipo: cancelamento ? "CANCELAMENTO" : "COMUNICACAO", numero, placa, enviadoEm };
 }
@@ -227,31 +237,51 @@ export async function lancarCobrancaSicove(input: {
   // comunicação — não há veículo a que atribuir o custo.
   const temFicha = Boolean(vehicle);
 
+  const rotulo = comprovante.tipo === "CANCELAMENTO" ? "Cancelamento" : "Comunicação de venda";
+  const descricao = `${rotulo} (SICOVE) - placa ${placa ?? "sem placa"}`;
+
   // Idempotência pelo número do registro: o mesmo serviço nunca é cobrado duas
-  // vezes, mesmo que o arquivo seja anexado de novo. Sem número (formato
-  // diferente do esperado), não arrisca duplicar.
-  if (!comprovante.numero) {
-    return {
-      ok: false,
-      mensagem:
-        "Comprovante reconhecido, mas sem o número do registro — a cobrança precisa ser lançada à mão.",
-    };
-  }
-  const jaExiste = await prisma.payable.findFirst({
-    where: { documentNumber: comprovante.numero },
-    select: { id: true },
-  });
-  if (jaExiste) {
-    return { ok: false, mensagem: "Este serviço já estava lançado em Contas a pagar." };
+  // vezes, mesmo que o arquivo seja anexado de novo.
+  if (comprovante.numero) {
+    // O comprovante de CANCELAMENTO traz o nº da comunicação cancelada: o
+    // título daquela comunicação (mesmo número) não é este serviço.
+    const jaExiste = await prisma.payable.findFirst({
+      where: {
+        documentNumber: comprovante.numero,
+        ...(comprovante.tipo === "CANCELAMENTO" ? { description: { startsWith: "Cancelamento" } } : {}),
+      },
+      select: { id: true },
+    });
+    if (jaExiste) {
+      return { ok: false, mensagem: "Este serviço já estava lançado em Contas a pagar." };
+    }
+  } else {
+    // Comprovante SEM o número do registro (formato diferente — acontece no
+    // de cancelamento): lança assim mesmo, sem número. A conferência da fatura
+    // casa o título pela placa e grava o número dela. A idempotência, aqui, é
+    // pelo serviço da placa ainda sem número (reanexar não duplica).
+    if (!placa) {
+      return {
+        ok: false,
+        mensagem:
+          "Comprovante reconhecido, mas sem o número do registro nem a placa — a cobrança precisa ser lançada à mão.",
+      };
+    }
+    const jaExiste = await prisma.payable.findFirst({
+      where: { description: descricao, documentNumber: null, status: { not: "PAGO" } },
+      select: { id: true },
+    });
+    if (jaExiste) {
+      return { ok: false, mensagem: "Este serviço já estava lançado em Contas a pagar." };
+    }
   }
 
   const enviadoEm = comprovante.enviadoEm ?? new Date();
   const dueDate = vencimentoDaFatura(enviadoEm, company?.sicoveVencimentoDia || 10);
   const supplierId = await resolveSupplierByName(fornecedor);
-  const rotulo = comprovante.tipo === "CANCELAMENTO" ? "Cancelamento" : "Comunicação de venda";
 
   const titulo = await createManualPayable({
-    description: `${rotulo} (SICOVE) - placa ${placa ?? "sem placa"}`,
+    description: descricao,
     category: "DESPESA_OPERACIONAL",
     categoryLabel: "Comunicação de venda",
     documentNumber: comprovante.numero,
@@ -262,7 +292,7 @@ export async function lancarCobrancaSicove(input: {
     // despesa administrativa, porque não há veículo a que atribuir.
     vehicleId: temFicha ? vehicle!.id : null,
     structuralKey: temFicha ? "VEICULOS" : "ADMINISTRATIVO",
-    notes: `Registro ${comprovante.numero} enviado em ${enviadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Cobrado na fatura mensal da prestadora.${
+    notes: `${comprovante.numero ? `Registro ${comprovante.numero}` : "Comprovante sem o nº do registro (a conferência da fatura grava o número)"} enviado em ${enviadoEm.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" })}. Cobrado na fatura mensal da prestadora.${
       temFicha ? "" : " Veículo não cadastrado no sistema — lançado como despesa administrativa."
     }`,
     alreadyPaid: false,
@@ -277,7 +307,7 @@ export async function lancarCobrancaSicove(input: {
       : "como custo deste veículo";
   return {
     ok: true,
-    mensagem: `${rotulo} reconhecida: título de ${brl} lançado em Contas a pagar, vencendo em ${venc}, ${destino}.`,
+    mensagem: `${rotulo} ${comprovante.tipo === "CANCELAMENTO" ? "reconhecido" : "reconhecida"}: título de ${brl} lançado em Contas a pagar, vencendo em ${venc}, ${destino}.`,
     payableId: titulo.id,
     vehicleId: vehicle?.id ?? null,
     placa,
