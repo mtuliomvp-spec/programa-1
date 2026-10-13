@@ -139,6 +139,9 @@ export async function getMonthlyDre(months = 12): Promise<DreMonth[]> {
         // lançado como entrada "Outros" do movimento de caixa passava a contar
         // como outra receita. Só a parte RETIDA (o par contábil) é receita.
         OR: [{ sinalGroup: null }, { sinalParContabil: true }],
+        // Reembolso de custo de veículo: devolve um gasto do carro (o custo
+        // negativo entra na margem), não é receita.
+        costRefundVehicleId: null,
       },
       select: { amount: true, receivedDate: true },
     }),
@@ -411,12 +414,16 @@ async function profitLossStatement(
         OR: [
           { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } },
           { cardItem: { payable: { status: "PAGO", paymentDate: { gte: rangeStart, lt: rangeEnd } } } },
+          // Reembolso de custo recebido depois da venda (custo NEGATIVO): entra
+          // quando o dinheiro entra, como o pós-venda entra quando é pago.
+          { receivable: { status: "RECEBIDO", receivedDate: { gte: rangeStart, lt: rangeEnd } } },
         ],
       },
       include: {
         vehicle: { select: { brand: true, model: true, plate: true } },
         payable: { select: { paymentDate: true } },
         cardItem: { select: { payable: { select: { paymentDate: true } } } },
+        receivable: { select: { receivedDate: true } },
       },
     }),
     // Outras receitas avulsas: dinheiro que entrou (RECEBIDO) sem ser venda,
@@ -437,6 +444,9 @@ async function profitLossStatement(
         // lançado como entrada "Outros" do movimento de caixa passava a contar
         // como outra receita. Só a parte RETIDA (o par contábil) é receita.
         OR: [{ sinalGroup: null }, { sinalParContabil: true }],
+        // Reembolso de custo de veículo: devolve um gasto do carro (o custo
+        // negativo entra na margem), não é receita.
+        costRefundVehicleId: null,
       },
       select: { id: true, amount: true, receivedDate: true, description: true },
     }),
@@ -676,7 +686,7 @@ async function profitLossStatement(
     posVenda += c.amount;
     entries.push({
       id: `pv-${c.id}`,
-      date: c.payable?.paymentDate ?? c.cardItem?.payable?.paymentDate ?? c.date,
+      date: c.payable?.paymentDate ?? c.cardItem?.payable?.paymentDate ?? c.receivable?.receivedDate ?? c.date,
       kind: "POS_VENDA",
       description: `Pós-venda: ${c.description}`,
       detail: `${c.vehicle.brand} ${c.vehicle.model} · ${c.vehicle.plate}`,
