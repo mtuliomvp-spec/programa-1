@@ -950,6 +950,10 @@ async function applyCrlvToVehicle(input: {
       // Marca manual "em processo de transferência": o CRLV no nome da casa a
       // desliga (o documento é a prova de que o processo acabou).
       transferInProgress: true,
+      // Veículo de terceiro e o destino da transferência: decidem se este
+      // CRLV prova a transferência ao comprador.
+      intermediation: true,
+      transferToName: true,
       // Veículo vendido: o CRLV no nome do COMPRADOR encerra a transferência.
       sale: {
         select: {
@@ -1057,10 +1061,20 @@ async function applyCrlvToVehicle(input: {
     const nossa = isOwnName(proprietario, await houseNameKeys());
     const emissao = parseDataBr(crlv.dataEmissao);
     const doComprador = sameParty(proprietario, crlv.cpfCnpj, vehicle.sale.customer);
+    const doDestino =
+      !!vehicle.transferToName && sameParty(proprietario, null, { name: vehicle.transferToName, document: null });
     const venda = new Date(vehicle.sale.saleDate);
     venda.setUTCHours(0, 0, 0, 0);
     const depoisDaVenda = emissao != null && emissao.getTime() >= venda.getTime();
-    if (!nossa && (doComprador || depoisDaVenda)) {
+    // A data de EMISSÃO do CRLV digital é a do download — ele é reemitido a
+    // qualquer hora, inclusive no dia da venda, ainda no nome do dono
+    // anterior. Por isso ela só vale como prova quando o NOME mudou em
+    // relação ao que a ficha já tinha, e nunca em veículo de terceiro (lá só
+    // o nome do comprador / de quem recebe a transferência prova).
+    const mesmoDonoDeAntes =
+      !!vehicle.docOwnerName && sameParty(proprietario, null, { name: vehicle.docOwnerName, document: null });
+    const provaPelaData = depoisDaVenda && !vehicle.intermediation && !mesmoDonoDeAntes;
+    if (!nossa && (doComprador || doDestino || provaPelaData)) {
       const quando = emissao ?? new Date();
       await prisma.sale.update({ where: { id: vehicle.sale.id }, data: { transferDoneAt: quando } });
       data.transferInProgress = false;

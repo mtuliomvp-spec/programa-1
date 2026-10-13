@@ -138,6 +138,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           docOwnerIsOurs: isOwnName(vehicle.docOwnerName, await houseNameKeys()),
           lastCrlvAt: ultimoCrlv?.createdAt ?? null,
           sale: vehicle.sale,
+          intermediation: vehicle.intermediation,
+          transferToName: vehicle.transferToName,
         })
       : false;
 
