@@ -77,6 +77,10 @@ export function crlvNoNomeDoComprador(v: {
   docOwnerName: string | null;
   docOwnerIsOurs: boolean;
   lastCrlvAt: Date | null;
+  /** Veículo de terceiro (financiamento de terceiros): nunca foi da loja. */
+  intermediation?: boolean;
+  /** Para quem a transferência está sendo feita ("Cliente" do orçamento). */
+  transferToName?: string | null;
   sale: {
     saleDate: Date;
     transferDoneAt: Date | null;
@@ -90,6 +94,13 @@ export function crlvNoNomeDoComprador(v: {
   if (v.status !== "VENDIDO" || !v.sale || v.sale.transferDoneAt) return false;
   if (!v.docOwnerName || v.docOwnerIsOurs) return false;
   if (sameParty(v.docOwnerName, null, v.sale.customer)) return true;
+  if (v.transferToName && sameParty(v.docOwnerName, null, { name: v.transferToName, document: null })) return true;
+  // Veículo de TERCEIRO: só o documento no nome do comprador (ou de quem
+  // recebe a transferência) prova que ela concluiu. Qualquer outro nome é o
+  // dono anterior — que nem sempre é o "vendedor" da operação (o carro pode
+  // estar no nome de um parente dele) — e a data do anexo não prova nada: o
+  // CRLV digital é reemitido a qualquer hora.
+  if (v.intermediation) return false;
   // Documento ainda no nome do VENDEDOR da operação (financiamento de
   // terceiros: o carro nunca foi da loja). Nada foi transferido — e o CRLV
   // dele costuma ser anexado no dia da operação, o que fazia a regra de baixo
@@ -132,6 +143,10 @@ export type VeiculoDocumental = {
   } | null;
   /** Ainda em estoque, mas com pré-venda aberta (conta como "saindo"). */
   preVendido?: boolean;
+  /** Veículo de terceiro (financiamento de terceiros). */
+  intermediation?: boolean;
+  /** Para quem a transferência está sendo feita ("Cliente" do orçamento). */
+  transferToName?: string | null;
 };
 
 export type SituacaoDocumental = {
@@ -187,6 +202,8 @@ export function situacaoDocumental(
     docOwnerIsOurs,
     lastCrlvAt: lastCrlvAt != null ? new Date(lastCrlvAt) : null,
     sale: v.sale,
+    intermediation: v.intermediation,
+    transferToName: v.transferToName,
   });
   // Quando a transferência ao comprador concluiu: a data marcada na venda ou,
   // faltando ela, a do CRLV no nome do comprador.
