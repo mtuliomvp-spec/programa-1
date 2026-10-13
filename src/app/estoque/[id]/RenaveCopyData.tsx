@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 
-export type CampoRenave = { rotulo: string; valor: string | null; dica?: string };
+/** `secao`: título que abre um grupo (ex.: a tela seguinte do formulário). */
+export type CampoRenave = { rotulo: string; valor: string | null; dica?: string; secao?: string };
 
 /**
  * "Copiar dados para o ControlStock": enquanto a integradora não libera a API,
@@ -95,24 +96,29 @@ function Bloco({ titulo, campos }: { titulo: string; campos: CampoRenave[] }) {
       ) : null}
       <ul className="mt-2 divide-y divide-slate-200">
         {campos.map((c) => (
-          <li key={c.rotulo} className="flex items-center justify-between gap-3 py-1.5 text-sm">
-            <span className="min-w-0">
-              <span className="block text-[11px] text-slate-500">{c.rotulo}</span>
-              {c.valor ? (
-                <span className="block break-all font-medium text-slate-900">{c.valor}</span>
-              ) : (
-                <span className="block text-xs font-medium text-amber-700">falta{c.dica ? ` — ${c.dica}` : ""}</span>
-              )}
-            </span>
-            {c.valor ? (
-              <button
-                type="button"
-                onClick={() => copiar(c.rotulo, c.valor!)}
-                className="shrink-0 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
-              >
-                {copiado === c.rotulo ? "✓" : "📋 Copiar"}
-              </button>
+          <li key={c.rotulo} className="py-1.5 text-sm">
+            {c.secao ? (
+              <p className="mb-1 mt-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700">{c.secao}</p>
             ) : null}
+            <div className="flex items-center justify-between gap-3">
+              <span className="min-w-0">
+                <span className="block text-[11px] text-slate-500">{c.rotulo}</span>
+                {c.valor ? (
+                  <span className="block break-all font-medium text-slate-900">{c.valor}</span>
+                ) : (
+                  <span className="block text-xs font-medium text-amber-700">falta{c.dica ? ` — ${c.dica}` : ""}</span>
+                )}
+              </span>
+              {c.valor ? (
+                <button
+                  type="button"
+                  onClick={() => copiar(c.rotulo, c.valor!)}
+                  className="shrink-0 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
+                >
+                  {copiado === c.rotulo ? "✓" : "📋 Copiar"}
+                </button>
+              ) : null}
+            </div>
           </li>
         ))}
       </ul>
