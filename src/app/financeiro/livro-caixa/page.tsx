@@ -200,7 +200,31 @@ export default async function LivroCaixaPage({
     cobertura?: boolean;
     /** Peça da devolução de um sinal: desfaz-se na ficha do veículo. */
     sinal?: boolean;
+    /** Sócio do capital a que o lançamento pertence (e o tipo do movimento). */
+    capital?: { nome: string; tipo: string } | null;
   };
+
+  // Movimentação de capital ligada ao título: diz de QUAL sócio é o dinheiro
+  // (o fornecedor/cliente da linha é só quem recebeu ou pagou — ex.: o Pix foi
+  // para um terceiro, mas é retirada do sócio) e se é aporte, retirada ou
+  // pró-labore. O título pode trazer o sócio direto ou só a movimentação.
+  const movsCapital = await prisma.capitalTransaction.findMany({
+    where: {
+      OR: [
+        { payableId: { in: paidMonth.map((p) => p.id) } },
+        { receivableId: { in: receivedMonth.map((r) => r.id) } },
+      ],
+    },
+    select: { payableId: true, receivableId: true, kind: true, beneficiary: { select: { name: true } } },
+  });
+  const tipoCapital: Record<string, string> = { APORTE: "aporte", RETIRADA: "retirada", PRO_LABORE: "pró-labore" };
+  const capitalPorPagavel = new Map(movsCapital.filter((m) => m.payableId).map((m) => [m.payableId!, m]));
+  const capitalPorRecebivel = new Map(movsCapital.filter((m) => m.receivableId).map((m) => [m.receivableId!, m]));
+  const capitalDaLinha = (
+    mov: { kind: string; beneficiary: { name: string } } | undefined,
+    socio: string | null | undefined,
+    padrao: string,
+  ) => (mov ? { nome: mov.beneficiary.name, tipo: tipoCapital[mov.kind] ?? padrao } : socio ? { nome: socio, tipo: padrao } : null);
 
   const vehicleLabel = (v: { brand: string; model: string; plate: string } | null) =>
     v ? `${v.brand} ${v.model} · ${v.plate}` : null;
@@ -233,6 +257,7 @@ export default async function LivroCaixaPage({
       amount: r.amount,
       cobertura: !!r.capitalCoverGroup,
       sinal: !!r.sinalGroup,
+      capital: capitalDaLinha(capitalPorRecebivel.get(r.id), r.capitalBeneficiary?.name, "aporte"),
       fixable: r.capitalCoverGroup || r.sinalGroup
         ? undefined
         : ({ kind: "entrada", id: r.id, dateInput: toDateInputValue(r.receivedDate!) } as const),
@@ -254,6 +279,7 @@ export default async function LivroCaixaPage({
       href: `/financeiro/a-pagar/${p.id}/ordem`,
       cobertura: !!p.capitalCoverGroup,
       sinal: p.sinalParContabil,
+      capital: capitalDaLinha(capitalPorPagavel.get(p.id), p.capitalBeneficiary?.name, "retirada"),
       fixable: p.capitalCoverGroup || p.sinalParContabil
         ? undefined
         : ({ kind: "saida", id: p.id, dateInput: toDateInputValue(p.paymentDate!) } as const),
@@ -280,6 +306,7 @@ export default async function LivroCaixaPage({
             m.description,
             m.notes,
             m.who,
+            m.capital?.nome,
             m.vehicle,
             m.account,
             m.amount,
@@ -570,7 +597,19 @@ export default async function LivroCaixaPage({
                       <span className="mt-0.5 block text-xs font-normal text-slate-500">{m.notes}</span>
                     ) : null}
                   </Td>
-                  <Td>{m.who}</Td>
+                  <Td>
+                    {m.who}
+                    {m.capital && m.capital.nome !== m.who ? (
+                      <span
+                        className="mt-0.5 block whitespace-nowrap text-[11px] font-medium text-violet-700"
+                        title="Sócio do capital a que este lançamento pertence"
+                      >
+                        💼 {m.capital.nome} · {m.capital.tipo}
+                      </span>
+                    ) : m.capital ? (
+                      <span className="mt-0.5 block text-[11px] font-medium text-violet-700">💼 capital · {m.capital.tipo}</span>
+                    ) : null}
+                  </Td>
                   <Td className="whitespace-nowrap text-slate-600">{m.vehicle || "-"}</Td>
                   <Td className="whitespace-nowrap text-slate-600">{m.account || "-"}</Td>
                   <Td className="text-right tabular-nums text-emerald-600">
