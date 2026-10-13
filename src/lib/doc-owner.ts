@@ -169,6 +169,13 @@ export type SituacaoDocumental = {
   transferDoneByCrlv: boolean;
   soldTransferred: boolean;
   saleTransferPending: boolean;
+  /**
+   * Em estoque, com transferência aberta para um DESTINO nomeado (o "Cliente"
+   * do orçamento — ex.: da loja para o nome de um sócio) e o documento ainda
+   * não no nome dele: o processo está correndo, mesmo o CRLV atual sendo da
+   * casa.
+   */
+  aguardandoDestino: boolean;
 };
 
 /** Descrição do anexo que identifica o orçamento/recibo do despachante. */
@@ -222,6 +229,10 @@ export function situacaoDocumental(
     temOrcamento || Boolean(v.sale?.transferCharged && (v.sale.transferAmount ?? 0) > 0);
 
   const hasCrlv = v.attachments.some((a) => a.kind === "CRLV");
+  const aguardandoDestino =
+    !saindo &&
+    !!v.transferToName &&
+    !(v.docOwnerName && sameParty(v.docOwnerName, null, { name: v.transferToName, document: null }));
 
   return {
     hasCrlv,
@@ -259,7 +270,8 @@ export function situacaoDocumental(
     // ficado ligada desde a compra e ninguém lembra de desligar — o documento
     // novo é a prova. Em carro saindo (vendido/pré-vendido) não vale: ali a
     // transferência que interessa é a que vai para o COMPRADOR.
-    transferConcluded: !saindo && hasCrlv && docOwnerIsOurs,
+    transferConcluded: !saindo && hasCrlv && docOwnerIsOurs && !aguardandoDestino,
+    aguardandoDestino,
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
     // marcada na venda ou provada pelo CRLV no nome do comprador.
     transferDoneAt,
@@ -300,6 +312,7 @@ export function seloCrlv({
   transferConcluded,
   saleTransferPending,
   soldTransferred,
+  aguardandoDestino,
 }: Pick<
   SituacaoDocumental,
   | "hasCrlv"
@@ -310,11 +323,15 @@ export function seloCrlv({
   | "transferConcluded"
   | "saleTransferPending"
   | "soldTransferred"
+  | "aguardandoDestino"
 >): { label: string; tone: "success" | "warning" | "info" } {
   const crlv = `CRLV${year ? ` ${year}` : ""}`;
   // Vendido e já no nome do comprador: processo encerrado, inclusive a marca
   // manual (o CRLV novo é a prova de que a transferência concluiu).
   if (soldTransferred) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
+  // Transferência aberta para um destino nomeado (ex.: da loja para um sócio)
+  // e o documento ainda não no nome dele: em processo.
+  if (aguardandoDestino) return { label: "🔄 Processo de transferência em aberto", tone: "info" };
   // Em estoque com o CRLV já no nosso nome: idem — o documento encerra o
   // processo, mesmo com a marca manual ligada.
   if (transferConcluded) return { label: `✓ Transferido · ${crlv}`, tone: "success" };
