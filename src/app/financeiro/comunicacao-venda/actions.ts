@@ -245,7 +245,7 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
   const [lancados, veiculos, semRegistro] = await Promise.all([
     prisma.payable.findMany({
       where: { documentNumber: { in: numeros } },
-      select: { id: true, documentNumber: true, amount: true },
+      select: { id: true, documentNumber: true, amount: true, description: true },
     }),
     prisma.vehicle.findMany({
       where: { plate: { in: placas } },
@@ -254,14 +254,17 @@ export async function conferirFaturaSicoveAction(formData: FormData): Promise<Co
     }),
     candidatosSemRegistro(placas, supplierId),
   ]);
-  const porNumero = new Map(lancados.map((p) => [p.documentNumber, p]));
+  // O cancelamento leva o nº da comunicação que cancelou: a chave é número +
+  // serviço, senão os dois títulos (comunicação e cancelamento) se confundem.
+  const tipoDoTitulo = (descricao: string) => (/^Cancelamento/i.test(descricao) ? "CANCELAMENTO" : "COMUNICACAO");
+  const porNumero = new Map(lancados.map((p) => [`${p.documentNumber}|${tipoDoTitulo(p.description)}`, p]));
   const porPlacaVeiculo = new Map(veiculos.map((v) => [v.plate.toUpperCase(), v]));
 
   // Casados pela placa (título lançado por fora, sem o nº do registro): a
   // conferência só MOSTRA — o número é gravado na hora de lançar/unificar.
   const usados = new Set<string>();
   const linhas: LinhaConferencia[] = fatura.itens.map((i) => {
-    const porNum = porNumero.get(i.numero);
+    const porNum = porNumero.get(`${i.numero}|${i.tipo}`);
     const adotado = porNum ? null : acharPelaPlaca(i.placa, semRegistro, usados);
     if (adotado) usados.add(adotado.id);
     const titulo = porNum ?? adotado;
@@ -431,7 +434,12 @@ async function lancarItensDaFatura(
     }
     // Idempotência: o número do registro é a identidade do serviço.
     const existe = await prisma.payable.findFirst({
-      where: { documentNumber: item.numero },
+      where: {
+        documentNumber: item.numero,
+        // Cancelamento tem o nº da comunicação cancelada: só o título do
+        // MESMO serviço conta como já lançado.
+        description: item.tipo === "CANCELAMENTO" ? { startsWith: "Cancelamento" } : { not: { startsWith: "Cancelamento" } },
+      },
       select: { id: true },
     });
     if (existe) continue;
