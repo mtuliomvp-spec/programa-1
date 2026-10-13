@@ -18,7 +18,13 @@ type Row = {
   vehicleLabel: string;
   dueDate: string;
   amount: number;
+  /** "0100/2026 · Solicitante" quando o título veio de uma solicitação de compra. */
+  solicitacao: string;
 };
+
+/** Valores especiais do filtro de solicitação de compra. */
+const SO_SOLICITACOES = "__so_solicitacoes__";
+const SEM_SOLICITACAO = "__sem_solicitacao__";
 
 function distinct(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean))).sort((a, b) => a.localeCompare(b, "pt-BR"));
@@ -31,6 +37,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   const [fornecedor, setFornecedor] = useState("");
   const [beneficiario, setBeneficiario] = useState("");
   const [veiculo, setVeiculo] = useState("");
+  const [solicitacao, setSolicitacao] = useState("");
   const [pending, start] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
   // Pagamento PARCIAL por título (opcional): só essa parte entra no combo.
@@ -39,6 +46,7 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
   const supplierOptions = distinct(available.map((r) => r.supplierName));
   const beneficiaryOptions = distinct(available.map((r) => r.beneficiaryName));
   const vehicleOptions = distinct(available.map((r) => r.vehicleLabel));
+  const requestOptions = distinct(available.map((r) => r.solicitacao));
 
   function toggle(id: string) {
     setSelected((prev) => {
@@ -73,12 +81,16 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
     if (fornecedor && r.supplierName !== fornecedor) return false;
     if (beneficiario && r.beneficiaryName !== beneficiario) return false;
     if (veiculo && r.vehicleLabel !== veiculo) return false;
+    if (solicitacao === SO_SOLICITACOES && !r.solicitacao) return false;
+    else if (solicitacao === SEM_SOLICITACAO && r.solicitacao) return false;
+    else if (solicitacao && solicitacao !== SO_SOLICITACOES && solicitacao !== SEM_SOLICITACAO && r.solicitacao !== solicitacao)
+      return false;
     if (nq) {
       // Inclui o valor em várias formas para achar com ou sem ponto de milhar:
       // "R$ 2.000,00", "2000", "2000.00" e "2000,00".
       const valor = `${formatCurrency(r.amount)} ${r.amount} ${r.amount.toFixed(2)} ${r.amount.toFixed(2).replace(".", ",")}`;
       const hay = normalizeSearch(
-        `${r.description} ${r.supplierName} ${r.beneficiaryName} ${r.vehicleLabel} ${valor} ${formatDate(r.dueDate)}`,
+        `${r.description} ${r.supplierName} ${r.beneficiaryName} ${r.vehicleLabel} ${r.solicitacao} ${valor} ${formatDate(r.dueDate)}`,
       );
       // Também compara a query sem ponto de milhar (ex.: "2.000" → "2000").
       if (!hay.includes(nq) && !hay.includes(nq.replace(/\./g, ""))) return false;
@@ -90,7 +102,10 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
     return <p className="px-1 py-3 text-sm text-slate-500">Nenhum título pendente disponível para adicionar.</p>;
   }
 
-  const subtitle = (r: Row) => [r.supplierName || r.beneficiaryName, r.vehicleLabel].filter(Boolean).join(" · ") || "—";
+  const subtitle = (r: Row) =>
+    [r.solicitacao ? `🛒 ${r.solicitacao}` : "", r.supplierName || r.beneficiaryName, r.vehicleLabel]
+      .filter(Boolean)
+      .join(" · ") || "—";
   const selectedTotal = available
     .filter((r) => selected.has(r.id))
     .reduce((s, r) => s + ((parciais[r.id] ?? 0) > 0 ? parciais[r.id] : r.amount), 0);
@@ -134,6 +149,23 @@ export default function AddTitlesToCombo({ comboId, available }: { comboId: stri
           emptyLabel="Todos os veículos"
           className="w-full sm:w-52"
         />
+        {/* Títulos que nasceram de SOLICITAÇÕES DE COMPRA: todos de uma vez,
+            uma solicitação específica (nº · solicitante) ou só os outros. */}
+        {requestOptions.length > 0 ? (
+          <SearchSelect
+            name="filtroSolicitacao"
+            value={solicitacao}
+            onChange={setSolicitacao}
+            options={[
+              { id: SO_SOLICITACOES, label: "🛒 Só solicitações de compra" },
+              { id: SEM_SOLICITACAO, label: "Sem solicitação de compra" },
+              ...requestOptions.map((s) => ({ id: s, label: `🛒 ${s}` })),
+            ]}
+            placeholder="Solicitação de compra…"
+            emptyLabel="Todas as origens"
+            className="w-full sm:w-56"
+          />
+        ) : null}
       </div>
       {shown.length === 0 ? (
         <p className="px-1 py-3 text-sm text-slate-500">Nenhum título encontrado para o filtro.</p>

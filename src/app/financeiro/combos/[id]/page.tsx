@@ -8,7 +8,7 @@ import { getActiveAccounts } from "@/lib/accounts";
 import { getCashboxState } from "@/lib/cashbox";
 import { getCompany } from "@/lib/company";
 import { abatimentoDoCombo } from "@/lib/combo-capital";
-import { formatCurrency, formatDate } from "@/lib/format";
+import { formatCurrency, formatDate, formatRequestNumber } from "@/lib/format";
 import { Badge, Card, LinkButton, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import CompanyDocHeader from "@/components/CompanyDocHeader";
 import CopyBarcode from "@/components/CopyBarcode";
@@ -157,6 +157,7 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
               beneficiaryUser: { select: { name: true } },
               capitalBeneficiary: { select: { name: true } },
               vehicle: { select: { brand: true, model: true, plate: true } },
+              purchaseRequest: { select: { seq: true, year: true, requestedBy: true } },
             },
             take: 500,
           })
@@ -168,6 +169,10 @@ export default async function ComboBorderoPage({ params }: { params: Promise<{ i
           vehicleLabel: p.vehicle ? `${p.vehicle.brand} ${p.vehicle.model} · ${p.vehicle.plate}` : "",
           dueDate: p.dueDate.toISOString(),
           amount: p.amount,
+          // Título nascido de uma solicitação de compra: nº e solicitante.
+          solicitacao: p.purchaseRequest
+            ? `${formatRequestNumber(p.purchaseRequest.seq, p.purchaseRequest.year)} · ${p.purchaseRequest.requestedBy}`
+            : "",
         }))
       : [];
 
