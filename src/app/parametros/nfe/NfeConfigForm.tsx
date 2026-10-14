@@ -159,6 +159,13 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
               cilindrada). Sempre dá para trocar na hora de emitir.
             </Dica>
           </Field>
+          <Field label="NCM das picapes médias/grandes (8704)">
+            <Input name="ncmPicape" defaultValue={formatarNcm(config.ncmPicape)} placeholder="8704.xx.xx" />
+            <Dica>
+              Hilux, S10, Ranger, Toro e similares (carga acima de 1 t). Picape compacta (Strada, Saveiro, Montana)
+              fica na 8703 pela cilindrada.
+            </Dica>
+          </Field>
           <Field label="CST / CSOSN do ICMS">
             <Input name="icmsCst" defaultValue={config.icmsCst} placeholder="Ex.: 20 (normal) ou 102 (Simples)" />
             <Dica>CST no regime normal; CSOSN no Simples Nacional.</Dica>

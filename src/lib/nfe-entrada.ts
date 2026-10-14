@@ -1,4 +1,4 @@
-import { cfopDaOperacao, ncmSugerido, pendenciasNfe, regraVigente, type NfeConfig } from "@/lib/nfe-config";
+import { cfopDaOperacao, ncmDoVeiculo, pendenciasNfe, regraVigente, type NfeConfig } from "@/lib/nfe-config";
 import { faltasEnderecoNfe, type Endereco } from "@/lib/endereco";
 
 /**
@@ -233,8 +233,9 @@ function montar(
     }
   }
 
-  const ncm = dig(i.ncm || ncmSugerido(v).ncm || cfg.ncmPadrao);
-  if (ncm.length !== 8) faltas.push("NCM do veículo (8 dígitos).");
+  const ncmAuto = ncmDoVeiculo(cfg, v);
+  const ncm = dig(i.ncm || ncmAuto.ncm);
+  if (ncm.length !== 8) faltas.push(`NCM do veículo (8 dígitos) — ${ncmAuto.motivo}.`);
 
   const regra = regraVigente(cfg, i.agora, o.consignado);
   const icms: Record<string, unknown> = { icms_origem: 0, icms_situacao_tributaria: regra.icmsCst };
