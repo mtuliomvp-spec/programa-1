@@ -65,6 +65,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
                 📝 Contrato de compra (consignante)
               </LinkButton>
             ) : null}
+            {sale.status === "CONCLUIDA" && !sale.vehicle.intermediation ? (
+              <LinkButton href={`/estoque/${sale.vehicleId}#nfe`} variant="secondary">
+                🧾 Nota fiscal (NF-e)
+              </LinkButton>
+            ) : null}
             {sale.tradeInVehicle ? (
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca

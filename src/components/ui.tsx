@@ -2,9 +2,9 @@ import type { ButtonHTMLAttributes, InputHTMLAttributes, LabelHTMLAttributes, Re
 import Link from "next/link";
 import clsx from "@/lib/clsx";
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
+export function Card({ children, className, id }: { children: ReactNode; className?: string; id?: string }) {
   return (
-    <div className={clsx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>
+    <div id={id} className={clsx("rounded-xl border border-slate-200 bg-white shadow-sm", className)}>
       {children}
     </div>
   );

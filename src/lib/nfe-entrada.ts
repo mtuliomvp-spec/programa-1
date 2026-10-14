@@ -2,14 +2,15 @@ import { cfopDaOperacao, pendenciasNfe, regraVigente, type NfeConfig } from "@/l
 import { faltasEnderecoNfe, type Endereco } from "@/lib/endereco";
 
 /**
- * Monta a NF-e de ENTRADA (compra do veículo usado) no formato da Focus NFe.
+ * Monta a NF-e do veículo usado no formato da Focus NFe:
+ *  - ENTRADA (compra, tipo_documento 0): o "destinatário" da nota é quem
+ *    vendeu o carro (o fornecedor);
+ *  - SAÍDA (venda, tipo_documento 1): o destinatário é o comprador (cliente).
+ * Emitente: os dados ficam no cadastro da empresa no painel da Focus —
+ * mandamos só o CNPJ e o regime vigente (o regime vem daqui porque a mudança
+ * agendada vale no dia exato).
  *
- * A loja emite a nota da própria compra (tipo_documento 0): o "destinatário"
- * da nota é quem vendeu o carro (o fornecedor). Emitente: os dados ficam no
- * cadastro da empresa no painel da Focus — mandamos só o CNPJ e o regime
- * vigente (o regime vem daqui porque a mudança agendada vale no dia exato).
- *
- * Função pura: recebe tudo pronto e devolve o payload ou o que falta.
+ * Funções puras: recebem tudo pronto e devolvem o payload ou o que falta.
  */
 
 export const NOME_HOMOLOGACAO = "NF-E EMITIDA EM AMBIENTE DE HOMOLOGACAO - SEM VALOR FISCAL";
@@ -39,16 +40,25 @@ export type VendedorNfe = {
   inscricaoEstadual?: string | null;
 };
 
-export type EntradaInput = {
+type Comum = {
   cfg: NfeConfig;
   empresa: { cnpj: string | null; inscricaoEstadual: string | null; uf: string | null };
   veiculo: VeiculoNfe;
-  vendedor: VendedorNfe | null;
   agora: Date;
   /** Ajustes feitos na tela antes de emitir. */
   ncm?: string;
   descricao?: string;
   informacoes?: string;
+};
+
+export type EntradaInput = Comum & { vendedor: VendedorNfe | null };
+
+export type SaidaInput = Comum & {
+  /** Comprador (cliente da venda). */
+  comprador: VendedorNfe | null;
+  venda: { status: string; totalAmount: number; consigned: boolean } | null;
+  /** Valor da nota ajustado na tela (padrão: valor da venda). */
+  valor?: number;
 };
 
 export type EntradaResultado =
@@ -125,9 +135,65 @@ export function indicadorIe(doc: string, ie: string | null | undefined): Record<
   return { indicador_inscricao_estadual_destinatario: 9 };
 }
 
+/** Empresa com IE (número) é contribuinte do ICMS. */
+function ieContribuinte(doc: string, ie: string | null | undefined): boolean {
+  return doc.length === 14 && !!ie && !/^ISENT/i.test(ie) && dig(ie).length >= 2;
+}
+
 export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
-  const { cfg, empresa, veiculo: v, vendedor } = i;
   const faltas: string[] = [];
+  const v = i.veiculo;
+  if (v.intermediation) faltas.push("Veículo de intermediação não tem nota de entrada da loja.");
+  if (v.consigned) faltas.push("Veículo consignado: a nota de entrada de consignação ainda não está configurada.");
+  if (!(v.purchasePrice > 0)) faltas.push("Valor da compra do veículo.");
+  return montar(i, {
+    tipo: "ENTRADA",
+    pessoa: i.vendedor,
+    papel: "fornecedor",
+    semPessoa: "Fornecedor (quem vendeu o carro) no cadastro do veículo.",
+    valor: v.purchasePrice,
+    consignado: v.consigned,
+    faltas,
+  });
+}
+
+export function montarNfeSaida(i: SaidaInput): EntradaResultado {
+  const faltas: string[] = [];
+  const v = i.veiculo;
+  const consignado = !!i.venda?.consigned || v.consigned;
+  if (v.intermediation) faltas.push("Intermediação (financiamento de terceiros) não tem nota de venda da loja.");
+  if (!i.venda) faltas.push("Venda registrada para este veículo.");
+  else if (i.venda.status === "CANCELADA") faltas.push("A venda deste veículo está cancelada.");
+  if (consignado) faltas.push("Venda de veículo consignado: a nota de consignação ainda não está configurada.");
+  const valor = i.valor ?? i.venda?.totalAmount ?? 0;
+  if (!(valor > 0)) faltas.push("Valor da venda.");
+  return montar(i, {
+    tipo: "SAIDA",
+    pessoa: i.comprador,
+    papel: "cliente",
+    semPessoa: "Cliente (comprador) na venda.",
+    valor,
+    consignado,
+    faltas,
+  });
+}
+
+function montar(
+  i: Comum,
+  o: {
+    tipo: "ENTRADA" | "SAIDA";
+    pessoa: VendedorNfe | null;
+    papel: "fornecedor" | "cliente";
+    semPessoa: string;
+    valor: number;
+    consignado: boolean;
+    faltas: string[];
+  },
+): EntradaResultado {
+  const { cfg, empresa, veiculo: v } = i;
+  const vendedor = o.pessoa;
+  const faltas = o.faltas;
+  const entrada = o.tipo === "ENTRADA";
 
   // Configuração (o que é de emissão; provedor/certificado/credenciamento a
   // própria Focus recusa se faltar).
@@ -139,27 +205,26 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
   );
   faltas.push(...doConfig.map((p) => `Configuração da NF-e: ${p}`));
 
-  if (v.intermediation) faltas.push("Veículo de intermediação não tem nota de entrada da loja.");
-  if (v.consigned) faltas.push("Veículo consignado: a nota de entrada de consignação ainda não está configurada.");
-  if (!(v.purchasePrice > 0)) faltas.push("Valor da compra do veículo.");
   if (!v.chassi?.trim()) faltas.push("Chassi do veículo (Editar veículo).");
   if (!dig(v.renavam)) faltas.push("RENAVAM do veículo (Editar veículo).");
 
   if (!vendedor) {
-    faltas.push("Fornecedor (quem vendeu o carro) no cadastro do veículo.");
+    faltas.push(o.semPessoa);
   } else {
     const doc = dig(vendedor.document);
-    if (doc.length !== 11 && doc.length !== 14) faltas.push(`CPF/CNPJ do fornecedor ${vendedor.name}.`);
+    if (doc.length !== 11 && doc.length !== 14) faltas.push(`CPF/CNPJ do ${o.papel} ${vendedor.name}.`);
     const fe = faltasEnderecoNfe(vendedor.endereco);
-    if (fe.length) faltas.push(`Endereço do fornecedor ${vendedor.name}: ${fe.join(", ")} (cadastro do fornecedor).`);
+    if (fe.length) {
+      faltas.push(`Endereço do ${o.papel} ${vendedor.name}: ${fe.join(", ")} (cadastro do ${o.papel}).`);
+    }
   }
 
   const ncm = dig(i.ncm || cfg.ncmPadrao);
   if (ncm.length !== 8) faltas.push("NCM do veículo (8 dígitos).");
 
-  const regra = regraVigente(cfg, i.agora, v.consigned);
+  const regra = regraVigente(cfg, i.agora, o.consignado);
   const icms: Record<string, unknown> = { icms_origem: 0, icms_situacao_tributaria: regra.icmsCst };
-  const valor = r2(v.purchasePrice);
+  const valor = r2(o.valor);
   if (["00", "20"].includes(regra.icmsCst)) {
     const reducao = regra.icmsCst === "20" ? num(regra.icmsReducaoBase || "0") : 0;
     const aliquota = num(regra.icmsAliquota || "");
@@ -184,19 +249,22 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
 
   const end = vendedor.endereco!;
   const doc = dig(vendedor.document);
-  const cfop = cfopDaOperacao(cfg, "entrada", empresa.uf, end.uf);
+  const cfop = cfopDaOperacao(cfg, entrada ? "entrada" : "saida", empresa.uf, end.uf);
   const interestadual = !!empresa.uf && end.uf !== empresa.uf.trim().toUpperCase();
   const descricao = (i.descricao?.trim() || descricaoVeiculo(v)).toUpperCase().slice(0, 120);
   const homologacao = cfg.ambiente !== "PRODUCAO";
   const informacoes = [i.informacoes?.trim(), cfg.informacoesComplementares.trim()].filter(Boolean).join(" ");
 
   const payload: Record<string, unknown> = {
-    natureza_operacao: cfg.naturezaEntrada || "Compra para comercialização",
+    natureza_operacao: entrada
+      ? cfg.naturezaEntrada || "Compra para comercialização"
+      : cfg.naturezaSaida || "Venda de mercadoria adquirida de terceiros",
     data_emissao: dataHoraSefaz(i.agora),
-    tipo_documento: 0,
+    tipo_documento: entrada ? 0 : 1,
     local_destino: interestadual ? 2 : 1,
     finalidade_emissao: 1,
-    consumidor_final: 1,
+    // Venda a empresa contribuinte (com IE) não é a consumidor final.
+    consumidor_final: !entrada && ieContribuinte(doc, vendedor.inscricaoEstadual) ? 0 : 1,
     presenca_comprador: 1,
     cnpj_emitente: dig(empresa.cnpj),
     regime_tributario_emitente: Number(regra.regime),

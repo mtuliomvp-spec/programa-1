@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { atualizarNfeAction, cancelarNfeAction, emitirNfeEntradaAction } from "../nfe-actions";
+import { atualizarNfeAction, cancelarNfeAction, emitirNfeEntradaAction, emitirNfeSaidaAction } from "../nfe-actions";
 
 export type NotaResumo = {
   id: string;
@@ -50,6 +50,7 @@ export default function VehicleNfe({
   ambiente,
   notas,
   entrada,
+  saida,
   canEmitir,
   canCancelar,
 }: {
@@ -57,14 +58,15 @@ export default function VehicleNfe({
   ambiente: string;
   notas: NotaResumo[];
   entrada: EntradaPrevia | null;
+  /** Prévia da nota de venda — só quando o veículo tem venda registrada. */
+  saida: EntradaPrevia | null;
   canEmitir: boolean;
   canCancelar: boolean;
 }) {
   const router = useRouter();
   const homologacao = ambiente !== "PRODUCAO";
-  const entradaValida = notas.some(
-    (n) => n.tipo === "ENTRADA" && n.ambiente === ambiente && ["PROCESSANDO", "AUTORIZADA"].includes(n.status),
-  );
+  const valida = (tipo: string) =>
+    notas.some((n) => n.tipo === tipo && n.ambiente === ambiente && ["PROCESSANDO", "AUTORIZADA"].includes(n.status));
 
   // Enquanto houver nota em processamento, pergunta à Focus a cada 4 s (até ~1 min).
   const processando = notas.filter((n) => n.status === "PROCESSANDO").map((n) => n.id);
@@ -105,7 +107,12 @@ export default function VehicleNfe({
         <p className="text-sm text-slate-500">Nenhuma nota emitida pelo sistema para este veículo.</p>
       )}
 
-      {entrada && canEmitir && !entradaValida ? <EmitirEntrada vehicleId={vehicleId} previa={entrada} homologacao={homologacao} /> : null}
+      {entrada && canEmitir && !valida("ENTRADA") ? (
+        <EmitirNota tipo="ENTRADA" vehicleId={vehicleId} previa={entrada} homologacao={homologacao} />
+      ) : null}
+      {saida && canEmitir && !valida("SAIDA") ? (
+        <EmitirNota tipo="SAIDA" vehicleId={vehicleId} previa={saida} homologacao={homologacao} />
+      ) : null}
     </div>
   );
 }
@@ -228,7 +235,20 @@ function NotaLinha({
   );
 }
 
-function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; previa: EntradaPrevia; homologacao: boolean }) {
+function EmitirNota({
+  tipo,
+  vehicleId,
+  previa,
+  homologacao,
+}: {
+  tipo: "ENTRADA" | "SAIDA";
+  vehicleId: string;
+  previa: EntradaPrevia;
+  homologacao: boolean;
+}) {
+  const entrada = tipo === "ENTRADA";
+  const nome = entrada ? "entrada" : "saída";
+  const [valor, setValor] = useState(previa.valor.toFixed(2).replace(".", ","));
   const router = useRouter();
   const [pending, start] = useTransition();
   const [aberto, setAberto] = useState(false);
@@ -240,7 +260,13 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
   function emitir() {
     setErro(null);
     start(async () => {
-      const r = await emitirNfeEntradaAction(vehicleId, { descricao, ncm, informacoes });
+      const ajustes = { descricao, ncm, informacoes };
+      const r = entrada
+        ? await emitirNfeEntradaAction(vehicleId, ajustes)
+        : await emitirNfeSaidaAction(vehicleId, {
+            ...ajustes,
+            valor: Number(valor.replace(/\./g, "").replace(",", ".")) || undefined,
+          });
       if (!r.ok) {
         setErro({ msg: r.error || "Não foi possível emitir.", faltas: r.faltas });
         return;
@@ -253,7 +279,7 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
   if (previa.faltas.length) {
     return (
       <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm">
-        <p className="font-semibold text-amber-900">Para emitir a NF-e de entrada, falta:</p>
+        <p className="font-semibold text-amber-900">Para emitir a NF-e de {nome}, falta:</p>
         <ul className="mt-1 list-inside list-disc space-y-0.5 text-xs text-amber-800">
           {previa.faltas.map((f) => (
             <li key={f}>{f}</li>
@@ -263,7 +289,16 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
     );
   }
 
-  const avisoEmpresa = previa.vendedorEmpresa ? (
+  const avisoEmpresa = !entrada ? (
+    previa.vendedorEmpresa ? (
+      <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+        Comprador empresa — IE: <strong>{previa.vendedorIe || "não informada"}</strong>
+        {previa.vendedorIe
+          ? ""
+          : ". Se a empresa tem inscrição estadual, informe no cadastro do cliente (a SEFAZ exige)."}
+      </p>
+    ) : null
+  ) : previa.vendedorEmpresa ? (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
       <p className="font-semibold">Compra de empresa (CNPJ)</p>
       <p className="mt-0.5">
@@ -288,7 +323,8 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
           onClick={() => setAberto(true)}
           className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700"
         >
-          🧾 Emitir NF-e de entrada{homologacao ? " (teste)" : ""}
+          🧾 Emitir NF-e de {nome}
+          {homologacao ? " (teste)" : ""}
         </button>
       </div>
     );
@@ -296,11 +332,33 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
 
   return (
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
-      <p className="font-semibold text-slate-900">NF-e de entrada — compra do veículo</p>
-      <p className="text-xs text-slate-600">
-        Vendedor: <strong>{previa.vendedor}</strong> · Valor: <strong>{brl(previa.valor)}</strong> · CFOP{" "}
-        <strong>{previa.cfop}</strong>
+      <p className="font-semibold text-slate-900">
+        NF-e de {nome} — {entrada ? "compra" : "venda"} do veículo
       </p>
+      <p className="text-xs text-slate-600">
+        {entrada ? "Vendedor" : "Comprador"}: <strong>{previa.vendedor}</strong>
+        {entrada ? (
+          <>
+            {" "}
+            · Valor: <strong>{brl(previa.valor)}</strong>
+          </>
+        ) : null}{" "}
+        · CFOP <strong>{previa.cfop}</strong>
+      </p>
+      {!entrada ? (
+        <label className="block max-w-[220px]">
+          <span className="text-xs text-slate-500">Valor da nota (R$)</span>
+          <input
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            inputMode="decimal"
+            className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
+          />
+          <span className="mt-0.5 block text-[11px] text-slate-500">
+            Valor da venda ({brl(previa.valor)}). Ajuste só se o contador orientar.
+          </span>
+        </label>
+      ) : null}
       <label className="block">
         <span className="text-xs text-slate-500">Descrição do item</span>
         <input value={descricao} onChange={(e) => setDescricao(e.target.value)} maxLength={120} className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
