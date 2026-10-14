@@ -56,6 +56,12 @@ function dataHoraDps(d: Date): string {
   return `${v("year")}-${v("month")}-${v("day")}T${v("hour")}:${v("minute")}:${v("second")}-0300`;
 }
 
+/** "6,5" → 6.5; vazio ou inválido → 0. */
+function percentualSimples(v: string): number {
+  const n = Number(v.replace(",", "."));
+  return Number.isFinite(n) && n >= 0 && n < 100 ? Math.round(n * 100) / 100 : 0;
+}
+
 export function montarNfse(i: NfseInput): NfseResultado {
   const { cfg, tomador } = i;
   const faltas: string[] = [];
@@ -123,10 +129,10 @@ export function montarNfse(i: NfseInput): NfseResultado {
     valor_servico: Math.round(i.valor * 100) / 100,
     tributacao_iss: 1,
     tipo_retencao_iss: cfg.nfseIssRetido ? 2 : 1,
-    // Totais aproximados dos tributos (Lei 12.741): a loja não informa
-    // (o DANFSe sai com "-", como nas notas que já emitia). Sem o grupo, o
-    // Ambiente Nacional recusa o XML.
-    indicador_total_tributacao: 0,
+    // Totais aproximados dos tributos (Lei 12.741). Sem o grupo o XML é
+    // recusado; para ME/EPP o "não informar" (indTotTrib) também é (E0712) —
+    // vai o percentual aproximado do Simples.
+    percentual_total_tributos_simples_nacional: percentualSimples(cfg.nfsePercentualSimples),
     ...(i.informacoes?.trim() ? { informacoes_complementares: i.informacoes.trim().slice(0, 2000) } : {}),
   };
   return { ok: true, payload };

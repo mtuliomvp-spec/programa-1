@@ -55,6 +55,7 @@ export async function saveNfeConfigAction(_prev: NfeConfigState, formData: FormD
     nfseNbs: f("nfseNbs").replace(/\D/g, "").slice(0, 9) || "109051100",
     nfseMunicipioIbge: f("nfseMunicipioIbge").replace(/\D/g, "").slice(0, 7) || "2111300",
     nfseIssRetido: f("nfseIssRetido") === "true",
+    nfsePercentualSimples: f("nfsePercentualSimples").slice(0, 6),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const erroPis = erroCstPisCofins(parsed.data.pisCofinsCst) || erroCstPisCofins(parsed.data.pisCofinsCstNovo);
