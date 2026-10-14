@@ -68,6 +68,9 @@ export function montarNfse(i: NfseInput): NfseResultado {
   if (regra.regime === "3") {
     faltas.push("NFS-e no regime normal (Lucro Presumido) ainda não está configurada — fale com o suporte.");
   }
+  if (!dig(cfg.nfseInscricaoMunicipal)) {
+    faltas.push("Inscrição municipal da loja (Parâmetros → Nota fiscal → NFS-e).");
+  }
   if (dig(cfg.nfseCodigoTributacao).length !== 6) faltas.push("Código de tributação nacional do serviço (6 dígitos).");
   if (dig(cfg.nfseMunicipioIbge).length !== 7) faltas.push("Município da prestação (código IBGE).");
 
@@ -104,6 +107,7 @@ export function montarNfse(i: NfseInput): NfseResultado {
     emitente_dps: 1,
     codigo_municipio_emissora: Number(dig(cfg.nfseMunicipioIbge)),
     cnpj_prestador: cnpj,
+    inscricao_municipal_prestador: dig(cfg.nfseInscricaoMunicipal).slice(0, 15),
     // 3 = optante ME/EPP; 1 = apuração dos tributos federais e municipal pelo SN.
     codigo_opcao_simples_nacional: 3,
     regime_tributario_simples_nacional: 1,

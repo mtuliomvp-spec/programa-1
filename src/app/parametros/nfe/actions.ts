@@ -50,6 +50,11 @@ export async function saveNfeConfigAction(_prev: NfeConfigState, formData: FormD
     icmsReducaoBaseNovo: f("icmsReducaoBaseNovo").slice(0, 10),
     icmsAliquotaNovo: f("icmsAliquotaNovo").slice(0, 10),
     pisCofinsCstNovo: f("pisCofinsCstNovo").slice(0, 10),
+    nfseInscricaoMunicipal: f("nfseInscricaoMunicipal").replace(/\D/g, "").slice(0, 15),
+    nfseCodigoTributacao: f("nfseCodigoTributacao").replace(/\D/g, "").slice(0, 6) || "100202",
+    nfseNbs: f("nfseNbs").replace(/\D/g, "").slice(0, 9) || "109051100",
+    nfseMunicipioIbge: f("nfseMunicipioIbge").replace(/\D/g, "").slice(0, 7) || "2111300",
+    nfseIssRetido: f("nfseIssRetido") === "true",
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   const erroPis = erroCstPisCofins(parsed.data.pisCofinsCst) || erroCstPisCofins(parsed.data.pisCofinsCstNovo);
