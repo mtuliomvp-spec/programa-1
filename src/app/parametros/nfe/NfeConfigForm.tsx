@@ -123,9 +123,13 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
             <Input name="icmsCst" defaultValue={config.icmsCst} placeholder="Ex.: 20 (normal) ou 102 (Simples)" />
             <Dica>CST no regime normal; CSOSN no Simples Nacional.</Dica>
           </Field>
+          <Field label="CST / CSOSN na consignação (se diferente)">
+            <Input name="icmsCstConsignacao" defaultValue={config.icmsCstConsignacao} placeholder="Ex.: 900" />
+            <Dica>Vazio = usa o mesmo código acima.</Dica>
+          </Field>
           <Field label="Redução da base do ICMS (%)">
             <Input name="icmsReducaoBase" defaultValue={config.icmsReducaoBase} inputMode="decimal" />
-            <Dica>Veículo usado costuma ter base reduzida — o percentual vem do contador.</Dica>
+            <Dica>Só no regime normal (no Simples com CSOSN 102 não há destaque de ICMS).</Dica>
           </Field>
           <Field label="Alíquota do ICMS (%)">
             <Input name="icmsAliquota" defaultValue={config.icmsAliquota} inputMode="decimal" />
@@ -138,6 +142,44 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
           <Textarea name="informacoesComplementares" rows={3} defaultValue={config.informacoesComplementares} />
           <Dica>Ex.: base legal da redução do ICMS, se o contador pedir.</Dica>
         </Field>
+      </fieldset>
+
+      <fieldset className="space-y-4">
+        <legend className="text-sm font-semibold text-slate-900">Mudança de regime agendada</legend>
+        <p className="text-xs text-slate-500">
+          A partir da data, as notas saem sozinhas com a regra nova — não é preciso trocar nada no dia.
+        </p>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Novo regime">
+            <Select name="regimeNovo" defaultValue={config.regimeNovo ?? ""}>
+              <option value="">— sem mudança prevista —</option>
+              {NFE_REGIMES.map((r) => (
+                <option key={r} value={r}>
+                  {r} — {nfeRegimeLabel[r]}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="A partir de">
+            <Input type="date" name="regimeNovoDesde" defaultValue={config.regimeNovoDesde} />
+          </Field>
+          <Field label="CST / CSOSN do ICMS no novo regime">
+            <Input name="icmsCstNovo" defaultValue={config.icmsCstNovo} placeholder="Regime normal: 2 dígitos (ex.: 20)" />
+          </Field>
+          <Field label="CST / CSOSN na consignação (novo regime)">
+            <Input name="icmsCstConsignacaoNovo" defaultValue={config.icmsCstConsignacaoNovo} />
+            <Dica>Vazio = usa o mesmo código ao lado.</Dica>
+          </Field>
+          <Field label="Redução da base do ICMS (%)">
+            <Input name="icmsReducaoBaseNovo" defaultValue={config.icmsReducaoBaseNovo} inputMode="decimal" />
+          </Field>
+          <Field label="Alíquota do ICMS (%)">
+            <Input name="icmsAliquotaNovo" defaultValue={config.icmsAliquotaNovo} inputMode="decimal" />
+          </Field>
+          <Field label="CST do PIS/COFINS (novo regime)">
+            <Input name="pisCofinsCstNovo" defaultValue={config.pisCofinsCstNovo} />
+          </Field>
+        </div>
       </fieldset>
 
       {state.error ? <p className="text-sm font-medium text-rose-600">{state.error}</p> : null}

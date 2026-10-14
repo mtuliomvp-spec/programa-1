@@ -35,6 +35,14 @@ export async function saveNfeConfigAction(_prev: NfeConfigState, formData: FormD
     icmsAliquota: f("icmsAliquota").slice(0, 10),
     pisCofinsCst: f("pisCofinsCst").slice(0, 10),
     informacoesComplementares: f("informacoesComplementares").slice(0, 2000),
+    icmsCstConsignacao: f("icmsCstConsignacao").slice(0, 10),
+    regimeNovo: f("regimeNovo") || null,
+    regimeNovoDesde: /^\d{4}-\d{2}-\d{2}$/.test(f("regimeNovoDesde")) ? f("regimeNovoDesde") : "",
+    icmsCstNovo: f("icmsCstNovo").slice(0, 10),
+    icmsCstConsignacaoNovo: f("icmsCstConsignacaoNovo").slice(0, 10),
+    icmsReducaoBaseNovo: f("icmsReducaoBaseNovo").slice(0, 10),
+    icmsAliquotaNovo: f("icmsAliquotaNovo").slice(0, 10),
+    pisCofinsCstNovo: f("pisCofinsCstNovo").slice(0, 10),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
 
