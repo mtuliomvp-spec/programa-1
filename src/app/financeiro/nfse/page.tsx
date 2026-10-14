@@ -4,7 +4,7 @@ import { requireModule, userCan } from "@/lib/guards";
 import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
-import NfsePainel, { type NotaServicoResumo, type TomadorOpcao } from "./NfsePainel";
+import NfsePainel, { type FinanceiraOpcao, type NotaServicoResumo } from "./NfsePainel";
 
 export const dynamic = "force-dynamic";
 
@@ -15,23 +15,27 @@ export const dynamic = "force-dynamic";
  */
 export default async function NfsePage() {
   await requireModule("financeiro");
-  const [canEmitir, canCancelar, company, notas, clientes] = await Promise.all([
+  const [canEmitir, canCancelar, company, notas, contas] = await Promise.all([
     userCan("financeiro", "nfse"),
     userCan("financeiro", "nfsecancelar"),
     getCompany(),
     prisma.notaServico.findMany({ orderBy: { createdAt: "desc" }, take: 200 }),
-    prisma.customer.findMany({
-      where: { document: { not: null } },
-      select: { id: true, name: true, document: true },
+    prisma.financialAccount.findMany({
+      where: { type: "FINANCEIRA", active: true },
+      select: { id: true, name: true, nfseTomador: { select: { name: true, document: true } } },
       orderBy: { name: "asc" },
     }),
   ]);
   const cfg = lerNfeConfig(company.nfeConfig);
 
-  // Tomador da comissão é banco/seguradora: só cadastros com CNPJ.
-  const tomadores: TomadorOpcao[] = clientes
-    .filter((c) => (c.document ?? "").replace(/\D/g, "").length === 14)
-    .map((c) => ({ id: c.id, name: c.name, document: c.document ?? "" }));
+  // Tomador = as financeiras de Contas e caixas; o CNPJ/razão social vêm do
+  // cadastro fiscal ligado a cada uma (pedido na primeira emissão).
+  const financeiras: FinanceiraOpcao[] = contas.map((c) => ({
+    id: c.id,
+    name: c.name,
+    tomadorNome: c.nfseTomador?.name ?? null,
+    tomadorDocumento: c.nfseTomador?.document ?? null,
+  }));
 
   const resumo: NotaServicoResumo[] = notas.map((n) => ({
     id: n.id,
@@ -73,22 +77,22 @@ export default async function NfsePage() {
       <Card>
         <CardHeader
           title="Emitir e acompanhar"
-          description="Tomador = o banco/seguradora (cadastrado como cliente, pelo CNPJ)"
+          description="Tomador = a financeira (Contas e caixas). Na primeira nota de cada uma, o sistema pede o CNPJ"
         />
         <NfsePainel
           notas={resumo}
-          tomadores={tomadores}
+          financeiras={financeiras}
           canEmitir={canEmitir}
           canCancelar={canCancelar}
           homologacao={cfg.ambiente !== "PRODUCAO"}
         />
       </Card>
       <p className="mt-3 text-xs text-slate-500">
-        Banco que não aparece na lista?{" "}
-        <Link href="/clientes/novo" className="font-medium text-blue-700 hover:underline">
-          Cadastre como cliente
+        Financeira que não aparece na lista?{" "}
+        <Link href="/financeiro/contas" className="font-medium text-blue-700 hover:underline">
+          Cadastre em Contas e caixas
         </Link>{" "}
-        com o CNPJ — o botão “Buscar dados pelo CNPJ” traz razão social e endereço.
+        com o tipo “Financeira”.
       </p>
     </div>
   );
