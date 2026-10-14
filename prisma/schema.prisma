@@ -2093,6 +2093,11 @@ model CompanySettings {
    * Dia do vencimento do boleto mensal da prestadora (padrão 10).
    */
   sicoveVencimentoDia     Int?
+  // Nota fiscal (NF-e) emitida pelo sistema: provedor, ambiente e a regra
+  // fiscal que o contador definiu (CFOP de entrada/saída, CST/CSOSN, alíquotas).
+  // Formato em src/lib/nfe-config.ts. O token do provedor NÃO fica aqui — vai
+  // em variável de ambiente.
+  nfeConfig               Json      @default("{}")
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
