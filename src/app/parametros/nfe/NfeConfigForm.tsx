@@ -214,6 +214,10 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
             <Input name="nfseMunicipioIbge" defaultValue={config.nfseMunicipioIbge} />
             <Dica>2111300 = São Luís/MA.</Dica>
           </Field>
+          <Field label="Tributos aproximados no Simples (%)">
+            <Input name="nfsePercentualSimples" defaultValue={config.nfsePercentualSimples} inputMode="decimal" placeholder="Ex.: 6" />
+            <Dica>Alíquota efetiva aproximada do Simples (Lei 12.741) — o contador informa. Vazio = 0.</Dica>
+          </Field>
           <Field label="ISS retido pelo tomador?">
             <Select name="nfseIssRetido" defaultValue={String(config.nfseIssRetido)}>
               <option value="false">Não retido</option>

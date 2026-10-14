@@ -76,6 +76,10 @@ export const nfeConfigSchema = z.object({
   nfseCodigoTributacao: z.string().default("100202"),
   nfseNbs: z.string().default("109051100"),
   nfseMunicipioIbge: z.string().default("2111300"),
+  // Percentual aproximado dos tributos no Simples (Lei 12.741) — para ME/EPP o
+  // Ambiente Nacional exige este campo (pTotTribSN) e recusa o "não informar"
+  // (E0712). Vazio = 0. A alíquota efetiva do DAS vem do contador.
+  nfsePercentualSimples: z.string().default(""),
   // ISS retido pelo tomador? As notas da loja saem "Não Retido".
   nfseIssRetido: z.boolean().default(false),
   // Tributação — o contador define. CST (regime normal) ou CSOSN (Simples).
