@@ -557,6 +557,7 @@ model Customer {
   partSales   PartSale[]
   receivables Receivable[]
   recurring   RecurringEntry[]
+  notasServico NotaServico[]
 
   @@map("customers")
 }
@@ -779,6 +780,41 @@ model NotaFiscal {
 
   @@index([vehicleId])
   @@map("notas_fiscais")
+}
+
+// NFS-e (nota de serviço, padrão nacional) emitida pelo sistema — comissão do
+// retorno de financiamento e do seguro que a loja cobra dos bancos/seguradoras.
+// Uma linha por tentativa, como a NotaFiscal. O tomador é um cliente (o banco)
+// e o nome/documento ficam copiados para o histórico não mudar com o cadastro.
+model NotaServico {
+  id                String    @id @default(cuid())
+  // "HOMOLOGACAO" ou "PRODUCAO".
+  ambiente          String
+  ref               String    @unique
+  // "PROCESSANDO", "AUTORIZADA", "ERRO", "CANCELADA".
+  status            String    @default("PROCESSANDO")
+  tomadorId         String?
+  tomador           Customer? @relation(fields: [tomadorId], references: [id], onDelete: SetNull)
+  tomadorNome       String
+  tomadorDocumento  String
+  descricao         String
+  valor             Float
+  competencia       DateTime
+  numero            String?
+  codigoVerificacao String?
+  url               String?
+  urlDanfse         String?
+  caminhoXml        String?
+  mensagem          String?
+  payload           Json
+  emitidaPor        String?
+  canceladaEm       DateTime?
+  justificativaCancelamento String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([tomadorId])
+  @@map("notas_servico")
 }
 
 // Documento da EMPRESA (ex.: contrato social, cartão CNPJ, alvará). Não tem

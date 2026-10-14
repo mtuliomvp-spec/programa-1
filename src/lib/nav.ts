@@ -61,6 +61,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       // Rotina do mês: conferir a fatura da prestadora e lançar o comprovante
       // avulso. Antes só se chegava nela por dentro dos Parâmetros.
       { href: "/financeiro/comunicacao-venda", label: "Comunicação de venda", icon: "📨", module: "financeiro" },
+      { href: "/financeiro/nfse", label: "Notas de serviço (NFS-e)", icon: "🧾", module: "financeiro" },
       { href: "/financeiro/categorias", label: "Categorias", icon: "🏷️", module: "financeiro" },
     ],
   },
