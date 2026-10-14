@@ -14,7 +14,10 @@ export default async function ParametrosNfePage() {
 
   const company = await getCompany();
   const config = lerNfeConfig(company.nfeConfig);
-  const pendencias = pendenciasNfe(config, !!company.cnpj?.trim(), !!company.inscricaoEstadual?.trim());
+  const todas = pendenciasNfe(config, !!company.cnpj?.trim(), !!company.inscricaoEstadual?.trim());
+  // As da mudança de regime agendada não impedem emitir hoje: ficam à parte.
+  const pendencias = todas.filter((p) => !/novo regime/i.test(p));
+  const futuras = todas.filter((p) => /novo regime/i.test(p));
   const hoje = regraVigente(config, new Date());
 
   return (
@@ -50,6 +53,16 @@ export default async function ParametrosNfePage() {
           ) : (
             <p>Tudo configurado. A emissão é liberada assim que a integração com o provedor estiver ativa.</p>
           )}
+          {futuras.length ? (
+            <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              <p className="font-semibold text-slate-700">Para a mudança de regime (não impede emitir hoje):</p>
+              <ul className="mt-1 list-inside list-disc space-y-0.5">
+                {futuras.map((p) => (
+                  <li key={p}>{p}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <p className="mt-3 text-sm">
             Regra que vale hoje:{" "}
             <strong className="text-slate-900">
