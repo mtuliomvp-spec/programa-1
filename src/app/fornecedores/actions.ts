@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
-import { enderecoDoForm, enderecoTexto, type Endereco } from "@/lib/endereco";
+import { enderecoDoForm, enderecoTexto, normalizarIe, type Endereco } from "@/lib/endereco";
 import { assertCan } from "@/lib/guards";
 import {
   duplicateError,
@@ -21,6 +21,7 @@ const schema = z.object({
   phone: z.string().optional(),
   email: z.string().optional(),
   address: z.string().optional(),
+  inscricaoEstadual: z.string().optional(),
   notes: z.string().optional(),
   // Dados bancários (para a Ordem de Pagamento).
   bankName: z.string().optional(),
@@ -55,6 +56,7 @@ export async function replicateAsCustomer(d: {
   email?: string | null;
   address?: string | null;
   endereco?: Endereco | null;
+  inscricaoEstadual?: string | null;
   notes?: string | null;
 }): Promise<{ id: string } | null> {
   // Também exposta como endpoint (arquivo "use server"): protege por conta própria.
@@ -74,6 +76,7 @@ export async function replicateAsCustomer(d: {
       email: d.email?.trim() || null,
       address: d.address?.trim() || null,
       endereco: d.endereco ?? Prisma.DbNull,
+      inscricaoEstadual: normalizarIe(d.inscricaoEstadual),
       notes: d.notes?.trim() || null,
     },
   });
@@ -104,6 +107,7 @@ export async function createSupplierAction(_prev: PersonFormState, formData: For
       email: d.email || null,
       address: d.address || null,
       endereco: d.endereco ?? Prisma.DbNull,
+      inscricaoEstadual: normalizarIe(d.inscricaoEstadual),
       notes: d.notes || null,
       ...bankData(d),
     },
@@ -146,6 +150,7 @@ export async function updateSupplierAction(_prev: PersonFormState, formData: For
       email: d.email || null,
       address: d.address || null,
       endereco: d.endereco ?? Prisma.DbNull,
+      inscricaoEstadual: normalizarIe(d.inscricaoEstadual),
       notes: d.notes || null,
       ...bankData(d),
     },

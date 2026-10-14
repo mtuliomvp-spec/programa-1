@@ -512,6 +512,9 @@ model Supplier {
   // Endereço em campos (CEP, logradouro, nº, bairro, cidade, UF, IBGE) — o que
   // a NF-e exige. `address` continua sendo o texto montado a partir dele.
   endereco         Json?
+  // Inscrição estadual (empresa contribuinte do ICMS) ou "ISENTO". A SEFAZ
+  // exige na NF-e quando o CNPJ tem IE ativa no cadastro de contribuintes.
+  inscricaoEstadual String?
   notes            String?
   // Dados bancários para pagamento (usados na Ordem de Pagamento).
   bankName         String?
@@ -544,6 +547,9 @@ model Customer {
   // Endereço em campos (CEP, logradouro, nº, bairro, cidade, UF, IBGE) — o que
   // a NF-e exige. `address` continua sendo o texto montado a partir dele.
   endereco         Json?
+  // Inscrição estadual (empresa contribuinte do ICMS) ou "ISENTO". A SEFAZ
+  // exige na NF-e quando o CNPJ tem IE ativa no cadastro de contribuintes.
+  inscricaoEstadual String?
   notes       String?
   createdAt   DateTime         @default(now())
   updatedAt   DateTime         @updatedAt

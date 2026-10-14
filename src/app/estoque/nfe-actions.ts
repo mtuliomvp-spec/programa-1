@@ -151,6 +151,7 @@ export async function emitirNfeEntradaAction(
           document: vehicle.supplier.document,
           phone: vehicle.supplier.phone,
           endereco: lerEndereco(vehicle.supplier.endereco),
+          inscricaoEstadual: vehicle.supplier.inscricaoEstadual,
         }
       : null,
     agora,
