@@ -144,7 +144,13 @@ export async function baixarUrl(ambiente: Ambiente, urlOuCaminho: string): Promi
   if (urlOuCaminho.startsWith("/")) return baixarArquivo(ambiente, urlOuCaminho);
   try {
     const u = new URL(urlOuCaminho);
-    if (u.protocol !== "https:" || !/(^|\.)(focusnfe\.com\.br|nfse\.gov\.br)$/.test(u.hostname)) return null;
+    // Hosts aceitos: a Focus, o portal nacional e o bucket de arquivos da Focus
+    // na Amazon (é lá que fica o DANFSe da NFS-e nacional:
+    // https://focusnfe.s3.sa-east-1.amazonaws.com/arquivos/...).
+    const permitido =
+      /(^|\.)(focusnfe\.com\.br|nfse\.gov\.br)$/.test(u.hostname) ||
+      /^focusnfe\.s3([.-][a-z0-9-]+)?\.amazonaws\.com$/.test(u.hostname);
+    if (u.protocol !== "https:" || !permitido) return null;
     // O token só vai para a própria Focus — nunca para o portal do governo.
     const daFocus = /(^|\.)focusnfe\.com\.br$/.test(u.hostname);
     const res = await fetch(u, {
