@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireModule, userCan } from "@/lib/guards";
 import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
+import { tomadorPorNome } from "@/lib/tomadores-nfse";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import NfsePainel, { type FinanceiraOpcao, type NotaServicoResumo } from "./NfsePainel";
 
@@ -30,12 +31,17 @@ export default async function NfsePage() {
 
   // Tomador = as financeiras de Contas e caixas; o CNPJ/razão social vêm do
   // cadastro fiscal ligado a cada uma (pedido na primeira emissão).
-  const financeiras: FinanceiraOpcao[] = contas.map((c) => ({
-    id: c.id,
-    name: c.name,
-    tomadorNome: c.nfseTomador?.name ?? null,
-    tomadorDocumento: c.nfseTomador?.document ?? null,
-  }));
+  // Sem vínculo ainda, mas reconhecida pelo nome entre os bancos das notas já
+  // emitidas: já aparece com o CNPJ — o vínculo é feito sozinho ao emitir.
+  const financeiras: FinanceiraOpcao[] = contas.map((c) => {
+    const conhecido = c.nfseTomador ? null : tomadorPorNome(c.name);
+    return {
+      id: c.id,
+      name: c.name,
+      tomadorNome: c.nfseTomador?.name ?? conhecido?.nome ?? null,
+      tomadorDocumento: c.nfseTomador?.document ?? conhecido?.cnpj ?? null,
+    };
+  });
 
   const resumo: NotaServicoResumo[] = notas.map((n) => ({
     id: n.id,

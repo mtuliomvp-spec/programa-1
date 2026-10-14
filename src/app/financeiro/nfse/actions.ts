@@ -9,7 +9,7 @@ import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { enderecoTexto, lerEndereco, normalizarEndereco } from "@/lib/endereco";
 import { lookupCnpj } from "@/lib/cnpj-lookup";
-import { tomadorPorCnpj } from "@/lib/tomadores-nfse";
+import { tomadorPorCnpj, tomadorPorNome, type TomadorConhecido } from "@/lib/tomadores-nfse";
 import { docKey } from "@/lib/person-keys";
 import { montarNfse } from "@/lib/nfse";
 import {
@@ -57,6 +57,29 @@ const fmtCnpj = (n: string) => `${n.slice(0, 2)}.${n.slice(2, 5)}.${n.slice(5, 8
  * da NFS-e. Busca razão social e endereço na Receita (BrasilAPI) pelo CNPJ;
  * reaproveita o cliente se o CNPJ já existir. Feito uma vez por financeira.
  */
+/** Cliente (cadastro fiscal) de um banco das notas já emitidas — reaproveita se o CNPJ existir. */
+async function clienteDoConhecido(conhecido: TomadorConhecido, nomeConta: string) {
+  const cnpj = conhecido.cnpj.replace(/\D/g, "");
+  const clientes = await prisma.customer.findMany({
+    where: { document: { not: null } },
+    select: { id: true, document: true, name: true },
+  });
+  const existente = clientes.find((c) => docKey(c.document) === cnpj);
+  if (existente) return existente;
+  return prisma.customer.create({
+    data: {
+      name: conhecido.nome,
+      document: conhecido.cnpj,
+      email: conhecido.email ?? null,
+      phone: conhecido.telefone ?? null,
+      endereco: conhecido.endereco,
+      address: enderecoTexto(conhecido.endereco),
+      notes: `Tomador de NFS-e (financeira ${nomeConta}) — dados das notas já emitidas.`,
+    },
+    select: { id: true, document: true, name: true },
+  });
+}
+
 export async function vincularFinanceiraAction(
   financeiraId: string,
   cnpjDigitado: string,
@@ -76,20 +99,7 @@ export async function vincularFinanceiraAction(
   let cliente = clientes.find((c) => docKey(c.document) === cnpj) ?? null;
   // Banco das notas que a loja já emitiu: dados das próprias notas, sem Receita.
   const conhecido = tomadorPorCnpj(cnpj);
-  if (!cliente && conhecido) {
-    cliente = await prisma.customer.create({
-      data: {
-        name: conhecido.nome,
-        document: conhecido.cnpj,
-        email: conhecido.email ?? null,
-        phone: conhecido.telefone ?? null,
-        endereco: conhecido.endereco,
-        address: enderecoTexto(conhecido.endereco),
-        notes: `Tomador de NFS-e (financeira ${conta.name}) — dados das notas já emitidas.`,
-      },
-      select: { id: true, document: true, name: true },
-    });
-  }
+  if (!cliente && conhecido) cliente = await clienteDoConhecido(conhecido, conta.name);
   if (!cliente) {
     const r = await lookupCnpj(cnpj);
     const nome = r.ok ? r.data.name : razaoSocial?.trim();
@@ -138,7 +148,17 @@ export async function emitirNfseAction(input: {
       : null,
   ]);
   if (!financeira || financeira.type !== "FINANCEIRA") return { ok: false, error: "Escolha a financeira." };
-  const tomador = financeira.nfseTomador;
+  let tomador = financeira.nfseTomador;
+  // Financeira ainda sem vínculo, mas reconhecida pelo nome entre os bancos das
+  // notas já emitidas: liga sozinha, sem pedir nada.
+  if (!tomador) {
+    const conhecido = tomadorPorNome(financeira.name);
+    if (conhecido) {
+      const c = await clienteDoConhecido(conhecido, financeira.name);
+      await prisma.financialAccount.update({ where: { id: financeira.id }, data: { nfseTomadorId: c.id } });
+      tomador = await prisma.customer.findUnique({ where: { id: c.id } });
+    }
+  }
   if (!tomador) return { ok: false, error: `Informe o CNPJ da financeira ${financeira.name} antes de emitir.` };
   const cfg = lerNfeConfig(company.nfeConfig);
   const ambiente: Ambiente = cfg.ambiente;
