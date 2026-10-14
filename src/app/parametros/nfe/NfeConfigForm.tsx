@@ -197,6 +197,33 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
       </fieldset>
 
       <fieldset className="space-y-4">
+        <legend className="text-sm font-semibold text-slate-900">NFS-e — notas de serviço (comissões dos bancos)</legend>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="Inscrição municipal da loja">
+            <Input name="nfseInscricaoMunicipal" defaultValue={config.nfseInscricaoMunicipal} inputMode="numeric" />
+            <Dica>Está nas NFS-e da loja (“Indicador Municipal”). São Luís exige.</Dica>
+          </Field>
+          <Field label="Código de tributação nacional">
+            <Input name="nfseCodigoTributacao" defaultValue={config.nfseCodigoTributacao} />
+            <Dica>100202 = 10.02.02 (agenciamento/intermediação de contratos).</Dica>
+          </Field>
+          <Field label="Código NBS">
+            <Input name="nfseNbs" defaultValue={config.nfseNbs} />
+          </Field>
+          <Field label="Município da prestação (IBGE)">
+            <Input name="nfseMunicipioIbge" defaultValue={config.nfseMunicipioIbge} />
+            <Dica>2111300 = São Luís/MA.</Dica>
+          </Field>
+          <Field label="ISS retido pelo tomador?">
+            <Select name="nfseIssRetido" defaultValue={String(config.nfseIssRetido)}>
+              <option value="false">Não retido</option>
+              <option value="true">Retido pelo tomador</option>
+            </Select>
+          </Field>
+        </div>
+      </fieldset>
+
+      <fieldset className="space-y-4">
         <legend className="text-sm font-semibold text-slate-900">Mudança de regime agendada</legend>
         <p className="text-xs text-slate-500">
           A partir da data, as notas saem sozinhas com a regra nova — não é preciso trocar nada no dia.

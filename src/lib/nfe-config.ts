@@ -71,6 +71,8 @@ export const nfeConfigSchema = z.object({
   // NFS-e (serviço — comissão de retorno/seguro cobrada dos bancos), padrão
   // nacional. Os padrões são os das notas que a loja já emitia: 10.02.02
   // (agenciamento/intermediação de contratos), NBS 1.0905.11.00, São Luís.
+  // Inscrição Municipal da loja — São Luís exige na DPS (rejeição E0116 sem ela).
+  nfseInscricaoMunicipal: z.string().default(""),
   nfseCodigoTributacao: z.string().default("100202"),
   nfseNbs: z.string().default("109051100"),
   nfseMunicipioIbge: z.string().default("2111300"),
