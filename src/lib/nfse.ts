@@ -9,12 +9,15 @@ import type { Endereco } from "@/lib/endereco";
  * Função pura: recebe tudo pronto e devolve o payload ou o que falta.
  */
 
-export const DESCRICOES_NFSE = [
-  "COMISSÃO SOBRE RETORNO",
-  "COMISSÃO SOBRE FINANCIAMENTO",
-  "COMISSÃO SOBRE SEGURO",
-  "INTERMEDIAÇÃO DE SEGUROS",
-] as const;
+/** Descrições usadas nas notas que a loja já emitiu, por tipo de nota. */
+export const DESCRICOES_NFSE = {
+  RETORNO: [
+    "COMISSÃO SOBRE RETORNO",
+    "COMISSÃO SOBRE FINANCIAMENTO",
+    "COMISSÃO SOBRE VENDA E INTERMEDIAÇÃO DE VEÍCULOS",
+  ],
+  SEGURO: ["INTERMEDIAÇÃO DE SEGUROS", "COMISSÃO SOBRE SEGURO"],
+} as const;
 
 /** Nota da comissão do seguro (e não do retorno) — pela descrição do serviço. */
 export function ehNotaDeSeguro(descricao: string): boolean {
