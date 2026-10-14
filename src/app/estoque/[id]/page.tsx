@@ -8,6 +8,7 @@ import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
+import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo } from "@/lib/nfe-entrada";
@@ -1074,6 +1075,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 title="Renave — escrituração eletrônica"
                 description="Dados que o registro de entrada e saída exige. Em implantação: o sistema avisa, mas não bloqueia nada"
               />
+              <div className="px-5 pt-4">
+                <RenaveJanelaAviso />
+              </div>
               <VehicleRenave
                 dados={renaveDados}
                 documentos={renaveDocumentos}

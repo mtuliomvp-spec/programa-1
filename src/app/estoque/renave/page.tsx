@@ -17,6 +17,7 @@ import {
   Tr,
 } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 import {
   RENAVE_NORMA,
   RENAVE_PRAZO_PADRAO,
@@ -97,6 +98,8 @@ export default async function RenavePage({
           </div>
         }
       />
+
+      <RenaveJanelaAviso className="mb-4" />
 
       {detran && detran !== "ADERIDO" ? (
         <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">

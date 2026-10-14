@@ -18,6 +18,7 @@ import {
   prazoTexto,
 } from "@/lib/renave";
 import RenaveConfigForm, { type RenaveConfig } from "./RenaveConfigForm";
+import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +108,8 @@ export default async function ParametrosRenavePage() {
           </div>
         }
       />
+
+      <RenaveJanelaAviso className="mb-4" />
 
       {detran && detran !== "ADERIDO" ? (
         <div className="mb-4 rounded-xl border border-rose-300 bg-rose-50 px-4 py-3">
