@@ -46,6 +46,14 @@ export const nfeConfigSchema = z.object({
   naturezaSaida: z.string().default("Venda de mercadoria adquirida de terceiros"),
   cfopSaidaUf: cfop.default("5102"),
   cfopSaidaForaUf: cfop.default("6102"),
+  // NCM do item (8 dígitos). Automóvel de passageiros é 8703.xx.xx e utilitário
+  // 8704.xx.xx — o código exato depende do motor/combustível; este é o padrão,
+  // ajustável na hora de emitir.
+  ncmPadrao: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ""))
+    .refine((s) => s === "" || /^\d{8}$/.test(s), "NCM tem 8 dígitos (ex.: 8703.23.10).")
+    .default(""),
   // Tributação — o contador define. CST (regime normal) ou CSOSN (Simples).
   icmsCst: z.string().default(""),
   icmsReducaoBase: z.string().default(""),
@@ -65,6 +73,11 @@ export function lerNfeConfig(raw: unknown): NfeConfig {
   const bons = { ...base };
   for (const issue of parsed.error.issues) delete bons[String(issue.path[0])];
   return nfeConfigSchema.parse(bons);
+}
+
+/** "87032310" → "8703.23.10". */
+export function formatarNcm(n: string): string {
+  return /^\d{8}$/.test(n) ? `${n.slice(0, 4)}.${n.slice(4, 6)}.${n.slice(6)}` : n;
 }
 
 /** "1102" → "1.102". */
@@ -99,6 +112,7 @@ export function pendenciasNfe(cfg: NfeConfig, temCnpj: boolean, temIe: boolean):
   if (!cfg.regime) p.push("Regime tributário (CRT)");
   if (!cfg.cfopEntradaUf || !cfg.cfopEntradaForaUf) p.push("CFOP de entrada");
   if (!cfg.cfopSaidaUf || !cfg.cfopSaidaForaUf) p.push("CFOP de saída");
+  if (!cfg.ncmPadrao) p.push("NCM padrão dos veículos (contador)");
   if (!cfg.icmsCst) p.push("CST/CSOSN do ICMS (contador)");
   if (!cfg.pisCofinsCst) p.push("CST do PIS/COFINS (contador)");
   return p;

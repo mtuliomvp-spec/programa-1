@@ -9,6 +9,8 @@ export type CepData = {
   cidade?: string;
   uf?: string;
   cep?: string;
+  /** Código IBGE do município (7 dígitos) — obrigatório na NF-e. */
+  ibge?: string;
   /** Endereço já montado (logradouro - bairro - cidade/UF - CEP) para preencher o campo. */
   address?: string;
 };
@@ -41,6 +43,7 @@ export async function lookupCep(input: string): Promise<CepLookupResult> {
     const bairro = s(json.bairro);
     const cidade = s(json.localidade);
     const uf = s(json.uf);
+    const ibge = s(json.ibge)?.replace(/\D/g, "");
     const cep = formatCep(digits);
 
     const parts: string[] = [];
@@ -51,7 +54,7 @@ export async function lookupCep(input: string): Promise<CepLookupResult> {
 
     return {
       ok: true,
-      data: { logradouro, bairro, cidade, uf, cep, address: parts.join(" - ") },
+      data: { logradouro, bairro, cidade, uf, cep, ibge, address: parts.join(" - ") },
     };
   } catch {
     return { ok: false, error: "Não foi possível consultar o CEP agora. Tente novamente." };

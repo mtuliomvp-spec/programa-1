@@ -3,7 +3,9 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { enderecoDoForm, enderecoTexto, type Endereco } from "@/lib/endereco";
 import { assertCan } from "@/lib/guards";
 import {
   duplicateError,
@@ -31,6 +33,7 @@ export async function replicateAsSupplier(d: {
   phone?: string | null;
   email?: string | null;
   address?: string | null;
+  endereco?: Endereco | null;
   notes?: string | null;
 }) {
   // Também exposta como endpoint (arquivo "use server"): protege por conta própria.
@@ -49,6 +52,7 @@ export async function replicateAsSupplier(d: {
       phone: d.phone?.trim() || null,
       email: d.email?.trim() || null,
       address: d.address?.trim() || null,
+      endereco: d.endereco ?? Prisma.DbNull,
       notes: d.notes?.trim() || null,
     },
   });
@@ -63,7 +67,9 @@ export async function createCustomerAction(_prev: PersonFormState, formData: For
   }
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
-  const d = parsed.data;
+  // Endereço em campos (end_*): quando preenchido, o texto sai dele.
+  const end = enderecoDoForm(formData);
+  const d = { ...parsed.data, address: end ? enderecoTexto(end) : parsed.data.address, endereco: end };
   // Trava contra duplicata: mesmo nome (ignorando acento/pontuação) ou mesmo
   // CPF/CNPJ já cadastrado.
   const dup = await findCustomerByIdentity(d.name, d.document);
@@ -75,6 +81,7 @@ export async function createCustomerAction(_prev: PersonFormState, formData: For
       phone: d.phone || null,
       email: d.email || null,
       address: d.address || null,
+      endereco: d.endereco ?? Prisma.DbNull,
       notes: d.notes || null,
     },
   });
@@ -93,7 +100,9 @@ export async function updateCustomerAction(_prev: PersonFormState, formData: For
   }
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
-  const d = parsed.data;
+  // Endereço em campos (end_*): quando preenchido, o texto sai dele.
+  const end = enderecoDoForm(formData);
+  const d = { ...parsed.data, address: end ? enderecoTexto(end) : parsed.data.address, endereco: end };
   // Trava contra duplicata, ignorando o próprio cadastro (salvar sem mudar o
   // nome não pode dar erro).
   const dup = await findCustomerByIdentity(d.name, d.document, d.id);
@@ -106,6 +115,7 @@ export async function updateCustomerAction(_prev: PersonFormState, formData: For
       phone: d.phone || null,
       email: d.email || null,
       address: d.address || null,
+      endereco: d.endereco ?? Prisma.DbNull,
       notes: d.notes || null,
     },
   });
