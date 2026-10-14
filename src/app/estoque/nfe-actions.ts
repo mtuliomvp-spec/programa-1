@@ -8,7 +8,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { lerEndereco } from "@/lib/endereco";
-import { montarNfeEntrada } from "@/lib/nfe-entrada";
+import { montarNfeEntrada, montarNfeSaida, type EntradaResultado } from "@/lib/nfe-entrada";
 import {
   baixarArquivo,
   cancelarNfe,
@@ -57,23 +57,35 @@ async function aplicarResposta(notaId: string, body: FocusNfe) {
     },
   });
 
-  if (nota.tipo === "ENTRADA" && nota.ambiente === "PRODUCAO") {
+  // Autorizada/cancelada em PRODUÇÃO: a de entrada é a NF-e de entrada do
+  // veículo; a de saída, a NF-e de saída (as duas o Renave pede).
+  if (nota.ambiente === "PRODUCAO") {
+    const entrada = nota.tipo === "ENTRADA";
     if (status === "AUTORIZADA" && nota.status !== "AUTORIZADA" && chave) {
       await prisma.vehicle.update({
         where: { id: nota.vehicleId },
-        data: {
-          entryNfeKey: chave,
-          entryNfeNumber: atualizada.numero,
-          entryNfeSerie: atualizada.serie,
-          entryNfeIssuedAt: atualizada.createdAt,
-        },
+        data: entrada
+          ? {
+              entryNfeKey: chave,
+              entryNfeNumber: atualizada.numero,
+              entryNfeSerie: atualizada.serie,
+              entryNfeIssuedAt: atualizada.createdAt,
+            }
+          : {
+              exitNfeKey: chave,
+              exitNfeNumber: atualizada.numero,
+              exitNfeSerie: atualizada.serie,
+              exitNfeIssuedAt: atualizada.createdAt,
+            },
       });
       await anexarArquivos(atualizada.id);
     }
     if (status === "CANCELADA" && chave) {
       await prisma.vehicle.updateMany({
-        where: { id: nota.vehicleId, entryNfeKey: chave },
-        data: { entryNfeKey: null, entryNfeNumber: null, entryNfeSerie: null, entryNfeIssuedAt: null },
+        where: entrada ? { id: nota.vehicleId, entryNfeKey: chave } : { id: nota.vehicleId, exitNfeKey: chave },
+        data: entrada
+          ? { entryNfeKey: null, entryNfeNumber: null, entryNfeSerie: null, entryNfeIssuedAt: null }
+          : { exitNfeKey: null, exitNfeNumber: null, exitNfeSerie: null, exitNfeIssuedAt: null },
       });
     }
   }
@@ -108,10 +120,31 @@ async function anexarArquivos(notaId: string) {
   }
 }
 
-export async function emitirNfeEntradaAction(
-  vehicleId: string,
-  ajustes: { ncm?: string; descricao?: string; informacoes?: string },
-): Promise<NfeActionResult> {
+type Ajustes = { ncm?: string; descricao?: string; informacoes?: string; valor?: number };
+
+const pessoaNfe = (p: {
+  name: string;
+  document: string | null;
+  phone: string | null;
+  endereco: unknown;
+  inscricaoEstadual: string | null;
+}) => ({
+  name: p.name,
+  document: p.document,
+  phone: p.phone,
+  endereco: lerEndereco(p.endereco),
+  inscricaoEstadual: p.inscricaoEstadual,
+});
+
+export async function emitirNfeEntradaAction(vehicleId: string, ajustes: Ajustes): Promise<NfeActionResult> {
+  return emitir(vehicleId, "ENTRADA", ajustes);
+}
+
+export async function emitirNfeSaidaAction(vehicleId: string, ajustes: Ajustes): Promise<NfeActionResult> {
+  return emitir(vehicleId, "SAIDA", ajustes);
+}
+
+async function emitir(vehicleId: string, tipo: "ENTRADA" | "SAIDA", ajustes: Ajustes): Promise<NfeActionResult> {
   try {
     await assertCan("estoque", "nfe");
   } catch (e) {
@@ -119,51 +152,58 @@ export async function emitirNfeEntradaAction(
   }
   const user = await getSessionUser();
   const [vehicle, company] = await Promise.all([
-    prisma.vehicle.findUnique({ where: { id: vehicleId }, include: { supplier: true } }),
+    prisma.vehicle.findUnique({
+      where: { id: vehicleId },
+      include: { supplier: true, sale: { include: { customer: true } } },
+    }),
     getCompany(),
   ]);
   if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
   const cfg = lerNfeConfig(company.nfeConfig);
   const ambiente: Ambiente = cfg.ambiente;
+  const nome = tipo === "ENTRADA" ? "entrada" : "saída";
 
-  // Uma nota de entrada válida por ambiente: outra só depois de cancelar.
+  // Uma nota válida de cada tipo por ambiente: outra só depois de cancelar.
   const existente = await prisma.notaFiscal.findFirst({
-    where: { vehicleId, tipo: "ENTRADA", ambiente, status: { in: ["PROCESSANDO", "AUTORIZADA"] } },
+    where: { vehicleId, tipo, ambiente, status: { in: ["PROCESSANDO", "AUTORIZADA"] } },
   });
   if (existente) {
     return {
       ok: false,
       error:
         existente.status === "PROCESSANDO"
-          ? "Já há uma nota de entrada em processamento — aguarde a resposta da SEFAZ."
-          : "Este veículo já tem NF-e de entrada autorizada neste ambiente. Para emitir outra, cancele a atual.",
+          ? `Já há uma nota de ${nome} em processamento — aguarde a resposta da SEFAZ.`
+          : `Este veículo já tem NF-e de ${nome} autorizada neste ambiente. Para emitir outra, cancele a atual.`,
     };
   }
 
   const agora = new Date();
-  const r = montarNfeEntrada({
+  const comum = {
     cfg,
     empresa: { cnpj: company.cnpj, inscricaoEstadual: company.inscricaoEstadual, uf: company.uf },
     veiculo: vehicle,
-    vendedor: vehicle.supplier
-      ? {
-          name: vehicle.supplier.name,
-          document: vehicle.supplier.document,
-          phone: vehicle.supplier.phone,
-          endereco: lerEndereco(vehicle.supplier.endereco),
-          inscricaoEstadual: vehicle.supplier.inscricaoEstadual,
-        }
-      : null,
     agora,
-    ...ajustes,
-  });
+    ncm: ajustes.ncm,
+    descricao: ajustes.descricao,
+    informacoes: ajustes.informacoes,
+  };
+  const r: EntradaResultado =
+    tipo === "ENTRADA"
+      ? montarNfeEntrada({ ...comum, vendedor: vehicle.supplier ? pessoaNfe(vehicle.supplier) : null })
+      : montarNfeSaida({
+          ...comum,
+          comprador: vehicle.sale ? pessoaNfe(vehicle.sale.customer) : null,
+          venda: vehicle.sale,
+          valor: ajustes.valor && ajustes.valor > 0 ? ajustes.valor : undefined,
+        });
   if (!r.ok) return { ok: false, error: "Faltam dados para emitir a nota.", faltas: r.faltas };
 
   const ref = `fincore-${ambiente === "PRODUCAO" ? "p" : "h"}-${agora.getTime().toString(36)}-${randomBytes(3).toString("hex")}`;
   const nota = await prisma.notaFiscal.create({
     data: {
       vehicleId,
-      tipo: "ENTRADA",
+      saleId: tipo === "SAIDA" ? (vehicle.sale?.id ?? null) : null,
+      tipo,
       ambiente,
       ref,
       valor: r.valor,

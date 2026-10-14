@@ -10,7 +10,7 @@ import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
 import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
 import { lerNfeConfig } from "@/lib/nfe-config";
-import { montarNfeEntrada, descricaoVeiculo } from "@/lib/nfe-entrada";
+import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo } from "@/lib/nfe-entrada";
 import { lerEndereco } from "@/lib/endereco";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
@@ -247,6 +247,37 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     vendedorEmpresa: (vehicle.supplier?.document ?? "").replace(/\D/g, "").length === 14,
     vendedorIe: vehicle.supplier?.inscricaoEstadual ?? null,
   };
+  // Nota de venda: só com venda registrada (e não cancelada).
+  const vendaNfe = vehicle.sale && vehicle.sale.status !== "CANCELADA" ? vehicle.sale : null;
+  const previaSaida = vendaNfe
+    ? montarNfeSaida({
+        cfg: nfeConfig,
+        empresa: { cnpj: renaveCompany.cnpj, inscricaoEstadual: renaveCompany.inscricaoEstadual, uf: renaveCompany.uf },
+        veiculo: vehicle,
+        comprador: {
+          name: vendaNfe.customer.name,
+          document: vendaNfe.customer.document,
+          phone: vendaNfe.customer.phone,
+          endereco: lerEndereco(vendaNfe.customer.endereco),
+          inscricaoEstadual: vendaNfe.customer.inscricaoEstadual,
+        },
+        venda: vendaNfe,
+        agora: new Date(),
+      })
+    : null;
+  const nfeSaida: EntradaPrevia | null =
+    vendaNfe && previaSaida
+      ? {
+          faltas: previaSaida.ok ? [] : previaSaida.faltas,
+          descricao: previaSaida.ok ? previaSaida.descricao : descricaoVeiculo(vehicle),
+          ncm: nfeConfig.ncmPadrao,
+          cfop: previaSaida.ok ? previaSaida.cfop : null,
+          valor: vendaNfe.totalAmount,
+          vendedor: vendaNfe.customer.name,
+          vendedorEmpresa: (vendaNfe.customer.document ?? "").replace(/\D/g, "").length === 14,
+          vendedorIe: vendaNfe.customer.inscricaoEstadual,
+        }
+      : null;
 
   // "Copiar dados para o ControlStock": o que o registro no painel da
   // integradora pede, campo a campo (vazio = falta, com a dica de onde
@@ -1020,16 +1051,17 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               de terceiro em financiamento não é estoque da loja — ali o aviso é
               outro, na própria tela da operação. */}
           {!vehicle.intermediation && (canNfe || notasFiscais.length > 0) ? (
-            <Card>
+            <Card className="scroll-mt-4" id="nfe">
               <CardHeader
                 title="Nota fiscal (NF-e)"
-                description="Emitida pelo sistema e autorizada na SEFAZ. A nota de entrada autorizada preenche a chave usada no Renave"
+                description="Emitida pelo sistema e autorizada na SEFAZ. As notas de entrada e de saída autorizadas preenchem as chaves usadas no Renave"
               />
               <VehicleNfe
                 vehicleId={vehicle.id}
                 ambiente={nfeConfig.ambiente}
                 notas={notasFiscais}
                 entrada={nfeEntrada}
+                saida={nfeSaida}
                 canEmitir={canNfe}
                 canCancelar={canNfeCancelar}
               />
