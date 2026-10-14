@@ -162,8 +162,9 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
           <Field label="NCM das picapes médias/grandes (8704)">
             <Input name="ncmPicape" defaultValue={formatarNcm(config.ncmPicape)} placeholder="8704.xx.xx" />
             <Dica>
-              Hilux, S10, Ranger, Toro e similares (carga acima de 1 t). Picape compacta (Strada, Saveiro, Montana)
-              fica na 8703 pela cilindrada.
+              Hilux, S10, Ranger, Toro e similares já saem pelo combustível do cadastro (diesel 8704.21.90, flex
+              8704.31.90, elétrica 8704.60.00). Este só vale quando o carro está sem combustível. Picape compacta
+              (Strada, Saveiro, Montana) fica na 8703 pela cilindrada.
             </Dica>
           </Field>
           <Field label="CST / CSOSN do ICMS">
@@ -185,7 +186,8 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
             <Input name="icmsAliquota" defaultValue={config.icmsAliquota} inputMode="decimal" />
           </Field>
           <Field label="CST do PIS/COFINS">
-            <Input name="pisCofinsCst" defaultValue={config.pisCofinsCst} />
+            <Input name="pisCofinsCst" defaultValue={config.pisCofinsCst} placeholder="2 dígitos (ex.: 49 ou 99)" />
+            <Dica>Não é o CSOSN: tem 2 dígitos.</Dica>
           </Field>
         </div>
         <Field label="Informações complementares (saem em toda nota)">
