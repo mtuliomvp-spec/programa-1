@@ -9,9 +9,9 @@ import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { enderecoTexto, lerEndereco, normalizarEndereco } from "@/lib/endereco";
 import { lookupCnpj } from "@/lib/cnpj-lookup";
-import { tomadorPorCnpj, tomadorPorNome, type TomadorConhecido } from "@/lib/tomadores-nfse";
+import { tomadorPorCnpj, tomadorPorNome, tomadorSeguroDe, type TomadorConhecido } from "@/lib/tomadores-nfse";
 import { docKey } from "@/lib/person-keys";
-import { montarNfse } from "@/lib/nfse";
+import { ehNotaDeSeguro, montarNfse } from "@/lib/nfse";
 import {
   cancelarNfsen,
   consultarNfsen,
@@ -31,32 +31,46 @@ const STATUS: Record<string, string> = {
   negado: "ERRO",
 };
 
-/** Nota rejeitada ou cancelada não cobre mais nada: os retornos voltam a ficar sem NF. */
+export type TipoNota = "RETORNO" | "SEGURO";
+
+/** Nota rejeitada ou cancelada não cobre mais nada: retornos/seguros voltam a ficar sem NF. */
 async function liberarRetornos(notaId: string) {
   await prisma.sale.updateMany({ where: { returnNfseId: notaId }, data: { returnNfseId: null } });
+  await prisma.sale.updateMany({ where: { insuranceNfseId: notaId }, data: { insuranceNfseId: null } });
 }
 
 /**
- * Liga os retornos (vendas financiadas) à nota — só os da financeira dela e
- * que não estejam numa outra nota válida. Devolve quantos ficaram ligados.
+ * Liga os retornos (ou, na nota de seguro, as comissões de seguro) das vendas
+ * financiadas à nota — só os da financeira dela e que não estejam numa outra
+ * nota válida. Devolve quantos ficaram ligados.
  */
-async function ligarRetornos(notaId: string, financeiraId: string, saleIds: string[]) {
+async function ligarRetornos(notaId: string, financeiraId: string, saleIds: string[], tipo: TipoNota) {
   const ids = [...new Set(saleIds)].slice(0, 200);
   if (!ids.length) return 0;
-  const r = await prisma.sale.updateMany({
-    where: {
-      id: { in: ids },
-      financerAccountId: financeiraId,
-      paymentMethod: "FINANCIADO",
-      returnNet: { gt: 0 },
-      OR: [
-        { returnNfseId: null },
-        { returnNfseId: notaId },
-        { returnNfse: { status: { in: ["ERRO", "CANCELADA"] } } },
-      ],
-    },
-    data: { returnNfseId: notaId },
-  });
+  const base = { id: { in: ids }, financerAccountId: financeiraId, paymentMethod: "FINANCIADO" as const };
+  const livre = ["ERRO", "CANCELADA"];
+  const r =
+    tipo === "SEGURO"
+      ? await prisma.sale.updateMany({
+          where: {
+            ...base,
+            insuranceSold: true,
+            OR: [
+              { insuranceNfseId: null },
+              { insuranceNfseId: notaId },
+              { insuranceNfse: { status: { in: livre } } },
+            ],
+          },
+          data: { insuranceNfseId: notaId },
+        })
+      : await prisma.sale.updateMany({
+          where: {
+            ...base,
+            returnNet: { gt: 0 },
+            OR: [{ returnNfseId: null }, { returnNfseId: notaId }, { returnNfse: { status: { in: livre } } }],
+          },
+          data: { returnNfseId: notaId },
+        });
   return r.count;
 }
 
@@ -114,6 +128,8 @@ export async function vincularFinanceiraAction(
   financeiraId: string,
   cnpjDigitado: string,
   razaoSocial?: string,
+  /** SEGURO = tomador da nota do seguro (quando é outra empresa do grupo). */
+  papel: TipoNota = "RETORNO",
 ): Promise<NfseActionResult & { tomador?: { name: string; document: string } }> {
   try {
     await assertCan("financeiro", "nfse");
@@ -153,9 +169,54 @@ export async function vincularFinanceiraAction(
       select: { id: true, document: true, name: true },
     });
   }
-  await prisma.financialAccount.update({ where: { id: conta.id }, data: { nfseTomadorId: cliente.id } });
+  await prisma.financialAccount.update({
+    where: { id: conta.id },
+    data: papel === "SEGURO" ? { nfseTomadorSeguroId: cliente.id } : { nfseTomadorId: cliente.id },
+  });
   revalidatePath("/financeiro/nfse");
   return { ok: true, tomador: { name: cliente.name, document: cliente.document ?? "" } };
+}
+
+/**
+ * Banco das notas já emitidas que ainda não é financeira em Contas e caixas
+ * (ex.: Aymoré): cria a conta (tipo Financeira, saldo zero) já ligada ao
+ * cadastro fiscal — e, se houver, à corretora da nota do seguro.
+ */
+export async function cadastrarFinanceiraAction(cnpj: string): Promise<NfseActionResult> {
+  try {
+    await assertCan("financeiro", "contas");
+    await assertCan("financeiro", "nfse");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const conhecido = tomadorPorCnpj(cnpj);
+  if (!conhecido || conhecido.soSeguro) return { ok: false, error: "Banco não encontrado entre as notas já emitidas." };
+  const nome = conhecido.conta ?? `Financeira ${conhecido.nome}`;
+  const contas = await prisma.financialAccount.findMany({
+    where: { type: "FINANCEIRA" },
+    select: { name: true, nfseTomador: { select: { document: true } } },
+  });
+  const jaExiste = contas.find(
+    (c) =>
+      docKey(c.nfseTomador?.document) === cnpj.replace(/\D/g, "") ||
+      c.name.trim().toLowerCase() === nome.toLowerCase(),
+  );
+  if (jaExiste) return { ok: false, error: `Já existe a financeira ${jaExiste.name} em Contas e caixas.` };
+  const tomador = await clienteDoConhecido(conhecido, nome);
+  const corretora = tomadorSeguroDe(conhecido);
+  const tomadorSeguro = corretora ? await clienteDoConhecido(corretora, nome) : null;
+  await prisma.financialAccount.create({
+    data: {
+      name: nome,
+      type: "FINANCEIRA",
+      nfseTomadorId: tomador.id,
+      nfseTomadorSeguroId: tomadorSeguro?.id ?? null,
+      notes: `Cadastrada pela NFS-e (${conhecido.nome}). Confira o % de imposto do retorno em Contas e caixas.`,
+    },
+  });
+  revalidatePath("/financeiro/nfse");
+  revalidatePath("/financeiro/contas");
+  return { ok: true };
 }
 
 export async function emitirNfseAction(input: {
@@ -176,20 +237,33 @@ export async function emitirNfseAction(input: {
   const [company, financeira] = await Promise.all([
     getCompany(),
     input.financeiraId
-      ? prisma.financialAccount.findUnique({ where: { id: input.financeiraId }, include: { nfseTomador: true } })
+      ? prisma.financialAccount.findUnique({
+          where: { id: input.financeiraId },
+          include: { nfseTomador: true, nfseTomadorSeguro: true },
+        })
       : null,
   ]);
   if (!financeira || financeira.type !== "FINANCEIRA") return { ok: false, error: "Escolha a financeira." };
+  const tipo: TipoNota = ehNotaDeSeguro(input.descricao) ? "SEGURO" : "RETORNO";
+  const conhecido = tomadorPorNome(financeira.name);
   let tomador = financeira.nfseTomador;
   // Financeira ainda sem vínculo, mas reconhecida pelo nome entre os bancos das
   // notas já emitidas: liga sozinha, sem pedir nada.
-  if (!tomador) {
-    const conhecido = tomadorPorNome(financeira.name);
-    if (conhecido) {
-      const c = await clienteDoConhecido(conhecido, financeira.name);
-      await prisma.financialAccount.update({ where: { id: financeira.id }, data: { nfseTomadorId: c.id } });
-      tomador = await prisma.customer.findUnique({ where: { id: c.id } });
+  if (!tomador && conhecido) {
+    const c = await clienteDoConhecido(conhecido, financeira.name);
+    await prisma.financialAccount.update({ where: { id: financeira.id }, data: { nfseTomadorId: c.id } });
+    tomador = await prisma.customer.findUnique({ where: { id: c.id } });
+  }
+  // Nota do seguro: vai para a corretora do grupo, quando há (Aymoré → Santander Corretora).
+  if (tipo === "SEGURO") {
+    let seguro = financeira.nfseTomadorSeguro;
+    const corretora = tomadorSeguroDe(tomadorPorCnpj(tomador?.document ?? "") ?? conhecido);
+    if (!seguro && corretora) {
+      const c = await clienteDoConhecido(corretora, financeira.name);
+      await prisma.financialAccount.update({ where: { id: financeira.id }, data: { nfseTomadorSeguroId: c.id } });
+      seguro = await prisma.customer.findUnique({ where: { id: c.id } });
     }
+    if (seguro) tomador = seguro;
   }
   if (!tomador) return { ok: false, error: `Informe o CNPJ da financeira ${financeira.name} antes de emitir.` };
   const cfg = lerNfeConfig(company.nfeConfig);
@@ -222,6 +296,7 @@ export async function emitirNfseAction(input: {
     data: {
       ambiente,
       ref,
+      tipo,
       tomadorId: tomador.id,
       financeiraId: financeira.id,
       tomadorNome: tomador.name,
@@ -233,7 +308,7 @@ export async function emitirNfseAction(input: {
       emitidaPor: user?.name ?? null,
     },
   });
-  await ligarRetornos(nota.id, financeira.id, input.saleIds ?? []);
+  await ligarRetornos(nota.id, financeira.id, input.saleIds ?? [], tipo);
 
   const { http, body } = await emitirNfsen(ambiente, ref, r.payload);
   if (http === 201 || http === 202 || body.status) {
@@ -269,11 +344,19 @@ export async function vincularRetornosAction(notaId: string, saleIds: string[]):
   const financeiraId = nota.financeiraId ?? (await financeiraDaNota(nota.tomadorId));
   if (!financeiraId) return { ok: false, error: "Não foi possível saber a financeira desta nota." };
   const ids = [...new Set(saleIds)];
-  await prisma.sale.updateMany({
-    where: { returnNfseId: notaId, id: { notIn: ids } },
-    data: { returnNfseId: null },
-  });
-  const count = await ligarRetornos(notaId, financeiraId, ids);
+  const tipo: TipoNota = nota.tipo === "SEGURO" ? "SEGURO" : "RETORNO";
+  if (tipo === "SEGURO") {
+    await prisma.sale.updateMany({
+      where: { insuranceNfseId: notaId, id: { notIn: ids } },
+      data: { insuranceNfseId: null },
+    });
+  } else {
+    await prisma.sale.updateMany({
+      where: { returnNfseId: notaId, id: { notIn: ids } },
+      data: { returnNfseId: null },
+    });
+  }
+  const count = await ligarRetornos(notaId, financeiraId, ids, tipo);
   revalidatePath("/financeiro/nfse");
   revalidatePath("/financeiro/financiamentos");
   return { ok: true, count };

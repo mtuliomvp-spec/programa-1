@@ -234,6 +234,10 @@ model FinancialAccount {
   // da comissão de retorno/seguro. Vinculado na primeira emissão, pelo CNPJ.
   nfseTomadorId       String?
   nfseTomador         Customer?              @relation("FinanceiraTomador", fields: [nfseTomadorId], references: [id], onDelete: SetNull)
+  // Tomador da nota de comissão do SEGURO, quando é outra empresa do grupo
+  // (ex.: retorno → Aymoré; seguro → Santander Corretora). Nulo = o mesmo.
+  nfseTomadorSeguroId String?
+  nfseTomadorSeguro   Customer?              @relation("FinanceiraTomadorSeguro", fields: [nfseTomadorSeguroId], references: [id], onDelete: SetNull)
   payables            Payable[]
   // Títulos pré-lançados nesta conta, esperando o caixa do dia do comprovante.
   pendingPayments     Payable[]              @relation("PendingPayment")
@@ -563,6 +567,7 @@ model Customer {
   recurring   RecurringEntry[]
   notasServico NotaServico[]
   financeirasTomador FinancialAccount[] @relation("FinanceiraTomador")
+  financeirasTomadorSeguro FinancialAccount[] @relation("FinanceiraTomadorSeguro")
 
   @@map("customers")
 }
@@ -817,8 +822,11 @@ model NotaServico {
   emitidaPor        String?
   canceladaEm       DateTime?
   justificativaCancelamento String?
-  // Retornos (vendas financiadas) que esta nota cobre.
+  // "RETORNO" (comissão sobre o retorno) ou "SEGURO" (comissão do seguro).
+  tipo              String    @default("RETORNO")
+  // Retornos / seguros (vendas financiadas) que esta nota cobre.
   retornos          Sale[]    @relation("RetornoNfse")
+  seguros           Sale[]    @relation("SeguroNfse")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1233,6 +1241,9 @@ model Sale {
   insuranceAmount           Float?
   insuranceCommissionAmount Float                @default(0)
   insuranceSettledAt        DateTime?
+  // NFS-e de comissão do seguro que cobre esta venda (desfeito se a nota cair).
+  insuranceNfseId           String?
+  insuranceNfse             NotaServico?         @relation("SeguroNfse", fields: [insuranceNfseId], references: [id], onDelete: SetNull)
   // Comissão do vendedor (valor em R$, digitado na venda). Gera uma conta a
   // pagar (categoria Comissão, centro Administrativo) quando > 0.
   commissionAmount          Float                @default(0)
@@ -1273,6 +1284,7 @@ model Sale {
 
   @@index([customerId])
   @@index([returnNfseId])
+  @@index([insuranceNfseId])
   @@map("sales")
 }
 

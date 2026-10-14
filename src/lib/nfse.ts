@@ -16,6 +16,11 @@ export const DESCRICOES_NFSE = [
   "INTERMEDIAÇÃO DE SEGUROS",
 ] as const;
 
+/** Nota da comissão do seguro (e não do retorno) — pela descrição do serviço. */
+export function ehNotaDeSeguro(descricao: string): boolean {
+  return /segur/i.test(descricao);
+}
+
 export type TomadorNfse = {
   name: string;
   document: string | null;
