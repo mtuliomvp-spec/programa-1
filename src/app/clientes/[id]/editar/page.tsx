@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, PageHeader } from "@/components/ui";
 import PersonForm from "@/components/PersonForm";
+import { lerEndereco } from "@/lib/endereco";
 import { requireAction } from "@/lib/guards";
 import { updateCustomerAction } from "../../actions";
 
@@ -19,7 +20,7 @@ export default async function EditarClientePage({ params }: { params: Promise<{ 
       <Card>
         <CardHeader title="Dados do cliente" />
         <div className="p-5">
-          <PersonForm action={updateCustomerAction} person={customer} documentLabel="CPF / CNPJ" />
+          <PersonForm action={updateCustomerAction} person={{ ...customer, endereco: lerEndereco(customer.endereco) }} documentLabel="CPF / CNPJ" />
         </div>
       </Card>
     </div>

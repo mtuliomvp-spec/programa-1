@@ -15,6 +15,17 @@ export type CnpjData = {
   email?: string;
   address?: string;
   situacao?: string;
+  /** Mesmo endereço em campos separados (o que a NF-e pede). */
+  endereco?: {
+    cep: string;
+    logradouro: string;
+    numero: string;
+    complemento: string;
+    bairro: string;
+    cidade: string;
+    uf: string;
+    ibge: string;
+  };
 };
 
 export type CnpjLookupResult = { ok: true; data: CnpjData } | { ok: false; error: string };
@@ -87,6 +98,19 @@ function normalize(raw: Record<string, unknown>): CnpjData {
     email: firstString(raw, ["email"])?.toLowerCase(),
     address: parts.length ? parts.join(" - ") : undefined,
     situacao: firstString(raw, ["descricao_situacao_cadastral", "situacao"]),
+    endereco: parts.length
+      ? {
+          cep: cep ?? "",
+          logradouro: titleCase(logradouro) ?? "",
+          numero: numero ?? "",
+          complemento: complemento ?? "",
+          bairro: titleCase(bairro) ?? "",
+          cidade: titleCase(municipio) ?? "",
+          uf: uf?.toUpperCase() ?? "",
+          // BrasilAPI traz o código IBGE; a ReceitaWS não.
+          ibge: String(raw.codigo_municipio_ibge ?? "").replace(/\D/g, ""),
+        }
+      : undefined,
   };
 }
 

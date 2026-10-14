@@ -4,6 +4,8 @@ import { useActionState, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { findPersonByDocument } from "@/app/person-lookup";
+import { lookupCepAction } from "@/app/cep-actions";
+import { UFS, type Endereco } from "@/lib/endereco";
 
 export type PersonFormState = { error?: string };
 
@@ -14,6 +16,7 @@ type PersonData = {
   phone: string | null;
   email: string | null;
   address: string | null;
+  endereco?: Endereco | null;
   notes: string | null;
   bankName?: string | null;
   bankAgency?: string | null;
@@ -45,7 +48,48 @@ export default function PersonForm({
   function setField(name: string, value: string | undefined) {
     if (!value) return;
     const el = formRef.current?.elements.namedItem(name);
-    if (el instanceof HTMLInputElement) el.value = value;
+    if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.value = value;
+  }
+
+  // Endereço em campos (end_*): o que veio de uma busca preenche só o que trouxe.
+  function setEndereco(e: Partial<Endereco> | undefined) {
+    if (!e) return;
+    for (const [k, v] of Object.entries(e)) setField(`end_${k}`, v || undefined);
+    // O IBGE é do município: veio outro (ou nenhum), o anterior não vale mais.
+    if ("cidade" in e) setIbge(e.ibge || "");
+  }
+
+  // Campo oculto controlado: no hidden, o React regrava o defaultValue a cada
+  // render e apagaria o valor posto à mão.
+  const [ibge, setIbge] = useState(person?.endereco?.ibge || "");
+  const [buscandoCep, startCep] = useTransition();
+  const [cepMsg, setCepMsg] = useState<string | null>(null);
+  function buscarCep() {
+    const el = formRef.current?.elements.namedItem("end_cep");
+    const cep = el instanceof HTMLInputElement ? el.value : "";
+    if (cep.replace(/\D/g, "").length !== 8) {
+      setCepMsg("Digite os 8 números do CEP.");
+      return;
+    }
+    setCepMsg(null);
+    startCep(async () => {
+      const r = await lookupCepAction(cep);
+      if (!r.ok) {
+        setCepMsg(r.error);
+        return;
+      }
+      setEndereco({
+        cep: r.data.cep,
+        logradouro: r.data.logradouro,
+        bairro: r.data.bairro,
+        cidade: r.data.cidade,
+        uf: r.data.uf,
+        ibge: r.data.ibge,
+      });
+      setCepMsg("Endereço encontrado — complete o número.");
+      const num = formRef.current?.elements.namedItem("end_numero");
+      if (num instanceof HTMLInputElement) num.focus();
+    });
   }
 
   // Ao sair do campo de documento, procura no cadastro local (cliente/fornecedor)
@@ -63,6 +107,7 @@ export default function PersonForm({
       setField("phone", r.data.phone);
       setField("email", r.data.email);
       setField("address", r.data.address);
+      setEndereco(r.data.endereco ?? undefined);
       setLookupMsg({ tone: "ok", text: `Já cadastrado como ${r.source}: dados trazidos. Confira e salve.` });
     });
   }
@@ -86,6 +131,7 @@ export default function PersonForm({
       setField("phone", d.phone);
       setField("email", d.email);
       setField("address", d.address);
+      setEndereco(d.endereco);
       const extra = [
         d.fantasia && d.fantasia !== d.name ? `nome fantasia ${d.fantasia}` : null,
         d.situacao ? `situação ${d.situacao}` : null,
@@ -149,10 +195,80 @@ export default function PersonForm({
         <Field label="E-mail">
           <Input type="email" name="email" defaultValue={person?.email || ""} />
         </Field>
-        <Field label="Endereço" >
-          <Input name="address" defaultValue={person?.address || ""} />
-        </Field>
       </div>
+
+      {/* Endereço em campos — é o formato que a NF-e exige. O texto de
+          `address` é montado a partir daqui ao salvar; cadastro antigo sem os
+          campos mantém o texto até alguém preencher. */}
+      <fieldset className="rounded-lg border border-slate-200 p-4">
+        <legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">Endereço</legend>
+        <input type="hidden" name="address" defaultValue={person?.address || ""} />
+        <input type="hidden" name="end_ibge" value={ibge} readOnly />
+        {person?.address && !person.endereco ? (
+          <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-xs text-amber-800">
+            Endereço cadastrado (texto): <strong>{person.address}</strong>. Preencha os campos abaixo — a nota
+            fiscal precisa dele separado.
+          </p>
+        ) : null}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-6">
+          <div className="sm:col-span-2">
+            <Field label="CEP">
+              <div className="flex gap-2">
+                <Input
+                  name="end_cep"
+                  defaultValue={person?.endereco?.cep || ""}
+                  placeholder="00000-000"
+                  inputMode="numeric"
+                  onBlur={(e) => {
+                    if (e.currentTarget.value.replace(/\D/g, "").length === 8) buscarCep();
+                  }}
+                />
+                <Button type="button" variant="secondary" onClick={buscarCep} disabled={buscandoCep}>
+                  {buscandoCep ? "…" : "🔍"}
+                </Button>
+              </div>
+            </Field>
+          </div>
+          <div className="sm:col-span-4">
+            <Field label="Logradouro (rua, avenida…)">
+              <Input name="end_logradouro" defaultValue={person?.endereco?.logradouro || ""} />
+            </Field>
+          </div>
+          <div className="sm:col-span-1">
+            <Field label="Número">
+              <Input name="end_numero" defaultValue={person?.endereco?.numero || ""} placeholder="S/N" />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="Complemento">
+              <Input name="end_complemento" defaultValue={person?.endereco?.complemento || ""} />
+            </Field>
+          </div>
+          <div className="sm:col-span-3">
+            <Field label="Bairro">
+              <Input name="end_bairro" defaultValue={person?.endereco?.bairro || ""} />
+            </Field>
+          </div>
+          <div className="sm:col-span-4">
+            <Field label="Cidade">
+              <Input name="end_cidade" defaultValue={person?.endereco?.cidade || ""} />
+            </Field>
+          </div>
+          <div className="sm:col-span-2">
+            <Field label="UF">
+              <Select name="end_uf" defaultValue={person?.endereco?.uf || ""}>
+                <option value="">—</option>
+                {UFS.map((uf) => (
+                  <option key={uf} value={uf}>
+                    {uf}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          </div>
+        </div>
+        {cepMsg ? <p className="mt-2 text-xs text-slate-600">{cepMsg}</p> : null}
+      </fieldset>
       {showBankData ? (
         <fieldset className="rounded-lg border border-slate-200 p-4">
           <legend className="px-1 text-xs font-bold uppercase tracking-wide text-slate-500">

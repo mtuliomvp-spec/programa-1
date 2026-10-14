@@ -29,6 +29,7 @@ export async function saveNfeConfigAction(_prev: NfeConfigState, formData: FormD
     naturezaSaida: f("naturezaSaida").slice(0, 60),
     cfopSaidaUf: f("cfopSaidaUf"),
     cfopSaidaForaUf: f("cfopSaidaForaUf"),
+    ncmPadrao: f("ncmPadrao"),
     icmsCst: f("icmsCst").slice(0, 10),
     icmsReducaoBase: f("icmsReducaoBase").slice(0, 10),
     icmsAliquota: f("icmsAliquota").slice(0, 10),

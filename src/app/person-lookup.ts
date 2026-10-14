@@ -3,13 +3,21 @@
 import { prisma } from "@/lib/prisma";
 import { canUseFormLookup } from "@/lib/guards";
 import { docKey } from "@/lib/person-keys";
+import { lerEndereco, type Endereco } from "@/lib/endereco";
 
 export type PersonLookup =
   | { found: false }
   | {
       found: true;
       source: "cliente" | "fornecedor";
-      data: { name: string; document: string; phone: string; email: string; address: string };
+      data: {
+        name: string;
+        document: string;
+        phone: string;
+        email: string;
+        address: string;
+        endereco: Endereco | null;
+      };
     };
 
 /**
@@ -29,8 +37,10 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
   const key = docKey(document);
   if (!key) return { found: false };
   const [customers, suppliers] = await Promise.all([
-    prisma.customer.findMany({ select: { name: true, document: true, phone: true, email: true, address: true } }),
-    prisma.supplier.findMany({ select: { name: true, document: true, phone: true, email: true, address: true } }),
+    prisma.customer.findMany({ select: { name: true, document: true, phone: true, email: true, address: true, endereco: true } }),
+    prisma.supplier.findMany({
+      select: { name: true, document: true, phone: true, email: true, address: true, endereco: true },
+    }),
   ]);
   const customer = customers.find((c) => docKey(c.document) === key) ?? null;
   const supplier = suppliers.find((s) => docKey(s.document) === key) ?? null;
@@ -46,6 +56,7 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
       phone: person.phone ?? "",
       email: person.email ?? "",
       address: person.address ?? "",
+      endereco: lerEndereco(person.endereco),
     },
   };
 }

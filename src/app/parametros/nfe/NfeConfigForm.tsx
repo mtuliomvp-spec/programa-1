@@ -6,6 +6,7 @@ import {
   NFE_PROVEDORES,
   NFE_REGIMES,
   formatarCfop,
+  formatarNcm,
   nfeProvedorLabel,
   nfeRegimeLabel,
   type NfeConfig,
@@ -114,6 +115,10 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <Field label="NCM padrão dos veículos">
+            <Input name="ncmPadrao" defaultValue={formatarNcm(config.ncmPadrao)} placeholder="8703.xx.xx" />
+            <Dica>Automóvel 8703, utilitário/picape 8704 — o código exato vem do contador. Dá para trocar na hora de emitir.</Dica>
+          </Field>
           <Field label="CST / CSOSN do ICMS">
             <Input name="icmsCst" defaultValue={config.icmsCst} placeholder="Ex.: 20 (normal) ou 102 (Simples)" />
             <Dica>CST no regime normal; CSOSN no Simples Nacional.</Dica>
