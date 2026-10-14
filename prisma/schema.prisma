@@ -690,6 +690,7 @@ model Vehicle {
   costRefunds            Receivable[]  @relation("CostRefundVehicle")
   fuelEntries            FuelEntry[]
   attachments            VehicleAttachment[]
+  notasFiscais           NotaFiscal[]
   showroomVisits         ShowroomVisit[]
   sale                   Sale?                    @relation("SaleVehicle")
   tradeInForSale         Sale?                    @relation("SaleTradeIn")
@@ -734,6 +735,44 @@ model VehicleAttachment {
 
   @@index([vehicleId])
   @@map("vehicle_attachments")
+}
+
+// NF-e emitida pelo sistema (provedor Focus NFe). Uma linha por TENTATIVA:
+// rejeitada fica no histórico com a mensagem da SEFAZ e a correção sai numa
+// nova. `ref` é a referência única enviada ao provedor. Nota de homologação
+// (teste, sem valor fiscal) nunca grava chave no veículo.
+model NotaFiscal {
+  id             String    @id @default(cuid())
+  vehicleId      String
+  vehicle        Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  saleId         String?
+  // "ENTRADA" (compra do veículo) ou "SAIDA" (venda).
+  tipo           String
+  // "HOMOLOGACAO" ou "PRODUCAO".
+  ambiente       String
+  ref            String    @unique
+  // "PROCESSANDO", "AUTORIZADA", "ERRO", "CANCELADA".
+  status         String    @default("PROCESSANDO")
+  statusSefaz    String?
+  mensagem       String?
+  chave          String?
+  numero         String?
+  serie          String?
+  protocolo      String?
+  caminhoXml     String?
+  caminhoDanfe   String?
+  valor          Float
+  cfop           String
+  // O que foi enviado ao provedor — para conferir depois o que saiu na nota.
+  payload        Json
+  emitidaPor     String?
+  canceladaEm    DateTime?
+  justificativaCancelamento String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([vehicleId])
+  @@map("notas_fiscais")
 }
 
 // Documento da EMPRESA (ex.: contrato social, cartão CNPJ, alvará). Não tem
