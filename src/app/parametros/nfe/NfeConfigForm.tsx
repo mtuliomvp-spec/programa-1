@@ -124,10 +124,40 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
           </div>
         </div>
 
+        <div className="rounded-lg border border-slate-200 p-4">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Consignação mercantil — veículo consignado
+          </p>
+          <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Natureza — entrada">
+              <Input name="naturezaConsigEntrada" defaultValue={config.naturezaConsigEntrada} />
+            </Field>
+            <Field label="CFOP entrada — mesmo estado">
+              <Input name="cfopConsigEntradaUf" defaultValue={formatarCfop(config.cfopConsigEntradaUf)} placeholder="1.917" />
+            </Field>
+            <Field label="CFOP entrada — outro estado">
+              <Input name="cfopConsigEntradaForaUf" defaultValue={formatarCfop(config.cfopConsigEntradaForaUf)} placeholder="2.917" />
+            </Field>
+            <Field label="Natureza — venda">
+              <Input name="naturezaConsigSaida" defaultValue={config.naturezaConsigSaida} />
+            </Field>
+            <Field label="CFOP venda — mesmo estado">
+              <Input name="cfopConsigSaidaUf" defaultValue={formatarCfop(config.cfopConsigSaidaUf)} placeholder="5.115" />
+            </Field>
+            <Field label="CFOP venda — outro estado">
+              <Input name="cfopConsigSaidaForaUf" defaultValue={formatarCfop(config.cfopConsigSaidaForaUf)} placeholder="6.115" />
+            </Field>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="NCM padrão dos veículos">
             <Input name="ncmPadrao" defaultValue={formatarNcm(config.ncmPadrao)} placeholder="8703.xx.xx" />
-            <Dica>Automóvel 8703, utilitário/picape 8704 — o código exato vem do contador. Dá para trocar na hora de emitir.</Dica>
+            <Dica>
+              O sistema já sugere pela cilindrada da versão (1.0 → 8703.21.00; até 1.5 → 8703.22.10; até 3.0 →
+              8703.23.10; acima → 8703.24.10). Este é usado quando não dá para saber (picape, diesel, versão sem
+              cilindrada). Sempre dá para trocar na hora de emitir.
+            </Dica>
           </Field>
           <Field label="CST / CSOSN do ICMS">
             <Input name="icmsCst" defaultValue={config.icmsCst} placeholder="Ex.: 20 (normal) ou 102 (Simples)" />
@@ -135,7 +165,10 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
           </Field>
           <Field label="CST / CSOSN na consignação (se diferente)">
             <Input name="icmsCstConsignacao" defaultValue={config.icmsCstConsignacao} placeholder="Ex.: 900" />
-            <Dica>Vazio = usa o mesmo código acima.</Dica>
+            <Dica>
+              Vazio = usa o mesmo código acima (o contador orientou 102). A SEFAZ recusa 900 na venda a pessoa
+              física.
+            </Dica>
           </Field>
           <Field label="Redução da base do ICMS (%)">
             <Input name="icmsReducaoBase" defaultValue={config.icmsReducaoBase} inputMode="decimal" />

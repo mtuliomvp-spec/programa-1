@@ -1,4 +1,4 @@
-import { cfopDaOperacao, pendenciasNfe, regraVigente, type NfeConfig } from "@/lib/nfe-config";
+import { cfopDaOperacao, ncmSugerido, pendenciasNfe, regraVigente, type NfeConfig } from "@/lib/nfe-config";
 import { faltasEnderecoNfe, type Endereco } from "@/lib/endereco";
 
 /**
@@ -27,6 +27,7 @@ export type VeiculoNfe = {
   modelYear: number;
   color: string | null;
   km: number;
+  fuel?: string | null;
   purchasePrice: number;
   consigned: boolean;
   intermediation: boolean;
@@ -56,7 +57,13 @@ export type EntradaInput = Comum & { vendedor: VendedorNfe | null };
 export type SaidaInput = Comum & {
   /** Comprador (cliente da venda). */
   comprador: VendedorNfe | null;
-  venda: { status: string; totalAmount: number; consigned: boolean } | null;
+  venda: {
+    status: string;
+    totalAmount: number;
+    consigned: boolean;
+    transferCharged?: boolean;
+    transferAmount?: number;
+  } | null;
   /** Valor da nota ajustado na tela (padrão: valor da venda). */
   valor?: number;
 };
@@ -144,8 +151,7 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
   const faltas: string[] = [];
   const v = i.veiculo;
   if (v.intermediation) faltas.push("Veículo de intermediação não tem nota de entrada da loja.");
-  if (v.consigned) faltas.push("Veículo consignado: a nota de entrada de consignação ainda não está configurada.");
-  if (!(v.purchasePrice > 0)) faltas.push("Valor da compra do veículo.");
+  if (!(v.purchasePrice > 0)) faltas.push(v.consigned ? "Valor combinado com o consignante." : "Valor da compra do veículo.");
   return montar(i, {
     tipo: "ENTRADA",
     pessoa: i.vendedor,
@@ -157,6 +163,15 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
   });
 }
 
+/**
+ * Valor da nota de venda: só o VEÍCULO (orientação do contador) — a
+ * transferência cobrada junto na venda é serviço e não entra na nota.
+ */
+export function valorDoVeiculoNaVenda(venda: NonNullable<SaidaInput["venda"]>): number {
+  const transf = venda.transferCharged ? (venda.transferAmount ?? 0) : 0;
+  return r2(Math.max(0, venda.totalAmount - transf));
+}
+
 export function montarNfeSaida(i: SaidaInput): EntradaResultado {
   const faltas: string[] = [];
   const v = i.veiculo;
@@ -164,8 +179,7 @@ export function montarNfeSaida(i: SaidaInput): EntradaResultado {
   if (v.intermediation) faltas.push("Intermediação (financiamento de terceiros) não tem nota de venda da loja.");
   if (!i.venda) faltas.push("Venda registrada para este veículo.");
   else if (i.venda.status === "CANCELADA") faltas.push("A venda deste veículo está cancelada.");
-  if (consignado) faltas.push("Venda de veículo consignado: a nota de consignação ainda não está configurada.");
-  const valor = i.valor ?? i.venda?.totalAmount ?? 0;
+  const valor = i.valor ?? (i.venda ? valorDoVeiculoNaVenda(i.venda) : 0);
   if (!(valor > 0)) faltas.push("Valor da venda.");
   return montar(i, {
     tipo: "SAIDA",
@@ -219,7 +233,7 @@ function montar(
     }
   }
 
-  const ncm = dig(i.ncm || cfg.ncmPadrao);
+  const ncm = dig(i.ncm || ncmSugerido(v).ncm || cfg.ncmPadrao);
   if (ncm.length !== 8) faltas.push("NCM do veículo (8 dígitos).");
 
   const regra = regraVigente(cfg, i.agora, o.consignado);
@@ -241,6 +255,17 @@ function montar(
   } else if (regra.icmsCst && !/^(1\d\d|[2-5]00|900|40|41|50)$/.test(regra.icmsCst)) {
     faltas.push(`O código de ICMS ${regra.icmsCst} ainda não é calculado pelo sistema — fale com o suporte.`);
   }
+  // A SEFAZ recusa CSOSN 900 na venda a não contribuinte ("CSOSN incompatível
+  // na operação com Não Contribuinte") — avisa antes de gastar a tentativa.
+  if (
+    !entrada &&
+    regra.icmsCst === "900" &&
+    !(vendedor && ieContribuinte(dig(vendedor.document), vendedor.inscricaoEstadual))
+  ) {
+    faltas.push(
+      "CSOSN 900 não é aceito pela SEFAZ na venda a pessoa física/não contribuinte — use 102 (deixe vazio o CSOSN da consignação na configuração).",
+    );
+  }
   if (["01", "02", "03"].includes(regra.pisCofinsCst)) {
     faltas.push(`PIS/COFINS tributado (CST ${regra.pisCofinsCst}) ainda não é calculado pelo sistema — fale com o suporte.`);
   }
@@ -249,16 +274,21 @@ function montar(
 
   const end = vendedor.endereco!;
   const doc = dig(vendedor.document);
-  const cfop = cfopDaOperacao(cfg, entrada ? "entrada" : "saida", empresa.uf, end.uf);
+  const cfop = cfopDaOperacao(cfg, entrada ? "entrada" : "saida", empresa.uf, end.uf, o.consignado);
   const interestadual = !!empresa.uf && end.uf !== empresa.uf.trim().toUpperCase();
   const descricao = (i.descricao?.trim() || descricaoVeiculo(v)).toUpperCase().slice(0, 120);
   const homologacao = cfg.ambiente !== "PRODUCAO";
   const informacoes = [i.informacoes?.trim(), cfg.informacoesComplementares.trim()].filter(Boolean).join(" ");
 
   const payload: Record<string, unknown> = {
-    natureza_operacao: entrada
-      ? cfg.naturezaEntrada || "Compra para comercialização"
-      : cfg.naturezaSaida || "Venda de mercadoria adquirida de terceiros",
+    natureza_operacao: (o.consignado
+      ? entrada
+        ? cfg.naturezaConsigEntrada || "Entrada em consignação mercantil"
+        : cfg.naturezaConsigSaida || "Venda de mercadoria recebida em consignação"
+      : entrada
+        ? cfg.naturezaEntrada || "Compra para comercialização"
+        : cfg.naturezaSaida || "Venda de mercadoria adquirida de terceiros"
+    ).slice(0, 60),
     data_emissao: dataHoraSefaz(i.agora),
     tipo_documento: entrada ? 0 : 1,
     local_destino: interestadual ? 2 : 1,

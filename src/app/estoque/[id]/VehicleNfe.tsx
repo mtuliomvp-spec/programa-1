@@ -26,6 +26,8 @@ export type EntradaPrevia = {
   faltas: string[];
   descricao: string;
   ncm: string;
+  /** De onde veio o NCM sugerido (ex.: "motor 1.0 (até 1.000 cm³)"). */
+  ncmMotivo?: string;
   cfop: string | null;
   valor: number;
   vendedor: string | null;
@@ -355,7 +357,7 @@ function EmitirNota({
             className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm"
           />
           <span className="mt-0.5 block text-[11px] text-slate-500">
-            Valor da venda ({brl(previa.valor)}). Ajuste só se o contador orientar.
+            Só o veículo ({brl(previa.valor)}) — a transferência cobrada na venda não entra na nota.
           </span>
         </label>
       ) : null}
@@ -366,6 +368,7 @@ function EmitirNota({
       <label className="block max-w-[200px]">
         <span className="text-xs text-slate-500">NCM</span>
         <input value={ncm} onChange={(e) => setNcm(e.target.value)} className="mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm" />
+        {previa.ncmMotivo ? <span className="mt-0.5 block text-[11px] text-slate-500">{previa.ncmMotivo}</span> : null}
       </label>
       <label className="block">
         <span className="text-xs text-slate-500">Informações complementares desta nota (opcional)</span>

@@ -10,8 +10,8 @@ import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
 import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
-import { lerNfeConfig } from "@/lib/nfe-config";
-import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo } from "@/lib/nfe-entrada";
+import { lerNfeConfig, ncmSugerido } from "@/lib/nfe-config";
+import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo, valorDoVeiculoNaVenda } from "@/lib/nfe-entrada";
 import { lerEndereco } from "@/lib/endereco";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
@@ -223,6 +223,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     temDanfe: !!n.caminhoDanfe,
     justificativaCancelamento: n.justificativaCancelamento,
   }));
+  // NCM pela cilindrada (versão/modelo); sem como saber, vale o padrão.
+  const ncmVeiculo = ncmSugerido(vehicle);
   const previaEntrada = montarNfeEntrada({
     cfg: nfeConfig,
     empresa: { cnpj: renaveCompany.cnpj, inscricaoEstadual: renaveCompany.inscricaoEstadual, uf: renaveCompany.uf },
@@ -241,7 +243,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   const nfeEntrada: EntradaPrevia = {
     faltas: previaEntrada.ok ? [] : previaEntrada.faltas,
     descricao: previaEntrada.ok ? previaEntrada.descricao : descricaoVeiculo(vehicle),
-    ncm: nfeConfig.ncmPadrao,
+    ncm: ncmVeiculo.ncm ?? nfeConfig.ncmPadrao,
+    ncmMotivo: ncmVeiculo.motivo,
     cfop: previaEntrada.ok ? previaEntrada.cfop : null,
     valor: vehicle.purchasePrice,
     vendedor: vehicle.supplier?.name ?? null,
@@ -271,9 +274,10 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       ? {
           faltas: previaSaida.ok ? [] : previaSaida.faltas,
           descricao: previaSaida.ok ? previaSaida.descricao : descricaoVeiculo(vehicle),
-          ncm: nfeConfig.ncmPadrao,
+          ncm: ncmVeiculo.ncm ?? nfeConfig.ncmPadrao,
+          ncmMotivo: ncmVeiculo.motivo,
           cfop: previaSaida.ok ? previaSaida.cfop : null,
-          valor: vendaNfe.totalAmount,
+          valor: valorDoVeiculoNaVenda(vendaNfe),
           vendedor: vendaNfe.customer.name,
           vendedorEmpresa: (vendaNfe.customer.document ?? "").replace(/\D/g, "").length === 14,
           vendedorIe: vendaNfe.customer.inscricaoEstadual,
