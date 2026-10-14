@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { isAdminRole } from "@/lib/permissions";
-import { lerNfeConfig, pendenciasNfe } from "@/lib/nfe-config";
+import { dataBr, lerNfeConfig, nfeRegimeLabel, pendenciasNfe, regraVigente } from "@/lib/nfe-config";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import NfeConfigForm from "./NfeConfigForm";
 
@@ -15,6 +15,7 @@ export default async function ParametrosNfePage() {
   const company = await getCompany();
   const config = lerNfeConfig(company.nfeConfig);
   const pendencias = pendenciasNfe(config, !!company.cnpj?.trim(), !!company.inscricaoEstadual?.trim());
+  const hoje = regraVigente(config, new Date());
 
   return (
     <div className="mx-auto max-w-3xl">
@@ -49,6 +50,21 @@ export default async function ParametrosNfePage() {
           ) : (
             <p>Tudo configurado. A emissão é liberada assim que a integração com o provedor estiver ativa.</p>
           )}
+          <p className="mt-3 text-sm">
+            Regra que vale hoje:{" "}
+            <strong className="text-slate-900">
+              {hoje.regime ? nfeRegimeLabel[hoje.regime] : "regime não definido"}
+              {hoje.icmsCst ? ` · ICMS ${hoje.icmsCst}` : ""}
+            </strong>
+            {config.regimeNovo && config.regimeNovoDesde && !hoje.regraNova ? (
+              <>
+                {" "}
+                — a partir de <strong>{dataBr(config.regimeNovoDesde)}</strong>:{" "}
+                {nfeRegimeLabel[config.regimeNovo]}
+                {config.icmsCstNovo ? ` · ICMS ${config.icmsCstNovo}` : ""}
+              </>
+            ) : null}
+          </p>
           <p className="mt-3 text-xs text-slate-500">
             O token de acesso do provedor não é cadastrado nesta tela: ele fica em variável de ambiente da
             instalação, e o certificado A1 fica no painel do provedor.

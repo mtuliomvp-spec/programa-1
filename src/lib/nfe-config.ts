@@ -56,10 +56,23 @@ export const nfeConfigSchema = z.object({
     .default(""),
   // Tributação — o contador define. CST (regime normal) ou CSOSN (Simples).
   icmsCst: z.string().default(""),
+  // Consignação pode ter tratamento próprio (ex.: CSOSN 900 em vez de 102).
+  // Vazio = usa o mesmo de icmsCst.
+  icmsCstConsignacao: z.string().default(""),
   icmsReducaoBase: z.string().default(""),
   icmsAliquota: z.string().default(""),
   pisCofinsCst: z.string().default(""),
   informacoesComplementares: z.string().default(""),
+  // Mudança de regime AGENDADA (ex.: Simples → Lucro Presumido em janeiro):
+  // a partir de `regimeNovoDesde` (AAAA-MM-DD) as notas saem com a regra nova,
+  // sem depender de alguém lembrar de trocar a configuração no dia.
+  regimeNovo: z.enum(NFE_REGIMES).nullable().default(null),
+  regimeNovoDesde: z.string().default(""),
+  icmsCstNovo: z.string().default(""),
+  icmsCstConsignacaoNovo: z.string().default(""),
+  icmsReducaoBaseNovo: z.string().default(""),
+  icmsAliquotaNovo: z.string().default(""),
+  pisCofinsCstNovo: z.string().default(""),
 });
 
 export type NfeConfig = z.infer<typeof nfeConfigSchema>;
@@ -101,6 +114,67 @@ export function cfopDaOperacao(
   return fora ? cfg.cfopSaidaForaUf : cfg.cfopSaidaUf;
 }
 
+/** Simples Nacional (CRT 1 e 2) usa CSOSN (3 dígitos); o regime normal usa CST (2 dígitos). */
+export const CSOSN_VALIDOS = ["101", "102", "103", "201", "202", "203", "300", "400", "500", "900"];
+export const CST_ICMS_VALIDOS = ["00", "10", "20", "30", "40", "41", "50", "51", "60", "70", "90"];
+
+export function usaCsosn(regime: string | null): boolean {
+  return regime === "1" || regime === "2";
+}
+
+/** Código de ICMS incompatível com o regime (CSOSN no regime normal ou o contrário). */
+export function erroCodigoIcms(regime: string | null, codigo: string): string | null {
+  const c = codigo.trim();
+  if (!c || !regime) return null;
+  if (usaCsosn(regime)) {
+    return CSOSN_VALIDOS.includes(c) ? null : `“${c}” não é CSOSN — no Simples Nacional o código tem 3 dígitos (ex.: 102).`;
+  }
+  return CST_ICMS_VALIDOS.includes(c) ? null : `“${c}” não é CST do ICMS — no regime normal o código tem 2 dígitos (ex.: 20).`;
+}
+
+/** "2027-01-01" → "01/01/2027". */
+export function dataBr(iso: string): string {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso) ? iso.split("-").reverse().join("/") : iso;
+}
+
+export type RegraTributaria = {
+  regime: (typeof NFE_REGIMES)[number] | null;
+  icmsCst: string;
+  icmsReducaoBase: string;
+  icmsAliquota: string;
+  pisCofinsCst: string;
+  /** true quando já vale a regra da mudança agendada. */
+  regraNova: boolean;
+};
+
+/**
+ * A regra que vale para uma nota emitida em `data` (dia em São Paulo): antes
+ * da mudança agendada, a atual; a partir dela, a nova. Na consignação, o
+ * código próprio (se houver) vence o geral.
+ */
+export function regraVigente(cfg: NfeConfig, data: Date, consignacao = false): RegraTributaria {
+  const dia = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(data);
+  const nova = !!cfg.regimeNovo && /^\d{4}-\d{2}-\d{2}$/.test(cfg.regimeNovoDesde) && dia >= cfg.regimeNovoDesde;
+  if (nova) {
+    return {
+      regime: cfg.regimeNovo,
+      icmsCst: (consignacao && cfg.icmsCstConsignacaoNovo) || cfg.icmsCstNovo,
+      icmsReducaoBase: cfg.icmsReducaoBaseNovo,
+      icmsAliquota: cfg.icmsAliquotaNovo,
+      pisCofinsCst: cfg.pisCofinsCstNovo,
+      regraNova: true,
+    };
+  }
+  return {
+    regime: cfg.regime,
+    icmsCst: (consignacao && cfg.icmsCstConsignacao) || cfg.icmsCst,
+    icmsReducaoBase: cfg.icmsReducaoBase,
+    icmsAliquota: cfg.icmsAliquota,
+    pisCofinsCst: cfg.pisCofinsCst,
+    regraNova: false,
+  };
+}
+
 /** O que ainda falta para a loja poder emitir — vira o checklist da tela. */
 export function pendenciasNfe(cfg: NfeConfig, temCnpj: boolean, temIe: boolean): string[] {
   const p: string[] = [];
@@ -114,6 +188,20 @@ export function pendenciasNfe(cfg: NfeConfig, temCnpj: boolean, temIe: boolean):
   if (!cfg.cfopSaidaUf || !cfg.cfopSaidaForaUf) p.push("CFOP de saída");
   if (!cfg.ncmPadrao) p.push("NCM padrão dos veículos (contador)");
   if (!cfg.icmsCst) p.push("CST/CSOSN do ICMS (contador)");
+  for (const c of [cfg.icmsCst, cfg.icmsCstConsignacao]) {
+    const e = erroCodigoIcms(cfg.regime, c);
+    if (e) p.push(e);
+  }
   if (!cfg.pisCofinsCst) p.push("CST do PIS/COFINS (contador)");
+  if (cfg.regimeNovo) {
+    const quando = cfg.regimeNovoDesde ? ` (a partir de ${dataBr(cfg.regimeNovoDesde)})` : "";
+    if (!cfg.regimeNovoDesde) p.push("Data em que o novo regime começa");
+    if (!cfg.icmsCstNovo) p.push(`${usaCsosn(cfg.regimeNovo) ? "CSOSN" : "CST"} do ICMS no novo regime${quando}`);
+    for (const c of [cfg.icmsCstNovo, cfg.icmsCstConsignacaoNovo]) {
+      const e = erroCodigoIcms(cfg.regimeNovo, c);
+      if (e) p.push(`Novo regime: ${e}`);
+    }
+    if (!cfg.pisCofinsCstNovo) p.push(`CST do PIS/COFINS no novo regime${quando}`);
+  }
   return p;
 }
