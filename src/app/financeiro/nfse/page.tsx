@@ -5,7 +5,7 @@ import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { tomadorPorNome } from "@/lib/tomadores-nfse";
 import { Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
-import NfsePainel, { type FinanceiraOpcao, type NotaServicoResumo } from "./NfsePainel";
+import NfsePainel, { type FinanceiraOpcao, type NotaServicoResumo, type RetornoOpcao } from "./NfsePainel";
 
 export const dynamic = "force-dynamic";
 
@@ -16,15 +16,33 @@ export const dynamic = "force-dynamic";
  */
 export default async function NfsePage() {
   await requireModule("financeiro");
-  const [canEmitir, canCancelar, company, notas, contas] = await Promise.all([
+  const [canEmitir, canCancelar, company, notas, contas, vendas] = await Promise.all([
     userCan("financeiro", "nfse"),
     userCan("financeiro", "nfsecancelar"),
     getCompany(),
     prisma.notaServico.findMany({ orderBy: { createdAt: "desc" }, take: 200 }),
     prisma.financialAccount.findMany({
       where: { type: "FINANCEIRA", active: true },
-      select: { id: true, name: true, nfseTomador: { select: { name: true, document: true } } },
+      select: { id: true, name: true, nfseTomadorId: true, nfseTomador: { select: { name: true, document: true } } },
       orderBy: { name: "asc" },
+    }),
+    // Retornos das vendas financiadas — o que a nota de comissão cobre.
+    prisma.sale.findMany({
+      where: { status: "CONCLUIDA", paymentMethod: "FINANCIADO", financerAccountId: { not: null }, returnNet: { gt: 0 } },
+      orderBy: { saleDate: "desc" },
+      take: 600,
+      select: {
+        id: true,
+        saleDate: true,
+        financerAccountId: true,
+        returnNet: true,
+        returnPaidAmount: true,
+        returnSettledAt: true,
+        returnNfseId: true,
+        returnNfse: { select: { status: true } },
+        customer: { select: { name: true } },
+        vehicle: { select: { model: true, plate: true } },
+      },
     }),
   ]);
   const cfg = lerNfeConfig(company.nfeConfig);
@@ -43,8 +61,27 @@ export default async function NfsePage() {
     };
   });
 
+  const retornos: RetornoOpcao[] = vendas.map((v) => ({
+    id: v.id,
+    financeiraId: v.financerAccountId ?? "",
+    data: v.saleDate.toISOString().slice(0, 10),
+    cliente: v.customer.name,
+    veiculo: `${v.vehicle.model} ${v.vehicle.plate}`.trim(),
+    valor: v.returnSettledAt && v.returnPaidAmount != null ? v.returnPaidAmount : v.returnNet,
+    recebidoEm: v.returnSettledAt ? v.returnSettledAt.toISOString().slice(0, 10) : null,
+    // Nota rejeitada/cancelada não conta (o vínculo é desfeito, mas por garantia).
+    notaId: v.returnNfseId && v.returnNfse && !["ERRO", "CANCELADA"].includes(v.returnNfse.status) ? v.returnNfseId : null,
+  }));
+
+  // Nota antiga sem a financeira gravada: a conta ligada ao mesmo tomador.
+  const financeiraDoTomador = (tomadorId: string | null) => {
+    const cs = contas.filter((c) => tomadorId && c.nfseTomadorId === tomadorId);
+    return cs.length === 1 ? cs[0].id : null;
+  };
+
   const resumo: NotaServicoResumo[] = notas.map((n) => ({
     id: n.id,
+    financeiraId: n.financeiraId ?? financeiraDoTomador(n.tomadorId),
     ambiente: n.ambiente,
     status: n.status,
     tomadorNome: n.tomadorNome,
@@ -88,6 +125,7 @@ export default async function NfsePage() {
         <NfsePainel
           notas={resumo}
           financeiras={financeiras}
+          retornos={retornos}
           canEmitir={canEmitir}
           canCancelar={canCancelar}
           homologacao={cfg.ambiente !== "PRODUCAO"}
