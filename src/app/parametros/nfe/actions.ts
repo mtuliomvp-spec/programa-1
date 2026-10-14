@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getSessionUser } from "@/lib/auth";
 import { isAdminRole } from "@/lib/permissions";
-import { nfeConfigSchema } from "@/lib/nfe-config";
+import { erroCstPisCofins, nfeConfigSchema } from "@/lib/nfe-config";
 
 export type NfeConfigState = { error?: string; success?: string };
 
@@ -52,6 +52,8 @@ export async function saveNfeConfigAction(_prev: NfeConfigState, formData: FormD
     pisCofinsCstNovo: f("pisCofinsCstNovo").slice(0, 10),
   });
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  const erroPis = erroCstPisCofins(parsed.data.pisCofinsCst) || erroCstPisCofins(parsed.data.pisCofinsCstNovo);
+  if (erroPis) return { error: erroPis };
 
   await prisma.companySettings.upsert({
     where: { id: "company" },

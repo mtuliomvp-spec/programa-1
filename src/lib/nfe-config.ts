@@ -140,9 +140,10 @@ export function cfopDaOperacao(
  *
  * Picapes (orientação do contador): as COMPACTAS, com carga abaixo de 1 t
  * (Strada, Saveiro, Montana, Oroch…), ficam na 8703 pela cilindrada; as médias
- * e grandes (Hilux, S10, Ranger, Toro…) vão para a 8704 — o código vem do "NCM
- * das picapes 8704" da configuração. Diesel/elétrico/híbrido de passeio têm
- * posição própria: aí vale o NCM padrão, conferido na tela.
+ * e grandes (Hilux, S10, Ranger, Toro…) vão para a 8704 pelo combustível; sem
+ * combustível cadastrado, vale o "NCM das picapes 8704" da configuração.
+ * Diesel/elétrico/híbrido de passeio têm posição própria: aí vale o NCM padrão,
+ * conferido na tela.
  */
 const PICAPE_COMPACTA = /\b(strada|saveiro|montana|oroch|courier|hoggar)\b/i;
 const PICAPE_8704 =
@@ -155,7 +156,24 @@ export function ncmSugerido(v: {
 }): { ncm: string | null; motivo: string; posicao8704?: boolean } {
   const texto = `${v.model} ${v.version ?? ""}`;
   if (PICAPE_8704.test(texto)) {
-    return { ncm: null, motivo: "picape média/grande (carga acima de 1 t) — posição 8704", posicao8704: true };
+    // Picape completa (com caçamba), PBT abaixo de 5 t — pelo combustível
+    // (orientação do contador): diesel 8704.21.90; flex/gasolina/etanol
+    // 8704.31.90; 100% elétrica 8704.60.00.
+    const comb = `${v.fuel ?? ""} ${texto}`;
+    if (/diesel/i.test(comb)) return { ncm: "87042190", motivo: "picape média/grande a diesel — 8704.21.90" };
+    if (/el[eé]tric/i.test(comb) && !/h[ií]brid/i.test(comb)) {
+      return { ncm: "87046000", motivo: "picape 100% elétrica — 8704.60.00" };
+    }
+    if (/flex|gasolina|etanol|[aá]lcool/i.test(comb)) {
+      return { ncm: "87043190", motivo: "picape média/grande flex/gasolina — 8704.31.90" };
+    }
+    return {
+      ncm: null,
+      motivo: /h[ií]brid/i.test(comb)
+        ? "picape híbrida — posição 8704 (confira o NCM com o contador)"
+        : "picape média/grande sem combustível cadastrado — posição 8704",
+      posicao8704: true,
+    };
   }
   const compacta = PICAPE_COMPACTA.test(texto);
   if (!compacta && /diesel|el[eé]tric|h[ií]brid/i.test(`${v.fuel ?? ""} ${texto}`)) {
@@ -185,6 +203,19 @@ export function ncmDoVeiculo(
     };
   }
   return { ncm: s.ncm ?? cfg.ncmPadrao, motivo: s.motivo };
+}
+
+/** CST do PIS/COFINS: sempre 2 dígitos (o CSOSN de 3 dígitos é do ICMS). */
+export const CST_PIS_COFINS_VALIDOS = [
+  "01", "02", "03", "04", "05", "06", "07", "08", "09",
+  "49", "50", "51", "52", "53", "54", "55", "56", "60", "61", "62", "63", "64", "65", "66", "67",
+  "70", "71", "72", "73", "74", "75", "98", "99",
+];
+
+export function erroCstPisCofins(codigo: string): string | null {
+  const c = codigo.trim();
+  if (!c || CST_PIS_COFINS_VALIDOS.includes(c)) return null;
+  return `“${c}” não é CST do PIS/COFINS — ele tem 2 dígitos (ex.: 49 ou 99). O 102 é o CSOSN do ICMS.`;
 }
 
 /** Simples Nacional (CRT 1 e 2) usa CSOSN (3 dígitos); o regime normal usa CST (2 dígitos). */
