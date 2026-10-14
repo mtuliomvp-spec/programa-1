@@ -16,7 +16,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const origem = xml ? nota.caminhoXml : arquivo === "danfse" ? nota.urlDanfse : null;
   if (!origem) return new Response("Arquivo indisponível", { status: 404 });
   const res = await baixarUrl(nota.ambiente as Ambiente, origem);
-  if (!res) return new Response("Não foi possível baixar o arquivo agora.", { status: 502 });
+  if (!res) {
+    // DANFSe com link público da Focus (arquivo na Amazon): se o download por
+    // aqui falhar, abre direto lá em vez de deixar a tela de erro.
+    if (!xml && /^https:\/\/focusnfe\.s3[.-]/.test(origem)) return Response.redirect(origem, 302);
+    return new Response("Não foi possível baixar o arquivo agora.", { status: 502 });
+  }
   const nome = `nfse-${nota.numero ?? nota.ref}.${xml ? "xml" : "pdf"}`;
   return new Response(await res.arrayBuffer(), {
     headers: {
