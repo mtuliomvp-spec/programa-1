@@ -64,7 +64,8 @@ export default function NfsePainel({
 }) {
   const router = useRouter();
 
-  // Nota em processamento: consulta a Focus a cada 4 s (até ~1 min).
+  // Nota em processamento: consulta a Focus a cada 5 s por até 3 min — o
+  // Ambiente Nacional da NFS-e às vezes passa de 1 min para responder.
   const chaveProc = notas
     .filter((n) => n.status === "PROCESSANDO")
     .map((n) => n.id)
@@ -81,8 +82,8 @@ export default function NfsePainel({
         if (r.ok && r.status !== "PROCESSANDO") mudou = true;
       }
       if (mudou) router.refresh();
-      if (mudou || tentativas.current >= 15) clearInterval(t);
-    }, 4000);
+      if (mudou || tentativas.current >= 36) clearInterval(t);
+    }, 5000);
     return () => clearInterval(t);
   }, [chaveProc, canEmitir, router]);
 
