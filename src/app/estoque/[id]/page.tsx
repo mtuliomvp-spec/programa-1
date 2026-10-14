@@ -236,6 +236,13 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     { rotulo: "Versão", valor: vehicle.version || null, dica: "Editar veículo" },
     { rotulo: "Ano de fabricação", valor: vehicle.manufactureYear ? String(vehicle.manufactureYear) : null },
     { rotulo: "Ano do modelo", valor: vehicle.modelYear ? String(vehicle.modelYear) : null },
+    {
+      // ATPV-e anexada = CRV digital (é o que sai no papel branco); CRV de
+      // papel antigo é AZUL ou VERDE, pela cor do documento — só olhando.
+      rotulo: "Tipo CRV",
+      valor: vehicle.attachments.some((a) => /ATPV/i.test(a.description)) ? "DIGITAL/BRANCO" : null,
+      dica: "sem ATPV-e anexada: veja a cor do CRV de papel — AZUL ou VERDE",
+    },
     { rotulo: "Número CRV", valor: soDigitos(vehicle.crvNumber), dica: "lido da ATPV-e (formulário do Renave)" },
     { rotulo: "Código Segurança CRV", valor: soDigitos(vehicle.crvSecurityCode), dica: "lido da ATPV-e" },
     { rotulo: "Valor da compra", valor: vehicle.purchasePrice ? vehicle.purchasePrice.toFixed(2).replace(".", ",") : null },
