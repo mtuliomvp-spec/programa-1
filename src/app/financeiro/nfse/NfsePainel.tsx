@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { DESCRICOES_NFSE, ehNotaDeSeguro } from "@/lib/nfse";
+import { DESCRICOES_NFSE } from "@/lib/nfse";
 import { TOMADORES_CONHECIDOS, tomadorPorNome, tomadorSeguroDe } from "@/lib/tomadores-nfse";
 import {
   atualizarNfseAction,
@@ -256,18 +256,22 @@ function Emitir({
   const [aberto, setAberto] = useState(false);
   const [financeiraId, setFinanceiraId] = useState("");
   const financeira = financeiras.find((f) => f.id === financeiraId) ?? null;
-  const [descricao, setDescricao] = useState<string>(DESCRICOES_NFSE[0]);
+  const [tipo, setTipo] = useState<Tipo>("RETORNO");
+  const [descricao, setDescricao] = useState<string>(DESCRICOES_NFSE.RETORNO[0]);
+  const [outraDescricao, setOutraDescricao] = useState(false);
   const [valor, setValor] = useState("");
   const [competencia, setCompetencia] = useState(hojeSp());
   const [informacoes, setInformacoes] = useState("");
   const [marcados, setMarcados] = useState<string[]>([]);
   const [erro, setErro] = useState<{ msg: string; faltas?: string[] } | null>(null);
-  const tipo: Tipo = ehNotaDeSeguro(descricao) ? "SEGURO" : "RETORNO";
   const livres = retornos.filter((r) => r.financeiraId === financeiraId && r.tipo === tipo && !r.notaId);
 
-  function mudarDescricao(d: string) {
-    if (ehNotaDeSeguro(d) !== ehNotaDeSeguro(descricao)) setMarcados([]);
-    setDescricao(d);
+  function mudarTipo(t: Tipo) {
+    if (t === tipo) return;
+    setTipo(t);
+    setDescricao(DESCRICOES_NFSE[t][0]);
+    setOutraDescricao(false);
+    setMarcados([]);
   }
 
   function marcar(ids: string[]) {
@@ -280,7 +284,7 @@ function Emitir({
     setErro(null);
     const v = Number(valor.replace(/\./g, "").replace(",", "."));
     start(async () => {
-      const r = await emitirNfseAction({ financeiraId, descricao, valor: v, competencia, informacoes, saleIds: marcados });
+      const r = await emitirNfseAction({ financeiraId, descricao, valor: v, competencia, informacoes, saleIds: marcados, tipo });
       if (!r.ok) {
         setErro({ msg: r.error || "Não foi possível emitir.", faltas: r.faltas });
         return;
@@ -328,6 +332,32 @@ function Emitir({
           ))}
         </select>
       </label>
+      <div>
+        <span className="text-xs text-slate-500">Tipo da nota</span>
+        <div className="mt-0.5 grid grid-cols-2 gap-2">
+          {(
+            [
+              ["RETORNO", "💰 Comissão do retorno", "retorno do financiamento"],
+              ["SEGURO", "🛡️ Comissão do seguro", "seguro vendido com o financiamento"],
+            ] as const
+          ).map(([t, titulo, sub]) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => mudarTipo(t)}
+              aria-pressed={tipo === t}
+              className={`rounded-lg border px-3 py-2 text-left ${
+                tipo === t
+                  ? "border-slate-900 bg-slate-900 text-white"
+                  : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+              }`}
+            >
+              <span className="block text-sm font-semibold">{titulo}</span>
+              <span className={`block text-[11px] ${tipo === t ? "text-slate-300" : "text-slate-500"}`}>{sub}</span>
+            </button>
+          ))}
+        </div>
+      </div>
       {financeira ? <Vinculo key={`${financeira.id}-${tipo}`} financeira={financeira} papel={tipo} /> : null}
       {financeira ? (
         <div>
@@ -343,12 +373,30 @@ function Emitir({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block sm:col-span-2">
           <span className="text-xs text-slate-500">Descrição do serviço</span>
-          <input list="nfse-descricoes" value={descricao} onChange={(e) => mudarDescricao(e.target.value)} className={campo} />
-          <datalist id="nfse-descricoes">
-            {DESCRICOES_NFSE.map((d) => (
-              <option key={d} value={d} />
+          <select
+            value={outraDescricao ? "" : descricao}
+            onChange={(e) => {
+              setOutraDescricao(!e.target.value);
+              setDescricao(e.target.value);
+            }}
+            className={campo}
+          >
+            {DESCRICOES_NFSE[tipo].map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
             ))}
-          </datalist>
+            <option value="">Outra (digitar)…</option>
+          </select>
+          {outraDescricao ? (
+            <input
+              value={descricao}
+              onChange={(e) => setDescricao(e.target.value.toUpperCase())}
+              placeholder="Descrição do serviço"
+              className={campo}
+              autoFocus
+            />
+          ) : null}
         </label>
         <label className="block">
           <span className="text-xs text-slate-500">Valor informado pelo banco (R$)</span>

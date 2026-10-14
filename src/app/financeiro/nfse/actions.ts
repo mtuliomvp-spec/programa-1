@@ -227,6 +227,8 @@ export async function emitirNfseAction(input: {
   informacoes?: string;
   /** Retornos (vendas) que a nota cobre. */
   saleIds?: string[];
+  /** Nota do retorno ou do seguro (sem isto, pela descrição). */
+  tipo?: TipoNota;
 }): Promise<NfseActionResult> {
   try {
     await assertCan("financeiro", "nfse");
@@ -244,7 +246,8 @@ export async function emitirNfseAction(input: {
       : null,
   ]);
   if (!financeira || financeira.type !== "FINANCEIRA") return { ok: false, error: "Escolha a financeira." };
-  const tipo: TipoNota = ehNotaDeSeguro(input.descricao) ? "SEGURO" : "RETORNO";
+  const tipo: TipoNota =
+    input.tipo === "SEGURO" || input.tipo === "RETORNO" ? input.tipo : ehNotaDeSeguro(input.descricao) ? "SEGURO" : "RETORNO";
   const conhecido = tomadorPorNome(financeira.name);
   let tomador = financeira.nfseTomador;
   // Financeira ainda sem vínculo, mas reconhecida pelo nome entre os bancos das
