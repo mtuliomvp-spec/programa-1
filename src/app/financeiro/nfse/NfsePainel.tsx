@@ -3,9 +3,16 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DESCRICOES_NFSE } from "@/lib/nfse";
-import { atualizarNfseAction, cancelarNfseAction, emitirNfseAction } from "./actions";
+import { TOMADORES_CONHECIDOS, tomadorPorNome } from "@/lib/tomadores-nfse";
+import { atualizarNfseAction, cancelarNfseAction, emitirNfseAction, vincularFinanceiraAction } from "./actions";
 
-export type TomadorOpcao = { id: string; name: string; document: string };
+export type FinanceiraOpcao = {
+  id: string;
+  name: string;
+  /** Cadastro fiscal ligado (razão social / CNPJ); null = ainda pedir o CNPJ. */
+  tomadorNome: string | null;
+  tomadorDocumento: string | null;
+};
 
 export type NotaServicoResumo = {
   id: string;
@@ -44,13 +51,13 @@ const fmtDoc = (d: string) => {
 
 export default function NfsePainel({
   notas,
-  tomadores,
+  financeiras,
   canEmitir,
   canCancelar,
   homologacao,
 }: {
   notas: NotaServicoResumo[];
-  tomadores: TomadorOpcao[];
+  financeiras: FinanceiraOpcao[];
   canEmitir: boolean;
   canCancelar: boolean;
   homologacao: boolean;
@@ -81,7 +88,7 @@ export default function NfsePainel({
 
   return (
     <div className="space-y-4 p-5">
-      {canEmitir ? <Emitir tomadores={tomadores} homologacao={homologacao} /> : null}
+      {canEmitir ? <Emitir financeiras={financeiras} homologacao={homologacao} /> : null}
       {notas.length ? (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {notas.map((n) => (
@@ -95,11 +102,12 @@ export default function NfsePainel({
   );
 }
 
-function Emitir({ tomadores, homologacao }: { tomadores: TomadorOpcao[]; homologacao: boolean }) {
+function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; homologacao: boolean }) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [aberto, setAberto] = useState(false);
-  const [tomadorId, setTomadorId] = useState("");
+  const [financeiraId, setFinanceiraId] = useState("");
+  const financeira = financeiras.find((f) => f.id === financeiraId) ?? null;
   const [descricao, setDescricao] = useState<string>(DESCRICOES_NFSE[0]);
   const [valor, setValor] = useState("");
   const [competencia, setCompetencia] = useState(hojeSp());
@@ -110,7 +118,7 @@ function Emitir({ tomadores, homologacao }: { tomadores: TomadorOpcao[]; homolog
     setErro(null);
     const v = Number(valor.replace(/\./g, "").replace(",", "."));
     start(async () => {
-      const r = await emitirNfseAction({ tomadorId, descricao, valor: v, competencia, informacoes });
+      const r = await emitirNfseAction({ financeiraId, descricao, valor: v, competencia, informacoes });
       if (!r.ok) {
         setErro({ msg: r.error || "Não foi possível emitir.", faltas: r.faltas });
         return;
@@ -139,16 +147,18 @@ function Emitir({ tomadores, homologacao }: { tomadores: TomadorOpcao[]; homolog
     <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm">
       <p className="font-semibold text-slate-900">Nova NFS-e de comissão</p>
       <label className="block">
-        <span className="text-xs text-slate-500">Tomador (banco / seguradora)</span>
-        <select value={tomadorId} onChange={(e) => setTomadorId(e.target.value)} className={campo}>
+        <span className="text-xs text-slate-500">Financeira (tomador)</span>
+        <select value={financeiraId} onChange={(e) => setFinanceiraId(e.target.value)} className={campo}>
           <option value="">— escolha —</option>
-          {tomadores.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} · {fmtDoc(t.document)}
+          {financeiras.map((f) => (
+            <option key={f.id} value={f.id}>
+              {f.name}
+              {f.tomadorDocumento ? ` · ${fmtDoc(f.tomadorDocumento)}` : " · (falta o CNPJ)"}
             </option>
           ))}
         </select>
       </label>
+      {financeira ? <Vinculo key={financeira.id} financeira={financeira} /> : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block sm:col-span-2">
           <span className="text-xs text-slate-500">Descrição do serviço</span>
@@ -176,7 +186,7 @@ function Emitir({ tomadores, homologacao }: { tomadores: TomadorOpcao[]; homolog
         <button
           type="button"
           onClick={emitir}
-          disabled={pending || !tomadorId || !valor}
+          disabled={pending || !financeira?.tomadorDocumento || !valor}
           className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
         >
           {pending ? "Enviando…" : homologacao ? "Emitir nota de teste" : "Emitir NFS-e"}
@@ -197,6 +207,96 @@ function Emitir({ tomadores, homologacao }: { tomadores: TomadorOpcao[]; homolog
           ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Cadastro fiscal da financeira: mostra a razão social/CNPJ ligados ou, na
+ * primeira vez, pede o CNPJ (a razão social e o endereço vêm da Receita).
+ */
+function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [editando, setEditando] = useState(!financeira.tomadorDocumento);
+  const sugerido = tomadorPorNome(financeira.name);
+  const [cnpj, setCnpj] = useState(sugerido?.cnpj ?? "");
+  const [razao, setRazao] = useState("");
+  const [pedeRazao, setPedeRazao] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+
+  function vincular() {
+    setErro(null);
+    start(async () => {
+      const r = await vincularFinanceiraAction(financeira.id, cnpj, razao || undefined);
+      if (!r.ok) {
+        setErro(r.error || "Não foi possível vincular.");
+        if (/raz[aã]o social/i.test(r.error || "")) setPedeRazao(true);
+        return;
+      }
+      setEditando(false);
+      router.refresh();
+    });
+  }
+
+  if (!editando && financeira.tomadorDocumento) {
+    return (
+      <p className="text-xs text-slate-600">
+        Nota sai para <strong>{financeira.tomadorNome}</strong> · CNPJ {fmtDoc(financeira.tomadorDocumento)}{" "}
+        <button type="button" onClick={() => setEditando(true)} className="ml-1 text-blue-700 hover:underline">
+          trocar
+        </button>
+      </p>
+    );
+  }
+  const campo = "mt-0.5 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+      <p>
+        Informe o <strong>CNPJ de {financeira.name}</strong> (o que vai na nota). É só da primeira vez.
+      </p>
+      {sugerido ? (
+        <p className="mt-1">
+          Pelas notas que a loja já emitiu: <strong>{sugerido.nome}</strong> · CNPJ {sugerido.cnpj} — confira e clique
+          em vincular.
+        </p>
+      ) : null}
+      <label className="mt-2 block">
+        <span className="text-[11px] text-amber-800">Bancos das notas já emitidas</span>
+        <select
+          value={TOMADORES_CONHECIDOS.some((t) => t.cnpj === cnpj) ? cnpj : ""}
+          onChange={(e) => e.target.value && setCnpj(e.target.value)}
+          className={campo}
+        >
+          <option value="">— outro (digite o CNPJ) —</option>
+          {TOMADORES_CONHECIDOS.map((t) => (
+            <option key={t.cnpj} value={t.cnpj}>
+              {t.nome} · {t.cnpj}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="mt-2 flex flex-wrap items-end gap-2">
+        <label className="block">
+          <span className="text-[11px] text-amber-800">CNPJ</span>
+          <input value={cnpj} onChange={(e) => setCnpj(e.target.value)} placeholder="00.000.000/0000-00" className={campo} />
+        </label>
+        {pedeRazao ? (
+          <label className="block min-w-[260px] flex-1">
+            <span className="text-[11px] text-amber-800">Razão social</span>
+            <input value={razao} onChange={(e) => setRazao(e.target.value)} className={campo} />
+          </label>
+        ) : null}
+        <button
+          type="button"
+          onClick={vincular}
+          disabled={pending || cnpj.replace(/\D/g, "").length !== 14}
+          className="h-9 rounded-lg bg-amber-600 px-3 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+        >
+          {pending ? "Buscando…" : "Buscar e vincular"}
+        </button>
+      </div>
+      {erro ? <p className="mt-1 text-rose-700">{erro}</p> : null}
     </div>
   );
 }

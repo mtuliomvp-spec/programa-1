@@ -230,6 +230,10 @@ model FinancialAccount {
   ownerBeneficiaryId  String?
   ownerBeneficiary    CapitalBeneficiary?    @relation("AccountOwner", fields: [ownerBeneficiaryId], references: [id])
   notes               String?
+  // Financeira: o cadastro fiscal (cliente com CNPJ) contra o qual sai a NFS-e
+  // da comissão de retorno/seguro. Vinculado na primeira emissão, pelo CNPJ.
+  nfseTomadorId       String?
+  nfseTomador         Customer?              @relation("FinanceiraTomador", fields: [nfseTomadorId], references: [id], onDelete: SetNull)
   payables            Payable[]
   // Títulos pré-lançados nesta conta, esperando o caixa do dia do comprovante.
   pendingPayments     Payable[]              @relation("PendingPayment")
@@ -558,6 +562,7 @@ model Customer {
   receivables Receivable[]
   recurring   RecurringEntry[]
   notasServico NotaServico[]
+  financeirasTomador FinancialAccount[] @relation("FinanceiraTomador")
 
   @@map("customers")
 }
@@ -795,6 +800,8 @@ model NotaServico {
   status            String    @default("PROCESSANDO")
   tomadorId         String?
   tomador           Customer? @relation(fields: [tomadorId], references: [id], onDelete: SetNull)
+  // A financeira (Contas e caixas) que pagou o retorno/comissão.
+  financeiraId      String?
   tomadorNome       String
   tomadorDocumento  String
   descricao         String
