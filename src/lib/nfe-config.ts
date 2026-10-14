@@ -46,6 +46,14 @@ export const nfeConfigSchema = z.object({
   naturezaSaida: z.string().default("Venda de mercadoria adquirida de terceiros"),
   cfopSaidaUf: cfop.default("5102"),
   cfopSaidaForaUf: cfop.default("6102"),
+  // Consignação mercantil: CFOPs e natureza próprios (o contador definiu
+  // 1.917/2.917 na entrada e 5.115/6.115 na venda).
+  naturezaConsigEntrada: z.string().default("Entrada em consignação mercantil"),
+  cfopConsigEntradaUf: cfop.default("1917"),
+  cfopConsigEntradaForaUf: cfop.default("2917"),
+  naturezaConsigSaida: z.string().default("Venda de mercadoria recebida em consignação"),
+  cfopConsigSaidaUf: cfop.default("5115"),
+  cfopConsigSaidaForaUf: cfop.default("6115"),
   // NCM do item (8 dígitos). Automóvel de passageiros é 8703.xx.xx e utilitário
   // 8704.xx.xx — o código exato depende do motor/combustível; este é o padrão,
   // ajustável na hora de emitir.
@@ -107,11 +115,45 @@ export function cfopDaOperacao(
   tipo: "entrada" | "saida",
   ufLoja: string | null | undefined,
   ufOutraParte: string | null | undefined,
+  consignacao = false,
 ): string {
   const fora =
     !!ufLoja && !!ufOutraParte && ufLoja.trim().toUpperCase() !== ufOutraParte.trim().toUpperCase();
+  if (consignacao) {
+    if (tipo === "entrada") return fora ? cfg.cfopConsigEntradaForaUf : cfg.cfopConsigEntradaUf;
+    return fora ? cfg.cfopConsigSaidaForaUf : cfg.cfopConsigSaidaUf;
+  }
   if (tipo === "entrada") return fora ? cfg.cfopEntradaForaUf : cfg.cfopEntradaUf;
   return fora ? cfg.cfopSaidaForaUf : cfg.cfopSaidaUf;
+}
+
+/**
+ * NCM do automóvel pela cilindrada (orientação do contador): até 1.0 →
+ * 8703.21.00; até 1.5 → 8703.22.10; até 3.0 → 8703.23.10; acima → 8703.24.10.
+ * A cilindrada sai da versão/modelo ("1.0 Turbo", "1.6 MSI"). Picape/utilitário
+ * é 8704 e diesel/elétrico/híbrido têm posições próprias — aí não sugere (vale
+ * o NCM padrão da configuração, conferido na tela).
+ */
+const PICAPES = /\b(strada|saveiro|toro|montana|hilux|s-?10|ranger|amarok|l200|triton|frontier|oroch|maverick|rampage|fiorino|courier|hoggar|d-?20|f-?250|ram)\b/i;
+
+export function ncmSugerido(v: {
+  model: string;
+  version: string | null;
+  fuel?: string | null;
+}): { ncm: string | null; motivo: string } {
+  const texto = `${v.model} ${v.version ?? ""}`;
+  if (PICAPES.test(texto)) return { ncm: null, motivo: "picape/utilitário (posição 8704) — confira o NCM" };
+  if (/diesel|el[eé]tric|h[ií]brid/i.test(`${v.fuel ?? ""} ${texto}`)) {
+    return { ncm: null, motivo: "diesel/elétrico/híbrido tem posição própria — confira o NCM" };
+  }
+  const m = texto.match(/\b(\d)[.,](\d)\b/);
+  if (!m) return { ncm: null, motivo: "cilindrada não encontrada na versão — confira o NCM" };
+  const litros = Number(`${m[1]}.${m[2]}`);
+  const cc = `${m[1]}.${m[2]}`;
+  if (litros <= 1.0) return { ncm: "87032100", motivo: `motor ${cc} (até 1.000 cm³)` };
+  if (litros <= 1.5) return { ncm: "87032210", motivo: `motor ${cc} (1.000 a 1.500 cm³)` };
+  if (litros <= 3.0) return { ncm: "87032310", motivo: `motor ${cc} (1.500 a 3.000 cm³)` };
+  return { ncm: "87032410", motivo: `motor ${cc} (acima de 3.000 cm³)` };
 }
 
 /** Simples Nacional (CRT 1 e 2) usa CSOSN (3 dígitos); o regime normal usa CST (2 dígitos). */
