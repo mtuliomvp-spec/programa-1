@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { formatCurrency, formatDate, toDateInputValue } from "@/lib/format";
@@ -37,6 +38,7 @@ export default async function FinanciamentosPage({
         customer: { select: { name: true } },
         vehicle: { select: { brand: true, model: true, plate: true } },
         financerAccount: { select: { name: true, sellerReturnPercent: true } },
+        returnNfse: { select: { id: true, numero: true, status: true, ambiente: true } },
       },
     }),
     getAccountsWithBalances(),
@@ -62,6 +64,7 @@ export default async function FinanciamentosPage({
         s.financerSettledAt ? "Recebido" : "Receber",
         s.returnLevel > 0 ? retornoLabel(s.returnLevel) : null,
         s.returnNet > 0 ? formatCurrency(s.returnNet) : null,
+        s.returnNfse ? `NFS-e ${s.returnNfse.numero ?? ""} NF emitida` : null,
       ) &&
       inDateRange(s.saleDate, de, ate) &&
       inValueRange(s.financedAmount ?? 0, min, max),
@@ -229,6 +232,7 @@ export default async function FinanciamentosPage({
                             programmedAmount={s.returnNet}
                           />
                         ) : null}
+                        <RetornoNfse nota={s.returnNfse} />
                       </div>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
@@ -272,5 +276,30 @@ export default async function FinanciamentosPage({
         )}
       </Card>
     </div>
+  );
+}
+
+/** NFS-e de comissão que cobre o retorno (Financeiro → Notas de serviço). */
+function RetornoNfse({ nota }: { nota: { id: string; numero: string | null; status: string; ambiente: string } | null }) {
+  if (!nota || nota.status === "ERRO" || nota.status === "CANCELADA") return null;
+  const teste = nota.ambiente !== "PRODUCAO" ? " (teste)" : "";
+  if (nota.status !== "AUTORIZADA") {
+    return (
+      <Link href="/financeiro/nfse" className="text-[11px] font-medium text-amber-700 hover:underline">
+        🧾 NFS-e processando{teste}
+      </Link>
+    );
+  }
+  return (
+    <a
+      href={`/financeiro/nfse/${nota.id}/danfse`}
+      target="_blank"
+      rel="noopener noreferrer"
+      title="Abrir a DANFSe"
+      className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+    >
+      🧾 NF emitida{nota.numero ? ` nº ${nota.numero}` : ""}
+      {teste}
+    </a>
   );
 }

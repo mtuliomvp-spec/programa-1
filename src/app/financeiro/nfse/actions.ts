@@ -31,10 +31,40 @@ const STATUS: Record<string, string> = {
   negado: "ERRO",
 };
 
+/** Nota rejeitada ou cancelada não cobre mais nada: os retornos voltam a ficar sem NF. */
+async function liberarRetornos(notaId: string) {
+  await prisma.sale.updateMany({ where: { returnNfseId: notaId }, data: { returnNfseId: null } });
+}
+
+/**
+ * Liga os retornos (vendas financiadas) à nota — só os da financeira dela e
+ * que não estejam numa outra nota válida. Devolve quantos ficaram ligados.
+ */
+async function ligarRetornos(notaId: string, financeiraId: string, saleIds: string[]) {
+  const ids = [...new Set(saleIds)].slice(0, 200);
+  if (!ids.length) return 0;
+  const r = await prisma.sale.updateMany({
+    where: {
+      id: { in: ids },
+      financerAccountId: financeiraId,
+      paymentMethod: "FINANCIADO",
+      returnNet: { gt: 0 },
+      OR: [
+        { returnNfseId: null },
+        { returnNfseId: notaId },
+        { returnNfse: { status: { in: ["ERRO", "CANCELADA"] } } },
+      ],
+    },
+    data: { returnNfseId: notaId },
+  });
+  return r.count;
+}
+
 async function aplicar(id: string, body: FocusNfse) {
   const nota = await prisma.notaServico.findUnique({ where: { id } });
   if (!nota) return null;
   const status = (body.status && STATUS[body.status]) || nota.status;
+  if (status === "ERRO" || status === "CANCELADA") await liberarRetornos(id);
   return prisma.notaServico.update({
     where: { id },
     data: {
@@ -134,6 +164,8 @@ export async function emitirNfseAction(input: {
   valor: number;
   competencia: string;
   informacoes?: string;
+  /** Retornos (vendas) que a nota cobre. */
+  saleIds?: string[];
 }): Promise<NfseActionResult> {
   try {
     await assertCan("financeiro", "nfse");
@@ -201,19 +233,60 @@ export async function emitirNfseAction(input: {
       emitidaPor: user?.name ?? null,
     },
   });
+  await ligarRetornos(nota.id, financeira.id, input.saleIds ?? []);
 
   const { http, body } = await emitirNfsen(ambiente, ref, r.payload);
   if (http === 201 || http === 202 || body.status) {
     const n = await aplicar(nota.id, body);
     revalidatePath("/financeiro/nfse");
+    revalidatePath("/financeiro/financiamentos");
     return { ok: true, status: n?.status };
   }
   await prisma.notaServico.update({
     where: { id: nota.id },
     data: { status: "ERRO", mensagem: mensagemErroNfse(body) },
   });
+  await liberarRetornos(nota.id);
   revalidatePath("/financeiro/nfse");
   return { ok: false, error: mensagemErroNfse(body) };
+}
+
+/**
+ * Quais retornos a nota cobre — para notas já emitidas (ou corrigir a escolha).
+ * Substitui a lista: o que sair dela volta a ficar sem NF.
+ */
+export async function vincularRetornosAction(notaId: string, saleIds: string[]): Promise<NfseActionResult & { count?: number }> {
+  try {
+    await assertCan("financeiro", "nfse");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const nota = await prisma.notaServico.findUnique({ where: { id: notaId } });
+  if (!nota) return { ok: false, error: "Nota não encontrada." };
+  if (nota.status !== "AUTORIZADA" && nota.status !== "PROCESSANDO") {
+    return { ok: false, error: "Só nota autorizada (ou em processamento) cobre retornos." };
+  }
+  const financeiraId = nota.financeiraId ?? (await financeiraDaNota(nota.tomadorId));
+  if (!financeiraId) return { ok: false, error: "Não foi possível saber a financeira desta nota." };
+  const ids = [...new Set(saleIds)];
+  await prisma.sale.updateMany({
+    where: { returnNfseId: notaId, id: { notIn: ids } },
+    data: { returnNfseId: null },
+  });
+  const count = await ligarRetornos(notaId, financeiraId, ids);
+  revalidatePath("/financeiro/nfse");
+  revalidatePath("/financeiro/financiamentos");
+  return { ok: true, count };
+}
+
+/** Nota sem a financeira gravada: a conta de Contas e caixas ligada ao mesmo tomador. */
+async function financeiraDaNota(tomadorId: string | null) {
+  if (!tomadorId) return null;
+  const contas = await prisma.financialAccount.findMany({
+    where: { type: "FINANCEIRA", nfseTomadorId: tomadorId },
+    select: { id: true },
+  });
+  return contas.length === 1 ? contas[0].id : null;
 }
 
 /** Situação na Focus (enquanto o Ambiente Nacional processa). Sem revalidate: quem chama dá refresh. */
@@ -249,6 +322,7 @@ export async function cancelarNfseAction(id: string, justificativa: string): Pro
     await prisma.notaServico.update({ where: { id }, data: { justificativaCancelamento: texto } });
     await aplicar(id, body);
     revalidatePath("/financeiro/nfse");
+    revalidatePath("/financeiro/financiamentos");
     return { ok: true };
   }
   return { ok: false, error: mensagemErroNfse(body) };

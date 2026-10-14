@@ -817,6 +817,8 @@ model NotaServico {
   emitidaPor        String?
   canceladaEm       DateTime?
   justificativaCancelamento String?
+  // Retornos (vendas financiadas) que esta nota cobre.
+  retornos          Sale[]    @relation("RetornoNfse")
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1212,6 +1214,10 @@ model Sale {
   returnSettledAt           DateTime?
   // Valor realmente pago pela financeira (pode diferir do programado returnNet)
   returnPaidAmount          Float?
+  // NFS-e de comissão emitida contra a financeira que cobre este retorno.
+  // Desfeito quando a nota é rejeitada ou cancelada.
+  returnNfseId              String?
+  returnNfse                NotaServico?         @relation("RetornoNfse", fields: [returnNfseId], references: [id], onDelete: SetNull)
   // FILA DO CAIXA: o repasse/retorno já caiu no banco num dia À FRENTE do
   // movimento aberto. Fica guardado (data do crédito, conta da empresa e, no
   // retorno, o valor real) e a baixa só acontece no ok do caixa daquele dia.
@@ -1266,6 +1272,7 @@ model Sale {
   createdAt                 DateTime             @default(now())
 
   @@index([customerId])
+  @@index([returnNfseId])
   @@map("sales")
 }
 

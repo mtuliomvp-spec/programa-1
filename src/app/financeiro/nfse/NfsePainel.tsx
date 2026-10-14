@@ -4,7 +4,13 @@ import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DESCRICOES_NFSE } from "@/lib/nfse";
 import { TOMADORES_CONHECIDOS, tomadorPorNome } from "@/lib/tomadores-nfse";
-import { atualizarNfseAction, cancelarNfseAction, emitirNfseAction, vincularFinanceiraAction } from "./actions";
+import {
+  atualizarNfseAction,
+  cancelarNfseAction,
+  emitirNfseAction,
+  vincularFinanceiraAction,
+  vincularRetornosAction,
+} from "./actions";
 
 export type FinanceiraOpcao = {
   id: string;
@@ -14,8 +20,23 @@ export type FinanceiraOpcao = {
   tomadorDocumento: string | null;
 };
 
+/** Retorno de uma venda financiada que uma nota de comissão pode cobrir. */
+export type RetornoOpcao = {
+  id: string;
+  financeiraId: string;
+  data: string;
+  cliente: string;
+  veiculo: string;
+  /** Pago pela financeira (recebido) ou o programado. */
+  valor: number;
+  recebidoEm: string | null;
+  /** Nota que já cobre este retorno. */
+  notaId: string | null;
+};
+
 export type NotaServicoResumo = {
   id: string;
+  financeiraId: string | null;
   ambiente: string;
   status: string;
   tomadorNome: string;
@@ -52,12 +73,14 @@ const fmtDoc = (d: string) => {
 export default function NfsePainel({
   notas,
   financeiras,
+  retornos,
   canEmitir,
   canCancelar,
   homologacao,
 }: {
   notas: NotaServicoResumo[];
   financeiras: FinanceiraOpcao[];
+  retornos: RetornoOpcao[];
   canEmitir: boolean;
   canCancelar: boolean;
   homologacao: boolean;
@@ -89,11 +112,11 @@ export default function NfsePainel({
 
   return (
     <div className="space-y-4 p-5">
-      {canEmitir ? <Emitir financeiras={financeiras} homologacao={homologacao} /> : null}
+      {canEmitir ? <Emitir financeiras={financeiras} retornos={retornos} homologacao={homologacao} /> : null}
       {notas.length ? (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {notas.map((n) => (
-            <Linha key={n.id} n={n} canCancelar={canCancelar} canEmitir={canEmitir} />
+            <Linha key={n.id} n={n} retornos={retornos} canCancelar={canCancelar} canEmitir={canEmitir} />
           ))}
         </ul>
       ) : (
@@ -103,7 +126,75 @@ export default function NfsePainel({
   );
 }
 
-function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; homologacao: boolean }) {
+const valorBr = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/**
+ * Lista de retornos da financeira para marcar os que a nota cobre — os já
+ * recebidos primeiro. A soma aparece embaixo (e vira o valor da nota ao emitir).
+ */
+function EscolherRetornos({
+  opcoes,
+  marcados,
+  onChange,
+}: {
+  opcoes: RetornoOpcao[];
+  marcados: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const [todos, setTodos] = useState(false);
+  if (!opcoes.length) {
+    return <p className="text-xs text-slate-500">Nenhum retorno sem NF desta financeira.</p>;
+  }
+  const ordenados = [...opcoes].sort(
+    (a, b) => Number(!a.recebidoEm) - Number(!b.recebidoEm) || b.data.localeCompare(a.data),
+  );
+  const visiveis = todos ? ordenados : ordenados.slice(0, 12);
+  const soma = opcoes.filter((o) => marcados.includes(o.id)).reduce((s, o) => s + o.valor, 0);
+  const alternar = (id: string) => onChange(marcados.includes(id) ? marcados.filter((x) => x !== id) : [...marcados, id]);
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white">
+      <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto">
+        {visiveis.map((o) => (
+          <li key={o.id}>
+            <label className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-xs hover:bg-slate-50">
+              <input type="checkbox" checked={marcados.includes(o.id)} onChange={() => alternar(o.id)} />
+              <span className="w-12 shrink-0 tabular-nums text-slate-500">{dataBr(o.data).slice(0, 5)}</span>
+              <span className="min-w-0 flex-1 truncate">
+                <strong className="text-slate-800">{o.cliente}</strong> · {o.veiculo}
+              </span>
+              <span className={o.recebidoEm ? "text-emerald-700" : "text-amber-700"}>
+                {o.recebidoEm ? `recebido ${dataBr(o.recebidoEm).slice(0, 5)}` : "a receber"}
+              </span>
+              <span className="w-24 shrink-0 text-right font-semibold tabular-nums">{brl(o.valor)}</span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="flex items-center justify-between border-t border-slate-100 px-3 py-1.5 text-xs">
+        {ordenados.length > visiveis.length ? (
+          <button type="button" onClick={() => setTodos(true)} className="text-blue-700 hover:underline">
+            mostrar todos ({ordenados.length})
+          </button>
+        ) : (
+          <span />
+        )}
+        <span className="text-slate-600">
+          {marcados.length} marcado(s) · soma <strong className="tabular-nums">{brl(soma)}</strong>
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Emitir({
+  financeiras,
+  retornos,
+  homologacao,
+}: {
+  financeiras: FinanceiraOpcao[];
+  retornos: RetornoOpcao[];
+  homologacao: boolean;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [aberto, setAberto] = useState(false);
@@ -113,13 +204,21 @@ function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; 
   const [valor, setValor] = useState("");
   const [competencia, setCompetencia] = useState(hojeSp());
   const [informacoes, setInformacoes] = useState("");
+  const [marcados, setMarcados] = useState<string[]>([]);
   const [erro, setErro] = useState<{ msg: string; faltas?: string[] } | null>(null);
+  const livres = retornos.filter((r) => r.financeiraId === financeiraId && !r.notaId);
+
+  function marcar(ids: string[]) {
+    setMarcados(ids);
+    const soma = livres.filter((o) => ids.includes(o.id)).reduce((s, o) => s + o.valor, 0);
+    if (ids.length) setValor(valorBr(soma));
+  }
 
   function emitir() {
     setErro(null);
     const v = Number(valor.replace(/\./g, "").replace(",", "."));
     start(async () => {
-      const r = await emitirNfseAction({ financeiraId, descricao, valor: v, competencia, informacoes });
+      const r = await emitirNfseAction({ financeiraId, descricao, valor: v, competencia, informacoes, saleIds: marcados });
       if (!r.ok) {
         setErro({ msg: r.error || "Não foi possível emitir.", faltas: r.faltas });
         return;
@@ -127,6 +226,7 @@ function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; 
       setAberto(false);
       setValor("");
       setInformacoes("");
+      setMarcados([]);
       router.refresh();
     });
   }
@@ -149,7 +249,14 @@ function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; 
       <p className="font-semibold text-slate-900">Nova NFS-e de comissão</p>
       <label className="block">
         <span className="text-xs text-slate-500">Financeira (tomador)</span>
-        <select value={financeiraId} onChange={(e) => setFinanceiraId(e.target.value)} className={campo}>
+        <select
+          value={financeiraId}
+          onChange={(e) => {
+            setFinanceiraId(e.target.value);
+            setMarcados([]);
+          }}
+          className={campo}
+        >
           <option value="">— escolha —</option>
           {financeiras.map((f) => (
             <option key={f.id} value={f.id}>
@@ -160,6 +267,16 @@ function Emitir({ financeiras, homologacao }: { financeiras: FinanceiraOpcao[]; 
         </select>
       </label>
       {financeira ? <Vinculo key={financeira.id} financeira={financeira} /> : null}
+      {financeira ? (
+        <div>
+          <span className="text-xs text-slate-500">
+            Retornos que esta nota cobre <span className="text-slate-400">(marque — a soma vira o valor da nota)</span>
+          </span>
+          <div className="mt-0.5">
+            <EscolherRetornos opcoes={livres} marcados={marcados} onChange={marcar} />
+          </div>
+        </div>
+      ) : null}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block sm:col-span-2">
           <span className="text-xs text-slate-500">Descrição do serviço</span>
@@ -302,10 +419,39 @@ function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
   );
 }
 
-function Linha({ n, canCancelar, canEmitir }: { n: NotaServicoResumo; canCancelar: boolean; canEmitir: boolean }) {
+function Linha({
+  n,
+  retornos,
+  canCancelar,
+  canEmitir,
+}: {
+  n: NotaServicoResumo;
+  retornos: RetornoOpcao[];
+  canCancelar: boolean;
+  canEmitir: boolean;
+}) {
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cancelando, setCancelando] = useState(false);
+  const cobertos = retornos.filter((r) => r.notaId === n.id);
+  const somaCobertos = cobertos.reduce((s, r) => s + r.valor, 0);
+  const [vinculando, setVinculando] = useState(false);
+  const [marcados, setMarcados] = useState<string[]>([]);
+  const ativa = n.status === "AUTORIZADA" || n.status === "PROCESSANDO";
+  const opcoes = retornos.filter((r) => r.financeiraId === n.financeiraId && (!r.notaId || r.notaId === n.id));
+
+  function salvarRetornos() {
+    setErro(null);
+    start(async () => {
+      const r = await vincularRetornosAction(n.id, marcados);
+      if (!r.ok) {
+        setErro(r.error || "Não foi possível vincular.");
+        return;
+      }
+      setVinculando(false);
+      router.refresh();
+    });
+  }
   const [justificativa, setJustificativa] = useState("");
   const [erro, setErro] = useState<string | null>(null);
   const info = statusInfo[n.status] ?? { label: n.status, cls: "bg-slate-100 text-slate-700" };
@@ -352,6 +498,22 @@ function Linha({ n, canCancelar, canEmitir }: { n: NotaServicoResumo; canCancela
       {n.codigoVerificacao ? (
         <p className="mt-1 break-all font-mono text-[11px] text-slate-600">Verificação: {n.codigoVerificacao}</p>
       ) : null}
+      {cobertos.length ? (
+        <div className="mt-1 text-xs text-slate-600">
+          <span className="font-medium">Retornos cobertos:</span>{" "}
+          {cobertos.map((r, i) => (
+            <span key={r.id}>
+              {i ? " · " : ""}
+              {dataBr(r.data).slice(0, 5)} {r.cliente} ({r.veiculo}) {brl(r.valor)}
+            </span>
+          ))}
+          {Math.abs(somaCobertos - n.valor) > 0.005 ? (
+            <span className="ml-1 text-amber-700">
+              — soma {brl(somaCobertos)}, diferente do valor da nota
+            </span>
+          ) : null}
+        </div>
+      ) : null}
       {n.status === "ERRO" && n.mensagem ? <p className="mt-1 text-xs text-rose-700">{n.mensagem}</p> : null}
       {n.status === "CANCELADA" && n.justificativaCancelamento ? (
         <p className="mt-1 text-xs text-slate-500">Cancelada: {n.justificativaCancelamento}</p>
@@ -377,12 +539,45 @@ function Linha({ n, canCancelar, canEmitir }: { n: NotaServicoResumo; canCancela
             {pending ? "Consultando…" : "↻ Atualizar situação"}
           </button>
         ) : null}
+        {ativa && canEmitir && n.financeiraId && !vinculando ? (
+          <button
+            type="button"
+            onClick={() => {
+              setMarcados(cobertos.map((r) => r.id));
+              setVinculando(true);
+            }}
+            className={botao}
+          >
+            🔗 {cobertos.length ? "Alterar retornos" : "Vincular retornos"}
+          </button>
+        ) : null}
         {n.status === "AUTORIZADA" && canCancelar && !cancelando ? (
           <button type="button" onClick={() => setCancelando(true)} className="text-xs font-medium text-rose-700 hover:underline">
             Cancelar nota
           </button>
         ) : null}
       </div>
+      {vinculando ? (
+        <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <p className="text-xs text-slate-600">
+            Marque os retornos que esta nota cobre (valor da nota: <strong>{brl(n.valor)}</strong>).
+          </p>
+          <EscolherRetornos opcoes={opcoes} marcados={marcados} onChange={setMarcados} />
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={salvarRetornos}
+              disabled={pending}
+              className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+            >
+              {pending ? "Salvando…" : "Salvar vínculo"}
+            </button>
+            <button type="button" onClick={() => setVinculando(false)} className="text-xs text-slate-500 hover:underline">
+              Voltar
+            </button>
+          </div>
+        </div>
+      ) : null}
       {cancelando ? (
         <div className="mt-2 space-y-2 rounded-lg border border-rose-200 bg-rose-50 p-3">
           <textarea
