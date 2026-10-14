@@ -10,7 +10,7 @@ import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
 import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
-import { lerNfeConfig, ncmSugerido } from "@/lib/nfe-config";
+import { lerNfeConfig, ncmDoVeiculo } from "@/lib/nfe-config";
 import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo, valorDoVeiculoNaVenda } from "@/lib/nfe-entrada";
 import { lerEndereco } from "@/lib/endereco";
 import VehicleCosts from "./VehicleCosts";
@@ -224,7 +224,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     justificativaCancelamento: n.justificativaCancelamento,
   }));
   // NCM pela cilindrada (versão/modelo); sem como saber, vale o padrão.
-  const ncmVeiculo = ncmSugerido(vehicle);
+  const ncmVeiculo = ncmDoVeiculo(nfeConfig, vehicle);
   const previaEntrada = montarNfeEntrada({
     cfg: nfeConfig,
     empresa: { cnpj: renaveCompany.cnpj, inscricaoEstadual: renaveCompany.inscricaoEstadual, uf: renaveCompany.uf },
@@ -243,7 +243,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   const nfeEntrada: EntradaPrevia = {
     faltas: previaEntrada.ok ? [] : previaEntrada.faltas,
     descricao: previaEntrada.ok ? previaEntrada.descricao : descricaoVeiculo(vehicle),
-    ncm: ncmVeiculo.ncm ?? nfeConfig.ncmPadrao,
+    ncm: ncmVeiculo.ncm,
     ncmMotivo: ncmVeiculo.motivo,
     cfop: previaEntrada.ok ? previaEntrada.cfop : null,
     valor: vehicle.purchasePrice,
@@ -274,7 +274,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       ? {
           faltas: previaSaida.ok ? [] : previaSaida.faltas,
           descricao: previaSaida.ok ? previaSaida.descricao : descricaoVeiculo(vehicle),
-          ncm: ncmVeiculo.ncm ?? nfeConfig.ncmPadrao,
+          ncm: ncmVeiculo.ncm,
           ncmMotivo: ncmVeiculo.motivo,
           cfop: previaSaida.ok ? previaSaida.cfop : null,
           valor: valorDoVeiculoNaVenda(vendaNfe),

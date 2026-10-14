@@ -62,6 +62,12 @@ export const nfeConfigSchema = z.object({
     .transform((s) => s.replace(/\D/g, ""))
     .refine((s) => s === "" || /^\d{8}$/.test(s), "NCM tem 8 dígitos (ex.: 8703.23.10).")
     .default(""),
+  // NCM das picapes médias/grandes (posição 8704) — o contador informa.
+  ncmPicape: z
+    .string()
+    .transform((s) => s.replace(/\D/g, ""))
+    .refine((s) => s === "" || /^\d{8}$/.test(s), "NCM das picapes tem 8 dígitos (ex.: 8704.21.10).")
+    .default(""),
   // Tributação — o contador define. CST (regime normal) ou CSOSN (Simples).
   icmsCst: z.string().default(""),
   // Consignação pode ter tratamento próprio (ex.: CSOSN 900 em vez de 102).
@@ -130,30 +136,55 @@ export function cfopDaOperacao(
 /**
  * NCM do automóvel pela cilindrada (orientação do contador): até 1.0 →
  * 8703.21.00; até 1.5 → 8703.22.10; até 3.0 → 8703.23.10; acima → 8703.24.10.
- * A cilindrada sai da versão/modelo ("1.0 Turbo", "1.6 MSI"). Picape/utilitário
- * é 8704 e diesel/elétrico/híbrido têm posições próprias — aí não sugere (vale
- * o NCM padrão da configuração, conferido na tela).
+ * A cilindrada sai da versão/modelo ("1.0 Turbo", "1.6 MSI").
+ *
+ * Picapes (orientação do contador): as COMPACTAS, com carga abaixo de 1 t
+ * (Strada, Saveiro, Montana, Oroch…), ficam na 8703 pela cilindrada; as médias
+ * e grandes (Hilux, S10, Ranger, Toro…) vão para a 8704 — o código vem do "NCM
+ * das picapes 8704" da configuração. Diesel/elétrico/híbrido de passeio têm
+ * posição própria: aí vale o NCM padrão, conferido na tela.
  */
-const PICAPES = /\b(strada|saveiro|toro|montana|hilux|s-?10|ranger|amarok|l200|triton|frontier|oroch|maverick|rampage|fiorino|courier|hoggar|d-?20|f-?250|ram)\b/i;
+const PICAPE_COMPACTA = /\b(strada|saveiro|montana|oroch|courier|hoggar)\b/i;
+const PICAPE_8704 =
+  /\b(hilux|s-?10|ranger|amarok|l200|triton|frontier|toro|maverick|rampage|fiorino|d-?20|f-?250|ram|silverado|tundra)\b/i;
 
 export function ncmSugerido(v: {
   model: string;
   version: string | null;
   fuel?: string | null;
-}): { ncm: string | null; motivo: string } {
+}): { ncm: string | null; motivo: string; posicao8704?: boolean } {
   const texto = `${v.model} ${v.version ?? ""}`;
-  if (PICAPES.test(texto)) return { ncm: null, motivo: "picape/utilitário (posição 8704) — confira o NCM" };
-  if (/diesel|el[eé]tric|h[ií]brid/i.test(`${v.fuel ?? ""} ${texto}`)) {
+  if (PICAPE_8704.test(texto)) {
+    return { ncm: null, motivo: "picape média/grande (carga acima de 1 t) — posição 8704", posicao8704: true };
+  }
+  const compacta = PICAPE_COMPACTA.test(texto);
+  if (!compacta && /diesel|el[eé]tric|h[ií]brid/i.test(`${v.fuel ?? ""} ${texto}`)) {
     return { ncm: null, motivo: "diesel/elétrico/híbrido tem posição própria — confira o NCM" };
   }
   const m = texto.match(/\b(\d)[.,](\d)\b/);
   if (!m) return { ncm: null, motivo: "cilindrada não encontrada na versão — confira o NCM" };
   const litros = Number(`${m[1]}.${m[2]}`);
   const cc = `${m[1]}.${m[2]}`;
-  if (litros <= 1.0) return { ncm: "87032100", motivo: `motor ${cc} (até 1.000 cm³)` };
-  if (litros <= 1.5) return { ncm: "87032210", motivo: `motor ${cc} (1.000 a 1.500 cm³)` };
-  if (litros <= 3.0) return { ncm: "87032310", motivo: `motor ${cc} (1.500 a 3.000 cm³)` };
-  return { ncm: "87032410", motivo: `motor ${cc} (acima de 3.000 cm³)` };
+  const sufixo = compacta ? " · picape compacta (carga abaixo de 1 t) fica na 8703" : "";
+  if (litros <= 1.0) return { ncm: "87032100", motivo: `motor ${cc} (até 1.000 cm³)${sufixo}` };
+  if (litros <= 1.5) return { ncm: "87032210", motivo: `motor ${cc} (1.000 a 1.500 cm³)${sufixo}` };
+  if (litros <= 3.0) return { ncm: "87032310", motivo: `motor ${cc} (1.500 a 3.000 cm³)${sufixo}` };
+  return { ncm: "87032410", motivo: `motor ${cc} (acima de 3.000 cm³)${sufixo}` };
+}
+
+/** NCM que vai na nota: o sugerido; picape 8704 usa o da configuração; senão o padrão. */
+export function ncmDoVeiculo(
+  cfg: NfeConfig,
+  v: { model: string; version: string | null; fuel?: string | null },
+): { ncm: string; motivo: string } {
+  const s = ncmSugerido(v);
+  if (s.posicao8704) {
+    return {
+      ncm: cfg.ncmPicape,
+      motivo: cfg.ncmPicape ? `${s.motivo} (NCM das picapes da configuração)` : `${s.motivo} — informe o NCM`,
+    };
+  }
+  return { ncm: s.ncm ?? cfg.ncmPadrao, motivo: s.motivo };
 }
 
 /** Simples Nacional (CRT 1 e 2) usa CSOSN (3 dígitos); o regime normal usa CST (2 dígitos). */
