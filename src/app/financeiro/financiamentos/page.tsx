@@ -39,6 +39,7 @@ export default async function FinanciamentosPage({
         vehicle: { select: { brand: true, model: true, plate: true } },
         financerAccount: { select: { name: true, sellerReturnPercent: true } },
         returnNfse: { select: { id: true, numero: true, status: true, ambiente: true } },
+        insuranceNfse: { select: { id: true, numero: true, status: true, ambiente: true } },
       },
     }),
     getAccountsWithBalances(),
@@ -65,6 +66,7 @@ export default async function FinanciamentosPage({
         s.returnLevel > 0 ? retornoLabel(s.returnLevel) : null,
         s.returnNet > 0 ? formatCurrency(s.returnNet) : null,
         s.returnNfse ? `NFS-e ${s.returnNfse.numero ?? ""} NF emitida` : null,
+        s.insuranceNfse ? `NFS-e ${s.insuranceNfse.numero ?? ""} NF emitida` : null,
       ) &&
       inDateRange(s.saleDate, de, ate) &&
       inValueRange(s.financedAmount ?? 0, min, max),
@@ -232,7 +234,7 @@ export default async function FinanciamentosPage({
                             programmedAmount={s.returnNet}
                           />
                         ) : null}
-                        <RetornoNfse nota={s.returnNfse} />
+                        <NfseSelo nota={s.returnNfse} />
                       </div>
                     ) : (
                       <span className="text-xs text-slate-400">—</span>
@@ -251,6 +253,7 @@ export default async function FinanciamentosPage({
                             </span>
                             <Badge tone="success">Recebido {formatDate(s.insuranceSettledAt)}</Badge>
                             {canEstornar ? <ReverseSettleButton saleId={s.id} mode="insurance" /> : null}
+                            <NfseSelo nota={s.insuranceNfse} />
                           </>
                         ) : (
                           <>
@@ -279,8 +282,8 @@ export default async function FinanciamentosPage({
   );
 }
 
-/** NFS-e de comissão que cobre o retorno (Financeiro → Notas de serviço). */
-function RetornoNfse({ nota }: { nota: { id: string; numero: string | null; status: string; ambiente: string } | null }) {
+/** NFS-e de comissão que cobre o retorno/seguro (Financeiro → Notas de serviço). */
+function NfseSelo({ nota }: { nota: { id: string; numero: string | null; status: string; ambiente: string } | null }) {
   if (!nota || nota.status === "ERRO" || nota.status === "CANCELADA") return null;
   const teste = nota.ambiente !== "PRODUCAO" ? " (teste)" : "";
   if (nota.status !== "AUTORIZADA") {

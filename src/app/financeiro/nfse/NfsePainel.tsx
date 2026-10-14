@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { DESCRICOES_NFSE } from "@/lib/nfse";
-import { TOMADORES_CONHECIDOS, tomadorPorNome } from "@/lib/tomadores-nfse";
+import { DESCRICOES_NFSE, ehNotaDeSeguro } from "@/lib/nfse";
+import { TOMADORES_CONHECIDOS, tomadorPorNome, tomadorSeguroDe } from "@/lib/tomadores-nfse";
 import {
   atualizarNfseAction,
+  cadastrarFinanceiraAction,
   cancelarNfseAction,
   emitirNfseAction,
   vincularFinanceiraAction,
@@ -18,11 +19,22 @@ export type FinanceiraOpcao = {
   /** Cadastro fiscal ligado (razão social / CNPJ); null = ainda pedir o CNPJ. */
   tomadorNome: string | null;
   tomadorDocumento: string | null;
+  /** Tomador da nota do seguro, quando é outra empresa (corretora do grupo). */
+  seguroNome: string | null;
+  seguroDocumento: string | null;
 };
+
+/** Banco das notas já emitidas que ainda não está em Contas e caixas. */
+export type BancoSemConta = { cnpj: string; nome: string; conta: string };
+
+type Tipo = "RETORNO" | "SEGURO";
 
 /** Retorno de uma venda financiada que uma nota de comissão pode cobrir. */
 export type RetornoOpcao = {
+  /** Id da venda. */
   id: string;
+  /** Comissão sobre o retorno ou sobre o seguro. */
+  tipo: Tipo;
   financeiraId: string;
   data: string;
   cliente: string;
@@ -36,6 +48,7 @@ export type RetornoOpcao = {
 
 export type NotaServicoResumo = {
   id: string;
+  tipo: Tipo;
   financeiraId: string | null;
   ambiente: string;
   status: string;
@@ -74,6 +87,7 @@ export default function NfsePainel({
   notas,
   financeiras,
   retornos,
+  bancosSemConta,
   canEmitir,
   canCancelar,
   homologacao,
@@ -81,6 +95,7 @@ export default function NfsePainel({
   notas: NotaServicoResumo[];
   financeiras: FinanceiraOpcao[];
   retornos: RetornoOpcao[];
+  bancosSemConta: BancoSemConta[];
   canEmitir: boolean;
   canCancelar: boolean;
   homologacao: boolean;
@@ -112,6 +127,7 @@ export default function NfsePainel({
 
   return (
     <div className="space-y-4 p-5">
+      {canEmitir && bancosSemConta.length ? <BancosSemConta bancos={bancosSemConta} /> : null}
       {canEmitir ? <Emitir financeiras={financeiras} retornos={retornos} homologacao={homologacao} /> : null}
       {notas.length ? (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
@@ -123,6 +139,46 @@ export default function NfsePainel({
         <p className="text-sm text-slate-500">Nenhuma NFS-e emitida pelo sistema ainda.</p>
       )}
     </div>
+  );
+}
+
+/** Cadastra em Contas e caixas, com um clique, o banco que só existia nas notas antigas. */
+function BancosSemConta({ bancos }: { bancos: BancoSemConta[] }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [erro, setErro] = useState<string | null>(null);
+  function cadastrar(cnpj: string) {
+    setErro(null);
+    start(async () => {
+      const r = await cadastrarFinanceiraAction(cnpj);
+      if (!r.ok) setErro(r.error || "Não foi possível cadastrar.");
+      router.refresh();
+    });
+  }
+  return (
+    <details className="rounded-lg border border-blue-200 bg-blue-50/60 p-3 text-xs text-blue-900">
+      <summary className="cursor-pointer font-semibold">
+        {bancos.length} banco(s) das notas anteriores ainda não estão em Contas e caixas
+      </summary>
+      <ul className="mt-2 space-y-1">
+        {bancos.map((b) => (
+          <li key={b.cnpj} className="flex flex-wrap items-center gap-2">
+            <span>
+              {b.nome} · CNPJ {b.cnpj}
+            </span>
+            <button
+              type="button"
+              onClick={() => cadastrar(b.cnpj)}
+              disabled={pending}
+              className="rounded-lg border border-blue-300 bg-white px-2 py-0.5 font-medium text-blue-800 hover:bg-blue-100 disabled:opacity-50"
+            >
+              ＋ Cadastrar como “{b.conta}”
+            </button>
+          </li>
+        ))}
+      </ul>
+      {erro ? <p className="mt-1 text-rose-700">{erro}</p> : null}
+    </details>
   );
 }
 
@@ -143,7 +199,7 @@ function EscolherRetornos({
 }) {
   const [todos, setTodos] = useState(false);
   if (!opcoes.length) {
-    return <p className="text-xs text-slate-500">Nenhum retorno sem NF desta financeira.</p>;
+    return <p className="text-xs text-slate-500">Nada sem NF desta financeira.</p>;
   }
   const ordenados = [...opcoes].sort(
     (a, b) => Number(!a.recebidoEm) - Number(!b.recebidoEm) || b.data.localeCompare(a.data),
@@ -206,7 +262,13 @@ function Emitir({
   const [informacoes, setInformacoes] = useState("");
   const [marcados, setMarcados] = useState<string[]>([]);
   const [erro, setErro] = useState<{ msg: string; faltas?: string[] } | null>(null);
-  const livres = retornos.filter((r) => r.financeiraId === financeiraId && !r.notaId);
+  const tipo: Tipo = ehNotaDeSeguro(descricao) ? "SEGURO" : "RETORNO";
+  const livres = retornos.filter((r) => r.financeiraId === financeiraId && r.tipo === tipo && !r.notaId);
+
+  function mudarDescricao(d: string) {
+    if (ehNotaDeSeguro(d) !== ehNotaDeSeguro(descricao)) setMarcados([]);
+    setDescricao(d);
+  }
 
   function marcar(ids: string[]) {
     setMarcados(ids);
@@ -266,11 +328,12 @@ function Emitir({
           ))}
         </select>
       </label>
-      {financeira ? <Vinculo key={financeira.id} financeira={financeira} /> : null}
+      {financeira ? <Vinculo key={`${financeira.id}-${tipo}`} financeira={financeira} papel={tipo} /> : null}
       {financeira ? (
         <div>
           <span className="text-xs text-slate-500">
-            Retornos que esta nota cobre <span className="text-slate-400">(marque — a soma vira o valor da nota)</span>
+            {tipo === "SEGURO" ? "Seguros" : "Retornos"} que esta nota cobre{" "}
+            <span className="text-slate-400">(marque — a soma vira o valor da nota)</span>
           </span>
           <div className="mt-0.5">
             <EscolherRetornos opcoes={livres} marcados={marcados} onChange={marcar} />
@@ -280,7 +343,7 @@ function Emitir({
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <label className="block sm:col-span-2">
           <span className="text-xs text-slate-500">Descrição do serviço</span>
-          <input list="nfse-descricoes" value={descricao} onChange={(e) => setDescricao(e.target.value)} className={campo} />
+          <input list="nfse-descricoes" value={descricao} onChange={(e) => mudarDescricao(e.target.value)} className={campo} />
           <datalist id="nfse-descricoes">
             {DESCRICOES_NFSE.map((d) => (
               <option key={d} value={d} />
@@ -333,11 +396,16 @@ function Emitir({
  * Cadastro fiscal da financeira: mostra a razão social/CNPJ ligados ou, na
  * primeira vez, pede o CNPJ (a razão social e o endereço vêm da Receita).
  */
-function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
+function Vinculo({ financeira, papel }: { financeira: FinanceiraOpcao; papel: Tipo }) {
   const router = useRouter();
   const [pending, start] = useTransition();
-  const [editando, setEditando] = useState(!financeira.tomadorDocumento);
-  const sugerido = tomadorPorNome(financeira.name);
+  const seguro = papel === "SEGURO";
+  // Nota do seguro sem tomador próprio: sai para o próprio banco.
+  const nome = (seguro ? financeira.seguroNome : null) ?? financeira.tomadorNome;
+  const documento = (seguro ? financeira.seguroDocumento : null) ?? financeira.tomadorDocumento;
+  const [editando, setEditando] = useState(!documento);
+  const banco = tomadorPorNome(financeira.name);
+  const sugerido = seguro ? (tomadorSeguroDe(banco) ?? banco) : banco;
   const [cnpj, setCnpj] = useState(sugerido?.cnpj ?? "");
   const [razao, setRazao] = useState("");
   const [pedeRazao, setPedeRazao] = useState(false);
@@ -346,7 +414,7 @@ function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
   function vincular() {
     setErro(null);
     start(async () => {
-      const r = await vincularFinanceiraAction(financeira.id, cnpj, razao || undefined);
+      const r = await vincularFinanceiraAction(financeira.id, cnpj, razao || undefined, papel);
       if (!r.ok) {
         setErro(r.error || "Não foi possível vincular.");
         if (/raz[aã]o social/i.test(r.error || "")) setPedeRazao(true);
@@ -357,10 +425,10 @@ function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
     });
   }
 
-  if (!editando && financeira.tomadorDocumento) {
+  if (!editando && documento) {
     return (
       <p className="text-xs text-slate-600">
-        Nota sai para <strong>{financeira.tomadorNome}</strong> · CNPJ {fmtDoc(financeira.tomadorDocumento)}{" "}
+        {seguro ? "Nota do seguro" : "Nota"} sai para <strong>{nome}</strong> · CNPJ {fmtDoc(documento)}{" "}
         <button type="button" onClick={() => setEditando(true)} className="ml-1 text-blue-700 hover:underline">
           trocar
         </button>
@@ -371,7 +439,16 @@ function Vinculo({ financeira }: { financeira: FinanceiraOpcao }) {
   return (
     <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
       <p>
-        Informe o <strong>CNPJ de {financeira.name}</strong> (o que vai na nota). É só da primeira vez.
+        {seguro ? (
+          <>
+            Informe o <strong>CNPJ que recebe a nota do seguro</strong> de {financeira.name} (ex.: a corretora do
+            grupo).
+          </>
+        ) : (
+          <>
+            Informe o <strong>CNPJ de {financeira.name}</strong> (o que vai na nota). É só da primeira vez.
+          </>
+        )}
       </p>
       {sugerido ? (
         <p className="mt-1">
@@ -433,12 +510,15 @@ function Linha({
   const router = useRouter();
   const [pending, start] = useTransition();
   const [cancelando, setCancelando] = useState(false);
-  const cobertos = retornos.filter((r) => r.notaId === n.id);
+  const cobertos = retornos.filter((r) => r.notaId === n.id && r.tipo === n.tipo);
   const somaCobertos = cobertos.reduce((s, r) => s + r.valor, 0);
   const [vinculando, setVinculando] = useState(false);
   const [marcados, setMarcados] = useState<string[]>([]);
   const ativa = n.status === "AUTORIZADA" || n.status === "PROCESSANDO";
-  const opcoes = retornos.filter((r) => r.financeiraId === n.financeiraId && (!r.notaId || r.notaId === n.id));
+  const opcoes = retornos.filter(
+    (r) => r.tipo === n.tipo && r.financeiraId === n.financeiraId && (!r.notaId || r.notaId === n.id),
+  );
+  const oQue = n.tipo === "SEGURO" ? "seguros" : "retornos";
 
   function salvarRetornos() {
     setErro(null);
@@ -500,7 +580,7 @@ function Linha({
       ) : null}
       {cobertos.length ? (
         <div className="mt-1 text-xs text-slate-600">
-          <span className="font-medium">Retornos cobertos:</span>{" "}
+          <span className="font-medium">{n.tipo === "SEGURO" ? "Seguros" : "Retornos"} cobertos:</span>{" "}
           {cobertos.map((r, i) => (
             <span key={r.id}>
               {i ? " · " : ""}
@@ -548,7 +628,7 @@ function Linha({
             }}
             className={botao}
           >
-            🔗 {cobertos.length ? "Alterar retornos" : "Vincular retornos"}
+            🔗 {cobertos.length ? `Alterar ${oQue}` : `Vincular ${oQue}`}
           </button>
         ) : null}
         {n.status === "AUTORIZADA" && canCancelar && !cancelando ? (
@@ -560,7 +640,7 @@ function Linha({
       {vinculando ? (
         <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs text-slate-600">
-            Marque os retornos que esta nota cobre (valor da nota: <strong>{brl(n.valor)}</strong>).
+            Marque os {oQue} que esta nota cobre (valor da nota: <strong>{brl(n.valor)}</strong>).
           </p>
           <EscolherRetornos opcoes={opcoes} marcados={marcados} onChange={setMarcados} />
           <div className="flex items-center gap-3">
