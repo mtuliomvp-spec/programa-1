@@ -32,6 +32,9 @@ export const MODULES: ModuleConfig[] = [
       { acao: "km", label: "Editar quilometragem" },
       { acao: "situacao", label: "Mudar situação no estoque (reservar / voltar ao estoque)" },
       { acao: "renave", label: "Renave: preencher dados e ler a NF-e" },
+      // Documento fiscal com valor legal: liberado à parte, sem herdar de outra permissão.
+      { acao: "nfe", label: "Emitir NF-e (nota fiscal de entrada/saída do veículo)" },
+      { acao: "nfecancelar", label: "Cancelar NF-e emitida" },
       EXCLUIR,
       { acao: "custos", label: "Lançar custos" },
       { acao: "sinal", label: "Registrar sinal / entrada antecipada" },

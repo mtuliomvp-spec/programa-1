@@ -8,6 +8,10 @@ import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
+import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
+import { lerNfeConfig } from "@/lib/nfe-config";
+import { montarNfeEntrada, descricaoVeiculo } from "@/lib/nfe-entrada";
+import { lerEndereco } from "@/lib/endereco";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
@@ -99,7 +103,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -120,6 +124,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "km"),
       userCan("estoque", "situacao"),
       userCan("estoque", "renave"),
+      userCan("estoque", "nfe"),
+      userCan("estoque", "nfecancelar"),
     ]);
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
@@ -192,6 +198,51 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     crvSecurityCode: vehicle.crvSecurityCode,
     renaveVinculoMotivo: vehicle.renaveVinculoMotivo,
     renaveNotes: vehicle.renaveNotes,
+  };
+
+  // NF-e emitida pelo sistema (Focus NFe): histórico e a prévia da nota de
+  // entrada — o que falta para emitir aparece antes de qualquer clique.
+  const nfeConfig = lerNfeConfig(renaveCompany.nfeConfig);
+  const notasFiscais: NotaResumo[] = (
+    await prisma.notaFiscal.findMany({ where: { vehicleId: vehicle.id }, orderBy: { createdAt: "desc" } })
+  ).map((n) => ({
+    id: n.id,
+    tipo: n.tipo,
+    ambiente: n.ambiente,
+    status: n.status,
+    numero: n.numero,
+    serie: n.serie,
+    chave: n.chave,
+    mensagem: n.mensagem,
+    createdAt: n.createdAt.toISOString(),
+    emitidaPor: n.emitidaPor,
+    valor: n.valor,
+    cfop: n.cfop,
+    temXml: !!n.caminhoXml,
+    temDanfe: !!n.caminhoDanfe,
+    justificativaCancelamento: n.justificativaCancelamento,
+  }));
+  const previaEntrada = montarNfeEntrada({
+    cfg: nfeConfig,
+    empresa: { cnpj: renaveCompany.cnpj, inscricaoEstadual: renaveCompany.inscricaoEstadual, uf: renaveCompany.uf },
+    veiculo: vehicle,
+    vendedor: vehicle.supplier
+      ? {
+          name: vehicle.supplier.name,
+          document: vehicle.supplier.document,
+          phone: vehicle.supplier.phone,
+          endereco: lerEndereco(vehicle.supplier.endereco),
+        }
+      : null,
+    agora: new Date(),
+  });
+  const nfeEntrada: EntradaPrevia = {
+    faltas: previaEntrada.ok ? [] : previaEntrada.faltas,
+    descricao: previaEntrada.ok ? previaEntrada.descricao : descricaoVeiculo(vehicle),
+    ncm: nfeConfig.ncmPadrao,
+    cfop: previaEntrada.ok ? previaEntrada.cfop : null,
+    valor: vehicle.purchasePrice,
+    vendedor: vehicle.supplier?.name ?? null,
   };
 
   // "Copiar dados para o ControlStock": o que o registro no painel da
@@ -965,6 +1016,23 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           {/* Escrituração eletrônica (Resolução Contran nº 1.026/2026). Veículo
               de terceiro em financiamento não é estoque da loja — ali o aviso é
               outro, na própria tela da operação. */}
+          {!vehicle.intermediation && (canNfe || notasFiscais.length > 0) ? (
+            <Card>
+              <CardHeader
+                title="Nota fiscal (NF-e)"
+                description="Emitida pelo sistema e autorizada na SEFAZ. A nota de entrada autorizada preenche a chave usada no Renave"
+              />
+              <VehicleNfe
+                vehicleId={vehicle.id}
+                ambiente={nfeConfig.ambiente}
+                notas={notasFiscais}
+                entrada={nfeEntrada}
+                canEmitir={canNfe}
+                canCancelar={canNfeCancelar}
+              />
+            </Card>
+          ) : null}
+
           {!vehicle.intermediation ? (
             <Card>
               <CardHeader
