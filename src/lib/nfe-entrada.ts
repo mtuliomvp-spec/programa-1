@@ -114,8 +114,11 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
 
   // Configuração (o que é de emissão; provedor/certificado/credenciamento a
   // própria Focus recusa se faltar).
+  // As do regime novo só barram a partir da data da mudança — antes disso são
+  // aviso na tela de configuração, não motivo para travar a nota de hoje.
+  const regraNovaJa = regraVigente(cfg, i.agora).regraNova;
   const doConfig = pendenciasNfe(cfg, !!dig(empresa.cnpj), !!empresa.inscricaoEstadual?.trim()).filter(
-    (p) => !/provedor|certificado|credenciamento/i.test(p),
+    (p) => !/provedor|certificado|credenciamento/i.test(p) && (regraNovaJa || !/novo regime/i.test(p)),
   );
   faltas.push(...doConfig.map((p) => `Configuração da NF-e: ${p}`));
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, type ReactNode } from "react";
+import { startTransition, useActionState, type ReactNode } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import {
   NFE_PROVEDORES,
@@ -21,7 +21,17 @@ export default function NfeConfigForm({ config }: { config: NfeConfig }) {
   const [state, formAction, pending] = useActionState(saveNfeConfigAction, {} as NfeConfigState);
 
   return (
-    <form action={formAction} className="space-y-5">
+    // Envio pelo onSubmit (e não `action=`): o React 19 limpa o formulário após
+    // uma action de form e os selects voltavam ao valor do carregamento — a tela
+    // parecia não ter salvo, e um novo "Salvar" regravava o antigo.
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const fd = new FormData(e.currentTarget);
+        startTransition(() => formAction(fd));
+      }}
+      className="space-y-5"
+    >
       <fieldset className="space-y-4">
         <legend className="text-sm font-semibold text-slate-900">Habilitação da loja</legend>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
