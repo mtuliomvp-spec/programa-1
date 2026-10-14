@@ -94,3 +94,11 @@ export function enderecoDoForm(formData: FormData): Endereco | null {
     ibge: g("ibge"),
   });
 }
+
+/** Inscrição estadual como guardada: "ISENTO" ou o número digitado (maiúsculo, sem espaços extras). */
+export function normalizarIe(v: string | null | undefined): string | null {
+  const t = (v ?? "").trim().toUpperCase().replace(/\s+/g, " ");
+  if (!t) return null;
+  if (/^ISENT/.test(t)) return "ISENTO";
+  return t.slice(0, 20);
+}

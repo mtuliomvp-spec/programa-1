@@ -29,6 +29,9 @@ export type EntradaPrevia = {
   cfop: string | null;
   valor: number;
   vendedor: string | null;
+  /** Vendedor é empresa (CNPJ): em regra quem emite é ela — aviso antes de emitir. */
+  vendedorEmpresa: boolean;
+  vendedorIe: string | null;
 };
 
 const statusInfo: Record<string, { label: string; cls: string }> = {
@@ -260,15 +263,34 @@ function EmitirEntrada({ vehicleId, previa, homologacao }: { vehicleId: string; 
     );
   }
 
+  const avisoEmpresa = previa.vendedorEmpresa ? (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+      <p className="font-semibold">Compra de empresa (CNPJ)</p>
+      <p className="mt-0.5">
+        Em regra, quem emite a nota é a <strong>empresa vendedora</strong> (a NF-e de venda dela) — a loja usa a chave
+        dessa nota na ficha (Renave → ler a NF-e) e não emite a própria. Emita a de entrada só se o contador orientar
+        (ex.: empresa que não é contribuinte do ICMS).
+      </p>
+      <p className="mt-1">
+        IE do vendedor:{" "}
+        <strong>{previa.vendedorIe || "não informada"}</strong>
+        {previa.vendedorIe ? "" : " — se a empresa tem inscrição estadual, informe no cadastro do fornecedor (a SEFAZ exige)."}
+      </p>
+    </div>
+  ) : null;
+
   if (!aberto) {
     return (
-      <button
-        type="button"
-        onClick={() => setAberto(true)}
-        className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700"
-      >
-        🧾 Emitir NF-e de entrada{homologacao ? " (teste)" : ""}
-      </button>
+      <div className="space-y-2">
+        {avisoEmpresa}
+        <button
+          type="button"
+          onClick={() => setAberto(true)}
+          className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700"
+        >
+          🧾 Emitir NF-e de entrada{homologacao ? " (teste)" : ""}
+        </button>
+      </div>
     );
   }
 

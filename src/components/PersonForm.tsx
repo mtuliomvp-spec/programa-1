@@ -17,6 +17,7 @@ type PersonData = {
   email: string | null;
   address: string | null;
   endereco?: Endereco | null;
+  inscricaoEstadual?: string | null;
   notes: string | null;
   bankName?: string | null;
   bankAgency?: string | null;
@@ -194,6 +195,16 @@ export default function PersonForm({
         </Field>
         <Field label="E-mail">
           <Input type="email" name="email" defaultValue={person?.email || ""} />
+        </Field>
+        <Field label="Inscrição estadual (empresa)">
+          <Input
+            name="inscricaoEstadual"
+            defaultValue={person?.inscricaoEstadual || ""}
+            placeholder="Número da IE, ISENTO ou vazio"
+          />
+          <span className="mt-1 block text-xs text-slate-500">
+            Só para empresa contribuinte do ICMS — a nota fiscal exige quando o CNPJ tem IE ativa.
+          </span>
         </Field>
       </div>
 

@@ -232,6 +232,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           document: vehicle.supplier.document,
           phone: vehicle.supplier.phone,
           endereco: lerEndereco(vehicle.supplier.endereco),
+          inscricaoEstadual: vehicle.supplier.inscricaoEstadual,
         }
       : null,
     agora: new Date(),
@@ -243,6 +244,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     cfop: previaEntrada.ok ? previaEntrada.cfop : null,
     valor: vehicle.purchasePrice,
     vendedor: vehicle.supplier?.name ?? null,
+    vendedorEmpresa: (vehicle.supplier?.document ?? "").replace(/\D/g, "").length === 14,
+    vendedorIe: vehicle.supplier?.inscricaoEstadual ?? null,
   };
 
   // "Copiar dados para o ControlStock": o que o registro no painel da

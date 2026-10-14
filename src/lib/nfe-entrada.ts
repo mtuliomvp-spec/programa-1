@@ -36,6 +36,7 @@ export type VendedorNfe = {
   document: string | null;
   phone: string | null;
   endereco: Endereco | null;
+  inscricaoEstadual?: string | null;
 };
 
 export type EntradaInput = {
@@ -107,6 +108,22 @@ const num = (s: string) => {
   return Number.isFinite(n) ? n : NaN;
 };
 const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * Indicador da IE do destinatário: empresa com IE ativa é contribuinte (1) e a
+ * SEFAZ exige o número — confere no cadastro nacional e rejeita "IE do
+ * destinatário não informada"; "ISENTO" é 2; pessoa física ou sem IE, 9.
+ */
+export function indicadorIe(doc: string, ie: string | null | undefined): Record<string, unknown> {
+  if (doc.length === 14 && ie) {
+    if (/^ISENT/i.test(ie)) return { indicador_inscricao_estadual_destinatario: 2 };
+    const n = dig(ie);
+    if (n.length >= 2) {
+      return { indicador_inscricao_estadual_destinatario: 1, inscricao_estadual_destinatario: n };
+    }
+  }
+  return { indicador_inscricao_estadual_destinatario: 9 };
+}
 
 export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
   const { cfg, empresa, veiculo: v, vendedor } = i;
@@ -185,7 +202,7 @@ export function montarNfeEntrada(i: EntradaInput): EntradaResultado {
     regime_tributario_emitente: Number(regra.regime),
     nome_destinatario: homologacao ? NOME_HOMOLOGACAO : vendedor.name.slice(0, 60),
     ...(doc.length === 11 ? { cpf_destinatario: doc } : { cnpj_destinatario: doc }),
-    indicador_inscricao_estadual_destinatario: 9,
+    ...indicadorIe(doc, vendedor.inscricaoEstadual),
     logradouro_destinatario: end.logradouro,
     numero_destinatario: end.numero || "S/N",
     ...(end.complemento ? { complemento_destinatario: end.complemento } : {}),
