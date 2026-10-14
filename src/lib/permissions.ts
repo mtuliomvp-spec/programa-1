@@ -119,6 +119,9 @@ export const MODULES: ModuleConfig[] = [
       { acao: "recorrentes", label: "Recorrentes: cadastrar, editar e gerar" },
       { acao: "categorias", label: "Categorias: criar, renomear e excluir" },
       { acao: "comunicacaovenda", label: "Comunicação de venda (faturas SICOVE)" },
+      // Documento fiscal com valor legal: liberado à parte.
+      { acao: "nfse", label: "Emitir NFS-e (comissão de retorno/seguro dos bancos)" },
+      { acao: "nfsecancelar", label: "Cancelar NFS-e emitida" },
       // Perdoar valor é diferente de receber: o que sobra vira custo/perda.
       { acao: "desconto", label: "Dar desconto (baixar diferença como perda)" },
       // Mexer na data de uma baixa já feita é correção contábil, não operação.

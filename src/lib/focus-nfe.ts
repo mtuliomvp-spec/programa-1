@@ -97,6 +97,67 @@ export function cancelarNfe(ambiente: Ambiente, ref: string, justificativa: stri
   });
 }
 
+/** Resposta da Focus para NFS-e nacional (campos que usamos). */
+export type FocusNfse = {
+  status?: string; // processando_autorizacao | autorizado | erro_autorizacao | cancelado | negado
+  numero?: string;
+  codigo_verificacao?: string;
+  url?: string;
+  url_danfse?: string;
+  caminho_xml_nota_fiscal?: string;
+  codigo?: string;
+  mensagem?: string;
+  erros?: { codigo?: string; mensagem?: string; correcao?: string }[];
+};
+
+export async function emitirNfsen(ambiente: Ambiente, ref: string, payload: unknown) {
+  return (await chamar(ambiente, `/v2/nfsen?ref=${encodeURIComponent(ref)}`, {
+    method: "POST",
+    headers: headers(ambiente, true),
+    body: JSON.stringify(payload),
+  })) as { http: number; body: FocusNfse };
+}
+
+export async function consultarNfsen(ambiente: Ambiente, ref: string) {
+  return (await chamar(ambiente, `/v2/nfsen/${encodeURIComponent(ref)}`, {
+    method: "GET",
+    headers: headers(ambiente),
+  })) as { http: number; body: FocusNfse };
+}
+
+export async function cancelarNfsen(ambiente: Ambiente, ref: string, justificativa: string) {
+  return (await chamar(ambiente, `/v2/nfsen/${encodeURIComponent(ref)}`, {
+    method: "DELETE",
+    headers: headers(ambiente, true),
+    body: JSON.stringify({ justificativa }),
+  })) as { http: number; body: FocusNfse };
+}
+
+export function mensagemErroNfse(body: FocusNfse): string {
+  const base = body.mensagem || "Erro na emissão da NFS-e.";
+  const det = (body.erros ?? []).map((e) => [e.codigo, e.mensagem, e.correcao].filter(Boolean).join(" — "));
+  return det.length ? det.join("; ") : base;
+}
+
+/** URL absoluta (DANFSe) só da própria Focus/portal nacional; caminho relativo vai pela base do ambiente. */
+export async function baixarUrl(ambiente: Ambiente, urlOuCaminho: string): Promise<Response | null> {
+  if (urlOuCaminho.startsWith("/")) return baixarArquivo(ambiente, urlOuCaminho);
+  try {
+    const u = new URL(urlOuCaminho);
+    if (u.protocol !== "https:" || !/(^|\.)(focusnfe\.com\.br|nfse\.gov\.br)$/.test(u.hostname)) return null;
+    // O token só vai para a própria Focus — nunca para o portal do governo.
+    const daFocus = /(^|\.)focusnfe\.com\.br$/.test(u.hostname);
+    const res = await fetch(u, {
+      headers: daFocus ? headers(ambiente) : {},
+      cache: "no-store",
+      signal: AbortSignal.timeout(30000),
+    });
+    return res.ok ? res : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Baixa um arquivo da nota (XML/DANFE) pelo caminho devolvido na consulta. */
 export async function baixarArquivo(ambiente: Ambiente, caminho: string): Promise<Response | null> {
   if (!caminho.startsWith("/")) return null;

@@ -68,6 +68,14 @@ export const nfeConfigSchema = z.object({
     .transform((s) => s.replace(/\D/g, ""))
     .refine((s) => s === "" || /^\d{8}$/.test(s), "NCM das picapes tem 8 dígitos (ex.: 8704.21.10).")
     .default(""),
+  // NFS-e (serviço — comissão de retorno/seguro cobrada dos bancos), padrão
+  // nacional. Os padrões são os das notas que a loja já emitia: 10.02.02
+  // (agenciamento/intermediação de contratos), NBS 1.0905.11.00, São Luís.
+  nfseCodigoTributacao: z.string().default("100202"),
+  nfseNbs: z.string().default("109051100"),
+  nfseMunicipioIbge: z.string().default("2111300"),
+  // ISS retido pelo tomador? As notas da loja saem "Não Retido".
+  nfseIssRetido: z.boolean().default(false),
   // Tributação — o contador define. CST (regime normal) ou CSOSN (Simples).
   icmsCst: z.string().default(""),
   // Consignação pode ter tratamento próprio (ex.: CSOSN 900 em vez de 102).
