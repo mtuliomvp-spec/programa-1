@@ -288,6 +288,7 @@ function Emitir({
   // Nota que já foi emitida fora do sistema: só registra (número + retornos).
   const [externa, setExterna] = useState(false);
   const [numero, setNumero] = useState("");
+  const [chave, setChave] = useState("");
   const livres = retornos.filter((r) => r.financeiraId === financeiraId && r.tipo === tipo && !r.notaId);
 
   function mudarTipo(t: Tipo) {
@@ -316,6 +317,7 @@ function Emitir({
         valor: v,
         competencia,
         saleIds: marcados,
+        chave,
       });
       if (!r.ok) {
         setErro({ msg: r.error || "Não foi possível registrar." });
@@ -324,6 +326,7 @@ function Emitir({
       setAberto(false);
       setValor("");
       setNumero("");
+      setChave("");
       setExterna(false);
       setMarcados([]);
       router.refresh();
@@ -465,10 +468,16 @@ function Emitir({
           <input type="date" value={competencia} onChange={(e) => setCompetencia(e.target.value)} className={campo} />
         </label>
         {externa ? (
-          <label className="block sm:col-span-2">
-            <span className="text-xs text-slate-500">Número da nota já emitida</span>
-            <input value={numero} onChange={(e) => setNumero(e.target.value)} inputMode="numeric" placeholder="ex.: 219" className={campo} />
-          </label>
+          <div className="grid grid-cols-3 gap-3 sm:col-span-2">
+            <label className="block">
+              <span className="text-xs text-slate-500">Número da nota</span>
+              <input value={numero} onChange={(e) => setNumero(e.target.value)} inputMode="numeric" placeholder="ex.: 10" className={campo} />
+            </label>
+            <label className="col-span-2 block">
+              <span className="text-xs text-slate-500">Chave de acesso (opcional, 50 números)</span>
+              <input value={chave} onChange={(e) => setChave(e.target.value)} inputMode="numeric" className={campo} />
+            </label>
+          </div>
         ) : (
           <label className="block sm:col-span-2">
             <span className="text-xs text-slate-500">Informações complementares (opcional)</span>

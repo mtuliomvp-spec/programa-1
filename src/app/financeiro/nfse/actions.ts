@@ -389,6 +389,8 @@ export async function registrarNotaExternaAction(input: {
   valor: number;
   competencia: string;
   saleIds: string[];
+  /** Chave de acesso (50 dígitos) do DANFSe, se tiver. */
+  chave?: string;
 }): Promise<NfseActionResult> {
   try {
     await assertCan("financeiro", "nfse");
@@ -401,6 +403,8 @@ export async function registrarNotaExternaAction(input: {
   if (!(input.valor > 0)) return { ok: false, error: "Informe o valor da nota." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.competencia)) return { ok: false, error: "Informe a competência." };
   if (!input.saleIds.length) return { ok: false, error: "Marque os retornos que essa nota cobriu." };
+  const chave = (input.chave ?? "").replace(/\D/g, "");
+  if (chave && chave.length !== 50) return { ok: false, error: "A chave de acesso da NFS-e tem 50 números." };
   const financeira = await prisma.financialAccount.findUnique({
     where: { id: input.financeiraId },
     include: { nfseTomador: true, nfseTomadorSeguro: true },
@@ -424,6 +428,7 @@ export async function registrarNotaExternaAction(input: {
       valor: Math.round(input.valor * 100) / 100,
       competencia: new Date(`${input.competencia}T12:00:00Z`),
       numero,
+      codigoVerificacao: chave || null,
       mensagem: "Emitida fora do sistema — só registrada aqui.",
       payload: {},
       emitidaPor: user?.name ?? null,
