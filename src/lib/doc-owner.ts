@@ -56,6 +56,75 @@ export function sameParty(
   return k1.includes(k2) || k2.includes(k1);
 }
 
+const PALAVRAS_FRACAS = new Set(["de", "da", "das", "do", "dos", "e"]);
+function palavrasDoNome(nome: string | null | undefined): string[] {
+  return (nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]/g, " ")
+    .split(/\s+/)
+    .filter((w) => w && !PALAVRAS_FRACAS.has(w));
+}
+
+/** Diferença de no máximo UMA letra (trocada, sobrando ou faltando). */
+function umaLetra(a: string, b: string): boolean {
+  if (a === b) return true;
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0;
+  let j = 0;
+  let erros = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+      continue;
+    }
+    if (++erros > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else {
+      i++;
+      j++;
+    }
+  }
+  return erros + (a.length - i) + (b.length - j) <= 1;
+}
+
+/**
+ * O documento está no nome de QUEM RECEBE a transferência? O nome do destino
+ * vem do orçamento do despachante, digitado por gente — com erro de letra
+ * ("Marlo Antonio") e abreviado ("Marco Antonio" para "MARCO ANTONIO MARAO
+ * VIANA PEREIRA"). Além da regra comum (documento ou nome contido), aceita:
+ * cada palavra do destino, na ordem, igual / início / uma letra diferente de
+ * uma palavra do proprietário — com ao menos duas palavras e uma delas exata.
+ */
+export function destinoConfere(
+  ownerName: string | null | undefined,
+  ownerDoc: string | null | undefined,
+  destino: string | null | undefined,
+): boolean {
+  if (!ownerName || !destino) return false;
+  if (sameParty(ownerName, ownerDoc, { name: destino, document: null })) return true;
+  const a = palavrasDoNome(destino);
+  const b = palavrasDoNome(ownerName);
+  if (a.length < 2 || b.length < 2) return false;
+  let j = 0;
+  let exatas = 0;
+  for (const w of a) {
+    while (
+      j < b.length &&
+      !(b[j] === w || (w.length >= 1 && w.length < b[j].length && b[j].startsWith(w)) || (w.length >= 4 && b[j].length >= 4 && umaLetra(w, b[j])))
+    ) {
+      j++;
+    }
+    if (j >= b.length) return false;
+    if (b[j] === w && w.length >= 4) exatas++;
+    j++;
+  }
+  return exatas >= 1;
+}
+
 /** "01/09/2026" (data impressa no CRLV) → Date ao meio-dia UTC; null se inválida. */
 export function parseDataBr(texto: string | null | undefined): Date | null {
   const m = (texto || "").match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
@@ -94,7 +163,7 @@ export function crlvNoNomeDoComprador(v: {
   if (v.status !== "VENDIDO" || !v.sale || v.sale.transferDoneAt) return false;
   if (!v.docOwnerName || v.docOwnerIsOurs) return false;
   if (sameParty(v.docOwnerName, null, v.sale.customer)) return true;
-  if (v.transferToName && sameParty(v.docOwnerName, null, { name: v.transferToName, document: null })) return true;
+  if (v.transferToName && destinoConfere(v.docOwnerName, null, v.transferToName)) return true;
   // Veículo de TERCEIRO: só o documento no nome do comprador (ou de quem
   // recebe a transferência) prova que ela concluiu. Qualquer outro nome é o
   // dono anterior — que nem sempre é o "vendedor" da operação (o carro pode
@@ -176,6 +245,11 @@ export type SituacaoDocumental = {
    * casa.
    */
   aguardandoDestino: boolean;
+  /**
+   * Em estoque, a transferência para o destino nomeado já concluiu (documento
+   * no nome dele): a linha "🔄 Transferência para…" não tem mais o que mostrar.
+   */
+  destinoConcluido: boolean;
 };
 
 /** Descrição do anexo que identifica o orçamento/recibo do despachante. */
@@ -232,7 +306,7 @@ export function situacaoDocumental(
   const aguardandoDestino =
     !saindo &&
     !!v.transferToName &&
-    !(v.docOwnerName && sameParty(v.docOwnerName, null, { name: v.transferToName, document: null }));
+    !destinoConfere(v.docOwnerName, null, v.transferToName);
 
   return {
     hasCrlv,
@@ -272,6 +346,7 @@ export function situacaoDocumental(
     // transferência que interessa é a que vai para o COMPRADOR.
     transferConcluded: !saindo && hasCrlv && docOwnerIsOurs && !aguardandoDestino,
     aguardandoDestino,
+    destinoConcluido: !saindo && !!v.transferToName && !aguardandoDestino,
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
     // marcada na venda ou provada pelo CRLV no nome do comprador.
     transferDoneAt,

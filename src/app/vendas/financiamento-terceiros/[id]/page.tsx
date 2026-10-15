@@ -445,7 +445,7 @@ export default async function FinanciamentoTerceirosDetailPage({
               </strong>
             </p>
           ) : null}
-          {sale.vehicle.transferToName && !doc.transferDoneAt ? (
+          {sale.vehicle.transferToName && !doc.transferDoneAt && !doc.destinoConcluido ? (
             <p className="mt-0.5 text-sm text-sky-700">
               🔄 Transferência para <strong>{sale.vehicle.transferToName}</strong> (cliente do
               orçamento do despachante)
