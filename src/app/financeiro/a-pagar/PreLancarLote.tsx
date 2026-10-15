@@ -128,6 +128,7 @@ export default function PreLancarLote({
           : `${r.enfileirados} título(s) pré-lançado(s) para ${dataBr(data)}`) +
           (r.attached ? " com o comprovante anexado" : "") +
           ". Confirme em Contas e caixas quando o movimento chegar no dia." +
+          (r.avisoFornecedor ? ` 👤 ${r.avisoFornecedor[0].toUpperCase()}${r.avisoFornecedor.slice(1)}.` : "") +
           (r.avisos?.length ? ` ⚠️ Confira: ${r.avisos.join("; ")}.` : ""),
       );
     });
