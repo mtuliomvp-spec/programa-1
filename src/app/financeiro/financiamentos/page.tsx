@@ -285,7 +285,19 @@ export default async function FinanciamentosPage({
 /** NFS-e de comissão que cobre o retorno/seguro (Financeiro → Notas de serviço). */
 function NfseSelo({ nota }: { nota: { id: string; numero: string | null; status: string; ambiente: string } | null }) {
   if (!nota || nota.status === "ERRO" || nota.status === "CANCELADA") return null;
-  const teste = nota.ambiente !== "PRODUCAO" ? " (teste)" : "";
+  const teste = nota.ambiente !== "PRODUCAO" && nota.ambiente !== "EXTERNA" ? " (teste)" : "";
+  // Emitida fora do sistema: não há DANFSe guardada — leva à lista de notas.
+  if (nota.ambiente === "EXTERNA") {
+    return (
+      <Link
+        href="/financeiro/nfse"
+        title="Nota emitida fora do sistema"
+        className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100"
+      >
+        🧾 NF emitida{nota.numero ? ` nº ${nota.numero}` : ""}
+      </Link>
+    );
+  }
   if (nota.status !== "AUTORIZADA") {
     return (
       <Link href="/financeiro/nfse" className="text-[11px] font-medium text-amber-700 hover:underline">

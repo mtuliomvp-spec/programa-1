@@ -375,6 +375,82 @@ async function financeiraDaNota(tomadorId: string | null) {
   return contas.length === 1 ? contas[0].id : null;
 }
 
+/**
+ * Nota que já foi emitida FORA do sistema (portal da prefeitura/nacional,
+ * antes do Fincore): só registra número, valor e os retornos/seguros que ela
+ * cobre — nada vai para a Focus. Assim o retorno não aparece de novo para
+ * emitir e ganha o selo "NF emitida" em Financiamentos.
+ */
+export async function registrarNotaExternaAction(input: {
+  financeiraId: string;
+  tipo: TipoNota;
+  numero: string;
+  descricao: string;
+  valor: number;
+  competencia: string;
+  saleIds: string[];
+}): Promise<NfseActionResult> {
+  try {
+    await assertCan("financeiro", "nfse");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const user = await getSessionUser();
+  const numero = input.numero.trim().replace(/^0+(?=\d)/, "").slice(0, 20);
+  if (!numero) return { ok: false, error: "Informe o número da nota já emitida." };
+  if (!(input.valor > 0)) return { ok: false, error: "Informe o valor da nota." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.competencia)) return { ok: false, error: "Informe a competência." };
+  if (!input.saleIds.length) return { ok: false, error: "Marque os retornos que essa nota cobriu." };
+  const financeira = await prisma.financialAccount.findUnique({
+    where: { id: input.financeiraId },
+    include: { nfseTomador: true, nfseTomadorSeguro: true },
+  });
+  if (!financeira || financeira.type !== "FINANCEIRA") return { ok: false, error: "Escolha a financeira." };
+  const tipo: TipoNota = input.tipo === "SEGURO" ? "SEGURO" : "RETORNO";
+  const conhecido = tomadorPorNome(financeira.name);
+  const tomador = (tipo === "SEGURO" ? financeira.nfseTomadorSeguro : null) ?? financeira.nfseTomador;
+  const corretora = tipo === "SEGURO" ? tomadorSeguroDe(conhecido) : null;
+  const nota = await prisma.notaServico.create({
+    data: {
+      ambiente: "EXTERNA",
+      ref: `externa-${Date.now().toString(36)}-${randomBytes(3).toString("hex")}`,
+      status: "AUTORIZADA",
+      tipo,
+      tomadorId: tomador?.id ?? null,
+      financeiraId: financeira.id,
+      tomadorNome: tomador?.name ?? corretora?.nome ?? conhecido?.nome ?? financeira.name,
+      tomadorDocumento: (tomador?.document ?? corretora?.cnpj ?? conhecido?.cnpj ?? "").replace(/\D/g, ""),
+      descricao: input.descricao.trim() || "COMISSÃO SOBRE RETORNO",
+      valor: Math.round(input.valor * 100) / 100,
+      competencia: new Date(`${input.competencia}T12:00:00Z`),
+      numero,
+      mensagem: "Emitida fora do sistema — só registrada aqui.",
+      payload: {},
+      emitidaPor: user?.name ?? null,
+    },
+  });
+  const count = await ligarRetornos(nota.id, financeira.id, input.saleIds, tipo);
+  revalidatePath("/financeiro/nfse");
+  revalidatePath("/financeiro/financiamentos");
+  return { ok: true, status: count ? "AUTORIZADA" : undefined };
+}
+
+/** Desfaz o registro de uma nota emitida fora do sistema (os retornos voltam a ficar sem NF). */
+export async function removerNotaExternaAction(id: string): Promise<NfseActionResult> {
+  try {
+    await assertCan("financeiro", "nfse");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const nota = await prisma.notaServico.findUnique({ where: { id } });
+  if (!nota || nota.ambiente !== "EXTERNA") return { ok: false, error: "Só o registro de nota externa pode ser removido." };
+  await liberarRetornos(id);
+  await prisma.notaServico.delete({ where: { id } });
+  revalidatePath("/financeiro/nfse");
+  revalidatePath("/financeiro/financiamentos");
+  return { ok: true };
+}
+
 /** Situação na Focus (enquanto o Ambiente Nacional processa). Sem revalidate: quem chama dá refresh. */
 export async function atualizarNfseAction(id: string): Promise<NfseActionResult> {
   try {
@@ -384,6 +460,7 @@ export async function atualizarNfseAction(id: string): Promise<NfseActionResult>
   }
   const nota = await prisma.notaServico.findUnique({ where: { id } });
   if (!nota) return { ok: false, error: "Nota não encontrada." };
+  if (nota.ambiente === "EXTERNA") return { ok: true, status: nota.status };
   const { body } = await consultarNfsen(nota.ambiente as Ambiente, nota.ref);
   if (!body.status) return { ok: false, error: mensagemErroNfse(body) };
   const n = await aplicar(id, body);
@@ -403,6 +480,9 @@ export async function cancelarNfseAction(id: string, justificativa: string): Pro
   const nota = await prisma.notaServico.findUnique({ where: { id } });
   if (!nota) return { ok: false, error: "Nota não encontrada." };
   if (nota.status !== "AUTORIZADA") return { ok: false, error: "Só nota autorizada pode ser cancelada." };
+  if (nota.ambiente === "EXTERNA") {
+    return { ok: false, error: "Nota emitida fora do sistema: cancele no portal onde foi emitida e remova o registro aqui." };
+  }
   const { body } = await cancelarNfsen(nota.ambiente as Ambiente, nota.ref, texto);
   if (body.status === "cancelado") {
     await prisma.notaServico.update({ where: { id }, data: { justificativaCancelamento: texto } });

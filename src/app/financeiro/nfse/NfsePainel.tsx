@@ -9,6 +9,8 @@ import {
   cadastrarFinanceiraAction,
   cancelarNfseAction,
   emitirNfseAction,
+  registrarNotaExternaAction,
+  removerNotaExternaAction,
   vincularFinanceiraAction,
   vincularRetornosAction,
 } from "./actions";
@@ -182,6 +184,25 @@ function BancosSemConta({ bancos }: { bancos: BancoSemConta[] }) {
   );
 }
 
+/**
+ * Nota × o que entrou dos retornos marcados. O banco costuma reter imposto
+ * (IR 1,5%) sobre a comissão: paga o líquido e a nota sai pelo bruto — então
+ * a nota maior que o recebido é normal. Só explica; não bloqueia nada.
+ */
+function DiferencaNota({ nota, recebido }: { nota: number; recebido: number }) {
+  const dif = Math.round((nota - recebido) * 100) / 100;
+  if (!(nota > 0) || !(recebido > 0) || Math.abs(dif) < 0.01) return null;
+  const pct = (dif / nota) * 100;
+  const retencao = dif > 0 && pct < 20;
+  return (
+    <span className={retencao ? "text-slate-500" : "text-amber-700"}>
+      {retencao
+        ? `nota ${brl(dif)} acima do recebido (${pct.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}% — imposto retido pelo banco; a nota sai pelo bruto)`
+        : `nota ${brl(Math.abs(dif))} ${dif > 0 ? "acima" : "abaixo"} do recebido (${brl(recebido)}) — confira o valor informado pelo banco`}
+    </span>
+  );
+}
+
 const valorBr = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /**
@@ -264,6 +285,9 @@ function Emitir({
   const [informacoes, setInformacoes] = useState("");
   const [marcados, setMarcados] = useState<string[]>([]);
   const [erro, setErro] = useState<{ msg: string; faltas?: string[] } | null>(null);
+  // Nota que já foi emitida fora do sistema: só registra (número + retornos).
+  const [externa, setExterna] = useState(false);
+  const [numero, setNumero] = useState("");
   const livres = retornos.filter((r) => r.financeiraId === financeiraId && r.tipo === tipo && !r.notaId);
 
   function mudarTipo(t: Tipo) {
@@ -278,6 +302,32 @@ function Emitir({
     setMarcados(ids);
     const soma = livres.filter((o) => ids.includes(o.id)).reduce((s, o) => s + o.valor, 0);
     if (ids.length) setValor(valorBr(soma));
+  }
+
+  function registrar() {
+    setErro(null);
+    const v = Number(valor.replace(/\./g, "").replace(",", "."));
+    start(async () => {
+      const r = await registrarNotaExternaAction({
+        financeiraId,
+        tipo,
+        numero,
+        descricao,
+        valor: v,
+        competencia,
+        saleIds: marcados,
+      });
+      if (!r.ok) {
+        setErro({ msg: r.error || "Não foi possível registrar." });
+        return;
+      }
+      setAberto(false);
+      setValor("");
+      setNumero("");
+      setExterna(false);
+      setMarcados([]);
+      router.refresh();
+    });
   }
 
   function emitir() {
@@ -401,25 +451,58 @@ function Emitir({
         <label className="block">
           <span className="text-xs text-slate-500">Valor informado pelo banco (R$)</span>
           <input value={valor} onChange={(e) => setValor(e.target.value)} inputMode="decimal" placeholder="0,00" className={campo} />
+          {marcados.length ? (
+            <span className="mt-0.5 block text-[11px] leading-snug">
+              <DiferencaNota
+                nota={Number(valor.replace(/\./g, "").replace(",", ".")) || 0}
+                recebido={livres.filter((o) => marcados.includes(o.id)).reduce((s, o) => s + o.valor, 0)}
+              />
+            </span>
+          ) : null}
         </label>
         <label className="block">
           <span className="text-xs text-slate-500">Competência</span>
           <input type="date" value={competencia} onChange={(e) => setCompetencia(e.target.value)} className={campo} />
         </label>
-        <label className="block sm:col-span-2">
-          <span className="text-xs text-slate-500">Informações complementares (opcional)</span>
-          <input value={informacoes} onChange={(e) => setInformacoes(e.target.value)} className={campo} />
-        </label>
+        {externa ? (
+          <label className="block sm:col-span-2">
+            <span className="text-xs text-slate-500">Número da nota já emitida</span>
+            <input value={numero} onChange={(e) => setNumero(e.target.value)} inputMode="numeric" placeholder="ex.: 219" className={campo} />
+          </label>
+        ) : (
+          <label className="block sm:col-span-2">
+            <span className="text-xs text-slate-500">Informações complementares (opcional)</span>
+            <input value={informacoes} onChange={(e) => setInformacoes(e.target.value)} className={campo} />
+          </label>
+        )}
       </div>
+      <label className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs text-slate-700">
+        <input type="checkbox" checked={externa} onChange={(e) => setExterna(e.target.checked)} className="mt-0.5" />
+        <span>
+          <strong>Esta nota já foi emitida fora do sistema</strong> (portal da prefeitura/nacional) — só registrar o
+          número e os {tipo === "SEGURO" ? "seguros" : "retornos"} que ela cobriu, sem emitir de novo.
+        </span>
+      </label>
       <div className="flex items-center gap-3">
-        <button
-          type="button"
-          onClick={emitir}
-          disabled={pending || !financeira?.tomadorDocumento || !valor}
-          className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
-        >
-          {pending ? "Enviando…" : homologacao ? "Emitir nota de teste" : "Emitir NFS-e"}
-        </button>
+        {externa ? (
+          <button
+            type="button"
+            onClick={registrar}
+            disabled={pending || !financeira || !valor || !numero.trim() || !marcados.length}
+            className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {pending ? "Registrando…" : "Registrar nota já emitida"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={emitir}
+            disabled={pending || !financeira?.tomadorDocumento || !valor}
+            className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {pending ? "Enviando…" : homologacao ? "Emitir nota de teste" : "Emitir NFS-e"}
+          </button>
+        )}
         <button type="button" onClick={() => setAberto(false)} className="text-xs text-slate-500 hover:underline">
           Voltar
         </button>
@@ -614,7 +697,11 @@ function Linha({
           NFS-e{n.numero ? ` nº ${n.numero}` : ""} · {n.tomadorNome}
         </span>
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${info.cls}`}>{info.label}</span>
-        {n.ambiente !== "PRODUCAO" ? (
+        {n.ambiente === "EXTERNA" ? (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
+            emitida fora do sistema
+          </span>
+        ) : n.ambiente !== "PRODUCAO" ? (
           <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">teste</span>
         ) : null}
       </div>
@@ -636,8 +723,8 @@ function Linha({
             </span>
           ))}
           {Math.abs(somaCobertos - n.valor) > 0.005 ? (
-            <span className="ml-1 text-amber-700">
-              — soma {brl(somaCobertos)}, diferente do valor da nota
+            <span className="ml-1">
+              — recebido {brl(somaCobertos)}; <DiferencaNota nota={n.valor} recebido={somaCobertos} />
             </span>
           ) : null}
         </div>
@@ -679,7 +766,23 @@ function Linha({
             🔗 {cobertos.length ? `Alterar ${oQue}` : `Vincular ${oQue}`}
           </button>
         ) : null}
-        {n.status === "AUTORIZADA" && canCancelar && !cancelando ? (
+        {n.ambiente === "EXTERNA" && canEmitir ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (!confirm("Remover o registro desta nota? Os retornos voltam a ficar sem NF (a nota em si não muda).")) return;
+              start(async () => {
+                const r = await removerNotaExternaAction(n.id);
+                if (!r.ok) setErro(r.error || "Não foi possível remover.");
+                router.refresh();
+              });
+            }}
+            disabled={pending}
+            className="text-xs font-medium text-rose-700 hover:underline disabled:opacity-50"
+          >
+            Remover registro
+          </button>
+        ) : n.status === "AUTORIZADA" && canCancelar && !cancelando ? (
           <button type="button" onClick={() => setCancelando(true)} className="text-xs font-medium text-rose-700 hover:underline">
             Cancelar nota
           </button>
