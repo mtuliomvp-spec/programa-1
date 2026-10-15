@@ -70,6 +70,11 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
                 🧾 Nota fiscal (NF-e)
               </LinkButton>
             ) : null}
+            {sale.status === "CONCLUIDA" && !sale.vehicle.intermediation ? (
+              <LinkButton href={`/estoque/${sale.vehicleId}#comunicacao`} variant="secondary">
+                📨 Comunicação de venda
+              </LinkButton>
+            ) : null}
             {sale.tradeInVehicle ? (
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca

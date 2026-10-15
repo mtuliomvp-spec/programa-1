@@ -8,6 +8,7 @@ import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
+import ComunicacaoVendaCopy from "./ComunicacaoVendaCopy";
 import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
 import { lerNfeConfig, ncmDoVeiculo } from "@/lib/nfe-config";
@@ -361,6 +362,41 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         { rotulo: "Chave da NF-e de saída", valor: soDigitos(vehicle.exitNfeKey), dica: "formulário do Renave" },
       ]
     : null;
+
+  // Comunicação de venda (SICOVE) pela R30: os dados do formulário dela, na
+  // ordem em que ela pede, para copiar e colar — sem integração com o site.
+  const endComprador = cliente ? lerEndereco(cliente.endereco) : null;
+  const docComprador = soDigitos(cliente?.document);
+  const comunicacaoCampos: CampoRenave[] | null = vehicle.sale
+    ? [
+        { secao: "Veículo", rotulo: "Placa", valor: vehicle.plate && !/^0KM-/i.test(vehicle.plate) ? vehicle.plate : null, dica: "Editar veículo" },
+        { rotulo: "RENAVAM", valor: soDigitos(vehicle.renavam), dica: "Editar veículo" },
+        { rotulo: "Chassi", valor: vehicle.chassi, dica: "Editar veículo" },
+        { rotulo: "Nº do CRV / ATPV-e", valor: soDigitos(vehicle.crvNumber), dica: "lido da ATPV-e (card ATPV-e)" },
+        { rotulo: "Código de segurança do CRV", valor: soDigitos(vehicle.crvSecurityCode), dica: "lido da ATPV-e" },
+        { secao: "Comprador", rotulo: docComprador && docComprador.length === 14 ? "CNPJ" : "CPF", valor: docComprador, dica: "cadastro do cliente" },
+        { rotulo: "Nome / razão social", valor: cliente?.name ?? null, dica: "cadastro do cliente" },
+        { rotulo: "CEP", valor: soDigitos(endComprador?.cep), dica: "endereço do cliente (CEP)" },
+        { rotulo: "Logradouro", valor: endComprador?.logradouro || null, dica: "endereço do cliente" },
+        { rotulo: "Número", valor: endComprador?.numero || null, dica: "endereço do cliente (use S/N se não houver)" },
+        ...(endComprador?.complemento ? [{ rotulo: "Complemento", valor: endComprador.complemento }] : []),
+        { rotulo: "Bairro", valor: endComprador?.bairro || null, dica: "endereço do cliente" },
+        { rotulo: "Município", valor: endComprador?.cidade || null, dica: "endereço do cliente" },
+        { rotulo: "UF", valor: endComprador?.uf || null, dica: "endereço do cliente" },
+        { rotulo: "Telefone", valor: soDigitos(cliente?.phone), dica: "cadastro do cliente" },
+        { rotulo: "E-mail", valor: cliente?.email || null, dica: "cadastro do cliente" },
+        { secao: "Venda", rotulo: "Data da venda", valor: formatDate(vehicle.sale.saleDate) },
+        {
+          rotulo: "Valor da venda",
+          // Só o carro: a transferência cobrada junto não é preço do veículo (mesma regra da NF-e).
+          valor: valorDoVeiculoNaVenda(vehicle.sale).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
+        },
+      ]
+    : null;
+  const comunicacaoTitulo = vehicle.payables.find(
+    (p) => p.categoryLabel === "Comunicação de venda" && !/^cancelamento/i.test(p.description),
+  );
+  const comunicacaoEnviada = comunicacaoTitulo ? formatDate(comunicacaoTitulo.createdAt) : null;
 
   // Suspeita de duplicidade: 2+ custos deste veículo com o MESMO valor (ex.:
   // custo manual + título gerado por solicitação de compra para o mesmo gasto).
@@ -1178,11 +1214,14 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             />
           </Card>
 
-          <Card>
+          <Card className="scroll-mt-4" id="comunicacao">
             <CardHeader
               title="Documentos do veículo"
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
+            {comunicacaoCampos && canComunicacao ? (
+              <ComunicacaoVendaCopy campos={comunicacaoCampos} enviada={comunicacaoEnviada} />
+            ) : null}
             <VehicleAttachments
               vehicleId={vehicle.id}
               canManage={canComunicacao}
