@@ -302,7 +302,7 @@ export default async function FinanciamentoTerceirosListPage({
                         </strong>
                       </p>
                     ) : null}
-                    {o.vehicle.transferToName && !o.doc.transferDoneAt ? (
+                    {o.vehicle.transferToName && !o.doc.transferDoneAt && !o.doc.destinoConcluido ? (
                       <p className="mt-0.5 text-[11px] font-normal text-sky-700">
                         🔄 Transferência para <strong>{o.vehicle.transferToName}</strong>
                       </p>

@@ -1061,12 +1061,11 @@ async function applyCrlvToVehicle(input: {
   // "No nome do dono anterior" e o "Processo de transferência em aberto"
   // darem lugar ao "Transferido" sem ninguém precisar marcar.
   if (proprietario && vehicle.status === "VENDIDO" && vehicle.sale && !vehicle.sale.transferDoneAt) {
-    const { houseNameKeys, isOwnName, sameParty, parseDataBr } = await import("@/lib/doc-owner");
+    const { houseNameKeys, isOwnName, sameParty, parseDataBr, destinoConfere } = await import("@/lib/doc-owner");
     const nossa = isOwnName(proprietario, await houseNameKeys());
     const emissao = parseDataBr(crlv.dataEmissao);
     const doComprador = sameParty(proprietario, crlv.cpfCnpj, vehicle.sale.customer);
-    const doDestino =
-      !!vehicle.transferToName && sameParty(proprietario, null, { name: vehicle.transferToName, document: null });
+    const doDestino = !!vehicle.transferToName && destinoConfere(proprietario, null, vehicle.transferToName);
     const venda = new Date(vehicle.sale.saleDate);
     venda.setUTCHours(0, 0, 0, 0);
     const depoisDaVenda = emissao != null && emissao.getTime() >= venda.getTime();
@@ -1106,8 +1105,9 @@ async function applyCrlvToVehicle(input: {
   // física): o CRLV no nome dele ENCERRA esse processo, e o carro fica livre
   // para o próximo (a transferência ao comprador).
   if (proprietario && vehicle.status !== "VENDIDO" && vehicle.transferToName) {
-    const { sameParty } = await import("@/lib/doc-owner");
-    if (sameParty(proprietario, crlv.cpfCnpj, { name: vehicle.transferToName, document: null })) {
+    const { destinoConfere } = await import("@/lib/doc-owner");
+    // Tolera erro de letra e nome abreviado no orçamento ("Marlo Antonio").
+    if (destinoConfere(proprietario, crlv.cpfCnpj, vehicle.transferToName)) {
       data.transferToName = null;
       data.transferInProgress = false;
       filled.push(`transferência para ${proprietario} concluída (CRLV em nome dele)`);

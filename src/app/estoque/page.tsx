@@ -295,7 +295,7 @@ export default async function EstoquePage({
                 </strong>
               </p>
             ) : null}
-            {v.transferToName && !v.transferDoneAt ? (
+            {v.transferToName && !v.transferDoneAt && !v.destinoConcluido ? (
               <p className="mt-0.5 truncate text-[11px] text-sky-700">
                 🔄 Transferência para <strong>{v.transferToName}</strong>
               </p>
@@ -405,7 +405,7 @@ export default async function EstoquePage({
             </strong>
           </span>
         ) : null}
-        {v.transferToName && !v.transferDoneAt ? (
+        {v.transferToName && !v.transferDoneAt && !v.destinoConcluido ? (
           <span className="mt-0.5 block text-[11px] font-normal text-sky-700">
             🔄 Transferência para <strong>{v.transferToName}</strong>
           </span>
