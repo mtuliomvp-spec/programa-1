@@ -10,6 +10,7 @@ import {
   preLancarTransferenciaAction,
   type LeituraTransferencia,
 } from "./actions";
+import { avisoResolvido } from "@/lib/transferencia-avisos";
 
 type Option = { id: string; name: string };
 
@@ -98,7 +99,10 @@ export default function InformarTransferencia({
       fd.set("amount", amount);
       fd.set("date", date);
       fd.set("description", description);
-      if (leitura?.avisos?.length) fd.set("note", leitura.avisos.join(" · "));
+      // Aviso de leitura que o usuário já resolveu (escolheu a conta, informou
+      // a data) não vai para a fila — lá ele só confundiria.
+      const avisos = (leitura?.avisos ?? []).filter((a) => !avisoResolvido(a));
+      if (avisos.length) fd.set("note", avisos.join(" · "));
       if (lancarTarifa && Number(tarifa) > 0) fd.set("tarifa", tarifa);
       const file = fileRef.current?.files?.[0];
       if (file) fd.set("file", await resizeImageToJpeg(file));

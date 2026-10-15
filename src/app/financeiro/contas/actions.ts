@@ -11,6 +11,7 @@ import { assertCan, assertCanAny } from "@/lib/guards";
 import { markPayablePaid } from "@/lib/finance";
 import { assertMonthOpen, monthLabelBR } from "@/lib/monthly-closing";
 import { parseDateInput, formatCurrency } from "@/lib/format";
+import { avisoVigente } from "@/lib/transferencia-avisos";
 
 export type ContaFormState = { error?: string };
 
@@ -814,7 +815,7 @@ export async function confirmarTransferenciaPendenteAction(
         date,
         description: pend.description,
         informedDate: pend.date,
-        note: pend.note,
+        note: avisoVigente(pend.note) || null,
         receiptName: pend.receiptName,
         receiptMime: pend.receiptMime,
         receiptSize: pend.receiptSize,
