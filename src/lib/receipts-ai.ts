@@ -59,6 +59,12 @@ const receiptSchema = z.object({
   bancoDestino: z.string().nullable().optional(),
   agenciaDestino: z.string().nullable().optional(),
   contaDestino: z.string().nullable().optional(),
+  // Dados bancários de quem RECEBEU como estão impressos (com o dígito) — vão
+  // para o cadastro do fornecedor, que os usa na Ordem de Pagamento.
+  agenciaDestinoImpressa: textoOuNulo,
+  contaDestinoImpressa: textoOuNulo,
+  tipoContaDestino: textoOuNulo,
+  chavePixDestino: textoOuNulo,
   // Tarifa cobrada pelo BANCO na operação (TED, DOC, Pix agendado...): é
   // despesa da loja, separada do valor transferido — vira título próprio.
   tarifa: z.number().nullable().optional(),
@@ -96,6 +102,10 @@ const RECEIPTS_JSON_SCHEMA = {
           "bancoDestino",
           "agenciaDestino",
           "contaDestino",
+          "agenciaDestinoImpressa",
+          "contaDestinoImpressa",
+          "tipoContaDestino",
+          "chavePixDestino",
           "tarifa",
         ],
         properties: {
@@ -166,6 +176,26 @@ const RECEIPTS_JSON_SCHEMA = {
           contaDestino: {
             type: ["string", "null"],
             description: "número da conta creditada, só dígitos (sem o dígito verificador)",
+          },
+          agenciaDestinoImpressa: {
+            type: "string",
+            description:
+              "agência da conta creditada COMO IMPRESSA, com o dígito verificador quando houver (ex. '2972-6'); \"\" (vazio) quando não aparece",
+          },
+          contaDestinoImpressa: {
+            type: "string",
+            description:
+              "número da conta creditada COMO IMPRESSO, com o dígito verificador (ex. '10979-7'); \"\" (vazio) quando não aparece",
+          },
+          tipoContaDestino: {
+            type: "string",
+            description:
+              "tipo da conta creditada: exatamente CORRENTE, POUPANCA ou PAGAMENTO; \"\" (vazio) se não aparece",
+          },
+          chavePixDestino: {
+            type: "string",
+            description:
+              "chave Pix de QUEM RECEBEU, como impressa (CPF/CNPJ, e-mail, telefone ou aleatória) e SOMENTE quando completa — mascarada com asteriscos vai \"\" (vazio); \"\" também quando não é Pix",
           },
           tarifa: {
             type: ["number", "null"],

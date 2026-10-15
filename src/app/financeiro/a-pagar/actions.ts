@@ -1346,6 +1346,7 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
         status: true,
         dueDate: true,
         amount: true,
+        supplierId: true,
         supplier: { select: { name: true, document: true } },
         beneficiaryUser: { select: { name: true, document: true } },
         capitalBeneficiary: { select: { name: true } },
@@ -1465,8 +1466,10 @@ export async function importPaymentReceiptsAction(base64: string): Promise<Impor
       filaLabel = " (título em aberto — falta dar baixa)";
     }
 
+    const { fornecedorDoComprovante, avisoFornecedor } = await import("@/lib/fornecedor-comprovante");
+    const fornecedor = avisoFornecedor(await fornecedorDoComprovante(r, { supplierIdDoTitulo: target.supplierId }));
     attached.push({
-      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}${filaLabel}`,
+      title: `nº ${String(target.orderNumber).padStart(4, "0")} — ${target.description}${filaLabel}${fornecedor ? ` · ${fornecedor}` : ""}`,
       receipt: label,
     });
   }
@@ -2588,6 +2591,8 @@ export type ReadReceiptResult = {
   avisos?: string[];
   /** O título entrou na fila de espera do caixa? */
   enfileirado?: boolean;
+  /** Fornecedor cadastrado/completado com os dados do comprovante. */
+  avisoFornecedor?: string | null;
 };
 
 /**
@@ -2625,6 +2630,7 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
       amount: true,
       dueDate: true,
       description: true,
+      supplierId: true,
       supplier: { select: { name: true, document: true } },
       beneficiaryUser: { select: { name: true, document: true } },
       capitalBeneficiary: { select: { name: true } },
@@ -2745,6 +2751,11 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
     nota: avisos.join(" · ") || null,
   });
 
+  // Quem recebeu vira (ou completa) o cadastro de fornecedor com CPF/CNPJ e
+  // dados bancários do comprovante.
+  const { fornecedorDoComprovante, avisoFornecedor } = await import("@/lib/fornecedor-comprovante");
+  const fornecedor = await fornecedorDoComprovante(lido, { supplierIdDoTitulo: payable.supplierId });
+
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/contas");
   return {
@@ -2758,6 +2769,7 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
     formaPagamento: lido.formaPagamento ?? null,
     accountName: conta?.name ?? null,
     avisos,
+    avisoFornecedor: avisoFornecedor(fornecedor),
   };
 }
 
@@ -2959,6 +2971,8 @@ export type PreLancarLoteResult = {
   senhaNecessaria?: boolean;
   /** Divergências da conferência (valor, conta) — nada bloqueia. */
   avisos?: string[];
+  /** Fornecedor cadastrado/completado com os dados do comprovante. */
+  avisoFornecedor?: string | null;
 };
 
 /** O que a conferência do comprovante do LOTE devolve para a tela. */
@@ -3095,9 +3109,11 @@ export async function preLancarPagamentoEmLoteAction(
       paymentComboId: true,
       category: true,
       cardInvoice: true,
+      supplierId: true,
     },
   });
   const pagaveis = rows.filter((p) => p.status !== "PAGO" && !p.paymentComboId);
+  let avisoDoFornecedor: string | null = null;
   if (!pagaveis.length) {
     return {
       ok: false,
@@ -3205,6 +3221,13 @@ export async function preLancarPagamentoEmLoteAction(
     try {
       const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
       const lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+      const { fornecedorDoComprovante, avisoFornecedor } = await import("@/lib/fornecedor-comprovante");
+      const fornecedores = [...new Set(pagaveis.map((p) => p.supplierId))];
+      avisoDoFornecedor = avisoFornecedor(
+        await fornecedorDoComprovante(lido, {
+          supplierIdDoTitulo: fornecedores.length === 1 ? fornecedores[0] : null,
+        }),
+      );
       if (lido?.valor != null && Math.abs(lido.valor - esperado) > 0.005) {
         avisos.push(
           parcial
@@ -3258,7 +3281,7 @@ export async function preLancarPagamentoEmLoteAction(
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/contas");
-  return { ok: true, enfileirados: pagaveis.length, attached, avisos };
+  return { ok: true, enfileirados: pagaveis.length, attached, avisos, avisoFornecedor: avisoDoFornecedor };
 }
 
 /** R$ 1.234,56 — só para as mensagens desta tela. */

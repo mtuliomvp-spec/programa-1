@@ -94,6 +94,8 @@ export type LeituraComprovante = {
   contraparte?: string | null;
   /** O comprovante é entre contas da própria loja (pagador e recebedor somos nós). */
   avisoSentido?: string | null;
+  /** Fornecedor cadastrado/completado agora com os dados do comprovante. */
+  avisoFornecedor?: string | null;
   /** Descrição sugerida (o usuário ajusta). */
   descricao?: string | null;
   /** PIX, TED, DOC, TRANSFERENCIA, BOLETO… */
@@ -402,12 +404,20 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     ? await prisma.financialAccount.findUnique({ where: { id: accountId }, select: { name: true } })
     : null;
 
+  // Quem recebeu vira fornecedor (ou completa o cadastro) com CPF/CNPJ e
+  // dados bancários do comprovante. O nome do cadastro volta para o formulário
+  // — o banco abrevia ("GLENDA MARAO V PEREIRA") e o nome lido criaria outro
+  // fornecedor na hora de salvar.
+  const { fornecedorDoComprovante, avisoFornecedor } = await import("@/lib/fornecedor-comprovante");
+  const fornecedor = !entrada && !avisoSentido ? await fornecedorDoComprovante(lido) : null;
+  const beneficiario = fornecedor?.nome ?? lido.beneficiario ?? null;
+
   // Como este fornecedor foi classificado da última vez: o fluxo e a categoria
   // de um mesmo pagamento raramente mudam de mês para mês.
   let fluxo: string | null = null;
   let categoria: string | null = null;
-  if (lido.beneficiario && !entrada) {
-    const supplierId = await fornecedorCadastrado(lido.beneficiario);
+  if (beneficiario && !entrada) {
+    const supplierId = fornecedor?.id ?? (await fornecedorCadastrado(beneficiario));
     if (supplierId) {
       const ultimo = await prisma.payable.findFirst({
         where: { supplierId },
@@ -433,7 +443,7 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
           lido.valor,
           parseDateInput(dataIso),
           // O outro lado: quem pagou (entrada) ou quem recebeu (saída).
-          (entrada ? lido.pagador : lido.beneficiario) ?? null,
+          (entrada ? lido.pagador : beneficiario) ?? null,
         )
       : null;
 
@@ -444,10 +454,11 @@ export async function lerComprovanteCaixaAction(formData: FormData): Promise<Lei
     kind: entrada ? "entrada" : "saida",
     accountId,
     accountName: conta?.name ?? null,
-    beneficiario: lido.beneficiario ?? null,
-    contraparte: (entrada ? lido.pagador : lido.beneficiario) ?? null,
+    beneficiario,
+    contraparte: (entrada ? lido.pagador : beneficiario) ?? null,
     avisoSentido,
-    descricao: (lido.descricao || (entrada ? lido.pagador : lido.beneficiario) || "").trim() || null,
+    avisoFornecedor: avisoFornecedor(fornecedor),
+    descricao: (lido.descricao || (entrada ? lido.pagador : beneficiario) || "").trim() || null,
     formaPagamento: lido.formaPagamento ?? null,
     fluxo,
     categoria,

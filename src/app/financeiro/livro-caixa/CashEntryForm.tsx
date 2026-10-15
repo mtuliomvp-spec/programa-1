@@ -299,6 +299,11 @@ export default function CashEntryForm({
             para pré-lançar de vários lugares. Não bloqueia — só avisa antes,
             que é quando ainda dá para desistir.
           */}
+          {leitura?.ok && leitura.avisoFornecedor ? (
+            <p className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-800">
+              👤 {leitura.avisoFornecedor[0].toUpperCase() + leitura.avisoFornecedor.slice(1)}.
+            </p>
+          ) : null}
           {leitura?.ok && leitura.avisoSentido ? (
             <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
               ⚠️ {leitura.avisoSentido}

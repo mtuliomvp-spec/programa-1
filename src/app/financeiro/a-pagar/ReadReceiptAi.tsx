@@ -148,6 +148,11 @@ export default function ReadReceiptAi({
           {result.beneficiario ? (
             <p className="mt-0.5 text-xs text-slate-500">Pago a: {result.beneficiario}</p>
           ) : null}
+          {"avisoFornecedor" in result && result.avisoFornecedor ? (
+            <p className="mt-0.5 text-xs text-blue-700">
+              👤 {result.avisoFornecedor[0].toUpperCase() + result.avisoFornecedor.slice(1)}.
+            </p>
+          ) : null}
           {result.valor != null && Math.abs(result.valor - amountAtual) > 0.005 ? (
             <p className="mt-1 text-xs font-medium text-amber-700">
               ⚠ {ehCombo ? "O combo soma" : "O título está em"} {formatCurrency(amountAtual)} — a
