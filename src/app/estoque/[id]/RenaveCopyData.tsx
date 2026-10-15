@@ -104,8 +104,8 @@ export function Bloco({
         </p>
       ) : null}
       <ul className="mt-2 divide-y divide-slate-200">
-        {campos.map((c) => (
-          <li key={`${c.secao ?? ""}${c.rotulo}`} className="py-1.5 text-sm">
+        {campos.map((c, i) => (
+          <li key={i} className="py-1.5 text-sm">
             {c.secao ? (
               <p className="mb-1 mt-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700">{c.secao}</p>
             ) : null}
@@ -121,10 +121,10 @@ export function Bloco({
               {c.valor ? (
                 <button
                   type="button"
-                  onClick={() => copiar(c.rotulo, c.valor!)}
+                  onClick={() => copiar(String(i), c.valor!)}
                   className="shrink-0 rounded-lg border border-blue-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-blue-700 hover:bg-blue-50"
                 >
-                  {copiado === c.rotulo ? "✓" : "📋 Copiar"}
+                  {copiado === String(i) ? "✓" : "📋 Copiar"}
                 </button>
               ) : null}
             </div>
