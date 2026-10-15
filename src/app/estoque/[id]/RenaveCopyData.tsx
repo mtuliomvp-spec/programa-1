@@ -45,7 +45,7 @@ export default function RenaveCopyData({ entrada, saida }: { entrada: CampoRenav
   );
 }
 
-async function copiarTexto(texto: string): Promise<boolean> {
+export async function copiarTexto(texto: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(texto);
     return true;
@@ -64,7 +64,16 @@ async function copiarTexto(texto: string): Promise<boolean> {
   }
 }
 
-function Bloco({ titulo, campos }: { titulo: string; campos: CampoRenave[] }) {
+export function Bloco({
+  titulo,
+  campos,
+  aviso = "complete na ficha (Editar / formulário do Renave) antes de registrar",
+}: {
+  titulo: string;
+  campos: CampoRenave[];
+  /** O que fazer quando falta dado. */
+  aviso?: string;
+}) {
   const [copiado, setCopiado] = useState<string | null>(null);
   const faltando = campos.filter((c) => !c.valor).length;
 
@@ -91,12 +100,12 @@ function Bloco({ titulo, campos }: { titulo: string; campos: CampoRenave[] }) {
       </div>
       {faltando > 0 ? (
         <p className="mt-1 text-[11px] text-amber-700">
-          ⚠ {faltando} dado(s) em falta — complete na ficha (Editar / formulário do Renave) antes de registrar.
+          ⚠ {faltando} dado(s) em falta — {aviso}.
         </p>
       ) : null}
       <ul className="mt-2 divide-y divide-slate-200">
         {campos.map((c) => (
-          <li key={c.rotulo} className="py-1.5 text-sm">
+          <li key={`${c.secao ?? ""}${c.rotulo}`} className="py-1.5 text-sm">
             {c.secao ? (
               <p className="mb-1 mt-1 text-[11px] font-semibold uppercase tracking-wide text-teal-700">{c.secao}</p>
             ) : null}
