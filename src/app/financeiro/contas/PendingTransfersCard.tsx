@@ -8,6 +8,7 @@ import {
   confirmarTransferenciaPendenteAction,
   descartarTransferenciaPendenteAction,
 } from "./actions";
+import { avisoVigente } from "@/lib/transferencia-avisos";
 
 export type TransferenciaPendente = {
   id: string;
@@ -116,7 +117,9 @@ export default function PendingTransfersCard({
                   </>
                 ) : null}
               </p>
-              {r.note ? <p className="mt-1 text-xs font-medium text-amber-700">⚠ {r.note}</p> : null}
+              {avisoVigente(r.note) ? (
+                <p className="mt-1 text-xs font-medium text-amber-700">⚠ {avisoVigente(r.note)}</p>
+              ) : null}
               {!r.podeConfirmar ? (
                 <p className="mt-1 text-xs text-slate-500">
                   Espera o movimento alcançar {formatDate(r.date)} — o caixa aberto é de {workDateLabel}.
