@@ -9,6 +9,7 @@ import VehicleKm from "./VehicleKm";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
 import ComunicacaoVendaCopy from "./ComunicacaoVendaCopy";
+import DocumentosCompra from "./DocumentosCompra";
 import {
   cepR30,
   documentoR30,
@@ -264,6 +265,24 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     vendedorEmpresa: (vehicle.supplier?.document ?? "").replace(/\D/g, "").length === 14,
     vendedorIe: vehicle.supplier?.inscricaoEstadual ?? null,
   };
+  // NF-e de entrada RECEBIDA: quando quem vende é empresa (locadora,
+  // concessionária), a nota de venda DELA é a entrada do carro — a chave fica
+  // no Renave e o DANFE em Documentos. Não é nota emitida pelo sistema, mas é
+  // aqui que se procura por ela; e com ela não há entrada a emitir.
+  const anexoNfeCompra = vehicle.attachments.find((a) => /^NF-?e de compra/i.test(a.description)) ?? null;
+  const chaveEntrada = (vehicle.entryNfeKey ?? "").replace(/\D/g, "");
+  const nfeRecebida =
+    (chaveEntrada && !notasFiscais.some((n) => n.tipo === "ENTRADA" && (n.chave ?? "").replace(/\D/g, "") === chaveEntrada)) ||
+    anexoNfeCompra
+      ? {
+          chave: chaveEntrada || null,
+          numero: vehicle.entryNfeNumber,
+          serie: vehicle.entryNfeSerie,
+          emitidaEm: vehicle.entryNfeIssuedAt ? formatDate(vehicle.entryNfeIssuedAt) : null,
+          emitente: vehicle.supplier?.name ?? null,
+          anexoId: anexoNfeCompra?.id ?? null,
+        }
+      : null;
   // Nota de venda: só com venda registrada (e não cancelada).
   const vendaNfe = vehicle.sale && vehicle.sale.status !== "CANCELADA" ? vehicle.sale : null;
   const previaSaida = vendaNfe
@@ -1207,6 +1226,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 ambiente={nfeConfig.ambiente}
                 notas={notasFiscais}
                 entrada={nfeEntrada}
+                recebida={nfeRecebida}
                 saida={nfeSaida}
                 canEmitir={canNfe}
                 canCancelar={canNfeCancelar}
@@ -1324,6 +1344,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               title="Documentos do veículo"
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
+            {canEditar ? <DocumentosCompra vehicleId={vehicle.id} /> : null}
             {comunicacaoCampos && canComunicacao ? (
               <ComunicacaoVendaCopy
                 campos={comunicacaoCampos}

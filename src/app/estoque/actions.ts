@@ -459,8 +459,16 @@ export async function createVehicleAction(
  * O tipo de cada arquivo vem da leitura feita na tela; sem ela, o texto do
  * PDF decide (sem IA) e, na dúvida, vai como documento.
  */
-async function anexarDocumentosDaCompra(vehicleId: string, formData: FormData) {
-  const { tipoPeloTexto, ROTULO_DOC_COMPRA } = await import("@/lib/documentos-compra");
+async function anexarDocumentosDaCompra(
+  vehicleId: string,
+  formData: FormData,
+  opts: {
+    /** Veículo já cadastrado: não sobrescreve o que a ficha tem e ajusta o vencimento do título. */
+    existente?: boolean;
+  } = {},
+): Promise<{ nome: string; onde: string; erro?: string }[]> {
+  const feitos: { nome: string; onde: string; erro?: string }[] = [];
+  const { tipoPeloTexto, tipoPeloNome, ROTULO_DOC_COMPRA } = await import("@/lib/documentos-compra");
   type Info = import("@/lib/documentos-compra").InfoDocsCompra;
   let info: Info | null = null;
   try {
@@ -473,106 +481,178 @@ async function anexarDocumentosDaCompra(vehicleId: string, formData: FormData) {
     // Formulário antigo: um arquivo só, o contrato.
     ...formData.getAll("contract"),
   ].filter((f): f is File => f instanceof File && f.size > 0 && f.size <= MAX_ATTACHMENT_BYTES);
-  if (!arquivos.length) return;
+  if (!arquivos.length) return feitos;
+  const atual = opts.existente
+    ? await prisma.vehicle.findUnique({
+        where: { id: vehicleId },
+        select: { docOwnerName: true, crvNumber: true, crvSecurityCode: true, entryNfeKey: true },
+      })
+    : null;
+  /** Num veículo já cadastrado, só completa o que está vazio. */
+  const vazio = (campo: keyof NonNullable<typeof atual>) => !atual || !atual[campo];
 
   const { textoDoPdf } = await import("@/lib/pdf-text");
   const { chaveNfeValida, dadosDaChaveNfe } = await import("@/lib/renave");
   const daFicha: Record<string, unknown> = {};
 
   for (const [i, file] of arquivos.entries()) {
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const mimeType = file.type || "application/octet-stream";
-    const veioDoContrato = formData.getAll("contract").includes(file);
-    let tipo = veioDoContrato ? "CONTRATO" : (info?.tipos?.[i] ?? null);
-    if (!tipo && mimeType === "application/pdf") {
-      try {
-        tipo = tipoPeloTexto(textoDoPdf(buffer));
-      } catch {
-        tipo = null;
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      const mimeType = file.type || "application/octet-stream";
+      const veioDoContrato = formData.getAll("contract").includes(file);
+      let tipo = veioDoContrato ? "CONTRATO" : (info?.tipos?.[i] ?? null);
+      if (!tipo && mimeType === "application/pdf") {
+        try {
+          tipo = tipoPeloTexto(textoDoPdf(buffer));
+        } catch {
+          tipo = null;
+        }
       }
-    }
-    const base = { filename: file.name || "documento", mimeType, size: file.size, data: buffer };
+      if (!tipo || tipo === "OUTRO") tipo = tipoPeloNome(file.name) ?? tipo;
+      const base = { filename: file.name || "documento", mimeType, size: file.size, data: buffer };
 
-    if (tipo === "CRLV") {
-      const ano = info?.crlvExercicio;
-      await prisma.vehicleAttachment.create({
-        data: { vehicleId, kind: "CRLV", description: ano ? `CRLV ${ano}` : "CRLV", ...base },
-      });
-      if (info?.docOwnerName) daFicha.docOwnerName = info.docOwnerName;
-      continue;
-    }
-    if (tipo === "ATPV") {
-      const lido = info?.atpv ?? null;
-      const so = (v: string | null | undefined) => (v || "").replace(/\D/g, "");
-      await prisma.vehicleAttachment.create({
-        data: {
-          vehicleId,
-          kind: "DOCUMENTO",
-          description: `ATPV-e${lido?.numeroAtpv ? ` nº ${so(lido.numeroAtpv)}` : ""}`,
-          ...base,
-          ...(lido ? { atpvLido: lido } : {}),
-        },
-      });
-      if (so(lido?.numeroCrv)) daFicha.crvNumber = so(lido?.numeroCrv);
-      if (so(lido?.codigoSegurancaCrv)) daFicha.crvSecurityCode = so(lido?.codigoSegurancaCrv);
-      continue;
-    }
-    if (tipo === "NFE") {
-      const n = info?.nfe ?? null;
-      await prisma.vehicleAttachment.create({
-        data: {
-          vehicleId,
-          kind: "DOCUMENTO",
-          description: `NF-e de compra${n?.numero ? ` nº ${n.numero}` : ""}`,
-          ...base,
-        },
-      });
-      if (n?.chave && chaveNfeValida(n.chave)) {
-        const k = dadosDaChaveNfe(n.chave);
-        daFicha.entryNfeKey = n.chave;
-        daFicha.entryNfeNumber = k?.numero ?? n.numero;
-        daFicha.entryNfeSerie = k?.serie ?? n.serie;
-        if (n.emitidaEm && /^\d{4}-\d{2}-\d{2}$/.test(n.emitidaEm)) daFicha.entryNfeIssuedAt = parseDateInput(n.emitidaEm);
-      }
-      continue;
-    }
-    if (tipo === "PAGAMENTO") {
-      // O boleto/Pix é do título da compra (o primeiro, se for parcelado).
-      const titulo = await prisma.payable.findFirst({
-        where: { vehicleId, category: "COMPRA_VEICULO" },
-        orderBy: { dueDate: "asc" },
-        select: { id: true, notes: true, barcode: true },
-      });
-      if (titulo) {
-        await prisma.payableAttachment.create({
-          data: { payableId: titulo.id, kind: "BOLETO", description: ROTULO_DOC_COMPRA.PAGAMENTO, ...base },
+      if (tipo === "CRLV") {
+        const ano = info?.crlvExercicio;
+        await prisma.vehicleAttachment.create({
+          data: { vehicleId, kind: "CRLV", description: ano ? `CRLV ${ano}` : "CRLV", ...base },
         });
-        const p = info?.pagamento ?? null;
-        const linha = (p?.linhaDigitavel || "").replace(/\D/g, "");
-        await prisma.payable.update({
-          where: { id: titulo.id },
-          data: {
-            ...(linha && !titulo.barcode ? { barcode: linha } : {}),
-            ...(p?.pix
-              ? { notes: [titulo.notes?.trim() || null, `Pix copia e cola: ${p.pix}`].filter(Boolean).join("\n") }
-              : {}),
-          },
-        });
+        if (info?.docOwnerName && vazio("docOwnerName")) daFicha.docOwnerName = info.docOwnerName;
+        feitos.push({ nome: file.name, onde: "card CRLV" });
         continue;
       }
-      // Sem título de compra (consignado): fica nos documentos do carro.
+      if (tipo === "ATPV") {
+        const lido = info?.atpv ?? null;
+        const so = (v: string | null | undefined) => (v || "").replace(/\D/g, "");
+        await prisma.vehicleAttachment.create({
+          data: {
+            vehicleId,
+            kind: "DOCUMENTO",
+            description: `ATPV-e${lido?.numeroAtpv ? ` nº ${so(lido.numeroAtpv)}` : ""}`,
+            ...base,
+            ...(lido ? { atpvLido: lido } : {}),
+          },
+        });
+        if (so(lido?.numeroCrv) && vazio("crvNumber")) daFicha.crvNumber = so(lido?.numeroCrv);
+        if (so(lido?.codigoSegurancaCrv) && vazio("crvSecurityCode")) daFicha.crvSecurityCode = so(lido?.codigoSegurancaCrv);
+        feitos.push({ nome: file.name, onde: "card ATPV-e" });
+        continue;
+      }
+      if (tipo === "NFE") {
+        const n = info?.nfe ?? null;
+        await prisma.vehicleAttachment.create({
+          data: {
+            vehicleId,
+            kind: "DOCUMENTO",
+            description: `NF-e de compra${n?.numero ? ` nº ${n.numero}` : ""}`,
+            ...base,
+          },
+        });
+        if (n?.chave && chaveNfeValida(n.chave) && vazio("entryNfeKey")) {
+          const k = dadosDaChaveNfe(n.chave);
+          daFicha.entryNfeKey = n.chave;
+          daFicha.entryNfeNumber = k?.numero ?? n.numero;
+          daFicha.entryNfeSerie = k?.serie ?? n.serie;
+          if (n.emitidaEm && /^\d{4}-\d{2}-\d{2}$/.test(n.emitidaEm)) daFicha.entryNfeIssuedAt = parseDateInput(n.emitidaEm);
+        }
+        feitos.push({ nome: file.name, onde: n?.chave ? "Documentos do veículo (chave no Renave)" : "Documentos do veículo" });
+        continue;
+      }
+      if (tipo === "PAGAMENTO") {
+        // O boleto/Pix é do título da compra (o primeiro, se for parcelado).
+        const titulo = await prisma.payable.findFirst({
+          where: { vehicleId, category: "COMPRA_VEICULO" },
+          orderBy: { dueDate: "asc" },
+          select: { id: true, notes: true, barcode: true, status: true },
+        });
+        if (titulo) {
+          await prisma.payableAttachment.create({
+            data: { payableId: titulo.id, kind: "BOLETO", description: ROTULO_DOC_COMPRA.PAGAMENTO, ...base },
+          });
+          const p = info?.pagamento ?? null;
+          const linha = (p?.linhaDigitavel || "").replace(/\D/g, "");
+          const venc = p?.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(p.vencimento) ? p.vencimento : null;
+          await prisma.payable.update({
+            where: { id: titulo.id },
+            data: {
+              // Cadastro novo já veio com o vencimento no formulário; aqui é o
+              // veículo existente, com o título ainda em aberto.
+              ...(opts.existente && venc && titulo.status !== "PAGO" ? { dueDate: parseDateInput(venc) } : {}),
+              ...(linha && !titulo.barcode ? { barcode: linha } : {}),
+              ...(p?.pix
+                ? { notes: [titulo.notes?.trim() || null, `Pix copia e cola: ${p.pix}`].filter(Boolean).join("\n") }
+                : {}),
+            },
+          });
+          feitos.push({ nome: file.name, onde: "título a pagar da compra (Boleto)" });
+          continue;
+        }
+        // Sem título de compra (consignado): fica nos documentos do carro.
+      }
+      await prisma.vehicleAttachment.create({
+        data: {
+          vehicleId,
+          kind: "DOCUMENTO",
+          description:
+            tipo === "CONTRATO" ? "Contrato de compra" : tipo === "PAGAMENTO" ? ROTULO_DOC_COMPRA.PAGAMENTO : "Documento da compra",
+          ...base,
+        },
+      });
+      feitos.push({ nome: file.name, onde: "Documentos do veículo" });
+    } catch (e) {
+      // Um arquivo que falha não impede os outros.
+      feitos.push({ nome: file.name, onde: "—", erro: e instanceof Error ? e.message : "não foi possível anexar" });
     }
-    await prisma.vehicleAttachment.create({
-      data: {
-        vehicleId,
-        kind: "DOCUMENTO",
-        description:
-          tipo === "CONTRATO" ? "Contrato de compra" : tipo === "PAGAMENTO" ? ROTULO_DOC_COMPRA.PAGAMENTO : "Documento da compra",
-        ...base,
-      },
-    });
   }
   if (Object.keys(daFicha).length) await prisma.vehicle.update({ where: { id: vehicleId }, data: daFicha });
+  return feitos;
+}
+
+/**
+ * Documentos da compra num veículo JÁ cadastrado (ficou faltando no cadastro,
+ * ou chegou depois): lê cada arquivo e põe no seu lugar da ficha, como no
+ * cadastro. Completa só o que está vazio e acerta o vencimento do título da
+ * compra pelo boleto/Pix.
+ */
+export async function anexarDocumentosCompraAction(formData: FormData): Promise<{
+  ok: boolean;
+  error?: string;
+  itens?: { nome: string; onde: string; erro?: string; aviso?: string }[];
+  avisos?: string[];
+}> {
+  try {
+    await assertCanAny([
+      ["estoque", "editar"],
+      ["estoque", "criar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const vehicleId = String(formData.get("vehicleId") || "");
+  const vehicle = await prisma.vehicle.findUnique({ where: { id: vehicleId }, select: { id: true } });
+  if (!vehicle) return { ok: false, error: "Veículo não encontrado." };
+  const arquivos = formData
+    .getAll("purchaseDocs")
+    .filter((f): f is File => f instanceof File && f.size > 0 && f.size <= MAX_ATTACHMENT_BYTES);
+  if (!arquivos.length) return { ok: false, error: "Escolha os documentos." };
+
+  const lidos = await Promise.all(arquivos.map((f) => lerDocCompra(f)));
+  const { consolidarCompra } = await import("@/lib/documentos-compra");
+  const c = consolidarCompra(
+    lidos.map((l) => l.lido),
+    lidos.map((l) => l.tipo),
+  );
+  const fd = new FormData();
+  arquivos.forEach((f) => fd.append("purchaseDocs", f));
+  fd.set("purchaseDocsInfo", JSON.stringify(c.info));
+  const feitos = await anexarDocumentosDaCompra(vehicle.id, fd, { existente: true });
+  revalidatePath(`/estoque/${vehicle.id}`);
+  revalidatePath("/financeiro/a-pagar");
+  revalidarTelasDeVeiculo();
+  return {
+    ok: true,
+    itens: feitos.map((f, i) => ({ ...f, aviso: lidos[i]?.aviso })),
+    avisos: c.avisos,
+  };
 }
 
 const updateSchema = vehicleSchema.extend({ id: z.string().min(1) });
@@ -860,10 +940,20 @@ export async function lerDocumentoCompraAction(
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Arquivo vazio." };
   if (file.size > MAX_ATTACHMENT_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  return lerDocCompra(file);
+}
+
+/** Reconhece e lê um documento da compra (sem checar permissão — quem chama checa). */
+async function lerDocCompra(file: File): Promise<{
+  ok: true;
+  tipo: import("@/lib/documentos-compra").TipoDocCompra;
+  lido: import("@/lib/documentos-compra").DocCompraLido;
+  aviso?: string;
+}> {
   const buffer = Buffer.from(await file.arrayBuffer());
   const mimeType = file.type || "application/pdf";
   const base64 = buffer.toString("base64");
-  const { tipoPeloTexto, pagamentoPeloTexto } = await import("@/lib/documentos-compra");
+  const { tipoPeloTexto, tipoPeloNome, pagamentoPeloTexto } = await import("@/lib/documentos-compra");
   const { textoDoPdf, chavesNfeNoTexto } = await import("@/lib/pdf-text");
   let texto = "";
   if (mimeType === "application/pdf") {
@@ -877,7 +967,14 @@ export async function lerDocumentoCompraAction(
   try {
     if (!tipo) {
       const { classificarDocCompra } = await import("@/lib/doc-compra-ai");
-      tipo = await classificarDocCompra(base64, mimeType);
+      try {
+        tipo = await classificarDocCompra(base64, mimeType);
+      } catch (e) {
+        // IA fora do ar: o nome do arquivo ainda diz onde ele vai.
+        tipo = tipoPeloNome(file.name);
+        if (!tipo) throw e;
+      }
+      if (tipo === "OUTRO") tipo = tipoPeloNome(file.name) ?? "OUTRO";
     }
     const lido = await lerPorTipo(tipo);
     return { ok: true, tipo, lido };

@@ -36,6 +36,17 @@ export type EntradaPrevia = {
   vendedorIe: string | null;
 };
 
+/** NF-e de entrada emitida PELO VENDEDOR (empresa) — recebida, não emitida aqui. */
+export type NfeRecebida = {
+  chave: string | null;
+  numero: string | null;
+  serie: string | null;
+  emitidaEm: string | null;
+  emitente: string | null;
+  /** DANFE anexado em Documentos do veículo. */
+  anexoId: string | null;
+};
+
 const statusInfo: Record<string, { label: string; cls: string }> = {
   PROCESSANDO: { label: "Processando na SEFAZ…", cls: "bg-amber-100 text-amber-800" },
   AUTORIZADA: { label: "Autorizada", cls: "bg-emerald-100 text-emerald-800" },
@@ -52,6 +63,7 @@ export default function VehicleNfe({
   ambiente,
   notas,
   entrada,
+  recebida = null,
   saida,
   canEmitir,
   canCancelar,
@@ -60,6 +72,8 @@ export default function VehicleNfe({
   ambiente: string;
   notas: NotaResumo[];
   entrada: EntradaPrevia | null;
+  /** Nota de entrada recebida do vendedor: com ela, não há entrada a emitir. */
+  recebida?: NfeRecebida | null;
   /** Prévia da nota de venda — só quando o veículo tem venda registrada. */
   saida: EntradaPrevia | null;
   canEmitir: boolean;
@@ -99,6 +113,37 @@ export default function VehicleNfe({
         </p>
       ) : null}
 
+      {recebida ? (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm">
+          <p className="font-semibold text-emerald-900">
+            📥 NF-e de entrada recebida{recebida.emitente ? ` de ${recebida.emitente}` : " do vendedor"}
+            {recebida.numero ? ` · nº ${recebida.numero}` : ""}
+            {recebida.serie ? ` · série ${recebida.serie}` : ""}
+          </p>
+          <p className="mt-0.5 text-xs text-emerald-800">
+            Emitida pelo vendedor{recebida.emitidaEm ? ` em ${recebida.emitidaEm}` : ""} — é a nota de entrada deste
+            carro; não é preciso emitir outra.
+          </p>
+          {recebida.chave ? (
+            <p className="mt-1 break-all font-mono text-[11px] text-emerald-900">Chave: {recebida.chave}</p>
+          ) : (
+            <p className="mt-1 text-xs text-amber-800">
+              A chave ainda não está no Renave — leia a nota no card do Renave.
+            </p>
+          )}
+          {recebida.anexoId ? (
+            <a
+              href={`/anexos/${recebida.anexoId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-2.5 py-1 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              📄 Abrir DANFE
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+
       {notas.length ? (
         <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
           {notas.map((n) => (
@@ -109,7 +154,7 @@ export default function VehicleNfe({
         <p className="text-sm text-slate-500">Nenhuma nota emitida pelo sistema para este veículo.</p>
       )}
 
-      {entrada && canEmitir && !valida("ENTRADA") ? (
+      {entrada && canEmitir && !valida("ENTRADA") && !recebida?.chave ? (
         <EmitirNota tipo="ENTRADA" vehicleId={vehicleId} previa={entrada} homologacao={homologacao} />
       ) : null}
       {saida && canEmitir && !valida("SAIDA") ? (
