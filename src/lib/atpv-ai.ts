@@ -16,6 +16,12 @@ import { recordAiUsage } from "@/lib/ai-usage";
  * conferência contra o que foi digitado na ficha.
  */
 
+/** Campo de texto com "" para ausente (a API limita os campos string|null). */
+const texto = z
+  .string()
+  .optional()
+  .transform((v) => (v && v.trim() ? v.trim() : null));
+
 const atpvSchema = z.object({
   placa: z.string().nullable(),
   renavam: z.string().nullable(),
@@ -30,6 +36,18 @@ const atpvSchema = z.object({
   vendedorDocumento: z.string().nullable(),
   compradorNome: z.string().nullable(),
   compradorDocumento: z.string().nullable(),
+  // Endereço e contato do comprador como estão na ATPV-e — completam a
+  // comunicação de venda quando o cadastro do cliente não tem.
+  compradorEmail: texto,
+  compradorCep: texto,
+  compradorLogradouro: texto,
+  compradorNumero: texto,
+  compradorComplemento: texto,
+  compradorBairro: texto,
+  compradorMunicipio: texto,
+  compradorUf: texto,
+  vendedorMunicipio: texto,
+  vendedorUf: texto,
 });
 
 export type AtpvExtraido = z.infer<typeof atpvSchema>;
@@ -51,6 +69,16 @@ const ATPV_JSON_SCHEMA = {
     "vendedorDocumento",
     "compradorNome",
     "compradorDocumento",
+    "compradorEmail",
+    "compradorCep",
+    "compradorLogradouro",
+    "compradorNumero",
+    "compradorComplemento",
+    "compradorBairro",
+    "compradorMunicipio",
+    "compradorUf",
+    "vendedorMunicipio",
+    "vendedorUf",
   ],
   properties: {
     placa: { type: ["string", "null"], description: "só letras e números, ex. ABC1D23" },
@@ -76,6 +104,22 @@ const ATPV_JSON_SCHEMA = {
     vendedorDocumento: { type: ["string", "null"], description: "CPF/CNPJ do vendedor, só dígitos" },
     compradorNome: { type: ["string", "null"] },
     compradorDocumento: { type: ["string", "null"], description: "CPF/CNPJ do comprador, só dígitos" },
+    compradorEmail: { type: "string", description: "E-MAIL do comprador, completo (junte as linhas quebradas); \"\" se ausente" },
+    compradorCep: { type: "string", description: "CEP do endereço do comprador, só dígitos; \"\" se ausente" },
+    compradorLogradouro: {
+      type: "string",
+      description: "do ENDEREÇO DE DOMICÍLIO do comprador, só o logradouro (ex. 'AVENIDA GRANDE ORIENTE'); \"\" se ausente",
+    },
+    compradorNumero: { type: "string", description: "número do endereço do comprador (ex. '23 A'); \"\" se ausente" },
+    compradorComplemento: {
+      type: "string",
+      description: "complemento do endereço do comprador (quadra, lote, apto — ex. 'QD 44'); \"\" se ausente",
+    },
+    compradorBairro: { type: "string", description: "bairro do endereço do comprador; \"\" se ausente" },
+    compradorMunicipio: { type: "string", description: "MUNICÍPIO DE DOMICÍLIO do comprador; \"\" se ausente" },
+    compradorUf: { type: "string", description: "UF do comprador, 2 letras; \"\" se ausente" },
+    vendedorMunicipio: { type: "string", description: "MUNICÍPIO DE DOMICÍLIO do vendedor; \"\" se ausente" },
+    vendedorUf: { type: "string", description: "UF do vendedor, 2 letras; \"\" se ausente" },
   },
 } as const;
 

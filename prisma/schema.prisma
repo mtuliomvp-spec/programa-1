@@ -748,6 +748,9 @@ model VehicleAttachment {
   geoAccuracy Float?
   // Endereço legível resolvido a partir das coordenadas (cidade, rua...).
   address     String?
+  // ATPV-e: o que a leitura tirou do documento (vendedor, comprador, CRV,
+  // valor declarado) — a comunicação de venda completa os dados com ele.
+  atpvLido    Json?
   createdAt   DateTime       @default(now())
 
   @@index([vehicleId])

@@ -185,9 +185,23 @@ export default function VehicleAtpv({
           </p>
         ) : null}
         {state.ok ? (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
-            ATPV-e anexada.
-          </p>
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+            <p>ATPV-e anexada e lida.</p>
+            {state.filled?.length ? (
+              <ul className="mt-1 space-y-0.5 text-xs">
+                {state.filled.map((f, i) => (
+                  <li key={i}>· {f}</li>
+                ))}
+              </ul>
+            ) : null}
+            {state.warnings?.length ? (
+              <ul className="mt-1 space-y-0.5 text-xs text-amber-800">
+                {state.warnings.map((w, i) => (
+                  <li key={i}>⚠️ {w}</li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         ) : null}
         <Field label="Arquivo da ATPV-e (PDF, imagem…)">
           <input
@@ -200,7 +214,7 @@ export default function VehicleAtpv({
         </Field>
         <div className="flex justify-end">
           <Button type="button" onClick={handleSend} disabled={pending || preparing}>
-            {preparing ? "Preparando…" : pending ? "Enviando…" : "Anexar ATPV-e"}
+            {preparing ? "Preparando…" : pending ? "Enviando e lendo…" : "Anexar ATPV-e"}
           </Button>
         </div>
       </form>
