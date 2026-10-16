@@ -83,6 +83,20 @@ export function tipoPeloTexto(texto: string): TipoDocCompra | null {
   return null;
 }
 
+/**
+ * Último recurso: o NOME do arquivo ("NF_TDD3I10.pdf", "CRLV ...", "boleto").
+ * Só vale quando o texto e a IA não decidiram.
+ */
+export function tipoPeloNome(nome: string): TipoDocCompra | null {
+  const n = sem(nome).replace(/[_.\-]+/g, " ");
+  if (/\bATPV/.test(n)) return "ATPV";
+  if (/\bCRLV\b|LICENCIAMENTO|\bCRV\b/.test(n)) return "CRLV";
+  if (/\bNF ?E?\b|\bNFE\b|DANFE|NOTA ?FISCAL/.test(n)) return "NFE";
+  if (/BOLETO|\bPIX\b|QR ?CODE|PAGAMENTO/.test(n)) return "PAGAMENTO";
+  if (/CONTRATO|RECIBO/.test(n)) return "CONTRATO";
+  return null;
+}
+
 /** "18/10/26" ou "18/10/2026" → "2026-10-18". */
 function dataBrIso(texto: string | undefined): string | null {
   const m = (texto ?? "").match(/(\d{2})\/(\d{2})\/(\d{2,4})/);
