@@ -9,9 +9,18 @@ import {
   createVehicleAction,
   updateVehicleAction,
   lookupPlateAction,
-  importContractAction,
+  lerDocumentoCompraAction,
+  consolidarDocumentosCompraAction,
   type VehicleFormState,
 } from "./actions";
+import { resizeImageToJpeg } from "@/lib/image-resize";
+import {
+  DESTINO_DOC_COMPRA,
+  ROTULO_DOC_COMPRA,
+  type DocCompraLido,
+  type InfoDocsCompra,
+  type TipoDocCompra,
+} from "@/lib/documentos-compra";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
@@ -85,6 +94,11 @@ export default function VehicleForm({
   const [lookupMsg, setLookupMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
   const [reading, startReading] = useTransition();
   const [contractMsg, setContractMsg] = useState<{ tone: "ok" | "err"; text: string } | null>(null);
+  // Documentos da compra lidos: o tipo de cada arquivo (para a tela) e o que
+  // vai junto deles ao salvar (cada um no seu lugar da ficha).
+  const [docsLidos, setDocsLidos] = useState<{ nome: string; tipo: TipoDocCompra; aviso?: string }[]>([]);
+  const [docsInfo, setDocsInfo] = useState<InfoDocsCompra | null>(null);
+  const [docsAvisos, setDocsAvisos] = useState<string[]>([]);
   const [fipeOptions, setFipeOptions] = useState<{ modelo: string; price: number; ano?: string }[]>([]);
   const [fipeChoice, setFipeChoice] = useState(0);
   const [showAllFipe, setShowAllFipe] = useState(false);
@@ -162,35 +176,59 @@ export default function VehicleForm({
     }
   }
 
-  function fileToBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const r = new FileReader();
-      r.onload = () => resolve(String(r.result).split(",")[1] ?? "");
-      r.onerror = () => reject(new Error("Falha ao ler o arquivo."));
-      r.readAsDataURL(file);
-    });
-  }
-
   function handleContract() {
-    const file = contractRef.current?.files?.[0];
-    if (!file) {
-      setContractMsg({ tone: "err", text: "Selecione o contrato (PDF ou foto) primeiro." });
+    const input = contractRef.current;
+    const escolhidos = Array.from(input?.files ?? []);
+    if (!escolhidos.length) {
+      setContractMsg({ tone: "err", text: "Escolha os documentos (PDF ou foto) primeiro." });
       return;
     }
-    setContractMsg({ tone: "ok", text: "Lendo o contrato com a IA… aguarde." });
+    setDocsLidos([]);
+    setDocsInfo(null);
+    setDocsAvisos([]);
+    setContractMsg({
+      tone: "ok",
+      text: `Lendo ${escolhidos.length} documento(s) com a IA… aguarde.`,
+    });
     startReading(async () => {
-      let base64: string;
-      try {
-        base64 = await fileToBase64(file);
-      } catch {
-        setContractMsg({ tone: "err", text: "Não foi possível abrir o arquivo." });
-        return;
+      // Foto vai reduzida (leitura e anexo): o envio fica pequeno.
+      const arquivos = await Promise.all(escolhidos.map((f) => resizeImageToJpeg(f)));
+      if (input && typeof DataTransfer !== "undefined") {
+        const dt = new DataTransfer();
+        arquivos.forEach((f) => dt.items.add(f));
+        input.files = dt.files;
       }
-      const res = await importContractAction(base64, file.type || "application/pdf");
+      const lidos = await Promise.all(
+        arquivos.map(async (f) => {
+          const fd = new FormData();
+          fd.set("file", f);
+          try {
+            const r = await lerDocumentoCompraAction(fd);
+            return r.ok
+              ? { nome: f.name, tipo: r.tipo, lido: r.lido, aviso: r.aviso }
+              : { nome: f.name, tipo: "OUTRO" as TipoDocCompra, lido: { tipo: "OUTRO" } as DocCompraLido, aviso: r.error };
+          } catch {
+            return {
+              nome: f.name,
+              tipo: "OUTRO" as TipoDocCompra,
+              lido: { tipo: "OUTRO" } as DocCompraLido,
+              aviso: "não foi possível ler",
+            };
+          }
+        }),
+      );
+      const tipos = lidos.map((l) => l.tipo);
+      setDocsLidos(lidos.map((l) => ({ nome: l.nome, tipo: l.tipo, aviso: l.aviso })));
+      const res = await consolidarDocumentosCompraAction(
+        lidos.map((l) => l.lido),
+        tipos,
+      );
       if (!res.ok) {
         setContractMsg({ tone: "err", text: res.error });
         return;
       }
+      setDocsInfo(res.info);
+      setDocsAvisos(res.avisos);
       const d = res.data;
       setField("brand", d.marca ?? undefined);
       setField("model", d.modelo ?? undefined);
@@ -208,6 +246,7 @@ export default function VehicleForm({
         setField("purchasePrice", d.valorCompra);
         setNegociado(d.valorCompra);
       }
+      if (res.vencimento) setField("dueDate", res.vencimento);
       // Fornecedor (vendedor) resolvido/cadastrado no servidor: adiciona à lista
       // e já deixa selecionado.
       if (res.supplier) {
@@ -219,12 +258,13 @@ export default function VehicleForm({
       const extras = [
         d.valorCompra != null ? `compra ${formatCurrency(d.valorCompra)}` : null,
         res.supplier ? `fornecedor: ${res.supplier.name} (selecionado)` : null,
+        res.vencimento ? `vencimento ${res.vencimento.split("-").reverse().join("/")}` : null,
       ]
         .filter(Boolean)
         .join(" · ");
       setContractMsg({
         tone: "ok",
-        text: `Contrato lido: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos e finalize — o contrato será anexado ao veículo.`,
+        text: `Documentos lidos: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos e finalize — cada documento será anexado no seu lugar da ficha.`,
       });
     });
   }
@@ -246,22 +286,31 @@ export default function VehicleForm({
       {!isEdit ? (
         <div className="rounded-lg border border-violet-200 bg-violet-50/70 p-4">
           <p className="text-sm font-semibold text-violet-900">
-            📄 Importar contrato de compra (opcional)
+            📄 Importar documentos da compra (opcional)
           </p>
           <p className="mt-1 text-xs text-slate-600">
-            Anexe o contrato (PDF ou foto): a IA lê e preenche os dados do veículo e o valor de
-            compra automaticamente — você só confere e finaliza. O contrato fica anexado ao veículo.
+            Anexe um ou vários documentos de uma vez — contrato, CRLV, ATPV-e, nota fiscal, boleto/Pix
+            (PDF ou foto). O sistema reconhece cada um, preenche os dados do veículo, o valor, o
+            fornecedor e o vencimento — você só confere e finaliza. Ao salvar, cada documento vai para o
+            seu lugar na ficha.
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <input
               ref={contractRef}
               type="file"
-              name="contract"
+              name="purchaseDocs"
+              multiple
+              onChange={() => {
+                setDocsLidos([]);
+                setDocsInfo(null);
+                setDocsAvisos([]);
+                setContractMsg(null);
+              }}
               accept="application/pdf,image/*"
               className="block max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-violet-500"
             />
             <Button type="button" variant="secondary" onClick={handleContract} disabled={reading}>
-              {reading ? "Lendo o contrato…" : "✨ Ler contrato e preencher"}
+              {reading ? "Lendo os documentos…" : "✨ Ler documentos e preencher"}
             </Button>
           </div>
           {contractMsg ? (
@@ -273,6 +322,27 @@ export default function VehicleForm({
               {contractMsg.text}
             </p>
           ) : null}
+          {docsLidos.length ? (
+            <ul className="mt-2 space-y-1 rounded-lg border border-violet-200 bg-white p-2 text-xs">
+              {docsLidos.map((d, i) => (
+                <li key={i} className="flex flex-wrap items-baseline gap-x-2">
+                  <span className="font-medium text-slate-800">📎 {d.nome}</span>
+                  <span className="text-violet-800">
+                    → {ROTULO_DOC_COMPRA[d.tipo]} · vai para: {DESTINO_DOC_COMPRA[d.tipo]}
+                  </span>
+                  {d.aviso ? <span className="text-amber-700">⚠ {d.aviso}</span> : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {docsAvisos.length ? (
+            <ul className="mt-2 space-y-0.5 text-xs text-amber-800">
+              {docsAvisos.map((a, i) => (
+                <li key={i}>⚠️ Confira: {a}.</li>
+              ))}
+            </ul>
+          ) : null}
+          <input type="hidden" name="purchaseDocsInfo" value={docsInfo ? JSON.stringify(docsInfo) : ""} />
         </div>
       ) : null}
 
