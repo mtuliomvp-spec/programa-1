@@ -24,6 +24,7 @@ export const AI_FEATURES = {
   boleto: "Boleto",
   fatura: "Fatura de cartão",
   orcamento: "Orçamento do despachante",
+  documentosCompra: "Documentos da compra (identificação)",
   parecer: "Parecer IA",
 } as const;
 

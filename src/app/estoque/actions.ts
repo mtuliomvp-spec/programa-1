@@ -430,21 +430,12 @@ export async function createVehicleAction(
       consigned,
       ownerRefundAmount: consigned ? data.ownerRefundAmount ?? 0 : 0,
     });
-    // Contrato de compra anexado no cadastro: fica no prontuário do veículo.
-    const contract = formData.get("contract");
-    if (contract instanceof File && contract.size > 0 && contract.size <= MAX_ATTACHMENT_BYTES) {
-      const buffer = Buffer.from(await contract.arrayBuffer());
-      await prisma.vehicleAttachment.create({
-        data: {
-          vehicleId: vehicle.id,
-          kind: "DOCUMENTO",
-          description: "Contrato de compra",
-          filename: contract.name || "contrato.pdf",
-          mimeType: contract.type || "application/octet-stream",
-          size: contract.size,
-          data: buffer,
-        },
-      });
+    // Documentos da compra anexados no cadastro: cada um no seu lugar da
+    // ficha. Falha aqui não desfaz o cadastro (o veículo já existe).
+    try {
+      await anexarDocumentosDaCompra(vehicle.id, formData);
+    } catch {
+      // Os arquivos podem ser anexados depois, card a card.
     }
     revalidarTelasDeVeiculo();
     revalidatePath("/financeiro/a-pagar");
@@ -455,6 +446,133 @@ export async function createVehicleAction(
     return { error: "Não foi possível salvar o veículo. Tente novamente." };
   }
   return {};
+}
+
+/**
+ * Põe cada documento da compra no seu lugar da ficha do veículo recém-criado:
+ *  - CRLV → card CRLV (e o proprietário do documento na ficha);
+ *  - ATPV-e → card ATPV-e, já lida (CRV e código de segurança na ficha);
+ *  - NF-e → Documentos do veículo, e a chave/nº/série/emissão no Renave;
+ *  - boleto/Pix → título a pagar da compra (espaço Boleto), com o código
+ *    Pix ou a linha digitável para pagar;
+ *  - contrato e outros → Documentos do veículo.
+ * O tipo de cada arquivo vem da leitura feita na tela; sem ela, o texto do
+ * PDF decide (sem IA) e, na dúvida, vai como documento.
+ */
+async function anexarDocumentosDaCompra(vehicleId: string, formData: FormData) {
+  const { tipoPeloTexto, ROTULO_DOC_COMPRA } = await import("@/lib/documentos-compra");
+  type Info = import("@/lib/documentos-compra").InfoDocsCompra;
+  let info: Info | null = null;
+  try {
+    info = JSON.parse(String(formData.get("purchaseDocsInfo") || "null")) as Info | null;
+  } catch {
+    info = null;
+  }
+  const arquivos = [
+    ...formData.getAll("purchaseDocs"),
+    // Formulário antigo: um arquivo só, o contrato.
+    ...formData.getAll("contract"),
+  ].filter((f): f is File => f instanceof File && f.size > 0 && f.size <= MAX_ATTACHMENT_BYTES);
+  if (!arquivos.length) return;
+
+  const { textoDoPdf } = await import("@/lib/pdf-text");
+  const { chaveNfeValida, dadosDaChaveNfe } = await import("@/lib/renave");
+  const daFicha: Record<string, unknown> = {};
+
+  for (const [i, file] of arquivos.entries()) {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const mimeType = file.type || "application/octet-stream";
+    const veioDoContrato = formData.getAll("contract").includes(file);
+    let tipo = veioDoContrato ? "CONTRATO" : (info?.tipos?.[i] ?? null);
+    if (!tipo && mimeType === "application/pdf") {
+      try {
+        tipo = tipoPeloTexto(textoDoPdf(buffer));
+      } catch {
+        tipo = null;
+      }
+    }
+    const base = { filename: file.name || "documento", mimeType, size: file.size, data: buffer };
+
+    if (tipo === "CRLV") {
+      const ano = info?.crlvExercicio;
+      await prisma.vehicleAttachment.create({
+        data: { vehicleId, kind: "CRLV", description: ano ? `CRLV ${ano}` : "CRLV", ...base },
+      });
+      if (info?.docOwnerName) daFicha.docOwnerName = info.docOwnerName;
+      continue;
+    }
+    if (tipo === "ATPV") {
+      const lido = info?.atpv ?? null;
+      const so = (v: string | null | undefined) => (v || "").replace(/\D/g, "");
+      await prisma.vehicleAttachment.create({
+        data: {
+          vehicleId,
+          kind: "DOCUMENTO",
+          description: `ATPV-e${lido?.numeroAtpv ? ` nº ${so(lido.numeroAtpv)}` : ""}`,
+          ...base,
+          ...(lido ? { atpvLido: lido } : {}),
+        },
+      });
+      if (so(lido?.numeroCrv)) daFicha.crvNumber = so(lido?.numeroCrv);
+      if (so(lido?.codigoSegurancaCrv)) daFicha.crvSecurityCode = so(lido?.codigoSegurancaCrv);
+      continue;
+    }
+    if (tipo === "NFE") {
+      const n = info?.nfe ?? null;
+      await prisma.vehicleAttachment.create({
+        data: {
+          vehicleId,
+          kind: "DOCUMENTO",
+          description: `NF-e de compra${n?.numero ? ` nº ${n.numero}` : ""}`,
+          ...base,
+        },
+      });
+      if (n?.chave && chaveNfeValida(n.chave)) {
+        const k = dadosDaChaveNfe(n.chave);
+        daFicha.entryNfeKey = n.chave;
+        daFicha.entryNfeNumber = k?.numero ?? n.numero;
+        daFicha.entryNfeSerie = k?.serie ?? n.serie;
+        if (n.emitidaEm && /^\d{4}-\d{2}-\d{2}$/.test(n.emitidaEm)) daFicha.entryNfeIssuedAt = parseDateInput(n.emitidaEm);
+      }
+      continue;
+    }
+    if (tipo === "PAGAMENTO") {
+      // O boleto/Pix é do título da compra (o primeiro, se for parcelado).
+      const titulo = await prisma.payable.findFirst({
+        where: { vehicleId, category: "COMPRA_VEICULO" },
+        orderBy: { dueDate: "asc" },
+        select: { id: true, notes: true, barcode: true },
+      });
+      if (titulo) {
+        await prisma.payableAttachment.create({
+          data: { payableId: titulo.id, kind: "BOLETO", description: ROTULO_DOC_COMPRA.PAGAMENTO, ...base },
+        });
+        const p = info?.pagamento ?? null;
+        const linha = (p?.linhaDigitavel || "").replace(/\D/g, "");
+        await prisma.payable.update({
+          where: { id: titulo.id },
+          data: {
+            ...(linha && !titulo.barcode ? { barcode: linha } : {}),
+            ...(p?.pix
+              ? { notes: [titulo.notes?.trim() || null, `Pix copia e cola: ${p.pix}`].filter(Boolean).join("\n") }
+              : {}),
+          },
+        });
+        continue;
+      }
+      // Sem título de compra (consignado): fica nos documentos do carro.
+    }
+    await prisma.vehicleAttachment.create({
+      data: {
+        vehicleId,
+        kind: "DOCUMENTO",
+        description:
+          tipo === "CONTRATO" ? "Contrato de compra" : tipo === "PAGAMENTO" ? ROTULO_DOC_COMPRA.PAGAMENTO : "Documento da compra",
+        ...base,
+      },
+    });
+  }
+  if (Object.keys(daFicha).length) await prisma.vehicle.update({ where: { id: vehicleId }, data: daFicha });
 }
 
 const updateSchema = vehicleSchema.extend({ id: z.string().min(1) });
@@ -714,6 +832,156 @@ export async function importContractAction(base64: string, mimeType: string) {
   } catch (e) {
     return { ok: false as const, error: e instanceof Error ? e.message : "Não foi possível ler o contrato." };
   }
+}
+
+/**
+ * DOCUMENTOS DA COMPRA (vários arquivos de uma vez): reconhece e lê UM arquivo
+ * — CRLV, ATPV-e, NF-e, boleto/Pix ou contrato. O PDF com texto se identifica
+ * sozinho pelo título; foto/escaneado vai para a IA. A tela chama uma vez por
+ * arquivo (cada envio fica pequeno) e depois consolida.
+ */
+export async function lerDocumentoCompraAction(
+  formData: FormData,
+): Promise<
+  | {
+      ok: true;
+      /** Onde o arquivo vai na ficha — vale mesmo se a leitura dos dados falhar. */
+      tipo: import("@/lib/documentos-compra").TipoDocCompra;
+      lido: import("@/lib/documentos-compra").DocCompraLido;
+      aviso?: string;
+    }
+  | { ok: false; error: string }
+> {
+  try {
+    await assertCan("estoque", "criar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Arquivo vazio." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  const buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/pdf";
+  const base64 = buffer.toString("base64");
+  const { tipoPeloTexto, pagamentoPeloTexto } = await import("@/lib/documentos-compra");
+  const { textoDoPdf, chavesNfeNoTexto } = await import("@/lib/pdf-text");
+  let texto = "";
+  if (mimeType === "application/pdf") {
+    try {
+      texto = textoDoPdf(buffer);
+    } catch {
+      texto = "";
+    }
+  }
+  let tipo = tipoPeloTexto(texto);
+  try {
+    if (!tipo) {
+      const { classificarDocCompra } = await import("@/lib/doc-compra-ai");
+      tipo = await classificarDocCompra(base64, mimeType);
+    }
+    const lido = await lerPorTipo(tipo);
+    return { ok: true, tipo, lido };
+  } catch (e) {
+    // Leitura falhou: o arquivo ainda vai para o seu lugar na ficha (o tipo
+    // reconhecido pelo texto vale), só não preenche nada.
+    return {
+      ok: true,
+      tipo: tipo ?? "OUTRO",
+      lido: { tipo: "OUTRO" },
+      aviso: e instanceof Error ? e.message : "Não foi possível ler este arquivo.",
+    };
+  }
+
+  async function lerPorTipo(
+    tipo: import("@/lib/documentos-compra").TipoDocCompra,
+  ): Promise<import("@/lib/documentos-compra").DocCompraLido> {
+    switch (tipo) {
+      case "CRLV": {
+        const { extractCrlv } = await import("@/lib/crlv-ai");
+        return { tipo, crlv: await extractCrlv(base64, mimeType) };
+      }
+      case "ATPV": {
+        const { extractAtpv } = await import("@/lib/atpv-ai");
+        return { tipo, atpv: await extractAtpv(base64, mimeType) };
+      }
+      case "NFE": {
+        const { extractNfe } = await import("@/lib/nfe-ai");
+        const { chaveNfeValida } = await import("@/lib/renave");
+        const n = await extractNfe(base64, mimeType);
+        // A chave impressa no PDF (quando o texto abre) vale mais que a lida.
+        const doTexto = chavesNfeNoTexto(texto);
+        const chave = doTexto.length === 1 ? doTexto[0] : (n.chaveAcesso || "").replace(/\D/g, "");
+        return {
+          tipo,
+          nfe: {
+            chave: chaveNfeValida(chave) ? chave : null,
+            numero: n.numero,
+            serie: n.serie,
+            emitidaEm: n.emitidaEm,
+            emitenteNome: n.emitenteNome,
+            emitenteDocumento: n.emitenteCnpj,
+            valorTotal: n.valorTotal,
+          },
+        };
+      }
+      case "PAGAMENTO": {
+        const doTexto = pagamentoPeloTexto(texto);
+        if (doTexto) return { tipo, pagamento: doTexto };
+        const { extractBoletos } = await import("@/lib/boleto-ai");
+        const b = (await extractBoletos(base64, mimeType))[0];
+        return {
+          tipo,
+          pagamento: {
+            valor: b?.valor ?? null,
+            vencimento: b?.vencimento ?? null,
+            pix: null,
+            linhaDigitavel: b?.linhaDigitavel ? b.linhaDigitavel.replace(/\D/g, "") || null : null,
+          },
+        };
+      }
+      case "CONTRATO": {
+        const { extractPurchaseContract } = await import("@/lib/contract-ai");
+        return { tipo, contrato: await extractPurchaseContract(base64, mimeType) };
+      }
+      default:
+        return { tipo: "OUTRO" };
+    }
+  }
+}
+
+/**
+ * Junta o que cada documento disse, completa pela placa (versão, cor,
+ * câmbio) e cadastra/acha o vendedor — devolve o que preenche o formulário e
+ * o que vai junto dos arquivos para cada um cair no seu lugar ao salvar.
+ */
+export async function consolidarDocumentosCompraAction(
+  lidos: import("@/lib/documentos-compra").DocCompraLido[],
+  tipos: import("@/lib/documentos-compra").TipoDocCompra[],
+) {
+  try {
+    await assertCan("estoque", "criar");
+  } catch (e) {
+    return { ok: false as const, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const { consolidarCompra } = await import("@/lib/documentos-compra");
+  const c = consolidarCompra(lidos, tipos);
+  const d = c.dados;
+  if (d.placa && (!d.cor || !d.combustivel || !d.transmissao || !d.versao)) {
+    try {
+      const { lookupPlate } = await import("@/lib/plate-lookup");
+      const r = await lookupPlate(d.placa);
+      if (r.ok) {
+        d.cor = d.cor || r.data.color || null;
+        d.combustivel = d.combustivel || r.data.fuel || null;
+        d.transmissao = d.transmissao || r.data.transmission || null;
+        d.versao = d.versao || r.data.version || null;
+      }
+    } catch {
+      // Complemento opcional.
+    }
+  }
+  const supplier = await resolveContractSupplier(d.vendedorNome, d.vendedorDocumento);
+  return { ok: true as const, data: d, supplier, vencimento: c.vencimento, info: c.info, avisos: c.avisos };
 }
 
 /** Acha o fornecedor pelo CPF/CNPJ (ou nome) ou cria um novo. Idempotente. */
