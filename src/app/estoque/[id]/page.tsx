@@ -24,6 +24,7 @@ import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
 import { lerNfeConfig, ncmDoVeiculo } from "@/lib/nfe-config";
 import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo, valorDoVeiculoNaVenda } from "@/lib/nfe-entrada";
 import { lerEndereco } from "@/lib/endereco";
+import type { AtpvExtraido } from "@/lib/atpv-ai";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
 import VehicleAdvance from "./VehicleAdvance";
@@ -50,7 +51,7 @@ import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { resumoDeVisitas } from "@/lib/showroom-visits";
 import { crlvNoNomeDoComprador, houseNameKeys, isOwnName, sameParty } from "@/lib/doc-owner";
-import { nameKey } from "@/lib/person-keys";
+import { docKey, nameKey } from "@/lib/person-keys";
 import QRCode from "qrcode";
 import { getBaseUrl } from "@/lib/base-url";
 import { getCompany } from "@/lib/company";
@@ -106,6 +107,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           geoAccuracy: true,
           address: true,
           createdAt: true,
+          atpvLido: true,
         },
         orderBy: { createdAt: "desc" },
       },
@@ -376,38 +378,87 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   // Comunicação de venda (SICOVE) pela R30: os dados do formulário dela, na
   // ordem e no formato em que ele pede (prints da tela "Consultar por Veículo"
   // e "Dados da Venda"), para copiar e colar — sem integração com o site.
-  const endComprador = cliente ? lerEndereco(cliente.endereco) : null;
+  const endSistema = cliente ? lerEndereco(cliente.endereco) : null;
+  // A ATPV-e DA VENDA (comprador = o cliente da venda; senão a mais recente
+  // lida depois da venda) completa o que o cadastro não tem: é o documento
+  // oficial que a R30 confere — CRV, vendedor, comprador e valor declarado.
+  const atpvAnexos = vehicle.attachments.filter((a) => /ATPV/i.test(a.description));
+  const atpvLidas = atpvAnexos
+    .map((a) => ({ a, l: (a.atpvLido ?? null) as AtpvExtraido | null }))
+    .filter((x): x is { a: (typeof atpvAnexos)[number]; l: AtpvExtraido } => !!x.l);
+  const atpvVenda =
+    (cliente
+      ? atpvLidas.find(
+          (x) =>
+            (docKey(cliente.document) && docKey(cliente.document) === docKey(x.l.compradorDocumento)) ||
+            (!!x.l.compradorNome && sameParty(x.l.compradorNome, null, cliente)),
+        )?.l
+      : null) ??
+    (vehicle.sale ? atpvLidas.find((x) => x.a.createdAt >= vehicle.sale!.saleDate)?.l : null) ??
+    null;
+  const atpvSemLeitura = atpvAnexos.find((a) => !a.atpvLido)?.id ?? null;
+  const daAtpv = "da ATPV-e";
+  // Endereço do comprador: o do cadastro; faltando, o da ATPV-e.
+  const endComprador = {
+    cep: endSistema?.cep || atpvVenda?.compradorCep || null,
+    logradouro: endSistema?.logradouro || atpvVenda?.compradorLogradouro || null,
+    numero: endSistema?.numero || atpvVenda?.compradorNumero || null,
+    complemento: endSistema?.complemento || atpvVenda?.compradorComplemento || null,
+    bairro: endSistema?.bairro || atpvVenda?.compradorBairro || null,
+    cidade: endSistema?.cidade || atpvVenda?.compradorMunicipio || null,
+    uf: endSistema?.uf || atpvVenda?.compradorUf || null,
+  };
+  const endDaAtpv = !endSistema?.logradouro && !!atpvVenda?.compradorLogradouro;
+  const docCliente = cliente?.document || atpvVenda?.compradorDocumento || null;
+  const nomeCliente = cliente?.name || atpvVenda?.compradorNome || null;
   // Proprietário = quem VENDE (em nome de quem o CRV está na hora da venda).
-  // Se o documento já passou para o comprador, quem vendeu foi a loja.
+  // A ATPV-e da venda diz quem é; sem ela, se o documento já passou para o
+  // comprador, quem vendeu foi a loja.
   const proprietarioEhLoja =
     donoEhLoja || !vehicle.docOwnerName || (!!cliente && sameParty(vehicle.docOwnerName, null, cliente));
-  const propDoc = proprietarioEhLoja ? soDigitos(renaveCompany.cnpj) : donoDoc;
-  const propNome = proprietarioEhLoja ? renaveCompany.razaoSocial : donoNome;
-  const temAtpv = vehicle.attachments.some((a) => /ATPV/i.test(a.description));
+  const propDoc = atpvVenda?.vendedorDocumento || (proprietarioEhLoja ? soDigitos(renaveCompany.cnpj) : donoDoc);
+  const propNome = atpvVenda?.vendedorNome || (proprietarioEhLoja ? renaveCompany.razaoSocial : donoNome);
+  const crvComunicacao = soDigitos(atpvVenda?.numeroCrv) ?? soDigitos(vehicle.crvNumber);
+  const valorSistema = vehicle.sale ? valorDoVeiculoNaVenda(vehicle.sale) : 0;
+  const valorAtpv = atpvVenda?.valorDeclarado ?? null;
+  const temAtpv = atpvAnexos.length > 0;
   const comunicacaoCampos: CampoRenave[] | null = vehicle.sale
     ? [
         { secao: "1ª tela — Consultar por Veículo", rotulo: "TIPO-CVE", valor: "1-COMUNICAÇÃO DE VENDA DIRETA" },
         { rotulo: "Placa", valor: vehicle.plate && !/^0KM-/i.test(vehicle.plate) ? vehicle.plate : null, dica: "Editar veículo" },
-        { rotulo: "RENAVAM", valor: soDigitos(vehicle.renavam), dica: "Editar veículo" },
+        { rotulo: "RENAVAM", valor: soDigitos(vehicle.renavam) ?? soDigitos(atpvVenda?.renavam), dica: "Editar veículo" },
         {
           rotulo: "Tipo CRV",
           // ATPV-e (CRV digital) é o "BRANCO"; CRV de papel antigo, pela cor.
           valor: temAtpv ? "BRANCO" : null,
-          dica: "sem ATPV-e anexada: veja a cor do CRV de papel — AZUL ou VERDE",
+          dica: "anexe a ATPV-e da venda (card ATPV-e) — CRV de papel antigo: AZUL ou VERDE, pela cor",
         },
-        { rotulo: "Número CRV", valor: soDigitos(vehicle.crvNumber), dica: "lido da ATPV-e (card ATPV-e)" },
+        {
+          rotulo: "Número CRV",
+          valor: crvComunicacao,
+          dica: "anexe a ATPV-e da venda (card ATPV-e)",
+          nota: atpvVenda?.numeroCrv ? daAtpv : undefined,
+        },
         { rotulo: "Data da Venda", valor: formatDate(vehicle.sale.saleDate) },
-        { rotulo: "Tipo Pessoa (proprietário)", valor: tipoPessoaR30(propDoc), dica: "CPF ou CNPJ de quem está no CRV" },
+        { rotulo: "Tipo Pessoa (proprietário)", valor: tipoPessoaR30(propDoc), dica: "anexe a ATPV-e da venda — ela traz o CPF/CNPJ do vendedor" },
         {
           rotulo: "CPF/CNPJ Proprietário",
           valor: documentoR30(propDoc),
-          dica: proprietarioEhLoja ? "CNPJ em Parâmetros da empresa" : `CPF/CNPJ de ${propNome ?? "quem está no CRV"}`,
+          dica: `anexe a ATPV-e da venda — ela traz o CPF/CNPJ de ${propNome ?? "quem está no CRV"}`,
+          nota: atpvVenda?.vendedorDocumento ? `${daAtpv} (${municipioR30(atpvVenda.vendedorNome) ?? "vendedor"})` : undefined,
         },
         {
           secao: "Dados da Venda",
           rotulo: "Valor da Venda",
-          // Só o carro: a transferência cobrada junto não é preço do veículo (mesma regra da NF-e).
-          valor: valorR30(valorDoVeiculoNaVenda(vehicle.sale)),
+          // O valor DECLARADO na ATPV-e é o que a R30 confere; sem ela, só o
+          // carro (a transferência cobrada junto não é preço do veículo).
+          valor: valorR30(valorAtpv ?? valorSistema),
+          nota:
+            valorAtpv != null
+              ? Math.abs(valorAtpv - valorSistema) > 0.5
+                ? `${daAtpv} — a venda no sistema está em ${valorR30(valorSistema)}`
+                : daAtpv
+              : undefined,
         },
         { rotulo: "Data da Venda", valor: formatDate(vehicle.sale.saleDate) },
         {
@@ -419,30 +470,30 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         { rotulo: "Município", valor: municipioR30(renaveCompany.city), dica: "cidade da loja em Parâmetros da empresa" },
         { rotulo: "Telefone do Informante", valor: telefoneR30(renaveCompany.phone), dica: "telefone com DDD em Parâmetros da empresa" },
         { rotulo: "Nome do Informante", valor: municipioR30(renaveCompany.nomeFantasia) },
-        // Telas seguintes (vendedor/comprador): ordem a confirmar pelos prints.
-        { secao: "Dados do Vendedor", rotulo: "Nome", valor: propNome ? municipioR30(propNome) : null, dica: "anexe o CRLV" },
-        { rotulo: "CPF/CNPJ", valor: documentoR30(propDoc), dica: "CPF/CNPJ de quem está no CRV" },
+        // Tela do vendedor: ordem a confirmar pelo print.
+        { secao: "Dados do Vendedor", rotulo: "Nome", valor: propNome ? municipioR30(propNome) : null, dica: "anexe a ATPV-e da venda" },
+        { rotulo: "CPF/CNPJ", valor: documentoR30(propDoc), dica: "anexe a ATPV-e da venda" },
         // Mesma ordem da tela "Dados do Comprador". A lupa do CEP no site já
         // preenche endereço, bairro, UF e município — confira com o daqui.
         {
           secao: "Dados do Comprador",
           rotulo: "Tipo Pessoa",
-          valor: tipoPessoaR30(cliente?.document),
+          valor: tipoPessoaR30(docCliente),
           dica: "CPF/CNPJ no cadastro do cliente",
         },
         {
-          rotulo: soDigitos(cliente?.document)?.length === 14 ? "CNPJ" : "CPF",
-          valor: documentoR30(cliente?.document),
+          rotulo: soDigitos(docCliente)?.length === 14 ? "CNPJ" : "CPF",
+          valor: documentoR30(docCliente),
           dica: "cadastro do cliente",
         },
-        { rotulo: "Nome", valor: cliente?.name ? municipioR30(cliente.name) : null, dica: "cadastro do cliente" },
-        { rotulo: "CEP", valor: cepR30(endComprador?.cep), dica: "endereço do cliente (CEP)" },
-        { rotulo: "Endereço", valor: maiusculasR30(endComprador?.logradouro), dica: "endereço do cliente" },
-        { rotulo: "Nº", valor: maiusculasR30(endComprador?.numero), dica: "endereço do cliente (use S/N se não houver)" },
-        ...(endComprador?.complemento ? [{ rotulo: "Complemento", valor: maiusculasR30(endComprador.complemento) }] : []),
-        { rotulo: "Bairro", valor: maiusculasR30(endComprador?.bairro), dica: "endereço do cliente" },
-        { rotulo: "UF", valor: ufR30(endComprador?.uf), dica: "endereço do cliente" },
-        { rotulo: "Município", valor: municipioR30(endComprador?.cidade), dica: "endereço do cliente" },
+        { rotulo: "Nome", valor: nomeCliente ? municipioR30(nomeCliente) : null, dica: "cadastro do cliente" },
+        { rotulo: "CEP", valor: cepR30(endComprador.cep), dica: "endereço do cliente (CEP)", nota: endDaAtpv ? daAtpv : undefined },
+        { rotulo: "Endereço", valor: maiusculasR30(endComprador.logradouro), dica: "endereço do cliente" },
+        { rotulo: "Nº", valor: maiusculasR30(endComprador.numero), dica: "endereço do cliente (use S/N se não houver)" },
+        ...(endComprador.complemento ? [{ rotulo: "Complemento", valor: maiusculasR30(endComprador.complemento) }] : []),
+        { rotulo: "Bairro", valor: maiusculasR30(endComprador.bairro), dica: "endereço do cliente" },
+        { rotulo: "UF", valor: ufR30(endComprador.uf), dica: "endereço do cliente" },
+        { rotulo: "Município", valor: municipioR30(endComprador.cidade), dica: "endereço do cliente" },
         // Telefone não é obrigatório no site: vazio não conta como falta.
         ...(telefoneR30(cliente?.phone) ? [{ rotulo: "Telefone", valor: telefoneR30(cliente?.phone) }] : []),
       ]
@@ -1274,7 +1325,13 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               description="Anexe a Comunicação de venda (Detran) e outros documentos deste veículo"
             />
             {comunicacaoCampos && canComunicacao ? (
-              <ComunicacaoVendaCopy campos={comunicacaoCampos} enviada={comunicacaoEnviada} />
+              <ComunicacaoVendaCopy
+                campos={comunicacaoCampos}
+                enviada={comunicacaoEnviada}
+                temAtpv={temAtpv}
+                atpvParaLer={atpvSemLeitura}
+                podeLerAtpv={canAtpv}
+              />
             ) : null}
             <VehicleAttachments
               vehicleId={vehicle.id}

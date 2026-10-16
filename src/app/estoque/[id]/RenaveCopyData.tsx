@@ -3,7 +3,14 @@
 import { useState } from "react";
 
 /** `secao`: título que abre um grupo (ex.: a tela seguinte do formulário). */
-export type CampoRenave = { rotulo: string; valor: string | null; dica?: string; secao?: string };
+export type CampoRenave = {
+  rotulo: string;
+  valor: string | null;
+  dica?: string;
+  secao?: string;
+  /** Observação sob o valor (ex.: de onde ele veio, divergência com a ficha). */
+  nota?: string;
+};
 
 /**
  * "Copiar dados para o ControlStock": enquanto a integradora não libera a API,
@@ -113,7 +120,10 @@ export function Bloco({
               <span className="min-w-0">
                 <span className="block text-[11px] text-slate-500">{c.rotulo}</span>
                 {c.valor ? (
-                  <span className="block break-all font-medium text-slate-900">{c.valor}</span>
+                  <>
+                    <span className="block break-all font-medium text-slate-900">{c.valor}</span>
+                    {c.nota ? <span className="block text-[11px] text-indigo-700">{c.nota}</span> : null}
+                  </>
                 ) : (
                   <span className="block text-xs font-medium text-amber-700">falta{c.dica ? ` — ${c.dica}` : ""}</span>
                 )}

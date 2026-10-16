@@ -1781,6 +1781,24 @@ export async function uploadVehicleAttachmentAction(
     }
   }
 
+  // ATPV-e: lida na hora, como o CRLV — completa a ficha (CRV, chassi,
+  // RENAVAM) e guarda o que o documento traz para a comunicação de venda. A
+  // leitura nunca derruba o anexo.
+  if (kind === "DOCUMENTO" && /^atpv/i.test(description)) {
+    try {
+      const r = await lerAtpvAnexo(attachment.id);
+      read = {
+        filled: r.filled ?? [],
+        warnings: [...(r.warnings ?? []), ...(r.error ? [`Não li a ATPV-e: ${r.error}`] : [])],
+      };
+    } catch (e) {
+      read = {
+        filled: [],
+        warnings: [e instanceof Error ? e.message : "Não foi possível ler a ATPV-e automaticamente."],
+      };
+    }
+  }
+
   // Comprovante de comunicação de venda (SICOVE): a prestadora cobra por
   // serviço, então anexar o comprovante lança sozinho o título daquele custo no
   // carro. Como no CRLV, nada aqui pode derrubar o anexo — o documento fica
@@ -2314,7 +2332,11 @@ export async function readAtpvAttachmentAction(attachmentId: string): Promise<At
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Sem permissão." };
   }
+  return lerAtpvAnexo(attachmentId);
+}
 
+/** A leitura em si — usada pelo botão e logo depois de anexar a ATPV-e. */
+async function lerAtpvAnexo(attachmentId: string): Promise<AttachmentState> {
   const att = await prisma.vehicleAttachment.findUnique({
     where: { id: attachmentId },
     select: { id: true, vehicleId: true, mimeType: true, description: true, data: true },
@@ -2431,11 +2453,14 @@ export async function readAtpvAttachmentAction(attachmentId: string): Promise<At
     warnings.push("A ficha já tinha todos os dados que a ATPV-e traz — nada mudou.");
   }
 
-  // O nome do anexo passa a dizer o que foi lido (aparece na lista).
+  // O nome do anexo passa a dizer o que foi lido (aparece na lista), e o que
+  // foi lido fica guardado nele — a comunicação de venda completa com isso
+  // (CPF/CNPJ do vendedor, endereço do comprador, valor declarado).
   await prisma.vehicleAttachment.update({
     where: { id: att.id },
     data: {
       description: `ATPV-e${lido.numeroAtpv ? ` nº ${digitos(lido.numeroAtpv)}` : ""}`.slice(0, 500),
+      atpvLido: lido,
     },
   });
 

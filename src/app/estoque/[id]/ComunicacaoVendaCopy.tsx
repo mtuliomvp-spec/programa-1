@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Bloco, type CampoRenave } from "./RenaveCopyData";
+import { readAtpvAttachmentAction } from "../actions";
 
 /** Endereço do formulário de comunicação de venda da prestadora (R30). */
 export const R30_URL = "https://r30web.com.br/cv-br/index.jsf";
@@ -16,12 +18,33 @@ export const R30_URL = "https://r30web.com.br/cv-br/index.jsf";
 export default function ComunicacaoVendaCopy({
   campos,
   enviada,
+  temAtpv,
+  atpvParaLer,
+  podeLerAtpv,
 }: {
   campos: CampoRenave[];
   /** Data (dd/mm/aaaa) do comprovante já anexado, se houver. */
   enviada: string | null;
+  /** Há ATPV-e anexada no veículo. */
+  temAtpv: boolean;
+  /** ATPV-e anexada que ainda não foi lida (anexo antigo): o quadro oferece ler. */
+  atpvParaLer: string | null;
+  podeLerAtpv: boolean;
 }) {
+  const router = useRouter();
   const [aberto, setAberto] = useState(!enviada);
+  const [lendo, startLeitura] = useTransition();
+  const [erroLeitura, setErroLeitura] = useState<string | null>(null);
+
+  function lerAtpv() {
+    if (!atpvParaLer) return;
+    setErroLeitura(null);
+    startLeitura(async () => {
+      const r = await readAtpvAttachmentAction(atpvParaLer);
+      if (r.error) setErroLeitura(r.error);
+      router.refresh();
+    });
+  }
   return (
     <div className="border-b border-slate-100 px-5 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -52,6 +75,28 @@ export default function ComunicacaoVendaCopy({
           a cobrança da R30 entra sozinha no custo deste carro.
         </p>
       )}
+      {aberto && !temAtpv ? (
+        <p className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          Anexe a <strong>ATPV-e da venda</strong> no card ATPV-e: o sistema lê o documento e completa este quadro
+          (número do CRV, CPF/CNPJ do vendedor, endereço do comprador e valor declarado).
+        </p>
+      ) : null}
+      {aberto && atpvParaLer ? (
+        <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900">
+          <span>Há uma ATPV-e anexada que ainda não foi lida.</span>
+          {podeLerAtpv ? (
+            <button
+              type="button"
+              onClick={lerAtpv}
+              disabled={lendo}
+              className="rounded-lg bg-indigo-700 px-2.5 py-1 font-semibold text-white hover:bg-indigo-600 disabled:opacity-50"
+            >
+              {lendo ? "Lendo…" : "🤖 Ler agora e completar"}
+            </button>
+          ) : null}
+          {erroLeitura ? <span className="text-rose-700">{erroLeitura}</span> : null}
+        </div>
+      ) : null}
       {aberto ? <Bloco titulo="Dados da comunicação" campos={campos} aviso="complete o cadastro antes de comunicar" /> : null}
     </div>
   );
