@@ -127,7 +127,7 @@ export async function createRecurringAction(
     data.kind === "PAGAR" && supplierName ? await resolveSupplierByName(supplierName) : null;
 
   try {
-    await prisma.recurringEntry.create({
+    const criada = await prisma.recurringEntry.create({
       data: {
         kind: data.kind,
         description: data.description,
@@ -149,6 +149,7 @@ export async function createRecurringAction(
         notes: data.notes || null,
       },
     });
+    await salvarDocumentos(criada.id, formData);
     await ensureRecurringGenerated();
   } catch {
     return { error: "Não foi possível salvar a recorrência." };
@@ -259,6 +260,7 @@ export async function updateRecurringAction(
         notes: data.notes || null,
       },
     });
+    await salvarDocumentos(data.id, formData);
     await ensureRecurringGenerated();
   } catch {
     return { error: "Não foi possível salvar as alterações." };
@@ -267,6 +269,45 @@ export async function updateRecurringAction(
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/a-receber");
   redirect("/financeiro/recorrentes");
+}
+
+/**
+ * Documentos escolhidos no formulário (contrato do aluguel, de serviço…)
+ * ficam guardados na recorrência. A descrição é a digitada ou o nome do
+ * arquivo.
+ */
+async function salvarDocumentos(recurringId: string, formData: FormData) {
+  const descricao = String(formData.get("documentoDescricao") || "").trim();
+  const arquivos = formData
+    .getAll("documentos")
+    .filter((f): f is File => f instanceof File && f.size > 0 && f.size <= MAX_DOC_BYTES);
+  for (const f of arquivos) {
+    await prisma.recurringAttachment.create({
+      data: {
+        recurringId,
+        description: (descricao || f.name.replace(/\.[a-z0-9]+$/i, "") || "Documento").slice(0, 200),
+        filename: f.name || "documento",
+        mimeType: f.type || "application/octet-stream",
+        size: f.size,
+        data: Buffer.from(await f.arrayBuffer()),
+      },
+    });
+  }
+}
+
+/** Exclui um documento anexado à recorrência. */
+export async function deleteRecurringAttachmentAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("financeiro", "recorrentes");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const att = await prisma.recurringAttachment.findUnique({ where: { id }, select: { recurringId: true } });
+  if (!att) return { ok: false, error: "Documento não encontrado." };
+  await prisma.recurringAttachment.delete({ where: { id } });
+  revalidatePath(`/financeiro/recorrentes/${att.recurringId}/editar`);
+  revalidatePath("/financeiro/recorrentes");
+  return { ok: true };
 }
 
 export async function toggleRecurringAction(id: string, active: boolean) {

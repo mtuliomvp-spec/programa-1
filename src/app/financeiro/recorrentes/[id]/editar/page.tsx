@@ -15,7 +15,13 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
 
   const entry = await prisma.recurringEntry.findUnique({
     where: { id },
-    include: { supplier: { select: { name: true } } },
+    include: {
+      supplier: { select: { name: true } },
+      attachments: {
+        select: { id: true, description: true, filename: true, size: true, createdAt: true },
+        orderBy: { createdAt: "asc" },
+      },
+    },
   });
   if (!entry) notFound();
 
@@ -57,6 +63,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
         <div className="p-5">
           <RecurringForm
             id={entry.id}
+            documentos={entry.attachments.map((d) => ({ ...d, createdAt: d.createdAt.toISOString() }))}
             suppliers={suppliers}
             customers={customers}
             beneficiaries={beneficiaries}

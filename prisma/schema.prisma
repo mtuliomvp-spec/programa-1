@@ -1999,6 +1999,8 @@ model RecurringEntry {
   notes                   String?
   payables                Payable[]
   receivables             Receivable[]
+  // Documentos da recorrência (contrato de aluguel, de prestação de serviço…).
+  attachments             RecurringAttachment[]
   createdAt               DateTime            @default(now())
   updatedAt               DateTime            @updatedAt
 
@@ -2006,6 +2008,23 @@ model RecurringEntry {
   @@index([customerId])
   @@map("recurring_entries")
 }
+// Documento anexado a uma recorrência (ex.: o contrato do aluguel). Fica no
+// banco (bytea), como os anexos de veículo e de título.
+model RecurringAttachment {
+  id          String         @id @default(cuid())
+  recurringId String
+  recurring   RecurringEntry @relation(fields: [recurringId], references: [id], onDelete: Cascade)
+  description String
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime       @default(now())
+
+  @@index([recurringId])
+  @@map("recurring_attachments")
+}
+
 
 // Proteção contra força bruta nas portas públicas (login, código de
 // liberação, esqueci a senha): uma linha por chave (e-mail ou IP) com a
