@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useState } from "react";
+import RecurringDocs, { type DocumentoRecorrencia } from "./RecurringDocs";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import SupplierInput from "@/components/SupplierInput";
@@ -40,6 +41,7 @@ export default function RecurringForm({
   receitaCategories,
   initial,
   id,
+  documentos = [],
 }: {
   suppliers: Option[];
   customers: Option[];
@@ -48,6 +50,8 @@ export default function RecurringForm({
   receitaCategories: string[];
   initial?: RecurringInitial;
   id?: string;
+  /** Documentos já anexados (edição). */
+  documentos?: DocumentoRecorrencia[];
 }) {
   const editing = !!id;
   const [state, formAction, pending] = useActionState(
@@ -284,6 +288,8 @@ export default function RecurringForm({
       <Field label="Observações">
         <Textarea name="notes" rows={2} defaultValue={initial?.notes ?? ""} />
       </Field>
+
+      <RecurringDocs documentos={documentos} />
 
       <div className="flex justify-end">
         <Button type="submit" disabled={pending}>

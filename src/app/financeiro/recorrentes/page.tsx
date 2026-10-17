@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { ensureRecurringGenerated } from "@/lib/recurring";
 import { formatCurrency } from "@/lib/format";
@@ -40,7 +41,13 @@ export default async function RecorrentesPage({
   const canCriar = await userCan("financeiro", "recorrentes");
 
   const allEntries = await prisma.recurringEntry.findMany({
-    include: { supplier: true, customer: true, capitalBeneficiary: true },
+    include: {
+      supplier: true,
+      customer: true,
+      capitalBeneficiary: true,
+      // Só a contagem: o arquivo em si é servido pela rota de anexos.
+      _count: { select: { attachments: true } },
+    },
     orderBy: [{ active: "desc" }, { dayOfMonth: "asc" }],
   });
   const entries = allEntries.filter(
@@ -130,7 +137,18 @@ export default async function RecorrentesPage({
             <tbody>
               {entries.map((e) => (
                 <Tr key={e.id} className={!e.active ? "opacity-60" : undefined}>
-                  <Td className="font-medium text-slate-900">{e.description}</Td>
+                  <Td className="font-medium text-slate-900">
+                    {e.description}
+                    {e._count.attachments > 0 ? (
+                      <Link
+                        href={`/financeiro/recorrentes/${e.id}/editar`}
+                        title="Documentos anexados (contrato etc.)"
+                        className="ml-1.5 text-xs font-normal text-slate-500 hover:text-blue-700"
+                      >
+                        📎{e._count.attachments > 1 ? ` ${e._count.attachments}` : ""}
+                      </Link>
+                    ) : null}
+                  </Td>
                   <Td>
                     <Badge tone={e.kind === "PAGAR" ? "danger" : "info"}>
                       {e.kind === "PAGAR" ? "A pagar" : "A receber"}
