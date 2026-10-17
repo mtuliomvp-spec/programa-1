@@ -9,6 +9,7 @@ import {
   cadastrarFinanceiraAction,
   cancelarNfseAction,
   emitirNfseAction,
+  informarNotaExternaAction,
   registrarNotaExternaAction,
   removerNotaExternaAction,
   vincularFinanceiraAction,
@@ -470,8 +471,14 @@ function Emitir({
         {externa ? (
           <div className="grid grid-cols-3 gap-3 sm:col-span-2">
             <label className="block">
-              <span className="text-xs text-slate-500">Número da nota</span>
-              <input value={numero} onChange={(e) => setNumero(e.target.value)} inputMode="numeric" placeholder="ex.: 10" className={campo} />
+              <span className="text-xs text-slate-500">Número da nota (se souber)</span>
+              <input
+                value={numero}
+                onChange={(e) => setNumero(e.target.value)}
+                inputMode="numeric"
+                placeholder="em branco = não sei"
+                className={campo}
+              />
             </label>
             <label className="col-span-2 block">
               <span className="text-xs text-slate-500">Chave de acesso (opcional, 50 números)</span>
@@ -489,7 +496,9 @@ function Emitir({
         <input type="checkbox" checked={externa} onChange={(e) => setExterna(e.target.checked)} className="mt-0.5" />
         <span>
           <strong>Esta nota já foi emitida fora do sistema</strong> (portal da prefeitura/nacional) — só registrar o
-          número e os {tipo === "SEGURO" ? "seguros" : "retornos"} que ela cobriu, sem emitir de novo.
+          número (se souber) e os {tipo === "SEGURO" ? "seguros" : "retornos"} que ela cobriu, sem emitir de novo.
+          Sem saber quais outros retornos entraram na mesma nota? Marque só os que você tem certeza — dá para
+          acrescentar depois em “Alterar retornos”.
         </span>
       </label>
       <div className="flex items-center gap-3">
@@ -497,7 +506,7 @@ function Emitir({
           <button
             type="button"
             onClick={registrar}
-            disabled={pending || !financeira || !valor || !numero.trim() || !marcados.length}
+            disabled={pending || !financeira || !valor || !marcados.length}
             className="h-9 rounded-lg bg-slate-900 px-4 text-sm font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
           >
             {pending ? "Registrando…" : "Registrar nota já emitida"}
@@ -654,6 +663,24 @@ function Linha({
   const somaCobertos = cobertos.reduce((s, r) => s + r.valor, 0);
   const [vinculando, setVinculando] = useState(false);
   const [marcados, setMarcados] = useState<string[]>([]);
+  // Nota registrada sem número: informar depois, quando descobrir.
+  const [informando, setInformando] = useState(false);
+  const [numeroInf, setNumeroInf] = useState("");
+  const [chaveInf, setChaveInf] = useState("");
+  const semNumero = n.ambiente === "EXTERNA" && !n.numero;
+
+  function salvarNumero() {
+    setErro(null);
+    start(async () => {
+      const r = await informarNotaExternaAction(n.id, numeroInf, chaveInf);
+      if (!r.ok) {
+        setErro(r.error || "Não foi possível salvar.");
+        return;
+      }
+      setInformando(false);
+      router.refresh();
+    });
+  }
   const ativa = n.status === "AUTORIZADA" || n.status === "PROCESSANDO";
   const opcoes = retornos.filter(
     (r) => r.tipo === n.tipo && r.financeiraId === n.financeiraId && (!r.notaId || r.notaId === n.id),
@@ -705,6 +732,11 @@ function Linha({
         <span className="font-semibold text-slate-900">
           NFS-e{n.numero ? ` nº ${n.numero}` : ""} · {n.tomadorNome}
         </span>
+        {semNumero ? (
+          <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700">
+            nº não informado
+          </span>
+        ) : null}
         <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${info.cls}`}>{info.label}</span>
         {n.ambiente === "EXTERNA" ? (
           <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-600">
@@ -775,6 +807,11 @@ function Linha({
             🔗 {cobertos.length ? `Alterar ${oQue}` : `Vincular ${oQue}`}
           </button>
         ) : null}
+        {semNumero && canEmitir && !informando ? (
+          <button type="button" onClick={() => setInformando(true)} className={botao}>
+            ✏️ Informar número
+          </button>
+        ) : null}
         {n.ambiente === "EXTERNA" && canEmitir ? (
           <button
             type="button"
@@ -797,6 +834,39 @@ function Linha({
           </button>
         ) : null}
       </div>
+      {informando ? (
+        <div className="mt-2 flex flex-wrap items-end gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+          <label className="block">
+            <span className="text-[11px] text-slate-500">Número da nota</span>
+            <input
+              value={numeroInf}
+              onChange={(e) => setNumeroInf(e.target.value)}
+              inputMode="numeric"
+              className="mt-0.5 block w-28 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            />
+          </label>
+          <label className="block min-w-[260px] flex-1">
+            <span className="text-[11px] text-slate-500">Chave de acesso (opcional, 50 números)</span>
+            <input
+              value={chaveInf}
+              onChange={(e) => setChaveInf(e.target.value)}
+              inputMode="numeric"
+              className="mt-0.5 block w-full rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={salvarNumero}
+            disabled={pending || (!numeroInf.trim() && !chaveInf.trim())}
+            className="h-8 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {pending ? "Salvando…" : "Salvar"}
+          </button>
+          <button type="button" onClick={() => setInformando(false)} className="text-xs text-slate-500 hover:underline">
+            Voltar
+          </button>
+        </div>
+      ) : null}
       {vinculando ? (
         <div className="mt-2 space-y-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
           <p className="text-xs text-slate-600">

@@ -398,8 +398,10 @@ export async function registrarNotaExternaAction(input: {
     return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
   }
   const user = await getSessionUser();
-  const numero = input.numero.trim().replace(/^0+(?=\d)/, "").slice(0, 20);
-  if (!numero) return { ok: false, error: "Informe o número da nota já emitida." };
+  // Número pode ficar em branco: nota antiga cujo número ninguém guardou. O
+  // que importa é o retorno não aparecer de novo para emitir; o número entra
+  // depois, em "Informar número".
+  const numero = input.numero.trim().replace(/^0+(?=\d)/, "").slice(0, 20) || null;
   if (!(input.valor > 0)) return { ok: false, error: "Informe o valor da nota." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.competencia)) return { ok: false, error: "Informe a competência." };
   if (!input.saleIds.length) return { ok: false, error: "Marque os retornos que essa nota cobriu." };
@@ -429,7 +431,9 @@ export async function registrarNotaExternaAction(input: {
       competencia: new Date(`${input.competencia}T12:00:00Z`),
       numero,
       codigoVerificacao: chave || null,
-      mensagem: "Emitida fora do sistema — só registrada aqui.",
+      mensagem: numero
+        ? "Emitida fora do sistema — só registrada aqui."
+        : "Emitida fora do sistema — número não informado.",
       payload: {},
       emitidaPor: user?.name ?? null,
     },
@@ -438,6 +442,32 @@ export async function registrarNotaExternaAction(input: {
   revalidatePath("/financeiro/nfse");
   revalidatePath("/financeiro/financiamentos");
   return { ok: true, status: count ? "AUTORIZADA" : undefined };
+}
+
+/** Número/chave de uma nota emitida fora do sistema, informados depois do registro. */
+export async function informarNotaExternaAction(id: string, numeroDigitado: string, chaveDigitada: string): Promise<NfseActionResult> {
+  try {
+    await assertCan("financeiro", "nfse");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const nota = await prisma.notaServico.findUnique({ where: { id } });
+  if (!nota || nota.ambiente !== "EXTERNA") return { ok: false, error: "Só nota registrada (emitida fora do sistema) aceita isto." };
+  const numero = numeroDigitado.trim().replace(/^0+(?=\d)/, "").slice(0, 20);
+  const chave = chaveDigitada.replace(/\D/g, "");
+  if (!numero && !chave) return { ok: false, error: "Informe o número (ou a chave) da nota." };
+  if (chave && chave.length !== 50) return { ok: false, error: "A chave de acesso da NFS-e tem 50 números." };
+  await prisma.notaServico.update({
+    where: { id },
+    data: {
+      ...(numero ? { numero } : {}),
+      ...(chave ? { codigoVerificacao: chave } : {}),
+      mensagem: "Emitida fora do sistema — só registrada aqui.",
+    },
+  });
+  revalidatePath("/financeiro/nfse");
+  revalidatePath("/financeiro/financiamentos");
+  return { ok: true };
 }
 
 /** Desfaz o registro de uma nota emitida fora do sistema (os retornos voltam a ficar sem NF). */
