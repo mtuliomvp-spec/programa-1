@@ -3288,3 +3288,170 @@ export async function preLancarPagamentoEmLoteAction(
 function formatCurrencyBR(v: number): string {
   return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
+
+export type BoletoFornecedorLido = {
+  valor: number | null;
+  /** aaaa-mm-dd */
+  vencimento: string | null;
+  linhaDigitavel: string | null;
+  /** CNPJ do beneficiário (só dígitos), quando impresso. */
+  beneficiarioCnpj: string | null;
+};
+
+/**
+ * "Importar NFs do fornecedor" com o BOLETO junto: diz se o arquivo é um
+ * boleto e lê valor, vencimento e linha digitável. PDF com texto é lido pela
+ * própria linha digitável (sem IA, exato); foto/escaneado com "boleto" no nome
+ * vai para a IA. Não é boleto → `boleto: null` (segue como NF/relatório).
+ */
+export async function lerBoletoFornecedorAction(
+  base64: string,
+  nome: string,
+): Promise<{ ok: boolean; error?: string; boleto?: BoletoFornecedorLido | null }> {
+  try {
+    await assertCan("financeiro", "importarnf");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!base64) return { ok: true, boleto: null };
+  const buffer = Buffer.from(base64, "base64");
+  const { textoDoPdf } = await import("@/lib/pdf-text");
+  let texto = "";
+  try {
+    texto = textoDoPdf(buffer);
+  } catch {
+    texto = "";
+  }
+  // DANFE também pode trazer número parecido com linha digitável: nota é nota.
+  if (/DANFE|DOCUMENTO AUXILIAR DA NOTA FISCAL/i.test(texto)) return { ok: true, boleto: null };
+  const { lerBoletoSicove } = await import("@/lib/sicove");
+  const lido = lerBoletoSicove(buffer);
+  const { getCompany } = await import("@/lib/company");
+  const empresa = await getCompany();
+  const cnpjLoja = (empresa.cnpj || "").replace(/\D/g, "");
+  const cnpjBenef =
+    [...texto.matchAll(/\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}/g)]
+      .map((m) => m[0].replace(/\D/g, ""))
+      .find((d) => d !== cnpjLoja) ?? null;
+  if (lido) {
+    return {
+      ok: true,
+      boleto: {
+        valor: lido.valor,
+        vencimento: lido.vencimento ? lido.vencimento.toISOString().slice(0, 10) : null,
+        linhaDigitavel: lido.linhaDigitavel,
+        beneficiarioCnpj: cnpjBenef,
+      },
+    };
+  }
+  const textoUtil = texto.replace(/\s/g, "").length > 40;
+  if (textoUtil || !/boleto/i.test(nome)) return { ok: true, boleto: null };
+  try {
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    const b = (await extractBoletos(base64, "application/pdf"))[0];
+    if (!b) return { ok: true, boleto: null };
+    return {
+      ok: true,
+      boleto: {
+        valor: b.valor ?? null,
+        vencimento: b.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(b.vencimento) ? b.vencimento : null,
+        linhaDigitavel: b.linhaDigitavel ?? null,
+        beneficiarioCnpj: cnpjBenef,
+      },
+    };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler o boleto." };
+  }
+}
+
+/**
+ * Anexa cada boleto ao título EM ABERTO de mesmo valor e vencimento (o título
+ * que a NF acabou de criar, ou um já lançado), no espaço Boleto, e guarda a
+ * linha digitável para a Ordem de Pagamento. Com mais de um candidato, o do
+ * mesmo fornecedor (raiz do CNPJ do beneficiário) e sem boleto ganha; se ainda
+ * assim houver dúvida, não anexa e diz por quê.
+ */
+export async function anexarBoletosFornecedorAction(
+  boletos: (BoletoFornecedorLido & { base64: string; filename: string })[],
+): Promise<{ ok: boolean; error?: string; outcomes: string[] }> {
+  try {
+    await assertCan("financeiro", "importarnf");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão.", outcomes: [] };
+  }
+  const { normalizeBarcodeLine } = await import("@/lib/barcode-line");
+  const outcomes: string[] = [];
+  const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const dataBr = (iso: string) => iso.split("-").reverse().join("/");
+
+  for (const b of boletos) {
+    const rotulo = `Boleto ${b.valor != null ? brl(b.valor) : ""}${b.vencimento ? ` venc. ${dataBr(b.vencimento)}` : ""}`.trim();
+    if (b.valor == null || !(b.valor > 0)) {
+      outcomes.push(`${rotulo} (${b.filename}): não deu para ler o valor — anexe no título à mão.`);
+      continue;
+    }
+    const candidatos = await prisma.payable.findMany({
+      where: {
+        status: { not: "PAGO" },
+        amount: { gte: b.valor - 0.01, lte: b.valor + 0.01 },
+        ...(b.vencimento
+          ? {
+              dueDate: {
+                gte: new Date(`${b.vencimento}T00:00:00.000Z`),
+                lte: new Date(`${b.vencimento}T23:59:59.999Z`),
+              },
+            }
+          : {}),
+      },
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        barcode: true,
+        supplier: { select: { document: true } },
+        attachments: { where: { kind: "BOLETO" }, select: { id: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+    const raiz = (b.beneficiarioCnpj || "").slice(0, 8);
+    let escolhidos = candidatos;
+    if (raiz.length === 8) {
+      const doFornecedor = escolhidos.filter((c) => (c.supplier?.document || "").replace(/\D/g, "").startsWith(raiz));
+      if (doFornecedor.length) escolhidos = doFornecedor;
+    }
+    const semBoleto = escolhidos.filter((c) => c.attachments.length === 0);
+    if (semBoleto.length) escolhidos = semBoleto;
+    if (escolhidos.length !== 1) {
+      outcomes.push(
+        escolhidos.length === 0
+          ? `${rotulo}: nenhum título em aberto com esse valor e vencimento — anexe no título à mão.`
+          : `${rotulo}: ${escolhidos.length} títulos com esse valor e vencimento — anexe no título certo à mão.`,
+      );
+      continue;
+    }
+    const alvo = escolhidos[0];
+    const data = new Uint8Array(Buffer.from(b.base64, "base64"));
+    await prisma.payableAttachment.deleteMany({ where: { payableId: alvo.id, kind: "BOLETO" } });
+    await prisma.payableAttachment.create({
+      data: {
+        payableId: alvo.id,
+        kind: "BOLETO",
+        description: KIND_DEFAULT_DESC.BOLETO || "Boleto",
+        filename: b.filename || "boleto.pdf",
+        mimeType: "application/pdf",
+        size: data.byteLength,
+        data,
+      },
+    });
+    const linha = normalizeBarcodeLine(b.linhaDigitavel);
+    if (linha && !alvo.barcode) await prisma.payable.update({ where: { id: alvo.id }, data: { barcode: linha } });
+    outcomes.push(
+      `${rotulo}: anexado ao título nº ${String(alvo.orderNumber).padStart(4, "0")} — ${alvo.description}${linha ? " (linha digitável guardada)" : ""}.`,
+    );
+    revalidatePath(`/financeiro/a-pagar/${alvo.id}/ordem`);
+    revalidatePath(`/financeiro/a-pagar/${alvo.id}/editar`);
+  }
+  revalidatePath("/financeiro/a-pagar");
+  return { ok: true, outcomes };
+}
