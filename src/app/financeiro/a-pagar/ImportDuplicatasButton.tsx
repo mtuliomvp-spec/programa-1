@@ -9,6 +9,9 @@ import {
   createDuplicatasAction,
   readNfeAction,
   applyNfeAction,
+  lerBoletoFornecedorAction,
+  anexarBoletosFornecedorAction,
+  type BoletoFornecedorLido,
   type ReadDuplicatasResult,
   type ImportDuplicatasResult,
   type NfeNotaPlano,
@@ -41,6 +44,11 @@ type NotaRevisao = NfeNotaPlano & {
 };
 
 type ArquivoLido = { nome: string; base64: string; totalNotas: number };
+/** Boleto escolhido junto: vai para o título de mesmo valor e vencimento. */
+type BoletoArquivo = BoletoFornecedorLido & { base64: string; filename: string };
+
+const brl = (v: number) => formatCurrency(v);
+const dataBr = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "sem vencimento");
 
 /** DANFE/NF-e baixada tem "procNFe" ou a chave de 44 dígitos no nome. */
 function looksLikeNfe(name: string): boolean {
@@ -85,6 +93,7 @@ export default function ImportDuplicatasButton() {
   const [beneficiarios, setBeneficiarios] = useState<{ id: string; name: string }[]>([]);
   const [avisos, setAvisos] = useState<string[]>([]);
   const [outcomes, setOutcomes] = useState<string[] | null>(null);
+  const [boletos, setBoletos] = useState<BoletoArquivo[]>([]);
 
   function reset() {
     setError(null);
@@ -99,6 +108,30 @@ export default function ImportDuplicatasButton() {
     setBeneficiarios([]);
     setAvisos([]);
     setOutcomes(null);
+    setBoletos([]);
+  }
+
+  /** Anexa os boletos lidos aos títulos (depois de lançar as notas). */
+  async function anexarBoletos(lista: BoletoArquivo[]): Promise<string[]> {
+    if (!lista.length) return [];
+    try {
+      const r = await anexarBoletosFornecedorAction(lista);
+      return r.ok ? r.outcomes : [r.error || "Não foi possível anexar os boletos."];
+    } catch {
+      return ["Não foi possível anexar os boletos — anexe nos títulos à mão."];
+    }
+  }
+
+  async function confirmarSoBoletos() {
+    setCreating(true);
+    try {
+      const saida = await anexarBoletos(boletos);
+      setBoletos([]);
+      setOutcomes(saida);
+      router.refresh();
+    } finally {
+      setCreating(false);
+    }
   }
 
   async function handleFiles(files: File[]) {
@@ -115,7 +148,24 @@ export default function ImportDuplicatasButton() {
     }
     setBusy(true);
     try {
-      const ehNfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1;
+      // Boletos escolhidos junto com as notas: separados aqui, anexados aos
+      // títulos depois do lançamento (mesmo valor e vencimento da parcela).
+      const lidosBoleto: BoletoArquivo[] = [];
+      const resto: { file: File; base64: string }[] = [];
+      for (const f of files) {
+        const base64 = await fileToBase64(f);
+        const r = await lerBoletoFornecedorAction(base64, f.name).catch(() => null);
+        if (r?.ok && r.boleto) lidosBoleto.push({ ...r.boleto, base64, filename: f.name });
+        else resto.push({ file: f, base64 });
+      }
+      setBoletos(lidosBoleto);
+      if (!resto.length) {
+        if (!lidosBoleto.length) setError("Nenhum arquivo utilizável.");
+        return;
+      }
+      files = resto.map((r) => r.file);
+      const base64De = new Map(resto.map((r) => [r.file, r.base64]));
+      const ehNfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1 || lidosBoleto.length > 0;
       if (ehNfe) {
         const lidos: ArquivoLido[] = [];
         const encontradas: NotaRevisao[] = [];
@@ -124,7 +174,7 @@ export default function ImportDuplicatasButton() {
         let carros: { id: string; label: string }[] = [];
         let socios: { id: string; name: string }[] = [];
         for (const f of files) {
-          const base64 = await fileToBase64(f);
+          const base64 = base64De.get(f) ?? (await fileToBase64(f));
           const res = await readNfeAction(base64);
           if (!res.ok || !res.notas) {
             todosAvisos.push(`${f.name}: ${res.error || "não foi possível ler."}`);
@@ -164,7 +214,7 @@ export default function ImportDuplicatasButton() {
         return;
       }
 
-      const base64 = await fileToBase64(files[0]);
+      const base64 = base64De.get(files[0]) ?? (await fileToBase64(files[0]));
       const res = await readDuplicatasAction(base64);
       if (!res.ok) {
         setError(res.error || "Não foi possível ler o relatório.");
@@ -242,6 +292,8 @@ export default function ImportDuplicatasButton() {
         }
         saida.push(...res.outcomes);
       }
+      saida.push(...(await anexarBoletos(boletos)));
+      setBoletos([]);
       setNotas([]);
       setArquivos([]);
       setOutcomes(saida);
@@ -287,6 +339,9 @@ export default function ImportDuplicatasButton() {
       }
       setRead(null);
       setResult(res);
+      const doBoleto = await anexarBoletos(boletos);
+      setBoletos([]);
+      if (doBoleto.length) setOutcomes(doBoleto);
       router.refresh();
     } catch {
       setError("Não foi possível criar os títulos. Tente novamente.");
@@ -296,7 +351,8 @@ export default function ImportDuplicatasButton() {
   }
 
   const emRevisaoNfe = notas.length > 0;
-  const open = Boolean(error || read || result || emRevisaoNfe || outcomes);
+  const soBoletos = boletos.length > 0 && !emRevisaoNfe && !read && !result && !outcomes;
+  const open = Boolean(error || read || result || emRevisaoNfe || outcomes || boletos.length);
 
   return (
     <>
@@ -488,6 +544,23 @@ export default function ImportDuplicatasButton() {
                   </div>
                 ))}
 
+                {boletos.length > 0 ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-xs text-emerald-900">
+                    <p className="font-semibold">Boleto(s) junto:</p>
+                    <ul className="mt-1 list-inside list-disc">
+                      {boletos.map((b, i) => (
+                        <li key={i}>
+                          {b.valor != null ? brl(b.valor) : "valor ilegível"} · venc. {dataBr(b.vencimento)} ({b.filename})
+                        </li>
+                      ))}
+                    </ul>
+                    <p className="mt-1 text-emerald-800">
+                      Depois de lançar, cada boleto é anexado ao título de mesmo valor e vencimento (espaço Boleto), com a
+                      linha digitável.
+                    </p>
+                  </div>
+                ) : null}
+
                 {avisos.length > 0 ? (
                   <ul className="list-inside list-disc text-xs text-amber-700">
                     {avisos.map((a, i) => (
@@ -637,6 +710,27 @@ export default function ImportDuplicatasButton() {
               </div>
             ) : null}
 
+            {soBoletos ? (
+              <div className="mt-3 space-y-3 text-sm">
+                <p className="text-slate-600">Só boleto(s) — serão anexados aos títulos já lançados de mesmo valor e vencimento:</p>
+                <ul className="list-inside list-disc text-slate-700">
+                  {boletos.map((b, i) => (
+                    <li key={i}>
+                      {b.valor != null ? brl(b.valor) : "valor ilegível"} · venc. {dataBr(b.vencimento)} ({b.filename})
+                    </li>
+                  ))}
+                </ul>
+                <div className="flex justify-end gap-2">
+                  <Button type="button" variant="secondary" onClick={reset} disabled={creating}>
+                    Cancelar
+                  </Button>
+                  <Button type="button" onClick={confirmarSoBoletos} disabled={creating}>
+                    {creating ? "Anexando…" : "Anexar aos títulos"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
             {outcomes ? (
               <div className="mt-3 space-y-3 text-sm">
                 <p className="font-medium text-emerald-700">✓ Lançamento concluído:</p>
@@ -652,7 +746,7 @@ export default function ImportDuplicatasButton() {
               </div>
             ) : null}
 
-            {!read && !emRevisaoNfe ? (
+            {!read && !emRevisaoNfe && !soBoletos ? (
               <div className="mt-4 flex justify-end">
                 <Button type="button" onClick={reset}>
                   Fechar
