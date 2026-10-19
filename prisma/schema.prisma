@@ -697,6 +697,12 @@ model Vehicle {
   // entrada ou foi retomado (art. 2º, IX e art. 11).
   renaveVinculoMotivo    String?
   renaveNotes            String?
+  // Tipo do CRV atual (DIGITAL, BRANCO, VERDE ou AZUL) — o Renave-WS exige.
+  crvTipo                String?
+  // Integração direta com o Renave-WS (SERPRO): estoque por ambiente e o
+  // registro de cada chamada.
+  renaveRegistros        RenaveRegistro[]
+  renaveOperacoes        RenaveOperacao[]
   photoUrl               String?
   notes                  String?
   supplierId             String?
@@ -2217,6 +2223,14 @@ model CompanySettings {
    */
   detranProtocolo         String?
   eCnpjValidUntil         DateTime?
+  // Integração direta com o Renave-WS (API do SERPRO): ambiente em uso
+  // ("HOMOLOGACAO" | "PRODUCAO"; nulo = desligada), o e-mail da loja que vai em
+  // toda movimentação (o manual pede sempre o mesmo) e o CPF do operador usado
+  // quando o usuário não tem CPF no cadastro. O certificado NÃO fica aqui —
+  // só nas variáveis de ambiente da instalação.
+  renaveWsAmbiente        String?
+  renaveWsEmail           String?
+  renaveWsCpfOperador     String?
   // Comunicação de venda (SICOVE): a prestadora cobra por serviço prestado e
   // fatura tudo num boleto mensal. Os valores mudam com reajuste, então ficam
   // aqui — o lançamento automático ao anexar o comprovante lê daqui.
@@ -2289,4 +2303,56 @@ model FinancingRate {
   updatedAt        DateTime  @updatedAt
 
   @@map("financing_rates")
+}
+
+/**
+ * Veículo no Renave-WS, por ambiente: o estoque aberto (id, estado e a última
+ * consulta) e, em homologação, o veículo de teste criado no SERPRO — lá não
+ * existe o carro de verdade, então as operações usam a placa/CRV do teste.
+ */
+model RenaveRegistro {
+  id                  String    @id @default(cuid())
+  vehicleId           String
+  vehicle             Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  ambiente            String
+  mock                Json?
+  idEstoque           Int?
+  estado              String?
+  estoque             Json?
+  // Código de segurança do CRV emitido em nome da loja depois da confirmação
+  // do Detran (a saída exige o do CRV ATUAL, não o da compra).
+  codigoCrvAtual      String?
+  assinaturaEnviadaEm DateTime?
+  atpveNumero         String?
+  sincronizadoEm      DateTime?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@unique([vehicleId, ambiente])
+  @@map("renave_registros")
+}
+
+/**
+ * Cada chamada ao Renave-WS (o que foi pedido, o que voltou, quem fez). Serve
+ * de trava contra reenvio enquanto uma operação está PENDENTE e de histórico
+ * para conferir cobrança e responder ao SERPRO. Fotos/PDF não entram.
+ */
+model RenaveOperacao {
+  id         String    @id @default(cuid())
+  vehicleId  String
+  vehicle    Vehicle   @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  ambiente   String
+  operacao   String
+  status     String
+  http       Int?
+  mensagem   String?
+  pedido     Json?
+  resposta   Json?
+  userId     String?
+  userName   String?
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([vehicleId, createdAt])
+  @@map("renave_operacoes")
 }
