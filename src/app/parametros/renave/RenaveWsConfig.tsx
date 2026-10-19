@@ -20,6 +20,12 @@ export type RenaveWsConfigDados = {
 export default function RenaveWsConfig({ dados }: { dados: RenaveWsConfigDados }) {
   const [state, formAction, pending] = useActionState(salvarRenaveWsAction, {} as RenaveWsState);
   const [ambiente, setAmbiente] = useState(dados.ambiente ?? "");
+  // Depois de salvar, a página volta com o ambiente gravado: o teste usa ele.
+  const [gravado, setGravado] = useState(dados.ambiente);
+  if (dados.ambiente !== gravado) {
+    setGravado(dados.ambiente);
+    setAmbiente(dados.ambiente ?? "");
+  }
   const [teste, setTeste] = useState<RenaveWsState | null>(null);
   const [testando, startTeste] = useTransition();
 
@@ -27,7 +33,14 @@ export default function RenaveWsConfig({ dados }: { dados: RenaveWsConfigDados }
     <form action={formAction} className="space-y-4">
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Field label="Ambiente">
-          <Select name="renaveWsAmbiente" value={ambiente} onChange={(e) => setAmbiente(e.target.value)}>
+          {/* Não controlado: o formulário de ação volta aos valores padrão depois de
+              salvar; com `value` a caixa voltava a "Desligada" mesmo gravada em produção. */}
+          <Select
+            key={dados.ambiente ?? "off"}
+            name="renaveWsAmbiente"
+            defaultValue={dados.ambiente ?? ""}
+            onChange={(e) => setAmbiente(e.target.value)}
+          >
             <option value="">Desligada</option>
             <option value="HOMOLOGACAO">Homologação (testes, sem custo)</option>
             <option value="PRODUCAO">Produção (cobrado, vale de verdade)</option>
