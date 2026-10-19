@@ -8,6 +8,10 @@ import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
+import RenaveWsPanel, { type RenaveWsRegistro } from "./RenaveWsPanel";
+import { lerAmbienteRenave, lerEstadoEstoque, cpfValido, hojeSaoPaulo } from "@/lib/renave-ws-dados";
+import type { EstoqueRenave } from "@/lib/renave-ws";
+
 import ComunicacaoVendaCopy from "./ComunicacaoVendaCopy";
 import DocumentosCompra from "./DocumentosCompra";
 import {
@@ -25,6 +29,7 @@ import VehicleNfe, { type EntradaPrevia, type NotaResumo } from "./VehicleNfe";
 import { lerNfeConfig, ncmDoVeiculo } from "@/lib/nfe-config";
 import { montarNfeEntrada, montarNfeSaida, descricaoVeiculo, valorDoVeiculoNaVenda } from "@/lib/nfe-entrada";
 import { lerEndereco } from "@/lib/endereco";
+import { getSessionUser } from "@/lib/auth";
 import type { AtpvExtraido } from "@/lib/atpv-ai";
 import VehicleCosts from "./VehicleCosts";
 import VehicleDebtsLookup from "./VehicleDebtsLookup";
@@ -119,7 +124,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   if (!vehicle) notFound();
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar, canRenaveWs] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -142,6 +147,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "renave"),
       userCan("estoque", "nfe"),
       userCan("estoque", "nfecancelar"),
+      userCan("estoque", "renavews"),
     ]);
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
@@ -374,6 +380,114 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     { rotulo: "Data Hodômetro", valor: formatDate(vehicle.entryDate), dica: "dia em que o km foi lido" },
     { rotulo: "Chave da Nota Fiscal", valor: soDigitos(vehicle.entryNfeKey), dica: "formulário do Renave (ler a NF-e)" },
   ];
+  // Renave direto (Renave-WS / SERPRO): ambiente em uso, o estoque do veículo
+  // nesse ambiente e o que preenche os formulários de entrada e saída.
+  const renaveWsAmbiente = lerAmbienteRenave(renaveCompany.renaveWsAmbiente);
+  const renaveWs = renaveWsAmbiente
+    ? await (async () => {
+        const [reg, ops, usuario] = await Promise.all([
+          prisma.renaveRegistro.findUnique({
+            where: { vehicleId_ambiente: { vehicleId: vehicle.id, ambiente: renaveWsAmbiente } },
+          }),
+          prisma.renaveOperacao.findMany({
+            where: { vehicleId: vehicle.id, ambiente: renaveWsAmbiente },
+            orderBy: { createdAt: "desc" },
+            take: 15,
+            select: { id: true, operacao: true, status: true, mensagem: true, userName: true, createdAt: true },
+          }),
+          getSessionUser().then((u) =>
+            u ? prisma.user.findUnique({ where: { id: u.id }, select: { document: true } }) : null,
+          ),
+        ]);
+        const est = (reg?.estoque ?? null) as EstoqueRenave | null;
+        const registro: RenaveWsRegistro = reg
+          ? {
+              idEstoque: reg.idEstoque,
+              estado: lerEstadoEstoque(reg.estado),
+              sincronizadoEm: reg.sincronizadoEm?.toISOString() ?? null,
+              assinaturaEnviadaEm: reg.assinaturaEnviadaEm?.toISOString() ?? null,
+              atpveNumero: reg.atpveNumero,
+              codigoCrvAtual: reg.codigoCrvAtual,
+              mock: (reg.mock ?? null) as NonNullable<RenaveWsRegistro>["mock"],
+              cancelado: !!est?.cancelamentoEstoque,
+              // Entrada de veículo próprio: o Renave grava a loja como vendedora.
+              proprio:
+                !!est &&
+                (!est.entradaEstoque?.vendedor?.numeroDocumento ||
+                  soDigitos(est.entradaEstoque.vendedor.numeroDocumento) === soDigitos(renaveCompany.cnpj) ||
+                  (renaveWsAmbiente === "HOMOLOGACAO" && !!(reg.mock as { proprio?: boolean } | null)?.proprio)),
+              notaEntrada: est?.entradaEstoque?.chaveNotaFiscalEntrada ?? null,
+              notaSaida: est?.saidaEstoque?.chaveNotaFiscalSaida ?? null,
+              termoEntrada: est?.entradaEstoque?.numeroTermoEntradaEstoque ?? null,
+              termoSaida: est?.saidaEstoque?.numeroTermoSaidaEstoque ?? null,
+              compradorNome: est?.saidaEstoque?.comprador?.nome ?? null,
+              restricoes: (est?.restricoesVeiculo ?? []).map((r) => r.tipoRestricao ?? "").filter(Boolean),
+            }
+          : null;
+        const cpfUsuario = soDigitos(usuario?.document);
+        const cpfOperador = cpfUsuario && cpfValido(cpfUsuario) ? cpfUsuario : (renaveCompany.renaveWsCpfOperador ?? "");
+        const emailLoja = renaveCompany.renaveWsEmail || renaveCompany.email || "";
+        const diaSP = (d: Date) => new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" }).format(d);
+        const valor = (n: number) => (n > 0 ? n.toFixed(2).replace(".", ",") : "");
+        const entrada = {
+          placa: vehicle.plate ?? "",
+          renavam: soDigitos(vehicle.renavam) ?? "",
+          tipoCrv: vehicle.crvTipo ?? "",
+          numeroCrv: soDigitos(vehicle.crvNumber) ?? "",
+          codigoSegurancaCrv: soDigitos(vehicle.crvSecurityCode) ?? "",
+          km: vehicle.km ? String(vehicle.km) : "",
+          kmEm: `${diaSP(vehicle.entryDate)}T09:00`,
+          documentoProprietario: donoDoc ?? soDigitos(vehicle.supplier?.document) ?? "",
+          dataCompra: diaSP(vehicle.entryDate),
+          valorCompra: valor(vehicle.purchasePrice),
+          emailVendedor: vehicle.supplier?.email ?? "",
+          emailEstabelecimento: emailLoja,
+          cpfOperador,
+        };
+        const venda = vehicle.sale && vehicle.sale.status !== "CANCELADA" ? vehicle.sale : null;
+        const end = venda ? lerEndereco(venda.customer.endereco) : null;
+        const saida = venda
+          ? {
+              placa: vehicle.plate ?? "",
+              renavam: soDigitos(vehicle.renavam) ?? "",
+              numeroCrv: soDigitos(vehicle.crvNumber) ?? "",
+              codigoSegurancaCrv: reg?.codigoCrvAtual ?? "",
+              dataVenda: diaSP(venda.saleDate),
+              valorVenda: valor(valorDoVeiculoNaVenda(venda)),
+              compradorDocumento: soDigitos(venda.customer.document) ?? "",
+              compradorNome: venda.customer.name,
+              compradorEmail: venda.customer.email ?? "",
+              cep: end?.cep ?? "",
+              logradouro: end?.logradouro ?? "",
+              numero: end?.numero ?? "",
+              complemento: end?.complemento ?? "",
+              bairro: end?.bairro ?? "",
+              cidade: end?.cidade ?? "",
+              uf: end?.uf ?? "",
+              codigoMunicipio: "",
+              emailEstabelecimento: emailLoja,
+              cpfOperador,
+            }
+          : null;
+        // Assinatura do vendedor: a ATPV-e assinada (ou foto do CRV) anexada.
+        const anexos = vehicle.attachments
+          .filter((a) => /^image\/|application\/pdf/.test(a.mimeType) && (a.kind === "DOCUMENTO" || a.kind === "CRLV"))
+          .sort((a, b) => Number(/assinad/i.test(b.description)) - Number(/assinad/i.test(a.description)))
+          .map((a) => ({ id: a.id, description: a.description, filename: a.filename }));
+        return {
+          ambiente: renaveWsAmbiente,
+          registro,
+          operacoes: ops.map((o) => ({ ...o, createdAt: o.createdAt.toISOString() })),
+          entrada,
+          proprioSugerido: donoEhLoja,
+          saida,
+          anexos,
+          chaves: { entrada: soDigitos(vehicle.entryNfeKey), saida: soDigitos(vehicle.exitNfeKey) },
+          hoje: hojeSaoPaulo(),
+        };
+      })()
+    : null;
+
   const cliente = vehicle.sale?.customer ?? null;
   const renaveCopiaSaida: CampoRenave[] | null = vehicle.sale
     ? [
@@ -1291,6 +1405,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
                 uf={renaveCompany.uf}
                 canEdit={canRenave}
               />
+              {renaveWs && (canRenaveWs || renaveWs.registro) ? (
+                <RenaveWsPanel vehicleId={vehicle.id} podeOperar={canRenaveWs} {...renaveWs} />
+              ) : null}
               <RenaveCopyData entrada={renaveCopiaEntrada} saida={renaveCopiaSaida} />
             </Card>
           ) : null}

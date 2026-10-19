@@ -191,3 +191,51 @@ export async function salvarPassoRenaveAction(
   revalidatePath("/", "layout");
   return { ok: true, message: "Salvo." };
 }
+
+// ---------------------------------------------------------------------------
+// Integração direta com o Renave-WS (SERPRO)
+// ---------------------------------------------------------------------------
+
+export type RenaveWsState = { error?: string; success?: string };
+
+/**
+ * Liga/desliga a integração e escolhe o ambiente. O certificado e-CNPJ não
+ * passa por aqui: fica só nas variáveis de ambiente da instalação.
+ */
+export async function salvarRenaveWsAction(_prev: RenaveWsState, formData: FormData): Promise<RenaveWsState> {
+  const user = await getSessionUser();
+  if (!user || !isAdminRole(user.role)) return { error: "Apenas administradores podem alterar os parâmetros." };
+  const { lerAmbienteRenave, cpfValido, digitos } = await import("@/lib/renave-ws-dados");
+  const ambiente = lerAmbienteRenave(String(formData.get("renaveWsAmbiente") ?? ""));
+  const email = String(formData.get("renaveWsEmail") ?? "").trim();
+  const cpf = digitos(String(formData.get("renaveWsCpfOperador") ?? ""));
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "E-mail da loja inválido." };
+  if (cpf && !cpfValido(cpf)) return { error: "CPF do operador inválido." };
+  if (ambiente === "PRODUCAO") {
+    const { certificadoConfigurado } = await import("@/lib/renave-ws");
+    if (!certificadoConfigurado("PRODUCAO"))
+      return { error: "Produção exige o certificado e-CNPJ configurado na instalação (RENAVE_CERT_PFX_BASE64 e RENAVE_CERT_SENHA)." };
+  }
+  await prisma.companySettings.upsert({
+    where: { id: "company" },
+    update: { renaveWsAmbiente: ambiente, renaveWsEmail: email || null, renaveWsCpfOperador: cpf || null },
+    create: { id: "company", renaveWsAmbiente: ambiente, renaveWsEmail: email || null, renaveWsCpfOperador: cpf || null },
+  });
+  revalidatePath("/parametros/renave");
+  revalidatePath("/estoque", "layout");
+  return { success: ambiente ? "Integração com o Renave salva." : "Integração com o Renave desligada." };
+}
+
+/** "Testar conexão": quem o Renave reconhece do outro lado (o certificado). */
+export async function testarRenaveWsAction(ambienteTexto: string): Promise<RenaveWsState> {
+  const user = await getSessionUser();
+  if (!user || !isAdminRole(user.role)) return { error: "Apenas administradores." };
+  const { lerAmbienteRenave } = await import("@/lib/renave-ws-dados");
+  const ambiente = lerAmbienteRenave(ambienteTexto);
+  if (!ambiente) return { error: "Escolha o ambiente." };
+  const { renaveWs } = await import("@/lib/renave-ws");
+  const r = await renaveWs.clienteAutenticado(ambiente);
+  if (!r.ok || !r.body) return { error: r.erro ?? "Sem resposta do Renave." };
+  const cnpj = r.body.cnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5");
+  return { success: `Conectado como ${r.body.nome} (CNPJ ${cnpj})${r.body.endereco?.municipio ? ` — ${r.body.endereco.municipio.nome}/${r.body.endereco.municipio.uf}` : ""}.` };
+}

@@ -18,6 +18,8 @@ import {
   prazoTexto,
 } from "@/lib/renave";
 import RenaveConfigForm, { type RenaveConfig } from "./RenaveConfigForm";
+import RenaveWsConfig from "./RenaveWsConfig";
+import { certificadoConfigurado } from "@/lib/renave-ws";
 import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 
 export const dynamic = "force-dynamic";
@@ -238,6 +240,24 @@ export default async function ParametrosRenavePage() {
         <CardHeader title="Configuração" />
         <div className="p-5">
           <RenaveConfigForm config={config} />
+        </div>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader
+          title="Integração direta com o SERPRO (Renave-WS)"
+          description="Registrar entrada e saída pelo próprio sistema, sem integradora — contrato SERPRO da loja e certificado e-CNPJ"
+        />
+        <div className="p-5">
+          <RenaveWsConfig
+            dados={{
+              ambiente: company.renaveWsAmbiente,
+              email: company.renaveWsEmail,
+              cpfOperador: company.renaveWsCpfOperador,
+              certProducao: certificadoConfigurado("PRODUCAO"),
+              certHomologacao: certificadoConfigurado("HOMOLOGACAO"),
+            }}
+          />
         </div>
       </Card>
 
