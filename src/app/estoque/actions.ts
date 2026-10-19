@@ -2700,14 +2700,69 @@ export async function readAtpvAttachmentAction(attachmentId: string): Promise<At
   return lerAtpvAnexo(attachmentId);
 }
 
+/** Corrige a fase de um arquivo da ATPV-e (emitida, preenchida, assinada, termo). */
+export async function definirFaseAtpvAction(
+  attachmentId: string,
+  fase: import("@/lib/atpv-fases").FaseAtpv | null,
+): Promise<AttachmentState> {
+  try {
+    await assertCan("estoque", "atpv");
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const { descricaoAtpv, numeroDaDescricao, FASES_ATPV } = await import("@/lib/atpv-fases");
+  const att = await prisma.vehicleAttachment.findUnique({
+    where: { id: attachmentId },
+    select: { id: true, vehicleId: true, description: true },
+  });
+  if (!att || !/ATPV/i.test(att.description)) return { error: "Anexo não encontrado." };
+  if (fase && !FASES_ATPV.includes(fase)) return { error: "Fase inválida." };
+  await prisma.vehicleAttachment.update({
+    where: { id: att.id },
+    data: { description: descricaoAtpv(numeroDaDescricao(att.description), fase) },
+  });
+  revalidatePath(`/estoque/${att.vehicleId}`);
+  return { ok: true };
+}
+
 /** A leitura em si — usada pelo botão e logo depois de anexar a ATPV-e. */
 async function lerAtpvAnexo(attachmentId: string): Promise<AttachmentState> {
   const att = await prisma.vehicleAttachment.findUnique({
     where: { id: attachmentId },
-    select: { id: true, vehicleId: true, mimeType: true, description: true, data: true },
+    select: { id: true, vehicleId: true, mimeType: true, description: true, data: true, filename: true },
   });
   if (!att) return { error: "Anexo não encontrado." };
   if (!/ATPV/i.test(att.description)) return { error: "Este anexo não é uma ATPV-e." };
+
+  // Fase do arquivo (emitida, preenchida, assinada, termo). O TERMO de
+  // conformidade não tem os dados do veículo: guarda junto, sem ler.
+  const { detectarFaseAtpv, pdfAssinado, descricaoAtpv, numeroDaDescricao } = await import("@/lib/atpv-fases");
+  let textoPdf = "";
+  if (att.mimeType === "application/pdf") {
+    try {
+      const { textoDoPdf } = await import("@/lib/pdf-text");
+      textoPdf = textoDoPdf(Buffer.from(att.data));
+    } catch {
+      textoPdf = "";
+    }
+  }
+  const assinado = att.mimeType === "application/pdf" && pdfAssinado(att.data);
+  const faseSemLeitura = detectarFaseAtpv({ filename: att.filename, texto: textoPdf, assinadoDigital: assinado });
+  if (faseSemLeitura === "TERMO") {
+    const irmas = await prisma.vehicleAttachment.findMany({
+      where: { vehicleId: att.vehicleId, kind: "DOCUMENTO", id: { not: att.id }, description: { contains: "ATPV" } },
+      select: { description: true },
+      orderBy: { createdAt: "desc" },
+    });
+    const numero = irmas.map((x) => numeroDaDescricao(x.description)).find(Boolean) ?? numeroDaDescricao(att.description);
+    await prisma.vehicleAttachment.update({ where: { id: att.id }, data: { description: descricaoAtpv(numero, "TERMO") } });
+    revalidatePath(`/estoque/${att.vehicleId}`);
+    return {
+      ok: true,
+      filled: ["Termo de conformidade da assinatura guardado junto da ATPV-e (não tem dados do veículo para ler)."],
+      warnings: [],
+    };
+  }
 
   const vehicle = await prisma.vehicle.findUnique({
     where: { id: att.vehicleId },
@@ -2821,10 +2876,16 @@ async function lerAtpvAnexo(attachmentId: string): Promise<AttachmentState> {
   // O nome do anexo passa a dizer o que foi lido (aparece na lista), e o que
   // foi lido fica guardado nele — a comunicação de venda completa com isso
   // (CPF/CNPJ do vendedor, endereço do comprador, valor declarado).
+  const fase = detectarFaseAtpv({
+    filename: att.filename,
+    texto: textoPdf,
+    assinadoDigital: assinado,
+    dataVenda: lido.dataVenda,
+  });
   await prisma.vehicleAttachment.update({
     where: { id: att.id },
     data: {
-      description: `ATPV-e${lido.numeroAtpv ? ` nº ${digitos(lido.numeroAtpv)}` : ""}`.slice(0, 500),
+      description: descricaoAtpv(digitos(lido.numeroAtpv) || numeroDaDescricao(att.description), fase),
       atpvLido: lido,
     },
   });
