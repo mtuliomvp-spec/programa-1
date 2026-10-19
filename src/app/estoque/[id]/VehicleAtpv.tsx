@@ -1,13 +1,23 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Button, Field } from "@/components/ui";
+import {
+  DICA_FASE_ATPV,
+  FASES_ATPV,
+  ROTULO_FASE_ATPV,
+  faseDaDescricao,
+  numeroDaDescricao,
+  type FaseAtpv,
+} from "@/lib/atpv-fases";
 import { formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
 import {
   uploadVehicleAttachmentAction,
   deleteVehicleAttachmentAction,
   readAtpvAttachmentAction,
+  definirFaseAtpvAction,
   type AttachmentState,
 } from "../actions";
 
@@ -17,7 +27,40 @@ type Atpv = {
   filename: string;
   size: number;
   createdAt: Date | string;
+  /** Fase do arquivo (gravada ou deduzida); sem ela, vale a da descrição. */
+  fase?: FaseAtpv | null;
+  /** A fase foi confirmada (gravada na descrição) ou é só dedução. */
+  faseGravada?: boolean;
+  numero?: string | null;
+  /** Já passou pela leitura (CRV, chassi, comprador…). */
+  lida?: boolean;
 };
+
+/** Completa o que a tela não mandou com o que a descrição diz. */
+function normalizar(a: Atpv): Atpv {
+  const daDescricao = faseDaDescricao(a.description);
+  return {
+    ...a,
+    fase: a.fase ?? daDescricao,
+    faseGravada: a.faseGravada ?? !!daDescricao,
+    numero: a.numero ?? numeroDaDescricao(a.description),
+    lida: a.lida ?? /n[ºo°]\s*\d/i.test(a.description),
+  };
+}
+
+/**
+ * Os arquivos são FASES da mesma ATPV-e (emitida → preenchida → assinada →
+ * termo de conformidade): agrupa pelo número; arquivo sem número (o termo,
+ * por exemplo) entra na ATPV-e mais recente.
+ */
+function agrupar(atpvs: Atpv[]): { numero: string | null; arquivos: Atpv[] }[] {
+  const numeros = [...new Set(atpvs.map((a) => a.numero).filter((n): n is string => !!n))];
+  if (numeros.length <= 1) return atpvs.length ? [{ numero: numeros[0] ?? null, arquivos: atpvs }] : [];
+  const grupos = numeros.map((n) => ({ numero: n as string | null, arquivos: atpvs.filter((a) => a.numero === n) }));
+  const soltos = atpvs.filter((a) => !a.numero);
+  if (soltos.length) grupos[0].arquivos.push(...soltos);
+  return grupos;
+}
 
 function humanSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -45,7 +88,6 @@ export default function VehicleAtpv({
     {} as AttachmentState,
   );
   const formRef = useRef<HTMLFormElement>(null);
-  const [removing, startRemove] = useTransition();
   const [preparing, setPreparing] = useState(false);
   const [lendo, startLeitura] = useTransition();
   const [leitura, setLeitura] = useState<AttachmentState | null>(null);
@@ -77,65 +119,79 @@ export default function VehicleAtpv({
       {atpvs.length === 0 ? (
         <p className="mb-4 text-sm text-slate-500">Nenhuma ATPV-e anexada ainda.</p>
       ) : (
-        <ul className="mb-4 divide-y divide-slate-100">
-          {atpvs.map((a) => (
-            <li key={a.id} className="flex items-center justify-between gap-3 py-2.5">
-              <div className="min-w-0">
-                {/* Depois da leitura a descrição carrega o número da ATPV-e. */}
-                <p className="truncate text-sm font-medium text-emerald-700">
-                  ✓ {/atpv-e n/i.test(a.description) ? a.description : "ATPV-e anexada"}
-                </p>
-                <p className="truncate text-xs text-slate-400">
-                  {a.filename} · {humanSize(a.size)} · {formatDate(a.createdAt)}
-                </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-3 text-sm">
-                {canManage ? (
-                  <button
-                    type="button"
-                    disabled={lendo}
-                    onClick={() => {
-                      setLeitura(null);
-                      startLeitura(async () => setLeitura(await readAtpvAttachmentAction(a.id)));
-                    }}
-                    className="font-medium text-indigo-700 hover:underline disabled:opacity-50"
-                    title="A IA lê o documento e completa a ficha (número e código do CRV, chassi, RENAVAM)"
-                  >
-                    {lendo ? "Lendo…" : "🤖 Ler este documento"}
-                  </button>
+        <div className="mb-4 space-y-4">
+          {agrupar(atpvs.map(normalizar)).map((g, gi) => {
+            // Lê a versão mais completa (assinada > preenchida > emitida).
+            const paraLer =
+              (["ASSINADA", "PREENCHIDA", "EMITIDA"] as FaseAtpv[])
+                .map((f) => g.arquivos.find((a) => a.fase === f))
+                .find(Boolean) ?? g.arquivos.find((a) => a.fase !== "TERMO");
+            const semFase = g.arquivos.filter((a) => !a.fase);
+            return (
+              <div key={g.numero ?? gi} className="rounded-lg border border-slate-200">
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2">
+                  <p className="text-sm font-semibold text-slate-900">
+                    📄 ATPV-e{g.numero ? ` nº ${g.numero}` : ""}
+                    <span className="ml-2 text-xs font-normal text-slate-500">
+                      {g.arquivos.length} arquivo(s) — fases do mesmo documento
+                    </span>
+                  </p>
+                  {canManage && paraLer ? (
+                    <button
+                      type="button"
+                      disabled={lendo}
+                      onClick={() => {
+                        setLeitura(null);
+                        startLeitura(async () => setLeitura(await readAtpvAttachmentAction(paraLer.id)));
+                      }}
+                      className="text-xs font-medium text-indigo-700 hover:underline disabled:opacity-50"
+                      title="A IA lê o documento e completa a ficha (número e código do CRV, chassi, RENAVAM)"
+                    >
+                      {lendo ? "Lendo…" : paraLer.lida ? "🤖 Ler de novo" : "🤖 Ler este documento"}
+                    </button>
+                  ) : null}
+                </div>
+                <ol className="divide-y divide-slate-100">
+                  {FASES_ATPV.map((f, i) => {
+                    const daFase = g.arquivos.filter((a) => a.fase === f);
+                    return (
+                      <li key={f} className="flex gap-3 px-3 py-2">
+                        <span
+                          className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                            daFase.length ? "bg-emerald-600 text-white" : "bg-slate-200 text-slate-500"
+                          }`}
+                        >
+                          {daFase.length ? "✓" : i + 1}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className={`text-sm font-medium ${daFase.length ? "text-slate-900" : "text-slate-400"}`}>
+                            {ROTULO_FASE_ATPV[f]}
+                            <span className="ml-1 text-xs font-normal text-slate-400">— {DICA_FASE_ATPV[f]}</span>
+                          </p>
+                          {daFase.length ? (
+                            daFase.map((a) => (
+                              <Arquivo key={a.id} a={a} vehicleId={vehicleId} canManage={canManage} />
+                            ))
+                          ) : (
+                            <p className="text-xs text-slate-400">ainda não anexada</p>
+                          )}
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ol>
+                {semFase.length ? (
+                  <div className="border-t border-slate-100 px-3 py-2">
+                    <p className="text-xs font-medium text-amber-700">Fase não identificada — escolha abaixo:</p>
+                    {semFase.map((a) => (
+                      <Arquivo key={a.id} a={a} vehicleId={vehicleId} canManage={canManage} />
+                    ))}
+                  </div>
                 ) : null}
-                <a
-                  href={`/anexos/${a.id}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="font-medium text-blue-700 hover:underline"
-                >
-                  Abrir
-                </a>
-                <a
-                  href={`/anexos/${a.id}?download=1`}
-                  className="font-medium text-slate-600 hover:underline"
-                >
-                  Baixar
-                </a>
-                {canManage ? (
-                  <button
-                    type="button"
-                    disabled={removing}
-                    onClick={() => {
-                      if (confirm("Excluir a ATPV-e?")) {
-                        startRemove(() => deleteVehicleAttachmentAction(a.id, vehicleId));
-                      }
-                    }}
-                    className="font-medium text-rose-600 hover:underline disabled:opacity-50"
-                  >
-                    Excluir
-                  </button>
-                ) : null}
               </div>
-            </li>
-          ))}
-        </ul>
+            );
+          })}
+        </div>
       )}
 
       {lendo ? (
@@ -218,6 +274,63 @@ export default function VehicleAtpv({
           </Button>
         </div>
       </form>
+    </div>
+  );
+}
+
+/** Um arquivo de uma fase: abrir, baixar, corrigir a fase e excluir. */
+function Arquivo({ a, vehicleId, canManage }: { a: Atpv; vehicleId: string; canManage: boolean }) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  return (
+    <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      <span className="min-w-0 truncate text-slate-500">
+        {a.filename} · {humanSize(a.size)} · {formatDate(a.createdAt)}
+      </span>
+      <a href={`/anexos/${a.id}`} target="_blank" rel="noopener noreferrer" className="font-medium text-blue-700 hover:underline">
+        Abrir
+      </a>
+      <a href={`/anexos/${a.id}?download=1`} className="font-medium text-slate-600 hover:underline">
+        Baixar
+      </a>
+      {canManage ? (
+        <>
+          <select
+            value=""
+            disabled={pending}
+            onChange={(e) =>
+              start(async () => {
+                await definirFaseAtpvAction(a.id, (e.target.value || null) as FaseAtpv | null);
+                router.refresh();
+              })
+            }
+            className="rounded border border-slate-300 bg-white px-1 py-0.5 text-xs text-slate-700"
+            title="Corrigir a fase deste arquivo"
+          >
+            <option value="">{a.fase ? "Trocar fase…" : "Escolher fase…"}</option>
+            {FASES_ATPV.filter((f) => f !== a.fase).map((f) => (
+              <option key={f} value={f}>
+                {ROTULO_FASE_ATPV[f]}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => {
+              if (confirm("Excluir este arquivo da ATPV-e?")) {
+                start(async () => {
+                  await deleteVehicleAttachmentAction(a.id, vehicleId);
+                  router.refresh();
+                });
+              }
+            }}
+            className="font-medium text-rose-600 hover:underline disabled:opacity-50"
+          >
+            Excluir
+          </button>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -32,6 +32,7 @@ import VehicleAdvance from "./VehicleAdvance";
 import VehicleAttachments from "./VehicleAttachments";
 import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
+import { detectarFaseAtpv, faseDaDescricao, numeroDaDescricao, pdfAssinado, type FaseAtpv } from "@/lib/atpv-fases";
 import VehicleRenave, { type DocumentoDoVeiculo, type RenaveDados } from "./VehicleRenave";
 import {
   pendenciasRenave,
@@ -397,6 +398,41 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   // Comunicação de venda (SICOVE) pela R30: os dados do formulário dela, na
   // ordem e no formato em que ele pede (prints da tela "Consultar por Veículo"
   // e "Dados da Venda"), para copiar e colar — sem integração com o site.
+  // Fase de cada arquivo da ATPV-e (emitida, preenchida, assinada, termo):
+  // a gravada na descrição; nos arquivos antigos, deduzida do próprio arquivo.
+  const atpvDocs = vehicle.attachments.filter((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description));
+  const semFase = atpvDocs.filter((a) => !faseDaDescricao(a.description));
+  const fasesInferidas = new Map<string, FaseAtpv>();
+  if (semFase.length) {
+    const bytes = await prisma.vehicleAttachment.findMany({
+      where: { id: { in: semFase.map((a) => a.id) } },
+      select: { id: true, data: true, mimeType: true },
+    });
+    const { textoDoPdf } = await import("@/lib/pdf-text");
+    for (const a of semFase) {
+      const b = bytes.find((x) => x.id === a.id);
+      const pdf = b?.mimeType === "application/pdf";
+      let texto = "";
+      try {
+        texto = pdf && b ? textoDoPdf(Buffer.from(b.data)) : "";
+      } catch {
+        texto = "";
+      }
+      fasesInferidas.set(
+        a.id,
+        detectarFaseAtpv({
+          filename: a.filename,
+          texto,
+          assinadoDigital: !!(pdf && b && pdfAssinado(b.data)),
+          dataVenda: (a.atpvLido as { dataVenda?: string | null } | null)?.dataVenda ?? null,
+        }),
+      );
+    }
+  }
+  const faseAtpvDe = (id: string): FaseAtpv | null => {
+    const a = atpvDocs.find((x) => x.id === id);
+    return a ? (faseDaDescricao(a.description) ?? fasesInferidas.get(id) ?? null) : null;
+  };
   const endSistema = cliente ? lerEndereco(cliente.endereco) : null;
   // A ATPV-e DA VENDA (comprador = o cliente da venda; senão a mais recente
   // lida depois da venda) completa o que o cadastro não tem: é o documento
@@ -415,7 +451,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       : null) ??
     (vehicle.sale ? atpvLidas.find((x) => x.a.createdAt >= vehicle.sale!.saleDate)?.l : null) ??
     null;
-  const atpvSemLeitura = atpvAnexos.find((a) => !a.atpvLido)?.id ?? null;
+  // O termo de conformidade não tem dados do veículo: não é "ATPV-e não lida".
+  const atpvSemLeitura =
+    atpvAnexos.find((a) => !a.atpvLido && faseAtpvDe(a.id) !== "TERMO")?.id ?? null;
   const daAtpv = "da ATPV-e";
   // Endereço do comprador: o do cadastro; faltando, o da ATPV-e.
   const endComprador = {
@@ -1296,9 +1334,17 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
             <VehicleAtpv
               vehicleId={vehicle.id}
               canManage={canAtpv}
-              atpvs={vehicle.attachments.filter(
-                (a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description),
-              )}
+              atpvs={atpvDocs.map((a) => ({
+                id: a.id,
+                description: a.description,
+                filename: a.filename,
+                size: a.size,
+                createdAt: a.createdAt,
+                fase: faseAtpvDe(a.id),
+                faseGravada: !!faseDaDescricao(a.description),
+                numero: numeroDaDescricao(a.description),
+                lida: !!a.atpvLido,
+              }))}
             />
           </Card>
 
