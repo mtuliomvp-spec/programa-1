@@ -229,6 +229,12 @@ export default async function EstoquePage({
         return v.hasAtpv;
       case "RENAVE_PENDENTE":
         return v.renavePendentes > 0;
+      case "COMUNICADO":
+        return v.hasComunicacao;
+      // Vendido e parado: nem transferido, nem com processo de transferência
+      // correndo (orçamento, título do despachante ou marca manual).
+      case "VENDIDO_SEM_PROCESSO":
+        return v.status === "VENDIDO" && v.transferDoneAt == null && !v.saleTransferPending && !badge.label.startsWith("🔄");
       default:
         return true;
     }
@@ -585,6 +591,8 @@ export default async function EstoquePage({
                 <option value="CRLV_PENDENTE">CRLV pendente</option>
                 <option value="ATPV">Com ATPV-e</option>
                 <option value="RENAVE_PENDENTE">Renave: dados faltando</option>
+                <option value="COMUNICADO">Comunicado venda</option>
+                <option value="VENDIDO_SEM_PROCESSO">Vendido — sem processo de transferência</option>
               </Select>
             </label>
           </div>
