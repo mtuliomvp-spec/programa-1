@@ -287,11 +287,11 @@ export default async function EstoquePage({
             <p className="mt-0.5 text-xs text-slate-500">
               {v.plate} · {v.manufactureYear}/{v.modelYear} · {v.km.toLocaleString("pt-BR")} km
             </p>
-            {v.docOwnerName ? (
+            {v.donoAtual ? (
               <p className="mt-0.5 truncate text-[11px] text-slate-500">
                 Este veículo está em nome de{" "}
                 <strong className={v.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
-                  {v.docOwnerName}
+                  {v.donoAtual}
                 </strong>
               </p>
             ) : null}
@@ -397,11 +397,11 @@ export default async function EstoquePage({
           {v.plate}
           {v.color ? ` · ${v.color}` : ""}
         </span>
-        {v.docOwnerName ? (
+        {v.donoAtual ? (
           <span className="mt-0.5 block text-[11px] font-normal text-slate-500">
             Este veículo está em nome de{" "}
             <strong className={v.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
-              {v.docOwnerName}
+              {v.donoAtual}
             </strong>
           </span>
         ) : null}

@@ -294,11 +294,11 @@ export default async function FinanciamentoTerceirosListPage({
                     {/* Em nome de quem o documento está: a pergunta que sobra
                         depois da operação — o carro já saiu do nome do dono
                         anterior? */}
-                    {o.vehicle.docOwnerName ? (
+                    {o.doc.donoAtual ? (
                       <p className="mt-0.5 text-[11px] font-normal text-slate-500">
                         Este veículo está em nome de{" "}
                         <strong className={o.doc.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
-                          {o.vehicle.docOwnerName}
+                          {o.doc.donoAtual}
                         </strong>
                       </p>
                     ) : null}

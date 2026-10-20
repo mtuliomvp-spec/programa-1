@@ -437,11 +437,11 @@ export default async function FinanciamentoTerceirosDetailPage({
               </Badge>
             )}
           </div>
-          {sale.vehicle.docOwnerName ? (
+          {doc.donoAtual ? (
             <p className="mt-3 text-sm text-slate-600">
               Este veículo está em nome de{" "}
               <strong className={doc.docOwnerOk ? "text-emerald-600" : "text-rose-600"}>
-                {sale.vehicle.docOwnerName}
+                {doc.donoAtual}
               </strong>
             </p>
           ) : null}
