@@ -51,7 +51,10 @@ type ErroRenave = { titulo?: string; detalhe?: string; mensagemParaUsuarioFinal?
 function mensagemErro(http: number, body: unknown, texto: string): string {
   const e = (body ?? {}) as ErroRenave;
   const msg = e.mensagemParaUsuarioFinal || e.detalhe || e.titulo;
-  if (msg) return e.logIdRastreabilidade ? `${msg} (rastreio SERPRO: ${e.logIdRastreabilidade})` : msg;
+  if (msg)
+    return e.logIdRastreabilidade && !msg.includes(e.logIdRastreabilidade)
+      ? `${msg} (rastreio SERPRO: ${e.logIdRastreabilidade})`
+      : msg;
   if (http === 401 || http === 403)
     return "O Renave recusou o certificado: confira se o e-CNPJ A1 está configurado na instalação e habilitado no Credencia (serviço RENAVE CONCESSIONÁRIO/LOJISTA).";
   if (http === 502 || http === 503 || http === 504) return "O Renave está indisponível agora. Tente de novo em alguns minutos.";
