@@ -91,6 +91,8 @@ export default function RenaveWsPanel(p: {
   proprioSugerido: boolean;
   /** Veículo já vendido no sistema: sem entrada no Renave, não há o que registrar. */
   vendido: boolean;
+  /** UF da loja cujo DETRAN ainda não aderiu ao Renave de usados (null = opera). */
+  ufSemRenave: string | null;
   saida: (DadosSaida & { cidade: string; uf: string }) | null;
   anexos: RenaveWsAnexo[];
   chaves: { entrada: string | null; saida: string | null };
@@ -143,6 +145,19 @@ export default function RenaveWsPanel(p: {
           {hom ? "Homologação — teste, sem custo" : "Produção — cobrado"}
         </span>
       </div>
+      {!hom && p.ufSemRenave !== null ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+          <p className="font-semibold">
+            🛑 O DETRAN{p.ufSemRenave ? ` do ${p.ufSemRenave}` : " do estado"} ainda não aderiu ao Renave de veículos usados
+          </p>
+          <p className="mt-0.5">
+            Para carros registrados no estado, as operações (aptidão, entrada e saída) não funcionam até a adesão —
+            confirmado pelo SERPRO. A escrituração continua pelo livro do DETRAN. A integração já está pronta: quando o
+            estado aderir, atualize a situação em Parâmetros → Renave. Carro registrado em estado que já aderiu pode ser
+            consultado normalmente.
+          </p>
+        </div>
+      ) : null}
       {hom ? (
         <p className="mt-1 text-xs text-amber-800">
           Na homologação o SERPRO atende como “Estabelecimento padrão de teste” e o carro de verdade não existe lá: as

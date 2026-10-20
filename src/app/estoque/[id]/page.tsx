@@ -477,6 +477,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           .map((a) => ({ id: a.id, description: a.description, filename: a.filename }));
         return {
           ambiente: renaveWsAmbiente,
+          // Estado da loja ainda fora do Renave de usados (Parâmetros → Renave).
+          ufSemRenave: detranOperando(renaveCompany.detranRenaveStatus) ? null : (renaveCompany.uf ?? ""),
           registro,
           operacoes: ops.map((o) => ({ ...o, createdAt: o.createdAt.toISOString() })),
           entrada,
