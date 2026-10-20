@@ -480,6 +480,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           operacoes: ops.map((o) => ({ ...o, createdAt: o.createdAt.toISOString() })),
           entrada,
           proprioSugerido: donoEhLoja,
+          vendido: vehicle.status === "VENDIDO",
           saida,
           anexos,
           chaves: { entrada: soDigitos(vehicle.entryNfeKey), saida: soDigitos(vehicle.exitNfeKey) },

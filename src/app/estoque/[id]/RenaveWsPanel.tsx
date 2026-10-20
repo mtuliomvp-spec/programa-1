@@ -89,6 +89,8 @@ export default function RenaveWsPanel(p: {
   operacoes: RenaveWsOperacao[];
   entrada: DadosEntrada;
   proprioSugerido: boolean;
+  /** Veículo já vendido no sistema: sem entrada no Renave, não há o que registrar. */
+  vendido: boolean;
   saida: (DadosSaida & { cidade: string; uf: string }) | null;
   anexos: RenaveWsAnexo[];
   chaves: { entrada: string | null; saida: string | null };
@@ -255,7 +257,12 @@ export default function RenaveWsPanel(p: {
             </Etapa>
           ) : null}
 
-          {!aberto || reg?.cancelado ? (
+          {(!aberto || reg?.cancelado) && p.vendido && !hom ? (
+            <p className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+              Veículo já vendido e sem entrada no Renave: não há entrada a registrar (o Renave diria que o carro ainda
+              está com a loja). Os registros valem para os carros em estoque.
+            </p>
+          ) : !aberto || reg?.cancelado ? (
             <EntradaForm
               key={mock?.placa ?? "real"}
               base={
