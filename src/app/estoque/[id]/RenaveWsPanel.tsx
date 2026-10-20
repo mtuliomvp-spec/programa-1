@@ -121,7 +121,9 @@ export default function RenaveWsPanel(p: {
       .then((r) => {
         setMsg(r);
         if (r.aptidao) setAptidao(r.aptidao);
-        if (r.ok && !r.aptidao) router.refresh();
+        // Atualiza a ficha sempre (o histórico de chamadas registra também os
+        // erros); só a aptidão bem-sucedida não precisa, o quadro já mostra.
+        if (!(r.ok && r.aptidao)) router.refresh();
       })
       .catch(() => setMsg({ ok: false, error: "Falha de comunicação com o servidor." }))
       .finally(() => setPendente(false));
@@ -277,6 +279,8 @@ export default function RenaveWsPanel(p: {
               hoje={p.hoje}
               aptidao={aptidao}
               onAptidao={(d) => rodar(() => consultarAptidaoRenaveAction(p.vehicleId, d))}
+              onBuscarCodigo={() => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId))}
+              codigoBuscado={msg?.codigo ?? null}
               onEntrada={(d, proprio) =>
                 rodar(
                   () =>
@@ -451,6 +455,8 @@ function EntradaForm({
   aptidao,
   onAptidao,
   onEntrada,
+  onBuscarCodigo,
+  codigoBuscado,
 }: {
   base: DadosEntrada;
   proprioInicial: boolean;
@@ -459,9 +465,17 @@ function EntradaForm({
   aptidao: Aptidao | null;
   onAptidao: (d: { tipoCrv: string; numeroCrv: string }) => void;
   onEntrada: (d: DadosEntrada, proprio: boolean) => void;
+  onBuscarCodigo: () => void;
+  codigoBuscado: string | null;
 }) {
   const [d, setD] = useState(base);
   const [proprio, setProprio] = useState(proprioInicial);
+  // Código do CRV atual buscado no Renave (carro já no nome da loja).
+  const [ultimoBuscado, setUltimoBuscado] = useState<string | null>(null);
+  if (codigoBuscado && codigoBuscado !== ultimoBuscado) {
+    setUltimoBuscado(codigoBuscado);
+    setD({ ...d, codigoSegurancaCrv: codigoBuscado });
+  }
   const campo = (k: keyof DadosEntrada) => ({
     value: d[k],
     onChange: (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setD({ ...d, [k]: e.target.value }),
@@ -472,6 +486,12 @@ function EntradaForm({
         <input type="checkbox" checked={proprio} onChange={(e) => setProprio(e.target.checked)} />
         CRV já no nome da loja (entrada de veículo próprio — sem vendedor e sem assinatura)
       </label>
+      {proprio ? (
+        <p className="mt-1 text-xs text-amber-800">
+          Use o CRV ATUAL, emitido em nome da loja (número no CRLV-e; o código dá para buscar no Renave) — não o da ATPV-e
+          ou do CRV de papel do dono anterior.
+        </p>
+      ) : null}
       <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
         <Field label="Placa">
           <Input value={d.placa} readOnly />
@@ -495,6 +515,13 @@ function EntradaForm({
         <Field label="Código de segurança do CRV">
           <Input {...campo("codigoSegurancaCrv")} inputMode="numeric" />
         </Field>
+        {proprio ? (
+          <div className="flex items-end">
+            <Button type="button" variant="secondary" disabled={bloqueado} onClick={onBuscarCodigo}>
+              Buscar código no Renave
+            </Button>
+          </div>
+        ) : null}
         <Field label="Km no hodômetro">
           <Input {...campo("km")} inputMode="numeric" />
         </Field>
