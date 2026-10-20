@@ -35,6 +35,7 @@ const crlvSchema = z.object({
   proprietario: z.string().nullable(),
   cpfCnpj: z.string().nullable(),
   dataEmissao: z.string().nullable(),
+  numeroCrv: z.string().nullable(),
 });
 
 export type CrlvExtraido = z.infer<typeof crlvSchema>;
@@ -59,6 +60,7 @@ const CRLV_JSON_SCHEMA = {
     "proprietario",
     "cpfCnpj",
     "dataEmissao",
+    "numeroCrv",
   ],
   properties: {
     placa: { type: ["string", "null"], description: "só letras e números, ex. ABC1D23" },
@@ -85,6 +87,10 @@ const CRLV_JSON_SCHEMA = {
       type: ["string", "null"],
       description: "data impressa no campo LOCAL/DATA do documento, no formato DD/MM/AAAA",
     },
+    numeroCrv: {
+      type: ["string", "null"],
+      description: "campo NÚMERO DO CRV, só dígitos (12); não é o RENAVAM nem o código de segurança do CLA",
+    },
   },
 } as const;
 
@@ -100,8 +106,10 @@ const SYSTEM_PROMPT =
   "5) PROPRIETÁRIO: o nome completo impresso no campo de proprietário do documento (pessoa ou empresa). " +
   "6) CPF/CNPJ do proprietário: só os dígitos, e SOMENTE se estiver completo — mascarado com asteriscos vai null. " +
   "7) DATA DE EMISSÃO: a data do campo LOCAL/DATA (ao lado da cidade), em DD/MM/AAAA. " +
-  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "9) Responda somente com o JSON pedido.";
+  "8) NÚMERO DO CRV: só os dígitos do campo 'NÚMERO DO CRV' (costuma ter 12). Não confunda com o RENAVAM " +
+  "nem com o 'CÓDIGO DE SEGURANÇA DO CLA'; se não houver o campo, null. " +
+  "9) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "10) Responda somente com o JSON pedido.";
 
 /** Tipos de imagem que a API aceita no bloco `image`. */
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
