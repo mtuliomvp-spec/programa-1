@@ -197,7 +197,7 @@ export type VeiculoDocumental = {
   docOwnerName: string | null;
   transferInProgress: boolean;
   attachments: { kind: string; description: string; createdAt: Date }[];
-  costs: { description: string; createdAt: Date }[];
+  costs: { description: string; createdAt: Date; amount?: number }[];
   payables: { description: string; createdAt: Date }[];
   sale: {
     saleDate: Date;
@@ -271,8 +271,13 @@ export function situacaoDocumental(
   // nome e ela CONCLUIU — o selo "em processo" deve dar lugar ao
   // "Transferido" (o caso contrário — CRLV antigo, transferência ao comprador
   // em andamento — mantém o "em processo").
+  // Reembolso de custo (o cliente devolvendo parte da transferência) também
+  // cita "transferência", mas não é um processo novo — e, criado depois do
+  // CRLV, reabria o selo "em processo" de uma transferência já concluída.
+  const ehReembolso = (c: { description: string; amount?: number }) =>
+    /^reembolso de custo/i.test(c.description) || (c.amount != null && c.amount < 0);
   const transferSignals = [
-    ...v.costs.filter((c) => /transfer[eê]ncia/i.test(c.description)),
+    ...v.costs.filter((c) => /transfer[eê]ncia/i.test(c.description) && !ehReembolso(c)),
     ...v.payables.filter((p) => /transfer[eê]ncia/i.test(p.description)),
   ].map((x) => x.createdAt.getTime());
   const lastTransferAt = transferSignals.length ? Math.max(...transferSignals) : null;
