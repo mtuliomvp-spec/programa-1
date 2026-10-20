@@ -94,6 +94,16 @@ async function registrar<T>(
     },
   });
   const r = await chamada();
+  // Erro interno do Renave com o DETRAN do estado ainda fora do Renave de
+  // usados: é o que o SERPRO respondeu para o MA (chamado 2026SS/2203658516X)
+  // — sem adesão do estado, as operações do fluxo falham com "erro inesperado".
+  if (!r.ok && r.http === 500 && ctx.ambiente === "PRODUCAO") {
+    const company = await getCompany();
+    const { detranOperando } = await import("@/lib/renave");
+    if (!detranOperando(company.detranRenaveStatus)) {
+      r.erro = `O DETRAN${company.uf ? ` do ${company.uf}` : " do estado"} ainda não aderiu ao Renave de veículos usados: para carros registrados no estado, as operações (inclusive a aptidão) não funcionam até a adesão. Detalhe do Renave: ${r.erro ?? "erro interno"}`;
+    }
+  }
   await prisma.renaveOperacao.update({
     where: { id: op.id },
     data: {
