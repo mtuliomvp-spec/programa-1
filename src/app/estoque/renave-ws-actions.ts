@@ -282,11 +282,14 @@ export async function consultarAptidaoRenaveAction(
     const pedido = { placa, renavam, tipoCrv: d.tipoCrv, numeroCrv };
     const r = await registrar(ctx, vehicleId, "APTIDAO", pedido, () => renaveWs.aptidao(ctx.ambiente, pedido));
     if (!r.ok) {
+      // Sempre o texto do próprio Renave; no "não encontrado", mais a dica do
+      // que costuma ser (o 404 vale para tipo/nº errado E para CRV que já não é
+      // o atual — carro transferido para a loja tem CRV novo).
       const naoAchou = r.http === 404;
       return {
         ok: false,
         error: naoAchou
-          ? "O Renave não encontrou o veículo com esse tipo e nº de CRV — confira os dois na ATPV-e/CRV."
+          ? `Renave: ${r.erro ?? "veículo não encontrado"}. Confira o tipo e o nº do CRV ATUAL — se o carro já foi transferido para a loja, o CRV é o novo (do CRLV-e), não o da ATPV-e da compra.`
           : (r.erro ?? "Falha na consulta."),
       };
     }
