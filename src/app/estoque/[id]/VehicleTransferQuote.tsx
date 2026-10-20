@@ -107,12 +107,15 @@ export default function VehicleTransferQuote({
   quotes,
   canManage = true,
   transferToName = null,
+  transferConcluida = false,
 }: {
   vehicleId: string;
   quotes: Quote[];
   canManage?: boolean;
   /** Para quem o veículo será transferido (campo "Cliente" do recibo). */
   transferToName?: string | null;
+  /** O CRLV já está no nome do destino: a transferência acabou. */
+  transferConcluida?: boolean;
 }) {
   const [state, formAction, pending] = useActionState(
     uploadVehicleAttachmentAction,
@@ -160,7 +163,11 @@ export default function VehicleTransferQuote({
 
   return (
     <div className="p-5">
-      {transferToName ? (
+      {transferToName && transferConcluida ? (
+        <p className="mb-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          ✓ Transferido para <strong>{transferToName}</strong> — o CRLV já está no nome dele.
+        </p>
+      ) : transferToName ? (
         <p className="mb-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-800">
           🔄 Transferência para <strong>{transferToName}</strong> (cliente do orçamento do despachante).
         </p>

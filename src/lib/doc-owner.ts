@@ -356,7 +356,10 @@ export function situacaoDocumental(
     // transferência que interessa é a que vai para o COMPRADOR.
     transferConcluded: !saindo && hasCrlv && docOwnerIsOurs && !aguardandoDestino,
     aguardandoDestino,
-    destinoConcluido: !saindo && !!v.transferToName && !aguardandoDestino,
+    // O documento já está no nome do destino: o processo acabou — vale também
+    // para carro saindo (pré-vendido/vendido), senão a pré-venda trazia de
+    // volta a "Transferência para…" de uma transferência já concluída.
+    destinoConcluido: !!v.transferToName && destinoConfere(v.docOwnerName, null, v.transferToName),
     // Transferência no DETRAN concluída (só faz sentido em veículo vendido):
     // marcada na venda ou provada pelo CRLV no nome do comprador.
     transferDoneAt,

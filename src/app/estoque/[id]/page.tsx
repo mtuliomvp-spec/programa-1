@@ -57,7 +57,7 @@ import ParecerIAButton from "@/components/ParecerIAButton";
 import { userCan } from "@/lib/guards";
 import { getActiveAccounts } from "@/lib/accounts";
 import { resumoDeVisitas } from "@/lib/showroom-visits";
-import { crlvNoNomeDoComprador, houseNameKeys, isOwnName, sameParty } from "@/lib/doc-owner";
+import { crlvNoNomeDoComprador, destinoConfere, houseNameKeys, isOwnName, sameParty } from "@/lib/doc-owner";
 import { docKey, nameKey } from "@/lib/person-keys";
 import QRCode from "qrcode";
 import { getBaseUrl } from "@/lib/base-url";
@@ -1442,6 +1442,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               vehicleId={vehicle.id}
               canManage={canOrcamento}
               transferToName={vehicle.transferToName}
+              transferConcluida={
+                !!vehicle.transferToName && destinoConfere(vehicle.docOwnerName, null, vehicle.transferToName)
+              }
               quotes={vehicle.attachments.filter(
                 (a) => a.kind === "DOCUMENTO" && /^or[çc]amento de transfer/i.test(a.description),
               )}
