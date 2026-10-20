@@ -286,7 +286,7 @@ export default function RenaveWsPanel(p: {
               hoje={p.hoje}
               aptidao={aptidao}
               onAptidao={(d) => rodar(() => consultarAptidaoRenaveAction(p.vehicleId, d))}
-              onBuscarCodigo={() => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId))}
+              onBuscarCodigo={(numeroCrv) => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId, numeroCrv))}
               codigoBuscado={msg?.codigo ?? null}
               onEntrada={(d, proprio) =>
                 rodar(
@@ -344,7 +344,7 @@ export default function RenaveWsPanel(p: {
                 codigoAtual={reg!.codigoCrvAtual}
                 bloqueado={pendente}
                 hoje={p.hoje}
-                onBuscarCodigo={() => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId))}
+                onBuscarCodigo={(numeroCrv) => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId, numeroCrv))}
                 onMunicipio={async (cidade, uf) => municipioRenaveAction(cidade, uf)}
                 onSaida={(d) => rodar(() => saidaRenaveAction(p.vehicleId, d), cobrado)}
                 codigoBuscado={msg?.codigo ?? null}
@@ -472,7 +472,7 @@ function EntradaForm({
   aptidao: Aptidao | null;
   onAptidao: (d: { tipoCrv: string; numeroCrv: string }) => void;
   onEntrada: (d: DadosEntrada, proprio: boolean) => void;
-  onBuscarCodigo: () => void;
+  onBuscarCodigo: (numeroCrv: string) => void;
   codigoBuscado: string | null;
 }) {
   const [d, setD] = useState(base);
@@ -524,7 +524,7 @@ function EntradaForm({
         </Field>
         {proprio ? (
           <div className="flex items-end">
-            <Button type="button" variant="secondary" disabled={bloqueado} onClick={onBuscarCodigo}>
+            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)}>
               Buscar código no Renave
             </Button>
           </div>
@@ -685,7 +685,7 @@ function SaidaForm({
   codigoBuscado: string | null;
   bloqueado: boolean;
   hoje: string;
-  onBuscarCodigo: () => void;
+  onBuscarCodigo: (numeroCrv: string) => void;
   onMunicipio: (cidade: string, uf: string) => Promise<{ ok: boolean; codigo?: string; nome?: string; error?: string }>;
   onSaida: (d: DadosSaida) => void;
 }) {
@@ -723,7 +723,7 @@ function SaidaForm({
           <Input {...campo("codigoSegurancaCrv")} inputMode="numeric" />
         </Field>
         <div className="flex items-end">
-          <Button type="button" variant="secondary" disabled={bloqueado} onClick={onBuscarCodigo}>
+          <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)}>
             Buscar código no Renave
           </Button>
         </div>

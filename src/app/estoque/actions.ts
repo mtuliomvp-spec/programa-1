@@ -29,6 +29,7 @@ import {
 import { assertCan, assertCanAny, canUseFormLookup } from "@/lib/guards";
 import { acoesDoAnexo } from "@/lib/vehicle-attachment-perm";
 import { parseDateInput } from "@/lib/format";
+import { normalizarNumeroCrv } from "@/lib/renave-ws-dados";
 import { parseDebtItems } from "@/lib/vehicle-debts";
 import { plateKey, plateIdentityKey, plateVariants, isSamePlateManuscrita } from "@/lib/plate";
 import { structuralCenterId } from "@/lib/structural";
@@ -1315,7 +1316,7 @@ async function applyCrlvToVehicle(input: {
     select: {
       plate: true, chassi: true, renavam: true, brand: true, model: true,
       manufactureYear: true, modelYear: true, color: true, fuel: true, transmission: true,
-      docOwnerName: true, status: true,
+      docOwnerName: true, status: true, crvNumber: true,
       // Marca manual "em processo de transferência": o CRLV no nome da casa a
       // desliga (o documento é a prova de que o processo acabou).
       transferInProgress: true,
@@ -1476,6 +1477,24 @@ async function applyCrlvToVehicle(input: {
       data.transferToName = null;
       data.transferInProgress = false;
       filled.push(`transferência para ${proprietario} concluída (CRLV em nome dele)`);
+    }
+  }
+
+  // CRV ATUAL: com o carro em estoque e o CRLV no nome da casa, o número do
+  // CRV impresso nele é o do documento emitido para a loja — é esse que o
+  // Renave confere. O da ficha costuma ter vindo da ATPV-e da compra (CRV do
+  // dono anterior) e deixa de valer; o código de segurança dele também.
+  const numeroCrv = normalizarNumeroCrv(crlv.numeroCrv);
+  if (proprietario && vehicle.status !== "VENDIDO" && numeroCrv.length === 12 && numeroCrv !== normalizarNumeroCrv(vehicle.crvNumber)) {
+    const { houseNameKeys, isOwnName } = await import("@/lib/doc-owner");
+    if (isOwnName(proprietario, await houseNameKeys())) {
+      data.crvNumber = numeroCrv;
+      data.crvTipo = "DIGITAL";
+      data.crvSecurityCode = null;
+      filled.push(`nº do CRV atual ${numeroCrv} (CRV digital em nome da loja)`);
+      warnings.push(
+        "O código de segurança guardado era do CRV antigo e foi apagado — use “Buscar código no Renave” no card do Renave.",
+      );
     }
   }
 

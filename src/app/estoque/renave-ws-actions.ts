@@ -477,7 +477,7 @@ export async function municipioRenaveAction(cidade: string, uf: string): Promise
  * Busca no Renave o PDF com o número de segurança do CRV ATUAL (o emitido em
  * nome da loja quando o Detran confirmou a entrada) e lê o código dele.
  */
-export async function buscarCodigoCrvRenaveAction(vehicleId: string): Promise<RenaveWsResult> {
+export async function buscarCodigoCrvRenaveAction(vehicleId: string, numeroCrvDigitado?: string): Promise<RenaveWsResult> {
   try {
     const ctx = await contexto();
     const { placa, renavam } = await identificacao(vehicleId, ctx.ambiente);
@@ -495,7 +495,15 @@ export async function buscarCodigoCrvRenaveAction(vehicleId: string): Promise<Re
       create: { vehicleId, ambiente: ctx.ambiente, codigoCrvAtual: codigo },
       update: { codigoCrvAtual: codigo },
     });
-    if (ctx.ambiente === "PRODUCAO") await prisma.vehicle.update({ where: { id: vehicleId }, data: { crvSecurityCode: codigo } });
+    // Em produção o código vai para a ficha — e, se a pessoa digitou o nº do
+    // CRV atual na tela, ele também (é o par que o Renave confere).
+    if (ctx.ambiente === "PRODUCAO") {
+      const numero = normalizarNumeroCrv(numeroCrvDigitado);
+      await prisma.vehicle.update({
+        where: { id: vehicleId },
+        data: { crvSecurityCode: codigo, ...(numero.length === 12 ? { crvNumber: numero, crvTipo: "DIGITAL" } : {}) },
+      });
+    }
     revalidar(vehicleId);
     return { ok: true, codigo, message: `Código de segurança do CRV atual: ${codigo}.` };
   } catch (e) {
