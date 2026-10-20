@@ -17,6 +17,7 @@ import {
   EmptyState,
   LinkButton,
   PageHeader,
+  Select,
   Table,
   Td,
   Th,
@@ -79,13 +80,44 @@ function SelosDaOperacao({
   );
 }
 
+/**
+ * Filtro "Documentação": as mesmas opções do estoque, menos as que não se
+ * aplicam a veículo de terceiro (CRLV no nome da loja, Renave). Refinanciamento
+ * não transfere nada, então fica fora dos filtros de transferência.
+ */
+function docMatch(doc: SituacaoDocumental, refinancing: boolean, filtro: string | null): boolean {
+  if (!filtro) return true;
+  const selo = seloCrlv(doc);
+  switch (filtro) {
+    case "TRANSFERENCIA":
+      return !refinancing && doc.transferDoneAt == null && (selo.label.startsWith("🔄") || doc.saleTransferPending);
+    case "ORCAMENTO":
+      return doc.hasTransferQuote;
+    case "TRANSFERIDO":
+      return !refinancing && doc.transferDoneAt != null;
+    case "CRLV_PENDENTE":
+      return selo.label.startsWith("⚠");
+    case "ATPV":
+      return doc.hasAtpv;
+    case "COMUNICADO":
+      return doc.hasComunicacao;
+    // Parado: nem transferido, nem com processo correndo (orçamento, título do
+    // despachante ou marca manual).
+    case "SEM_PROCESSO":
+      return !refinancing && doc.transferDoneAt == null && !doc.saleTransferPending && !selo.label.startsWith("🔄");
+    default:
+      return true;
+  }
+}
+
 export default async function FinanciamentoTerceirosListPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ q?: string; de?: string; ate?: string; min?: string; max?: string; doc?: string }>;
 }) {
   await requireModule("vendas");
-  const { q: qParam, de, ate, min, max } = await searchParams;
+  const { q: qParam, de, ate, min, max, doc: docParam } = await searchParams;
+  const docFilter = docParam && docParam !== "TODOS" ? docParam : null;
   const q = (qParam || "").trim();
 
   const [openPreRaw, opsRaw, houseKeys] = await Promise.all([
@@ -185,7 +217,8 @@ export default async function FinanciamentoTerceirosListPage({
         },
         houseKeys,
       ),
-    }));
+    }))
+    .filter((o) => docMatch(o.doc, o.refinancing, docFilter));
 
   return (
     <div>
@@ -210,6 +243,22 @@ export default async function FinanciamentoTerceirosListPage({
         ate={ate}
         min={min}
         max={max}
+        filtersKey={docParam ?? ""}
+        extra={
+          <label className="flex flex-col gap-0.5 text-xs text-slate-500">
+            Documentação
+            <Select name="doc" defaultValue={docParam || "TODOS"} className="mt-0.5 h-11 w-56">
+              <option value="TODOS">Toda a documentação</option>
+              <option value="TRANSFERENCIA">Em processo de transferência</option>
+              <option value="ORCAMENTO">Com orçamento de transferência</option>
+              <option value="TRANSFERIDO">Transferido para o comprador</option>
+              <option value="CRLV_PENDENTE">CRLV pendente</option>
+              <option value="ATPV">Com ATPV-e</option>
+              <option value="COMUNICADO">Comunicado venda</option>
+              <option value="SEM_PROCESSO">Sem processo de transferência</option>
+            </Select>
+          </label>
+        }
       />
 
       {openPre.length > 0 ? (
