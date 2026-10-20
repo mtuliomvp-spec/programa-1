@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { formatDate } from "@/lib/format";
@@ -105,6 +105,13 @@ export default function RenaveWsPanel(p: {
   const mock = hom ? reg?.mock ?? null : null;
   const aberto = !!reg?.idEstoque && !reg.cancelado;
   const estado = aberto ? reg!.estado : null;
+  // A resposta aparece no topo do painel, longe do botão clicado (que costuma
+  // ficar no fim do formulário): leva a tela até ela.
+  const avisoRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (msg && (msg.error || msg.faltas?.length || msg.message))
+      avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [msg]);
 
   function rodar(fn: () => Promise<RenaveWsResult>, confirmar?: string) {
     if (confirmar && !hom && !window.confirm(confirmar)) return;
@@ -139,18 +146,25 @@ export default function RenaveWsPanel(p: {
         </p>
       ) : null}
 
-      {msg?.error ? <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{msg.error}</p> : null}
-      {msg?.faltas?.length ? (
-        <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          <p className="font-semibold">Falta para enviar:</p>
-          <ul className="ml-4 list-disc">
-            {msg.faltas.map((f) => (
-              <li key={f}>{f}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {msg?.ok && msg.message ? <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{msg.message}</p> : null}
+      <div ref={avisoRef} className="scroll-mt-4">
+        {pendente ? (
+          <p className="mt-2 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-800">
+            ⏳ Falando com o Renave… pode levar até 2 minutos. Não feche a tela.
+          </p>
+        ) : null}
+        {msg?.error ? <p className="mt-2 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{msg.error}</p> : null}
+        {msg?.faltas?.length ? (
+          <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <p className="font-semibold">Falta para enviar:</p>
+            <ul className="ml-4 list-disc">
+              {msg.faltas.map((f) => (
+                <li key={f}>{f}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+        {msg?.ok && msg.message ? <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{msg.message}</p> : null}
+      </div>
 
       {/* Situação */}
       <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
