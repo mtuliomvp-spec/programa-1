@@ -3597,6 +3597,82 @@ export async function createCostRefundAction(input: {
   return { ok: true };
 }
 
+/**
+ * O "sinal" era, na verdade, o cliente devolvendo um GASTO do carro (ex.: parte
+ * da transferência paga pela loja). Como sinal ele seria abatido na venda e
+ * sairia no contrato como parte do preço; como reembolso de custo, sai da venda
+ * e reduz o custo do carro. O título é o mesmo (valor, conta, data, comprovante):
+ * só troca de natureza. Já recebido, o custo negativo nasce na hora.
+ */
+export async function converterSinalEmReembolsoAction(input: {
+  receivableId: string;
+  vehicleId: string;
+  costId: string | null;
+  descricao: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("estoque", "sinal");
+    await assertBooksBalanced();
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const descricao = input.descricao.trim();
+  if (!descricao) return { ok: false, error: "Descreva o custo que o cliente está reembolsando." };
+  const r = await prisma.receivable.findUnique({
+    where: { id: input.receivableId },
+    select: {
+      id: true,
+      vehicleId: true,
+      saleId: true,
+      sinalGroup: true,
+      status: true,
+      receivedDate: true,
+      notes: true,
+      vehicle: { select: { brand: true, model: true, plate: true } },
+    },
+  });
+  if (!r || r.vehicleId !== input.vehicleId || !r.vehicle) return { ok: false, error: "Sinal não encontrado." };
+  if (r.saleId) return { ok: false, error: "Este sinal já foi abatido numa venda fechada — não dá para converter." };
+  if (r.sinalGroup) return { ok: false, error: "Este sinal está numa devolução — desfaça a devolução antes." };
+  if (r.status === "RECEBIDO" && r.receivedDate) {
+    try {
+      await assertMonthOpen(r.receivedDate);
+    } catch (e) {
+      return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
+    }
+  }
+  const custo = input.costId
+    ? await prisma.vehicleCost.findFirst({
+        where: { id: input.costId, vehicleId: input.vehicleId },
+        select: { category: true },
+      })
+    : null;
+  const v = r.vehicle;
+  await prisma.receivable.update({
+    where: { id: r.id },
+    data: {
+      // Sem vehicleId: deixa de ser sinal (não é abatido na venda nem vai ao contrato).
+      vehicleId: null,
+      costRefundVehicleId: input.vehicleId,
+      costRefundCategory: custo?.category ?? "OUTROS",
+      category: "OUTROS",
+      description: `Reembolso de custo: ${descricao} — ${v.brand} ${v.model} (${v.plate})`,
+      notes: [r.notes, "Lançado como sinal e convertido em reembolso de custo (reduz o custo do veículo)."]
+        .filter(Boolean)
+        .join("\n"),
+    },
+  });
+  // Já recebido: nasce agora o custo negativo no carro.
+  const { syncReceivableCapital } = await import("@/lib/finance");
+  await syncReceivableCapital(r.id);
+  revalidatePath(`/estoque/${input.vehicleId}`);
+  revalidatePath("/financeiro/a-receber");
+  revalidatePath("/financeiro/contas");
+  revalidatePath("/vendas", "layout");
+  revalidatePath("/");
+  return { ok: true };
+}
+
 /** Cancela um reembolso de custo ainda NÃO recebido (apaga o título). */
 export async function cancelCostRefundAction(
   receivableId: string,

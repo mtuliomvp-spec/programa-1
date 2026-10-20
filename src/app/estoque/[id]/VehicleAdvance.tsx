@@ -12,6 +12,7 @@ import {
 } from "../actions";
 import ConfirmButton from "@/components/ConfirmButton";
 import DevolverSinal from "./DevolverSinal";
+import ConverterSinalReembolso from "./ConverterSinalReembolso";
 
 type Account = { id: string; name: string };
 type Customer = { id: string; name: string };
@@ -45,6 +46,7 @@ export default function VehicleAdvance({
   advances,
   devolvidos = [],
   canManage = true,
+  costs = [],
 }: {
   vehicleId: string;
   accounts: Account[];
@@ -52,6 +54,8 @@ export default function VehicleAdvance({
   advances: Advance[];
   devolvidos?: Devolvido[];
   canManage?: boolean;
+  /** Custos do carro (para converter um "sinal" que era reembolso de custo). */
+  costs?: { id: string; description: string; amount: number }[];
 }) {
   const [desfazendo, startDesfazer] = useTransition();
   const [erroDesfazer, setErroDesfazer] = useState<string | null>(null);
@@ -157,6 +161,7 @@ export default function VehicleAdvance({
                     contaDoSinal={a.accountName}
                     aguardandoCredito={a.status !== "RECEBIDO"}
                   />
+                  <ConverterSinalReembolso receivableId={a.id} vehicleId={vehicleId} amount={a.amount} costs={costs} />
                 </div>
               ) : null}
             </li>

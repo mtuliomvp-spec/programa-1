@@ -1085,6 +1085,9 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <VehicleAdvance
                 vehicleId={vehicle.id}
                 canManage={canSinal}
+                costs={vehicle.costs
+                  .filter((c) => c.amount > 0 && !c.receivableId)
+                  .map((c) => ({ id: c.id, description: c.description, amount: c.amount }))}
                 accounts={advanceAccounts.map((a) => ({ id: a.id, name: a.name }))}
                 customers={advanceCustomers}
                 advances={advances.map((r) => ({
