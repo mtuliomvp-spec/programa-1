@@ -31,9 +31,13 @@ export default function ReturnNfe({ payableId }: { payableId: string }) {
       setRes(r);
       if (r.ok) {
         if (fileRef.current) fileRef.current.value = "";
-        // O valor do formulário acima é estado próprio (máscara): recarrega
-        // para a tela inteira refletir o título abatido.
-        setTimeout(() => window.location.reload(), 1800);
+        // Devolução total: o título não existe mais no Contas a pagar — volta à
+        // lista (ele fica em "Cancelados por devolução"). Parcial: recarrega para
+        // o formulário acima (estado próprio, com máscara) mostrar o novo valor.
+        setTimeout(
+          () => (r.cancelado ? window.location.assign("/financeiro/a-pagar#devolucoes") : window.location.reload()),
+          r.cancelado ? 2500 : 1800,
+        );
       }
     } finally {
       setBusy(false);
@@ -44,8 +48,9 @@ export default function ReturnNfe({ payableId }: { payableId: string }) {
     <div className="mb-1 rounded-xl border border-orange-200 bg-orange-50/50 p-4">
       <p className="text-sm font-semibold text-slate-800">↩️ Devolveu mercadoria ao fornecedor?</p>
       <p className="mt-0.5 text-xs text-slate-500">
-        Anexe o PDF da NF de devolução e o valor devolvido é abatido desta ordem de pagamento. A
-        nota fica anexada ao título como comprovante.
+        Anexe o PDF da NF de devolução e o valor devolvido é abatido desta ordem de pagamento. Se a
+        devolução cobrir o título inteiro, ele é <strong>cancelado</strong> — sai do Contas a pagar, mas
+        fica registrado (com a NF de devolução e os anexos) em &quot;Cancelados por devolução&quot;.
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <input
@@ -55,7 +60,7 @@ export default function ReturnNfe({ payableId }: { payableId: string }) {
           className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
         />
         <Button type="button" variant="secondary" onClick={abater} disabled={busy}>
-          {busy ? "Lendo a nota…" : "Abater devolução"}
+          {busy ? "Lendo a nota…" : "Abater / cancelar pela devolução"}
         </Button>
       </div>
       {res?.error ? (
@@ -63,7 +68,13 @@ export default function ReturnNfe({ payableId }: { payableId: string }) {
           {res.error}
         </p>
       ) : null}
-      {res?.ok ? (
+      {res?.ok && res.cancelado ? (
+        <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          ✓ Devolução total (NF nº {res.nfNumero}, {brl(res.valor ?? 0)}): nada mais a pagar — o título foi{" "}
+          <strong>cancelado</strong> e ficou registrado em &quot;Cancelados por devolução&quot;. Voltando ao Contas a
+          pagar…
+        </p>
+      ) : res?.ok ? (
         <p className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           ✓ NF de devolução nº {res.nfNumero} abatida: {brl(res.valor ?? 0)} a menos. A ordem passou
           de {brl(res.valorAntes ?? 0)} para <strong>{brl(res.valorDepois ?? 0)}</strong>.

@@ -406,6 +406,32 @@ export default async function ContasAPagarPage({
     return qs ? `/financeiro/a-pagar?${qs}` : "/financeiro/a-pagar";
   };
 
+  // Registro das devoluções de compra (NF de devolução abatida ou que cancelou o
+  // título) — filtrado pela mesma busca da tela.
+  const devolucoesTodas = await prisma.devolucaoCompra.findMany({
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    select: {
+      id: true,
+      total: true,
+      supplierNome: true,
+      tituloNumero: true,
+      tituloDescricao: true,
+      tituloValor: true,
+      tituloVencimento: true,
+      veiculoPlaca: true,
+      valor: true,
+      nfeNumero: true,
+      nfCompraNumero: true,
+      userName: true,
+      createdAt: true,
+      anexos: { select: { id: true, kind: true, description: true } },
+    },
+  });
+  const devolucoes = devolucoesTodas.filter((d) =>
+    matchesSearch(q, d.supplierNome, d.tituloDescricao, d.nfeNumero, d.nfCompraNumero, d.veiculoPlaca, d.tituloNumero, d.valor),
+  );
+
   return (
     <div>
       <PageHeader
@@ -567,6 +593,52 @@ export default async function ContasAPagarPage({
           </>
         )}
       </Card>
+
+      {devolucoes.length ? (
+        <Card className="mt-4 scroll-mt-4 print:hidden" id="devolucoes">
+          <details>
+            <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-800">
+              ↩️ Devoluções de compra ({devolucoes.length}) — títulos cancelados ou abatidos por NF de devolução
+            </summary>
+            <p className="px-5 pb-2 text-xs text-slate-500">
+              Devolução total cancela o título (sai do Contas a pagar), mas ele fica aqui com a NF de devolução e os
+              anexos — prova para o caso de o fornecedor cobrar por engano. A mesma NF de compra não é lançada de novo.
+            </p>
+            <ul className="divide-y divide-slate-100 border-t border-slate-100">
+              {devolucoes.map((d) => (
+                <li key={d.id} className="flex flex-wrap items-start justify-between gap-2 px-5 py-2.5 text-sm">
+                  <div className="min-w-0">
+                    <p className="font-medium text-slate-800">
+                      {d.total ? "Cancelado" : "Abatido"} · título nº {d.tituloNumero ? String(d.tituloNumero).padStart(4, "0") : "—"}{" "}
+                      · {d.supplierNome ?? "fornecedor"}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      {d.tituloDescricao}
+                      {d.veiculoPlaca ? ` · ${d.veiculoPlaca}` : ""}
+                    </p>
+                    <p className="text-xs text-slate-500">
+                      Título de {formatCurrency(d.tituloValor)}
+                      {d.tituloVencimento ? ` (venc. ${formatDate(d.tituloVencimento)})` : ""} · devolução NF nº {d.nfeNumero ?? "?"} de{" "}
+                      {formatCurrency(d.valor)} · registrada em {formatDate(d.createdAt)}
+                      {d.userName ? ` por ${d.userName}` : ""}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <a href={`/financeiro/a-pagar/devolucoes/${d.id}/nf`} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">
+                      NF de devolução
+                    </a>
+                    {d.anexos.map((a) => (
+                      <a key={a.id} href={`/financeiro/a-pagar/devolucoes/${d.id}/${a.id}`} target="_blank" rel="noreferrer" className="font-medium text-blue-700 hover:underline">
+                        {a.kind === "BOLETO" ? "Boleto" : a.description.slice(0, 30)}
+                      </a>
+                    ))}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </details>
+        </Card>
+      ) : null}
     </div>
   );
 }
