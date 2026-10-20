@@ -432,7 +432,8 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
         const entrada = {
           placa: vehicle.plate ?? "",
           renavam: soDigitos(vehicle.renavam) ?? "",
-          tipoCrv: vehicle.crvTipo ?? "",
+          // Carro já no nome da loja: o CRV emitido para ela é digital.
+          tipoCrv: vehicle.crvTipo ?? (donoEhLoja ? "DIGITAL" : ""),
           numeroCrv: soDigitos(vehicle.crvNumber) ?? "",
           codigoSegurancaCrv: soDigitos(vehicle.crvSecurityCode) ?? "",
           km: vehicle.km ? String(vehicle.km) : "",

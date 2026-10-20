@@ -264,7 +264,9 @@ export default function RenaveWsPanel(p: {
             </p>
           ) : !aberto || reg?.cancelado ? (
             <EntradaForm
-              key={mock?.placa ?? "real"}
+              // Remonta quando a ficha muda o CRV (leitura do CRLV, código buscado
+              // no Renave): o formulário mostra o que acabou de ser gravado.
+              key={`${mock?.placa ?? "real"}|${p.entrada.tipoCrv}|${p.entrada.numeroCrv}|${p.entrada.codigoSegurancaCrv}`}
               base={
                 mock
                   ? {
