@@ -10,6 +10,7 @@ import { syncCardInvoiceDerived } from "@/lib/card-invoice";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen, getCashboxWorkDate } from "@/lib/cashbox";
 import { assertCan, assertCanAny } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { parseDateInput, formatRequestNumber } from "@/lib/format";
 import { structuralCenterId } from "@/lib/structural";
@@ -1647,6 +1648,13 @@ export async function createDuplicatasAction(input: {
     const due = new Date(`${dup.vencimento}T12:00:00Z`);
     const notaDigits = digits(dup.nota);
 
+    // Compra devolvida por inteiro: o título foi cancelado pela NF de devolução.
+    const devolvida = await devolucaoTotalDaNf(supplierId, notaDigits);
+    if (devolvida) {
+      skipped.push({ title, reason: devolvida });
+      continue;
+    }
+
     // Duplicata já lançada? Mesmo VALOR e: documento com o nº da NF (qualquer
     // fornecedor) OU mesmo vencimento no fornecedor escolhido. Preferência para
     // o vencimento igual (desempata parcelas de mesmo valor da mesma NF) e cada
@@ -1983,6 +1991,22 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
  * contra o que já existe é refeita aqui (e não herdada da tela), para o caso de
  * alguém ter lançado o mesmo título enquanto a revisão estava aberta.
  */
+/**
+ * A NF de compra deste fornecedor foi devolvida por inteiro (título cancelado
+ * por NF de devolução)? Devolve a frase para a tela, ou null.
+ */
+async function devolucaoTotalDaNf(supplierId: string | null, numeroNf: string): Promise<string | null> {
+  const numero = numeroNf.replace(/\D/g, "").replace(/^0+/, "");
+  if (!supplierId || !numero) return null;
+  const d = await prisma.devolucaoCompra.findFirst({
+    where: { supplierId, nfCompraNumero: numero, total: true },
+    select: { tituloNumero: true, nfeNumero: true, createdAt: true },
+  });
+  if (!d) return null;
+  const quando = d.createdAt.toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+  return `compra devolvida — título${d.tituloNumero ? ` nº ${String(d.tituloNumero).padStart(4, "0")}` : ""} cancelado em ${quando} pela NF de devolução nº ${d.nfeNumero ?? "?"}`;
+}
+
 export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNfeResult> {
   try {
     await assertCan("financeiro", "importarnf");
@@ -2103,6 +2127,15 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         continue;
       }
       capitalBeneficiaryId = b.id;
+    }
+
+    // Compra DEVOLVIDA por inteiro (título cancelado por NF de devolução): não
+    // volta a virar título — é justamente a cobrança por engano que o registro
+    // da devolução existe para barrar.
+    const devolvida = await devolucaoTotalDaNf(supplierId, numero);
+    if (devolvida) {
+      outcomes.push(`NF ${numero}: ${devolvida} — não lançada.`);
+      continue;
     }
 
     const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas);
@@ -2780,6 +2813,8 @@ export async function readPayableReceiptAction(formData: FormData): Promise<Read
 export type DevolucaoResult = {
   ok: boolean;
   error?: string;
+  /** Devolução total: o título foi cancelado (fica no registro de devoluções). */
+  cancelado?: boolean;
   /** O que foi lido e aplicado, pronto para a tela. */
   nfNumero?: string;
   valor?: number;
@@ -2827,7 +2862,11 @@ export async function applyReturnNfeAction(formData: FormData): Promise<Devoluca
 
   const payable = await prisma.payable.findUnique({
     where: { id: payableId },
-    include: { supplier: { select: { name: true, document: true } }, costCenter: { select: { key: true } } },
+    include: {
+      supplier: { select: { name: true, document: true } },
+      costCenter: { select: { key: true } },
+      vehicle: { select: { plate: true } },
+    },
   });
   if (!payable) return { ok: false, error: "Título não encontrado." };
   if (payable.status === "PAGO") {
@@ -2892,16 +2931,100 @@ export async function applyReturnNfeAction(formData: FormData): Promise<Devoluca
     select: { id: true },
   });
   if (jaAbatida) return { ok: false, error: "Esta NF de devolução já foi abatida deste título." };
-
-  const restante = round2(payable.amount - valor);
-  if (restante <= 0.005) {
+  const jaRegistrada = await prisma.devolucaoCompra.findFirst({
+    where: { nfeChave: chave },
+    select: { tituloNumero: true, total: true },
+  });
+  if (jaRegistrada) {
     return {
       ok: false,
-      error: `A devolução (${brl(valor)}) cobre o título inteiro (${brl(payable.amount)}). Nesse caso, exclua o título em vez de abater.`,
+      error: `Esta NF de devolução já foi registrada${jaRegistrada.tituloNumero ? ` (título nº ${String(jaRegistrada.tituloNumero).padStart(4, "0")}${jaRegistrada.total ? ", cancelado" : ""})` : ""}.`,
+    };
+  }
+
+  const restante = round2(payable.amount - valor);
+  if (restante < -0.005) {
+    return {
+      ok: false,
+      error: `A devolução (${brl(valor)}) é maior que o título (${brl(payable.amount)}) — confira se é a nota certa ou se a compra tem mais de uma parcela.`,
     };
   }
 
   const numeroNf = dadosDaChaveNfe(chave)?.numero ?? "?";
+  // Nº da NF da COMPRA (o que trava a reimportação do título cancelado).
+  const nfCompraNumero =
+    `${payable.documentNumber ?? ""} ${payable.description}`.match(/\bNF[\s-]*(?:e\s*)?n?[ºo°]?\s*(\d{3,9})/i)?.[1]?.replace(/^0+/, "") ?? null;
+  const usuario = await getSessionUser();
+  const registro = {
+    supplierId: payable.supplierId,
+    supplierNome: payable.supplier?.name ?? null,
+    tituloNumero: payable.orderNumber,
+    tituloDescricao: payable.description,
+    tituloDocumento: payable.documentNumber,
+    tituloValor: payable.amount,
+    tituloVencimento: payable.dueDate,
+    veiculoPlaca: payable.vehicle?.plate ?? null,
+    nfCompraNumero,
+    valor,
+    nfeChave: chave,
+    nfeNumero: numeroNf,
+    filename: file.name || "nf-devolucao.pdf",
+    mimeType: "application/pdf",
+    size: buffer.byteLength,
+    data: new Uint8Array(buffer),
+    userName: usuario?.name ?? null,
+  };
+
+  // DEVOLUÇÃO TOTAL: nada mais a pagar. O título é CANCELADO — sai do Contas a
+  // pagar pelo mesmo caminho da exclusão (custo do veículo e capital juntos) —
+  // e fica o registro com a NF de devolução e os anexos do título.
+  if (restante <= 0.005) {
+    const bloqueio = originBlockReason(payable);
+    if (bloqueio) {
+      return {
+        ok: false,
+        error:
+          "A devolução cobre o título inteiro, mas ele nasceu de outra operação (compra, venda, peça…) — cancele pela origem.",
+      };
+    }
+    const anexos = await prisma.payableAttachment.findMany({
+      where: { payableId },
+      select: { kind: true, description: true, filename: true, mimeType: true, size: true, data: true },
+    });
+    await prisma.$transaction([
+      prisma.devolucaoCompra.create({
+        data: {
+          ...registro,
+          total: true,
+          anexos: { create: anexos.map((a) => ({ ...a, data: new Uint8Array(a.data) })) },
+        },
+      }),
+      prisma.vehicleCost.deleteMany({ where: { payableId } }),
+      prisma.capitalTransaction.deleteMany({ where: { payableId } }),
+      prisma.investmentAllocation.deleteMany({ where: { payableId } }),
+      prisma.payable.delete({ where: { id: payableId } }),
+      ...(payable.recurringId
+        ? [
+            prisma.recurringEntry.update({
+              where: { id: payable.recurringId },
+              data: {
+                skippedDays: {
+                  push: [payable.recurringPeriod, payable.dueDate.toISOString().slice(0, 10)].filter(
+                    (k): k is string => !!k,
+                  ),
+                },
+              },
+            }),
+          ]
+        : []),
+    ]);
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/financeiro/fluxo-caixa");
+    revalidatePath("/financeiro/contas");
+    revalidatePath("/estoque");
+    revalidatePath("/");
+    return { ok: true, cancelado: true, nfNumero: numeroNf, valor, valorAntes: payable.amount, valorDepois: 0 };
+  }
   const flow = payable.vehicleId
     ? "VEICULOS"
     : payable.capitalBeneficiaryId
@@ -2942,6 +3065,8 @@ export async function applyReturnNfeAction(formData: FormData): Promise<Devoluca
       data: buffer,
     },
   });
+  // Devolução PARCIAL também fica no registro, ligada ao título que continua.
+  await prisma.devolucaoCompra.create({ data: { ...registro, total: false, payableId } });
 
   revalidatePath("/financeiro/a-pagar");
   revalidatePath(`/financeiro/a-pagar/${payableId}/editar`);

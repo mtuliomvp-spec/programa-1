@@ -541,6 +541,7 @@ model Supplier {
   payables         Payable[]
   recurring        RecurringEntry[]
   purchaseRequests PurchaseRequest[]
+  devolucoes       DevolucaoCompra[]
 
   @@map("suppliers")
 }
@@ -2355,4 +2356,61 @@ model RenaveOperacao {
 
   @@index([vehicleId, createdAt])
   @@map("renave_operacoes")
+}
+
+/**
+ * DEVOLUÇÃO DE COMPRA: a NF-e de devolução do fornecedor abatida de um título
+ * do Contas a pagar. Parcial, o título continua com o saldo (payableId). TOTAL,
+ * o título é cancelado — sai do Contas a pagar como na exclusão —, mas fica
+ * aqui o registro: o título (nº, descrição, NF da compra, valor, vencimento),
+ * a NF de devolução e os anexos do título. Se o fornecedor cobrar depois por
+ * engano (ou a mesma NF for importada de novo), a prova está guardada.
+ */
+model DevolucaoCompra {
+  id                String     @id @default(cuid())
+  supplierId        String?
+  supplier          Supplier?  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  supplierNome      String?
+  // Título que continua (devolução parcial); nulo quando ele foi cancelado.
+  payableId         String?
+  total             Boolean    @default(false)
+  tituloNumero      Int?
+  tituloDescricao   String
+  tituloDocumento   String?
+  tituloValor       Float
+  tituloVencimento  DateTime?
+  veiculoPlaca      String?
+  // Nº da NF de COMPRA (só dígitos, sem zeros à esquerda): trava a reimportação.
+  nfCompraNumero    String?
+  valor             Float
+  nfeChave          String
+  nfeNumero         String?
+  filename          String
+  mimeType          String
+  size              Int
+  data              Bytes
+  userName          String?
+  createdAt         DateTime   @default(now())
+  anexos            DevolucaoCompraAnexo[]
+
+  @@index([supplierId, nfCompraNumero])
+  @@index([nfeChave])
+  @@map("devolucoes_compra")
+}
+
+/** Anexos do título cancelado por devolução (NF da compra, boleto…). */
+model DevolucaoCompraAnexo {
+  id          String          @id @default(cuid())
+  devolucaoId String
+  devolucao   DevolucaoCompra @relation(fields: [devolucaoId], references: [id], onDelete: Cascade)
+  kind        String
+  description String
+  filename    String
+  mimeType    String
+  size        Int
+  data        Bytes
+  createdAt   DateTime        @default(now())
+
+  @@index([devolucaoId])
+  @@map("devolucao_compra_anexos")
 }
