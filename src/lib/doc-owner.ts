@@ -227,6 +227,12 @@ export type SituacaoDocumental = {
   hasTransferQuote: boolean;
   docOwnerIsOurs: boolean;
   docOwnerOk: boolean;
+  /**
+   * Em nome de quem o carro está AGORA: o do CRLV mais recente — ou, em veículo
+   * vendido com a transferência marcada como concluída, o comprador (o CRLV
+   * anexado costuma ser o antigo, de antes da venda).
+   */
+  donoAtual: string | null;
   transferStarted: boolean;
   transferInProgress: boolean;
   /**
@@ -330,6 +336,10 @@ export function situacaoDocumental(
     // Nome no documento é o esperado: da casa — ou, em veículo vendido já
     // transferido, do comprador (também verde: é onde o carro deve estar).
     docOwnerOk: docOwnerIsOurs || (v.status === "VENDIDO" && transferDoneAt != null),
+    donoAtual:
+      v.status === "VENDIDO" && v.sale?.transferDoneAt && !crlvDoComprador
+        ? v.sale.customer.name
+        : v.docOwnerName,
     // Processo de transferência iniciado quando qualquer um: marca manual
     // (casos antigos); custo do veículo com "transferência"; conta a pagar com
     // "transferência" (pagamento ao despachante), mesmo fora da ficha de venda;
