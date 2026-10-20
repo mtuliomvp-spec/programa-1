@@ -489,9 +489,11 @@ export async function buscarCodigoCrvRenaveAction(vehicleId: string): Promise<Re
     if (!pdf) return { ok: false, error: "O Renave não devolveu o PDF do código do CRV." };
     const codigo = codigoSegurancaDoTexto(await textoPdf(pdf), renavam);
     if (!codigo) return { ok: false, error: "Não consegui ler o código no PDF — abra o documento e digite." };
-    await prisma.renaveRegistro.update({
+    // Antes da entrada (veículo próprio) o registro do ambiente ainda não existe.
+    await prisma.renaveRegistro.upsert({
       where: { vehicleId_ambiente: { vehicleId, ambiente: ctx.ambiente } },
-      data: { codigoCrvAtual: codigo },
+      create: { vehicleId, ambiente: ctx.ambiente, codigoCrvAtual: codigo },
+      update: { codigoCrvAtual: codigo },
     });
     if (ctx.ambiente === "PRODUCAO") await prisma.vehicle.update({ where: { id: vehicleId }, data: { crvSecurityCode: codigo } });
     revalidar(vehicleId);
