@@ -762,7 +762,19 @@ export async function lancarComprovanteAvulsoAction(
       data: buffer,
     },
   });
-  if (cobranca.vehicleId) {
+  // Quem já tinha guardado o comprovante na ficha não ganha uma cópia repetida.
+  const jaNaFicha = cobranca.vehicleId
+    ? await prisma.vehicleAttachment.findFirst({
+        where: {
+          vehicleId: cobranca.vehicleId,
+          kind: "DOCUMENTO",
+          size: buffer.byteLength,
+          description: { contains: "comunica", mode: "insensitive" },
+        },
+        select: { id: true },
+      })
+    : null;
+  if (cobranca.vehicleId && !jaNaFicha) {
     await prisma.vehicleAttachment.create({
       data: {
         vehicleId: cobranca.vehicleId,
@@ -774,6 +786,8 @@ export async function lancarComprovanteAvulsoAction(
         data: buffer,
       },
     });
+  }
+  if (cobranca.vehicleId) {
     revalidatePath(`/estoque/${cobranca.vehicleId}`);
     revalidatePath("/estoque");
   }

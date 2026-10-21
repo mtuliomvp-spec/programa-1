@@ -47,7 +47,7 @@ export default async function ComunicacaoVendaPage() {
           title="Cobrança automática"
           description={
             ligado
-              ? "Ligada: anexar o comprovante na ficha do carro lança o título sozinho."
+              ? "Ligada: o comprovante lançado em Financeiro › Comunicação de venda vira o título sozinho."
               : "Desligada: preencha a prestadora e o valor para o título ser lançado sozinho."
           }
         />

@@ -7,41 +7,47 @@ import { Button } from "@/components/ui";
 import { lancarComprovanteAvulsoAction, type ComprovanteAvulsoResult } from "./actions";
 
 /**
- * Lançar o comprovante do SICOVE sem passar pela ficha do carro.
+ * Lançar os comprovantes do SICOVE: é aqui que nasce o título da comunicação
+ * de venda (a ficha do carro só guarda o documento).
  *
- * É o caminho de quem não tem ficha para anexar: o veículo já saiu do estoque
- * ou nunca esteve nele (a loja entrou só como agente da comunicação). Achando
- * a placa em um carro EM ESTOQUE, o custo entra nele como sempre; nos demais
- * casos entra como despesa administrativa.
+ * Aceita vários PDFs de uma vez — cada um vira o seu título, na ordem. Achando
+ * a placa em um carro cadastrado, o custo entra nele (pós-venda, se vendido);
+ * placa desconhecida entra como despesa administrativa.
  */
 export default function ComprovanteAvulso() {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [res, setRes] = useState<ComprovanteAvulsoResult | null>(null);
+  const [res, setRes] = useState<(ComprovanteAvulsoResult & { arquivo: string })[]>([]);
   const [pending, start] = useTransition();
 
   function lancar() {
-    const file = fileRef.current?.files?.[0];
-    if (!file) return;
-    setRes(null);
+    const files = Array.from(fileRef.current?.files ?? []);
+    if (files.length === 0) return;
+    setRes([]);
     start(async () => {
-      const fd = new FormData();
-      fd.set("file", file);
-      const r = await lancarComprovanteAvulsoAction(fd);
-      setRes(r);
-      if (r.ok) {
+      const lista: (ComprovanteAvulsoResult & { arquivo: string })[] = [];
+      for (const file of files) {
+        const fd = new FormData();
+        fd.set("file", file);
+        const r = await lancarComprovanteAvulsoAction(fd);
+        lista.push({ ...r, arquivo: file.name });
+        setRes([...lista]);
+      }
+      if (lista.some((r) => r.ok)) {
         if (fileRef.current) fileRef.current.value = "";
         router.refresh();
       }
     });
   }
 
+  const varios = res.length > 1;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
         <input
           ref={fileRef}
           type="file"
+          multiple
           accept="application/pdf,.pdf,image/*"
           className="block w-full max-w-sm text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
         />
@@ -50,24 +56,33 @@ export default function ComprovanteAvulso() {
         </Button>
       </div>
 
-      {res?.ok ? (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-          ✓ {res.mensagem}{" "}
-          {res.payableId ? (
-            <Link
-              href={`/financeiro/a-pagar/${res.payableId}/ordem`}
-              className="font-medium text-blue-700 hover:underline"
-            >
-              ver o título →
-            </Link>
-          ) : null}
-        </p>
-      ) : null}
-      {res && !res.ok ? (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-          ⚠️ {res.mensagem}
-        </p>
-      ) : null}
+      {res.map((r, i) =>
+        r.ok ? (
+          <p
+            key={i}
+            className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800"
+          >
+            ✓ {varios ? <strong>{r.arquivo}: </strong> : null}
+            {r.mensagem}{" "}
+            {r.payableId ? (
+              <Link
+                href={`/financeiro/a-pagar/${r.payableId}/ordem`}
+                className="font-medium text-blue-700 hover:underline"
+              >
+                ver o título →
+              </Link>
+            ) : null}
+          </p>
+        ) : (
+          <p
+            key={i}
+            className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800"
+          >
+            ⚠️ {varios ? <strong>{r.arquivo}: </strong> : null}
+            {r.mensagem}
+          </p>
+        ),
+      )}
     </div>
   );
 }
