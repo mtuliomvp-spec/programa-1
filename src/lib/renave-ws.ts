@@ -36,6 +36,26 @@ export function certificadoConfigurado(ambiente: RenaveAmbiente): boolean {
   return !!certificado(ambiente);
 }
 
+/**
+ * O acesso DIRETO ao Renave (contrato da loja com o SERPRO + certificado
+ * e-CNPJ) está pronto para registrar de verdade? É o caminho que dispensa
+ * integradora: o SERPRO confirmou que o contrato da loja permite o acesso
+ * direto, e o sistema transmite com o certificado da própria loja.
+ */
+export function acessoDiretoRenave(c: {
+  renaveWsAmbiente: string | null;
+  renaveWsEmail: string | null;
+  renaveWsCpfOperador: string | null;
+}): { ambiente: RenaveAmbiente | null; pronto: boolean; falta: string[] } {
+  const ambiente = c.renaveWsAmbiente === "PRODUCAO" || c.renaveWsAmbiente === "HOMOLOGACAO" ? c.renaveWsAmbiente : null;
+  const falta: string[] = [];
+  if (ambiente !== "PRODUCAO") falta.push("ambiente em Produção");
+  if (!certificadoConfigurado("PRODUCAO")) falta.push("certificado e-CNPJ instalado");
+  if (!c.renaveWsEmail?.trim()) falta.push("e-mail do vendedor");
+  if (!c.renaveWsCpfOperador?.trim()) falta.push("CPF do operador");
+  return { ambiente, pronto: falta.length === 0, falta };
+}
+
 export type RenaveResposta<T = unknown> = {
   http: number;
   ok: boolean;

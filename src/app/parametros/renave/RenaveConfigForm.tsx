@@ -92,14 +92,15 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
               É por ele que se acompanha o andamento fora do Credencia (art. 10, § 4º).
             </span>
           </Field>
-          <Field label="Integradora">
+          <Field label="Integradora (opcional)">
             <Input
               name="renaveIntegradora"
               defaultValue={config.renaveIntegradora || ""}
-              placeholder="Nome da integradora autorizada"
+              placeholder="Deixe em branco se usa o acesso direto"
             />
             <span className="mt-1 block text-xs text-slate-500">
-              É por ela que os registros entram no Renave (art. 5º, III).
+              Só se a loja terceirizar o registro. Com o acesso direto pelo SERPRO (card abaixo), não é
+              necessária.
             </span>
           </Field>
           <Field label="Situação da integradora">
@@ -113,7 +114,7 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
               <option value="CONTRATADA">Contratada</option>
             </Select>
             <span className="mt-1 block text-xs text-slate-500">
-              Enquanto for avaliação, o passo a passo mantém esta etapa como pendente.
+              Só conta para quem usa integradora no lugar do acesso direto.
             </span>
           </Field>
           <Field label="CNAE principal">
@@ -178,14 +179,14 @@ export default function RenaveConfigForm({ config }: { config: RenaveConfig }) {
             rows={6}
             defaultValue={config.renaveObservacoes || ""}
             placeholder={
-              "Ex.: Integradora X — R$ 34,90 por entrada de usado; taxa do DETRAN por fora.\n" +
+              "Ex.: SERPRO — contrato nº …, acesso direto confirmado em dd/mm; R$ 5,23 por saída.\n" +
               "Pendente: comprovante da regularização junto ao órgão federal.\n" +
               "DETRAN do estado ainda não publicou valores nem a jornada — sem previsão oficial.\n" +
               "Consignação: modelo do contrato eletrônico ainda não divulgado."
             }
           />
           <span className="mt-1 block text-xs text-slate-500">
-            Serve de memória da loja: o que a integradora respondeu, o que falta vir por escrito e o que
+            Serve de memória da loja: o que o SERPRO respondeu, o que falta vir por escrito e o que
             depende do DETRAN. Em caso de fiscalização, é a linha do tempo do que a loja fez.
           </span>
         </Field>

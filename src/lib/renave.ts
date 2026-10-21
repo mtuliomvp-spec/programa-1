@@ -5,13 +5,14 @@ import type { RenaveSituacao, TituloNegocio, TipoIdentificacaoPrevia, TipoAssina
  * Resolução Contran nº 1.026, de 26 de junho de 2026 (DOU de 30/06/2026).
  *
  * O que a resolução muda para a loja, em uma frase: a escrituração de entrada
- * e saída de veículos passa a ser feita SÓ no Renave (art. 1º, § 1º), por meio
- * de uma integradora autorizada (art. 5º, III), e cada registro tem um conjunto
- * mínimo de dados (arts. 13, 15, 16, 17, 18 e 19).
+ * e saída de veículos passa a ser feita SÓ no Renave (art. 1º, § 1º), e cada
+ * registro tem um conjunto mínimo de dados (arts. 13, 15, 16, 17, 18 e 19).
  *
- * O sistema NÃO é o Renave e não é integradora: ele guarda os dados que o
- * registro exige, aponta o que está faltando e mantém o livro conferível para
- * fiscalização (art. 5º, V). Enquanto durar a implantação, nada é bloqueado —
+ * A loja acessa o Renave DIRETO, pelo contrato dela com o SERPRO e o
+ * certificado e-CNPJ dela (o SERPRO confirmou que o contrato permite) — o
+ * sistema transmite com esse certificado (renave-ws.ts). Este arquivo guarda
+ * os dados que o registro exige, aponta o que está faltando e mantém o livro
+ * conferível para fiscalização (art. 5º, V). Enquanto durar a implantação, nada é bloqueado —
  * os avisos apenas antecipam o que a obrigatoriedade vai exigir.
  */
 
@@ -23,7 +24,7 @@ export const RENAVE_PRAZO_PADRAO = new Date("2026-09-28T12:00:00.000Z");
 
 /**
  * Implantação em duas etapas, como os bancos vêm comunicando às lojas: primeiro
- * uma PRODUÇÃO ASSISTIDA, em que já dá para registrar com apoio da integradora,
+ * uma PRODUÇÃO ASSISTIDA, em que já dá para registrar sem a cobrança valendo,
  * e só depois a obrigatoriedade de fato. A data que governa os avisos do sistema
  * continua sendo a de Parâmetros → Renave (`renaveObrigatorioEm`) — esta aqui é
  * o marco para a loja ensaiar antes, que é quando os problemas aparecem.
@@ -41,8 +42,8 @@ export const RENAVE_NORMA = "Resolução Contran nº 1.026/2026";
 /**
  * O Renave de usados só funciona onde o DETRAN do estado aderiu. O prazo da
  * resolução vale para a loja, mas a operação depende do estado: enquanto ele
- * não opera, não há registro a fazer, não faz sentido comprar crédito de
- * integradora, e a escrituração continua pelo livro de modelo aprovado pelo
+ * não opera, não há registro a fazer, não faz sentido contratar integradora
+ * nem comprar crédito, e a escrituração continua pelo livro de modelo aprovado pelo
  * próprio DETRAN (art. 4º, V).
  */
 export type DetranStatus = "NAO_ADERIDO" | "HOMOLOGACAO" | "ADERIDO";
@@ -85,7 +86,7 @@ export function avisoDetranParado(uf: string | null | undefined, status: DetranS
   return (
     `O DETRAN ${onde} ${situacao}. Enquanto isso não há registro eletrônico a fazer: ` +
     `a escrituração continua pelo livro de movimento de entrada e saída, com modelo aprovado pelo ` +
-    `próprio DETRAN (art. 4º, V). Não compre crédito de integradora para operar aqui antes da adesão — ` +
+    `próprio DETRAN (art. 4º, V). Não contrate integradora nem compre crédito para operar aqui antes da adesão — ` +
     `e protocole no DETRAN uma consulta sobre a previsão e sobre como escriturar até lá, guardando o protocolo.`
   );
 }

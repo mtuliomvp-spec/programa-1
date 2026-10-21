@@ -13,8 +13,8 @@ export type CampoRenave = {
 };
 
 /**
- * "Copiar dados para o ControlStock": enquanto a integradora não libera a API,
- * o registro no Renave é feito no painel dela. Aqui fica tudo o que o painel
+ * "Copiar dados para o ControlStock": para a loja que registra pelo painel de
+ * uma integradora (em vez do acesso direto pelo SERPRO). Aqui fica tudo o que o painel
  * pede, campo a campo (cada um com o seu "copiar", porque lá são campos
  * separados) e o bloco inteiro de uma vez. O que falta aparece marcado.
  */

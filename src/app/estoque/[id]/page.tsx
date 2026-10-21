@@ -1415,7 +1415,11 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               {renaveWs && (canRenaveWs || renaveWs.registro) ? (
                 <RenaveWsPanel vehicleId={vehicle.id} podeOperar={canRenaveWs} {...renaveWs} />
               ) : null}
-              <RenaveCopyData entrada={renaveCopiaEntrada} saida={renaveCopiaSaida} />
+              {/* Só para quem registra pelo painel de uma integradora; com o
+                  acesso direto, o registro sai do card acima. */}
+              {renaveCompany.renaveIntegradora ? (
+                <RenaveCopyData entrada={renaveCopiaEntrada} saida={renaveCopiaSaida} />
+              ) : null}
             </Card>
           ) : null}
 

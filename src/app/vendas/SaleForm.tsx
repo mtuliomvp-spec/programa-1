@@ -459,7 +459,7 @@ export default function SaleForm({
             <p className="mt-0.5 text-xs text-rose-800">
               A instituição financeira só registra o gravame de veículo que já esteja no estoque da
               loja dentro do Renave, e o apontamento acontece <strong>antes</strong> de o
-              financiamento ser liberado. Registre a entrada pela integradora e anote o protocolo na{" "}
+              financiamento ser liberado. Registre a entrada na{" "}
               <strong>ficha do veículo → Renave</strong>
               {renavePrazo ? ` — a exigência vale a partir de ${renavePrazo}` : ""}.
             </p>
