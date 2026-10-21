@@ -2,7 +2,7 @@
  * Piloto nacional do Renave de usados: o sistema só recebe registros nas
  * janelas abaixo (horário de Brasília), sem divisão por UF, até o
  * funcionamento integral. Cronograma divulgado às lojas em out/2026 (repassado
- * por banco parceiro) — confirmar mudanças com a integradora.
+ * por banco parceiro) — confirmar mudanças com o SERPRO.
  */
 export const RENAVE_JANELAS: { dia: string; inicio: number; fim: number }[] = [
   { dia: "2026-10-13", inicio: 5, fim: 12 },

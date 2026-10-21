@@ -14,6 +14,8 @@ export type AssistenteDados = {
   renaveAdesaoSei: string | null;
   renaveIntegradora: string | null;
   renaveIntegradoraStatus: string | null;
+  /** Acesso direto ao Renave (SERPRO): pronto em produção, ou o que falta. */
+  acessoDireto: { pronto: boolean; falta: string[] };
   renaveCnae: string | null;
   eCnpjValidUntil: string | null;
   detranRenaveStatus: string | null;
@@ -114,7 +116,7 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
       linhas.push(
         `Integradora: ${v.renaveIntegradora}` +
           (v.renaveIntegradoraStatus === "CONTRATADA" ? " — contratada." : " — em avaliação, sem contrato assinado.") +
-          " Confirmar: preço por registro, se tem API e como trata a consignação.",
+          " (no lugar do acesso direto pelo SERPRO).",
       );
     }
     if (v.detranRenaveStatus) {
@@ -135,7 +137,7 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
       `${dados.hoje} — Cronograma da implantação: produção assistida a partir de ${dados.producaoAssistida} e ` +
         `operações adequadas no início de novembro` +
         (v.renaveObrigatorioEm
-          ? `; obrigatoriedade configurada no sistema para ${br(v.renaveObrigatorioEm)}, a confirmar com a integradora`
+          ? `; obrigatoriedade configurada no sistema para ${br(v.renaveObrigatorioEm)}, a confirmar com o DETRAN`
           : "") +
         `. Gravame só é apontado em veículo já registrado no estoque do Renave, antes da liberação do ` +
         `financiamento.`,
@@ -147,7 +149,10 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
   const passos: { id: string; ok: boolean }[] = [
     { id: "adesao", ok: feito("renaveAdesaoSolicitadaEm") },
     { id: "documentos", ok: feito("renaveCnae", "eCnpjValidUntil") },
-    { id: "integradora", ok: feito("renaveIntegradora", "renaveIntegradoraStatus") },
+    {
+      id: "integradora",
+      ok: dados.acessoDireto.pronto || (v.renaveIntegradora.trim() !== "" && v.renaveIntegradoraStatus === "CONTRATADA"),
+    },
     { id: "detran", ok: feito("detranRenaveStatus", "detranRenaveCheckedAt") },
     { id: "datas", ok: feito("renaveObrigatorioEm") },
     { id: "anotacoes", ok: feito("renaveObservacoes") },
@@ -274,22 +279,31 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
 
       <Card className="mb-4">
         <CardHeader
-          title="3. Integradora"
-          description="Quem transmite os registros ao Renave"
+          title="3. Acesso ao Renave"
+          description="Por onde os registros chegam ao Renave"
           action={<Status ok={passos[2].ok} />}
         />
         <div className="space-y-3 p-5">
           <p className="text-sm text-slate-600">
-            A loja precisa de uma integradora autorizada (art. 5º, III) — este sistema não faz e não pode
-            fazer esse papel. Enquanto a situação for “em avaliação”, o roteiro mantém a etapa como
-            pendente.
+            A loja registra <strong>direto no Renave</strong>, pelo próprio sistema: o contrato é da loja
+            com o SERPRO e a autenticação é o certificado e-CNPJ dela — o SERPRO confirmou que o contrato
+            permite o acesso direto, sem integradora. A configuração fica em Parâmetros → Renave ›
+            Integração direta com o SERPRO.
+          </p>
+          <p className={`text-sm ${dados.acessoDireto.pronto ? "text-emerald-700" : "text-amber-700"}`}>
+            {dados.acessoDireto.pronto
+              ? "✓ Acesso direto configurado em produção."
+              : `Acesso direto: falta ${dados.acessoDireto.falta.join(", ")}.`}
+          </p>
+          <p className="text-xs text-slate-500">
+            Integradora é opcional — preencha só se a loja terceirizar o registro.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Integradora">
+            <Field label="Integradora (opcional)">
               <Input
                 value={v.renaveIntegradora}
                 onChange={set("renaveIntegradora")}
-                placeholder="Nome da integradora autorizada"
+                placeholder="Em branco = acesso direto"
               />
             </Field>
             <Field label="Situação da integradora">
@@ -354,8 +368,8 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
         <div className="space-y-3 p-5">
           <p className="text-sm text-slate-600">
             A produção assistida começa em <strong>{dados.producaoAssistida}</strong> e as operações
-            precisam estar adequadas no <strong>início de novembro</strong>. Confirme a data exata com a
-            sua integradora e coloque aqui — é a partir dela que as telas avisam.
+            precisam estar adequadas no <strong>início de novembro</strong>. Confirme a data exata com o
+            DETRAN do estado e coloque aqui — é a partir dela que as telas avisam.
           </p>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Obrigatoriedade a partir de">
@@ -381,7 +395,7 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
         <div className="space-y-3 p-5">
           <p className="text-sm text-slate-600">
             O botão abaixo monta um texto com o que já está preenchido aqui — datas, números, cronograma.
-            Nada é inventado: o que estiver em branco não aparece. Complete com o que a integradora
+            Nada é inventado: o que estiver em branco não aparece. Complete com o que o SERPRO
             respondeu e o que o DETRAN disse. Cada linha começa com a <strong>data do fato</strong> — a do
             cronograma é o dia em que a anotação foi feita, não a data da obrigatoriedade (essa vai escrita
             dentro da linha). O texto é uma <strong>foto do momento</strong>: mudou algum passo e quer
@@ -392,7 +406,7 @@ export default function Assistente({ dados }: { dados: AssistenteDados }) {
               rows={8}
               value={v.renaveObservacoes}
               onChange={set("renaveObservacoes")}
-              placeholder="Datas, números, preços da integradora, respostas do DETRAN…"
+              placeholder="Datas, números, chamados do SERPRO, respostas do DETRAN…"
             />
           </Field>
           {confirmandoModelo ? (

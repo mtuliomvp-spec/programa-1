@@ -3250,7 +3250,7 @@ export type RenaveFormState = { error?: string; success?: string };
 
 /**
  * Grava os dados do Renave na ficha do veículo. Nada aqui fala com o Renave —
- * o registro é feito pela integradora contratada; o que fica no sistema é o
+ * o registro sai do painel Renave-WS (renave-ws-actions.ts); o que fica aqui é o
  * conjunto de dados que o registro exige e o protocolo do que já foi feito,
  * para a ficha bater com o livro eletrônico numa fiscalização (art. 5º, V).
  *

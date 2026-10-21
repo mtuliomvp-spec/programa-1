@@ -19,7 +19,7 @@ import {
 } from "@/lib/renave";
 import RenaveConfigForm, { type RenaveConfig } from "./RenaveConfigForm";
 import RenaveWsConfig from "./RenaveWsConfig";
-import { certificadoConfigurado } from "@/lib/renave-ws";
+import { acessoDiretoRenave, certificadoConfigurado } from "@/lib/renave-ws";
 import RenaveJanelaAviso from "@/components/RenaveJanelaAviso";
 
 export const dynamic = "force-dynamic";
@@ -34,6 +34,7 @@ export default async function ParametrosRenavePage() {
   const diasParaPrazo = Math.ceil((prazo.getTime() - agora.getTime()) / (24 * 60 * 60 * 1000));
   // Dias desde o protocolo da adesão no Credencia: o órgão tem até 30 (art. 10),
   // e pendência aberta congela a contagem — por isso o aviso, e não um prazo fatal.
+  const acesso = acessoDiretoRenave(company);
   const diasEmAnalise = company.renaveAdesaoSolicitadaEm
     ? Math.floor((agora.getTime() - company.renaveAdesaoSolicitadaEm.getTime()) / (24 * 60 * 60 * 1000))
     : 0;
@@ -181,15 +182,24 @@ export default async function ParametrosRenavePage() {
             )}
           </p>
           <p>
-            Integradora:{" "}
-            <strong className="text-slate-900">{company.renaveIntegradora || "nenhuma informada"}</strong>
+            Acesso ao Renave:{" "}
+            {acesso.pronto ? (
+              <>
+                <strong className="text-slate-900">direto pelo SERPRO (Renave-WS)</strong>
+                <span className="ml-1.5 align-middle">
+                  <Badge tone="success">Produção configurada</Badge>
+                </span>
+              </>
+            ) : (
+              <>
+                <strong className="text-slate-900">acesso direto incompleto</strong>
+                <span className="ml-1 text-xs text-slate-500">— falta {acesso.falta.join(", ")}</span>
+              </>
+            )}
             {company.renaveIntegradora ? (
-              <span className="ml-1.5 align-middle">
-                {company.renaveIntegradoraStatus === "CONTRATADA" ? (
-                  <Badge tone="success">Contratada</Badge>
-                ) : (
-                  <Badge tone="warning">Em avaliação</Badge>
-                )}
+              <span className="ml-1.5 text-xs text-slate-500">
+                · integradora informada: {company.renaveIntegradora}
+                {company.renaveIntegradoraStatus === "CONTRATADA" ? " (contratada)" : " (em avaliação)"}
               </span>
             ) : null}
           </p>
@@ -266,12 +276,13 @@ export default async function ParametrosRenavePage() {
         <ul className="space-y-2 p-5 text-sm text-slate-600">
           <li>
             <strong className="text-slate-900">1. Aderir ao Renave</strong> no sistema Credencia, com
-            certificado e-CNPJ válido e CNAE compatível (arts. 7º e 8º). Pode ser direto ou pela integradora.
+            certificado e-CNPJ válido e CNAE compatível (arts. 7º e 8º).
           </li>
           <li>
-            <strong className="text-slate-900">2. Contratar uma integradora autorizada</strong> — é ela quem
-            transmite os registros (art. 5º, III). O sistema não faz esse papel e não pode fazê-lo: provedores
-            de sistema de gestão de lojas estão impedidos de atuar como integradoras (Anexo, item 1.3.2).
+            <strong className="text-slate-900">2. Manter o acesso direto ao Renave</strong> — contrato da
+            loja com o SERPRO e o certificado e-CNPJ instalado na hospedagem. O SERPRO confirmou que o
+            contrato permite o acesso direto: o sistema transmite entrada e saída com o certificado da loja,
+            sem integradora. Integradora só se a loja preferir terceirizar.
           </li>
           <li>
             <strong className="text-slate-900">3. Emitir NF-e</strong> nas entradas e saídas, com os dados
@@ -291,7 +302,7 @@ export default async function ParametrosRenavePage() {
               href="/parametros/renave/passo-a-passo"
               className="font-medium text-blue-700 hover:underline"
             >
-              Ver o passo a passo completo (com prazos, o que perguntar à integradora e a rotina nova) →
+              Ver o passo a passo completo (com prazos, o que configurar e a rotina nova) →
             </Link>
           </li>
         </ul>

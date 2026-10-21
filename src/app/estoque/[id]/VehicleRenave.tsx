@@ -449,7 +449,7 @@ export default function VehicleRenave({
                 <Input
                   name="renaveEntradaProtocolo"
                   defaultValue={dados.renaveEntradaProtocolo || ""}
-                  placeholder="Número devolvido pela integradora"
+                  placeholder="Preenchido sozinho ao registrar pelo sistema"
                 />
               </Field>
               <Field label="Emissão da NF-e de entrada">

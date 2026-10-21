@@ -11,6 +11,7 @@ import {
   pendenciasCobraveis,
   prazoTexto,
 } from "@/lib/renave";
+import { acessoDiretoRenave } from "@/lib/renave-ws";
 import Assistente, { type AssistenteDados } from "./Assistente";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,7 @@ export const dynamic = "force-dynamic";
  * Assistente de preenchimento do Renave: o que é para preencher DENTRO do
  * sistema, na ordem, com o porquê de cada campo e salvando passo a passo.
  *
- * O passo a passo cuida do que a loja faz fora (contador, integradora, DETRAN);
+ * O passo a passo cuida do que a loja faz fora (contador, SERPRO, DETRAN);
  * aqui é a digitação — que antes estava espalhada entre Parâmetros e a ficha de
  * cada veículo, sem ordem nem explicação de para que serve cada dado.
  */
@@ -63,6 +64,7 @@ export default async function RenaveAssistentePage() {
     renaveAdesaoSei: company.renaveAdesaoSei,
     renaveIntegradora: company.renaveIntegradora,
     renaveIntegradoraStatus: company.renaveIntegradoraStatus,
+    acessoDireto: (({ pronto, falta }) => ({ pronto, falta }))(acessoDiretoRenave(company)),
     renaveCnae: company.renaveCnae,
     eCnpjValidUntil: company.eCnpjValidUntil?.toISOString() ?? null,
     detranRenaveStatus: company.detranRenaveStatus,

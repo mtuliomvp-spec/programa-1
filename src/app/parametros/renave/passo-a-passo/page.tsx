@@ -19,6 +19,7 @@ import {
   pendenciasCobraveis,
   prazoTexto,
 } from "@/lib/renave";
+import { acessoDiretoRenave } from "@/lib/renave-ws";
 
 export const dynamic = "force-dynamic";
 
@@ -26,8 +27,8 @@ export const dynamic = "force-dynamic";
  * Roteiro de adequação ao Renave, para a equipe consultar e imprimir.
  *
  * Não é um texto solto: cada etapa mostra a SITUAÇÃO REAL da loja naquilo que o
- * sistema consegue enxergar (adesão, integradora, certificado, veículos com
- * dados faltando). O que depende de terceiros — contador, DETRAN, integradora —
+ * sistema consegue enxergar (adesão, acesso ao Renave, certificado, veículos
+ * com dados faltando). O que depende de terceiros — contador, DETRAN, SERPRO —
  * fica marcado como conferência manual, sem fingir que o sistema sabe.
  */
 
@@ -105,16 +106,20 @@ export default async function RenavePassoAPassoPage() {
 
   const certOk = company.eCnpjValidUntil ? company.eCnpjValidUntil.getTime() > agora.getTime() : false;
   // Estado que ainda não opera: as etapas que dependem dele saem da cobrança —
-  // contratar/pagar integradora e aderir não estão ao alcance da loja agora.
+  // aderir não está ao alcance da loja agora.
   const detran = detranStatusOf(company.detranRenaveStatus);
   const operando = detranOperando(company.detranRenaveStatus);
   const dependeDoEstado = (concluida: boolean): Situacao =>
     concluida ? "feito" : operando ? "pendente" : "aguardando";
 
   const etapa1: Situacao = certOk && company.renaveCnae ? "feito" : "pendente";
-  const etapa2: Situacao = dependeDoEstado(
-    Boolean(company.renaveIntegradora) && company.renaveIntegradoraStatus === "CONTRATADA",
-  );
+  // Acesso ao Renave: o caminho da loja é o DIRETO (contrato SERPRO +
+  // certificado), que dá para deixar pronto antes de o estado aderir. Quem usa
+  // integradora no lugar também conclui a etapa.
+  const acesso = acessoDiretoRenave(company);
+  const integradoraContratada =
+    Boolean(company.renaveIntegradora) && company.renaveIntegradoraStatus === "CONTRATADA";
+  const etapa2: Situacao = acesso.pronto || integradoraContratada ? "feito" : "pendente";
   // Adesão protocolada e ainda em análise não é pendência da loja: o pedido já
   // saiu, o que resta é acompanhar (e correr atrás se aparecer pendência).
   const diasEmAnalise = company.renaveAdesaoSolicitadaEm
@@ -126,7 +131,7 @@ export default async function RenavePassoAPassoPage() {
       ? "analise"
       : dependeDoEstado(false);
   const etapa5: Situacao =
-    company.renaveAderido && company.renaveIntegradora && certOk ? "feito" : "pendente";
+    company.renaveAderido && (acesso.pronto || integradoraContratada) && certOk ? "feito" : "pendente";
   const etapa6: Situacao = vehicles.length > 0 && comPendencia === 0 ? "feito" : "pendente";
 
   const feitas = [etapa1, etapa2, etapa3, etapa5, etapa6].filter((e) => e === "feito").length;
@@ -177,7 +182,7 @@ export default async function RenavePassoAPassoPage() {
         <Card className="mt-4">
           <CardHeader
             title="Anotações da loja"
-            description="O que já foi apurado com a integradora e com o DETRAN"
+            description="O que já foi apurado com o SERPRO e com o DETRAN"
           />
           <p className="whitespace-pre-line p-5 text-sm text-slate-700">{company.renaveObservacoes}</p>
         </Card>
@@ -193,8 +198,9 @@ export default async function RenavePassoAPassoPage() {
           <p className="mt-1.5 text-xs font-medium text-rose-900">O que fazer enquanto isso:</p>
           <ul className="mt-0.5 list-disc space-y-0.5 pl-5 text-xs text-rose-800">
             <li>
-              <strong>Não comprar crédito</strong> de integradora para operar aqui — o serviço não existe no
-              estado ainda.
+              <strong>Não contratar integradora</strong> nem comprar crédito para operar aqui — o serviço não
+              existe no estado ainda. O acesso direto pelo SERPRO fica pronto e passa a funcionar quando o
+              DETRAN aderir.
             </li>
             <li>
               <strong>Protocolar consulta no DETRAN</strong>: previsão de adesão e como escriturar até lá
@@ -206,12 +212,12 @@ export default async function RenavePassoAPassoPage() {
               )}
             </li>
             <li>
-              <strong>Guardar as provas</strong>: print do mapa oficial, protocolo do DETRAN e as conversas com
-              a integradora. É a defesa da loja se houver fiscalização.
+              <strong>Guardar as provas</strong>: print do mapa oficial, protocolo do DETRAN e os chamados e
+              respostas do SERPRO. É a defesa da loja se houver fiscalização.
             </li>
             <li>
-              <strong>Seguir com as etapas 1, 4 e 6</strong> — certificado, CNAE, NF-e e os dados dos veículos
-              não dependem do estado e adiantam todo o resto.
+              <strong>Seguir com as etapas 1, 2, 4 e 6</strong> — certificado, CNAE, acesso ao Renave, NF-e e
+              os dados dos veículos não dependem do estado e adiantam todo o resto.
             </li>
           </ul>
         </div>
@@ -219,7 +225,7 @@ export default async function RenavePassoAPassoPage() {
 
       {/* Cronograma em duas etapas: é o que os bancos estão comunicando às
           lojas, e muda o que fazer agora — a produção assistida é a janela para
-          ensaiar com a integradora antes de valer para valer. */}
+          ensaiar pelo próprio sistema antes de valer para valer. */}
       <Card className="mt-4">
         <CardHeader
           title="Cronograma da implantação"
@@ -228,13 +234,13 @@ export default async function RenavePassoAPassoPage() {
         <ul className="space-y-2 p-5 text-sm text-slate-700">
           <li>
             <strong>A partir de {prazoTexto(RENAVE_PRODUCAO_ASSISTIDA)} — produção assistida.</strong>{" "}
-            Dá para registrar entrada, saída, transferência e consignação com apoio da integradora,
-            sem a cobrança valendo. É a janela para ensaiar: registre <strong>um</strong> carro de cada
+            Dá para registrar entrada, saída, transferência e consignação pelo próprio sistema (acesso
+            direto ao Renave), sem a cobrança valendo. É a janela para ensaiar: registre <strong>um</strong> carro de cada
             tipo (comprado, consignado) e veja onde trava.
           </li>
           <li>
             <strong>Início de novembro — operações já adequadas.</strong> A partir daí não se opera
-            veículo fora do Renave. Confirme a data exata com a sua integradora e informe-a em{" "}
+            veículo fora do Renave. Confirme a data exata com o DETRAN do estado e informe-a em{" "}
             <Link href="/parametros/renave" className="font-medium text-blue-700 hover:underline">
               Parâmetros → Renave
             </Link>
@@ -293,39 +299,41 @@ export default async function RenavePassoAPassoPage() {
         </ul>
       </Etapa>
 
-      <Etapa numero={2} titulo="Escolher e contratar a integradora" status={etapa2} prazo="2 a 5 dias">
+      <Etapa numero={2} titulo="Acesso direto ao Renave (SERPRO)" status={etapa2} prazo="1 a 3 dias">
         <p>
-          A loja <strong>precisa</strong> de uma integradora autorizada: é ela quem transmite os registros ao
-          Renave (art. 5º, III). O sistema não faz e não pode fazer esse papel — provedores de sistema de
-          gestão de lojas estão impedidos de atuar como integradoras (Anexo, item 1.3.2).
+          A loja transmite os registros <strong>direto ao Renave</strong>, sem integradora: o contrato é da
+          própria loja com o SERPRO, e a autenticação é o <strong>certificado e-CNPJ</strong> da loja — o
+          sistema só leva os dados, com o certificado dela. O SERPRO confirmou que o contrato da loja permite
+          esse acesso direto (Renave-WS). O custo é o do SERPRO, por registro.
         </p>
-        <p className="font-medium text-slate-900">Onde achar:</p>
+        <p className="font-medium text-slate-900">O que precisa estar pronto:</p>
         <ul className="list-disc space-y-1 pl-5">
-          <li>pergunte ao DETRAN quais integradoras operam o Renave na sua circunscrição;</li>
-          <li>pergunte ao contador e a duas ou três lojas conhecidas quem elas usam;</li>
+          <li>contrato com o SERPRO ativo (é ele que libera o acesso ao Renave-WS);</li>
           <li>
-            se a loja já usa alguma, confirme se ela <strong>já regularizou o cadastro</strong> junto ao órgão
-            federal (art. 33, § 2º) — passado o prazo sem isso, a autorização dela cai.
+            certificado e-CNPJ A1 (arquivo .pfx) instalado nas variáveis de ambiente da hospedagem — nunca
+            enviado por e-mail, chat ou tela;
+          </li>
+          <li>
+            em{" "}
+            <Link href="/parametros/renave" className="font-medium text-blue-700 hover:underline">
+              Parâmetros → Renave
+            </Link>{" "}
+            › <strong>Integração direta com o SERPRO</strong>: ambiente <strong>Produção</strong>, e-mail do
+            vendedor e CPF do operador, e o botão <strong>Testar conexão</strong>.
           </li>
         </ul>
-        <p className="font-medium text-slate-900">Perguntas antes de assinar:</p>
-        <ul className="list-disc space-y-1 pl-5">
-          <li>quanto custa por registro (a norma fixa piso e teto — cobrar fora disso é proibido, art. 32, § 3º);</li>
-          <li>se há cobrança amarrada a outros serviços (também proibido);</li>
-          <li>
-            se ela tem <strong>API</strong> — é isso que decide se, mais para a frente, o registro pode sair
-            direto do sistema, sem redigitar;
-          </li>
-          <li>como ela trata a <strong>consignação</strong> (contrato eletrônico com assinatura digital das duas partes).</li>
-        </ul>
-        {company.renaveIntegradora ? (
-          <p className={company.renaveIntegradoraStatus === "CONTRATADA" ? "text-emerald-700" : "text-amber-700"}>
-            Integradora no sistema: <strong>{company.renaveIntegradora}</strong>
-            {company.renaveIntegradoraStatus === "CONTRATADA"
-              ? " — contratada."
-              : " — em avaliação, ainda sem contrato assinado."}
-          </p>
-        ) : null}
+        {acesso.pronto ? (
+          <p className="text-emerald-700">Acesso direto configurado em produção.</p>
+        ) : (
+          <p className="text-amber-700">Falta: {acesso.falta.join(", ")}.</p>
+        )}
+        <p className="text-xs text-slate-500">
+          Integradora é opcional — só para quem preferir terceirizar o registro. Se for o caso, informe-a em
+          Parâmetros → Renave.
+          {company.renaveIntegradora
+            ? ` Informada: ${company.renaveIntegradora}${company.renaveIntegradoraStatus === "CONTRATADA" ? " (contratada)" : " (em avaliação)"}.`
+            : ""}
+        </p>
       </Etapa>
 
       <Etapa
@@ -335,7 +343,7 @@ export default async function RenavePassoAPassoPage() {
         prazo="1 dia para protocolar + até 30 dias de análise"
       >
         <ul className="list-disc space-y-1.5 pl-5">
-          <li>A adesão é solicitada no <strong>Credencia (SERPRO)</strong>, com o e-CNPJ. Pode ser feita direto pela loja ou pela integradora — o efeito é o mesmo (art. 8º).</li>
+          <li>A adesão é solicitada no <strong>Credencia (SERPRO)</strong>, com o e-CNPJ, pela própria loja (art. 8º).</li>
           <li>
             O órgão tem <strong>até 30 dias</strong> para analisar, prorrogáveis uma vez. Por isso esta etapa não
             pode esperar: protocole com folga.
@@ -377,8 +385,8 @@ export default async function RenavePassoAPassoPage() {
                 : "Confira o Credencia a cada poucos dias: se aparecer pendência, o prazo para de contar até você resolver."}
             </p>
             <p className="mt-0.5">
-              Enquanto espera, siga com as etapas 1, 2, 4 e 6 — a adesão deferida não adianta nada sem
-              integradora contratada e sem os dados dos veículos em ordem.
+              Enquanto espera, siga com as etapas 1, 2, 4 e 6 — a adesão deferida não adianta nada sem o
+              acesso ao Renave configurado e sem os dados dos veículos em ordem.
             </p>
             <p className="mt-0.5">
               Quando sair o deferimento, marque <strong>Adesão concluída</strong> em Parâmetros → Renave.
@@ -407,7 +415,10 @@ export default async function RenavePassoAPassoPage() {
         </p>
         <ol className="list-decimal space-y-1 pl-5">
           <li>situação da adesão e a data;</li>
-          <li>integradora contratada;</li>
+          <li>
+            acesso direto ao Renave: ambiente Produção, e-mail do vendedor e CPF do operador — e{" "}
+            <strong>Testar conexão</strong>;
+          </li>
           <li>CNAE principal;</li>
           <li>validade do e-CNPJ (o sistema avisa quando estiver perto de vencer);</li>
           <li>data da obrigatoriedade (já vem preenchida; ajuste se o órgão prorrogar);</li>
@@ -467,7 +478,7 @@ export default async function RenavePassoAPassoPage() {
               </tr>
               <tr>
                 <td className="px-3 py-2 font-medium">Protocolo de entrada</td>
-                <td className="px-3 py-2">O número que a integradora devolve ao registrar</td>
+                <td className="px-3 py-2">Preenchido sozinho quando a entrada é registrada pelo sistema</td>
               </tr>
             </tbody>
           </table>
@@ -488,13 +499,16 @@ export default async function RenavePassoAPassoPage() {
           <li>Identificação prévia de entrada (ou vistoria).</li>
           <li>NF-e de entrada.</li>
           <li>ATPV-e assinada.</li>
-          <li>Registro de entrada pela integradora → anote o protocolo na ficha.</li>
+          <li>
+            Registro de entrada pelo próprio sistema: ficha do veículo → card Renave → registrar a entrada
+            (o protocolo e o termo ficam guardados na ficha).
+          </li>
         </ol>
         <p className="font-medium text-slate-900">Ao vender</p>
         <ol className="list-decimal space-y-1 pl-5">
           <li>NF-e de saída.</li>
           <li>ATPV-e assinada.</li>
-          <li>Registro de saída pela integradora → protocolo na ficha.</li>
+          <li>Registro de saída pelo próprio sistema, no mesmo card — a ATPV-e sai de lá.</li>
           <li>O Renave avisa quando o novo CRV sair no nome do comprador (art. 18, § 4º).</li>
         </ol>
         <p className="font-medium text-slate-900">Consignação — o que muda</p>
@@ -523,7 +537,7 @@ export default async function RenavePassoAPassoPage() {
       <Etapa numero={8} titulo="Checagem final" status="manual" prazo="uma semana antes do prazo">
         <ul className="space-y-1.5">
           <li>☐ Adesão deferida no Credencia</li>
-          <li>☐ Integradora contratada e testada com um registro real</li>
+          <li>☐ Acesso direto ao Renave (SERPRO) testado com um registro real</li>
           <li>☐ NF-e de entrada e de saída funcionando</li>
           <li>☐ Painel do Renave com zero veículos pendentes</li>
           <li>☐ Equipe treinada na rotina da etapa 7</li>

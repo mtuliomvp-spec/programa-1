@@ -121,8 +121,9 @@ export default async function RenavePage({
       <div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 print:hidden">
         <p className="text-sm font-semibold text-blue-900">Implantação em andamento — nada está bloqueado</p>
         <p className="text-xs text-blue-800">
-          O registro no Renave é feito no sistema da integradora contratada. O que fica aqui são os dados que
-          o registro exige e o protocolo do que já foi registrado, para a ficha bater com o livro eletrônico.
+          O registro no Renave é feito pelo próprio sistema, direto no SERPRO, na ficha de cada veículo. O
+          que fica aqui são os dados que o registro exige e o protocolo do que já foi registrado, para a
+          ficha bater com o livro eletrônico.
           A partir de <strong>{prazoTexto(prazo)}</strong>, movimentar um veículo sem esses dados deixa de ser
           possível.{" "}
           <Link href="/parametros/renave/passo-a-passo" className="font-medium underline">
