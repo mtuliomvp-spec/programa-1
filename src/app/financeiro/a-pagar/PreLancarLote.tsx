@@ -2,6 +2,7 @@
 
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import AvisoDiaUtil from "@/components/AvisoDiaUtil";
 import { Button, Input } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
 import { formatCurrency } from "@/lib/format";
@@ -242,6 +243,7 @@ export default function PreLancarLote({
               ? ` · conta no papel: ${conf.contaLida}`
               : ""}
           {contaConfere ? " — confere com a conta escolhida" : ""}.
+          {conf.data ? <AvisoDiaUtil data={conf.data} escolhida={data} onUsar={setData} className="mt-1" /> : null}
         </p>
       ) : null}
 
