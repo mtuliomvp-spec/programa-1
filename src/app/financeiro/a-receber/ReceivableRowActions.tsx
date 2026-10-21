@@ -10,7 +10,9 @@ import {
   receiveFromCapitalAction,
   informarRecebimentoAction,
   desfazerRecebimentoInformadoAction,
+  conferirComprovanteRecebimentoAction,
 } from "./actions";
+import AvisoDiaUtil from "@/components/AvisoDiaUtil";
 import FixDateButton from "@/components/FixDateButton";
 
 type Account = { id: string; name: string };
@@ -78,6 +80,32 @@ export default function ReceivableRowActions({
   const [entradaValor, setEntradaValor] = useState(String(amount));
   const [arquivo, setArquivo] = useState<File | null>(null);
   const [avisos, setAvisos] = useState<string[]>([]);
+  // Leitura do comprovante assim que ele é escolhido: a data dele preenche o
+  // campo (editável — fim de semana/feriado pode compensar no dia útil seguinte).
+  const [lendoComprovante, setLendoComprovante] = useState(false);
+  const [lidoComprovante, setLidoComprovante] = useState<{ data: string | null; valor: number | null; erro?: string } | null>(null);
+
+  async function escolherComprovante(f: File | null) {
+    setArquivo(f);
+    setLidoComprovante(null);
+    if (!f) return;
+    setLendoComprovante(true);
+    try {
+      const fd = new FormData();
+      fd.set("file", f);
+      const r = await conferirComprovanteRecebimentoAction(fd);
+      if (r.ok) {
+        if (r.data) setEntradaData(r.data);
+        setLidoComprovante({ data: r.data ?? null, valor: r.valor ?? null });
+      } else {
+        setLidoComprovante({ data: null, valor: null, erro: r.error });
+      }
+    } catch {
+      setLidoComprovante({ data: null, valor: null, erro: "Não consegui ler o comprovante — informe a data à mão." });
+    } finally {
+      setLendoComprovante(false);
+    }
+  }
 
   // Sem permissão de baixa: nenhum controle de receber aparece (o reverter e a
   // correção de data, de um título já recebido, têm permissões próprias).
@@ -340,10 +368,20 @@ export default function ReceivableRowActions({
             <input
               type="file"
               accept="image/*,application/pdf,.pdf"
-              onChange={(e) => setArquivo(e.target.files?.[0] ?? null)}
+              onChange={(e) => void escolherComprovante(e.target.files?.[0] ?? null)}
               className="mt-0.5 block w-full text-[11px] text-slate-600 file:mr-2 file:rounded file:border-0 file:bg-white file:px-2 file:py-1 file:text-[11px]"
             />
           </label>
+          {lendoComprovante ? <p className="mt-1 text-[11px] text-slate-500">Lendo o comprovante…</p> : null}
+          {lidoComprovante?.erro ? <p className="mt-1 text-[11px] text-amber-700">{lidoComprovante.erro}</p> : null}
+          {lidoComprovante?.data ? (
+            <DataDoComprovante
+              data={lidoComprovante.data}
+              valor={lidoComprovante.valor}
+              escolhida={entradaData}
+              onUsar={setEntradaData}
+            />
+          ) : null}
           {valor > 0 && valor < amount ? (
             <p className="mt-1 text-[11px] text-amber-700">
               Parcial: entram {money(valor)} e {money(Math.round((amount - valor) * 100) / 100)}{" "}
@@ -478,6 +516,29 @@ export default function ReceivableRowActions({
           No capital
         </button>
       ) : null}
+    </div>
+  );
+}
+
+/** O que o comprovante diz (data preenchida) e o atalho do dia útil seguinte. */
+function DataDoComprovante({
+  data,
+  valor,
+  escolhida,
+  onUsar,
+}: {
+  data: string;
+  valor: number | null;
+  escolhida: string;
+  onUsar: (d: string) => void;
+}) {
+  const br = (iso: string) => iso.split("-").reverse().join("/");
+  return (
+    <div className="mt-1 rounded border border-sky-200 bg-white px-2 py-1 text-[11px] text-slate-600">
+      📅 Comprovante de <strong>{br(data)}</strong>
+      {valor != null ? ` · ${valor.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""} — data
+      preenchida; ajuste se o banco compensou em outro dia.
+      <AvisoDiaUtil data={data} escolhida={escolhida} onUsar={onUsar} className="mt-0.5" />
     </div>
   );
 }

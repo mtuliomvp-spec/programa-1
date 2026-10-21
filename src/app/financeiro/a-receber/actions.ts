@@ -560,6 +560,87 @@ export async function deleteReceivablesAction(ids: string[]): Promise<DeleteRece
 
 const MAX_ATTACHMENT_BYTES = 15 * 1024 * 1024; // 15 MB
 
+export type ConferenciaRecebimento = {
+  ok: boolean;
+  error?: string;
+  senhaNecessaria?: boolean;
+  valor?: number | null;
+  /** yyyy-mm-dd da transferência/depósito lida do comprovante. */
+  data?: string | null;
+};
+
+/**
+ * Lê o comprovante assim que ele é escolhido no "Já caiu", para a tela já
+ * preencher a DATA com a do comprovante (editável: transferência feita no fim
+ * de semana ou feriado pode só compensar no dia útil seguinte). Não grava nada.
+ */
+export async function conferirComprovanteRecebimentoAction(formData: FormData): Promise<ConferenciaRecebimento> {
+  try {
+    await assertCanAny([
+      ["financeiro", "receber"],
+      ["financeiro", "criar"],
+      ["financeiro", "editar"],
+    ]);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const file = formData.get("file");
+  if (!(file instanceof File) || file.size === 0) return { ok: false, error: "Selecione o comprovante." };
+  if (file.size > MAX_ATTACHMENT_BYTES) return { ok: false, error: "Arquivo muito grande (máximo 15 MB)." };
+  let buffer = Buffer.from(await file.arrayBuffer());
+  const mimeType = file.type || "application/octet-stream";
+  const { ehPdf, pdfPedeSenha, decifrarPdf } = await import("@/lib/pdf-password");
+  const senha = String(formData.get("senha") || "");
+  if (ehPdf(buffer, mimeType) && (await pdfPedeSenha(buffer))) {
+    if (!senha) return { ok: false, senhaNecessaria: true, error: "PDF com senha — informe a data à mão." };
+    try {
+      buffer = Buffer.from(await decifrarPdf(buffer, senha));
+    } catch {
+      return { ok: false, senhaNecessaria: true, error: "Senha do PDF incorreta." };
+    }
+  }
+  try {
+    const { extractPaymentReceipts } = await import("@/lib/receipts-ai");
+    const lido = (await extractPaymentReceipts(buffer.toString("base64"), mimeType))[0];
+    if (lido) {
+      return {
+        ok: true,
+        valor: lido.valor ?? null,
+        data: lido.data && /^\d{4}-\d{2}-\d{2}$/.test(lido.data) ? lido.data : null,
+      };
+    }
+  } catch {
+    // Sem IA (ou falhou): tenta o texto do próprio PDF logo abaixo.
+  }
+  const doTexto = ehPdf(buffer, mimeType) ? await comprovantePeloTexto(buffer) : null;
+  if (doTexto && (doTexto.data || doTexto.valor != null)) return { ok: true, ...doTexto };
+  return { ok: false, error: "Não consegui ler o comprovante — informe a data à mão." };
+}
+
+/**
+ * Comprovante em PDF com texto (Pix/TED do banco): "DATA: 20/10/2026" e
+ * "VALOR: R$ 318,00" no próprio documento — a leitura sem IA.
+ */
+async function comprovantePeloTexto(pdf: Buffer): Promise<{ data: string | null; valor: number | null } | null> {
+  let texto = "";
+  try {
+    const mupdf = await import("mupdf");
+    const doc = mupdf.Document.openDocument(pdf, "application/pdf");
+    for (let i = 0; i < doc.countPages(); i++) texto += `${doc.loadPage(i).toStructuredText("preserve-whitespace").asText()}\n`;
+  } catch {
+    return null;
+  }
+  const t = texto.replace(/[ \t]+/g, " ");
+  // A data rotulada da operação (não a de emissão do comprovante, no topo).
+  const md =
+    t.match(/\bDATA(?: D[AOE] (?:TRANSA[CÇ][AÃ]O|PAGAMENTO|TRANSFER[EÊ]NCIA|OPERA[CÇ][AÃ]O|CR[EÉ]DITO))?\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i) ??
+    t.match(/\b(?:REALIZAD[OA]|EFETUAD[OA]) EM\s*:?\s*(\d{2})\/(\d{2})\/(\d{4})/i);
+  const mv = t.match(/\bVALOR(?: (?:PAGO|DA TRANSFER[EÊ]NCIA|TRANSFERIDO|DO PIX))?\s*:?\s*R\$\s*([\d.]+,\d{2})/i);
+  const data = md ? `${md[3]}-${md[2]}-${md[1]}` : null;
+  const valor = mv ? Number(mv[1].replace(/\./g, "").replace(",", ".")) : null;
+  return { data, valor: Number.isFinite(valor) ? valor : null };
+}
+
 export type InformarRecebimentoResult = {
   ok: boolean;
   error?: string;
