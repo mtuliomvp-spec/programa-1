@@ -1442,7 +1442,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           <Card>
             <CardHeader
               title="Orçamento de transferência (despachante)"
-              description="Anexe o orçamento/recibo do despachante: a IA lê e lança o título da transferência no Contas a pagar"
+              description="Anexe o orçamento/recibo do despachante: a IA lê e lança o título no Contas a pagar. Recibo só de serviços (2ª via do CRLV-e, licenciamento, placa…) lança o título sem abrir transferência"
             />
             <VehicleTransferQuote
               vehicleId={vehicle.id}
