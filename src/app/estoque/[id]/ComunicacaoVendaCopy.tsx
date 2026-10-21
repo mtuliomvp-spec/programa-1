@@ -71,8 +71,8 @@ export default function ComunicacaoVendaCopy({
         <p className="mt-1 text-xs font-medium text-emerald-700">✓ Comprovante da comunicação anexado em {enviada}.</p>
       ) : (
         <p className="mt-0.5 text-xs text-slate-500">
-          Abra o site da R30 em outra aba e cole campo a campo. Depois de enviar, anexe o comprovante aqui embaixo —
-          a cobrança da R30 entra sozinha no custo deste carro.
+          Abra o site da R30 em outra aba e cole campo a campo. Depois de enviar, lance o comprovante em
+          Financeiro › Comunicação de venda — a cobrança da R30 entra no custo deste carro e o comprovante vem para esta ficha.
         </p>
       )}
       {aberto && !temAtpv ? (

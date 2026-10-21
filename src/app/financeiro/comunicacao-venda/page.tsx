@@ -44,27 +44,28 @@ export default async function ConferenciaFaturaPage() {
 
       <Card>
         <CardHeader
-          title="Conferir"
-          description="Todo mês, quando a fatura e o boleto chegam: a fatura tem que bater com os títulos do sistema, e os dois juntos unificam o mês num pagamento só."
+          title="Lançar comunicação de venda"
+          description="Anexe aqui o comprovante do SICOVE (PDF) de cada comunicação ou cancelamento — é aqui que nasce o título em Contas a pagar."
         />
         <div className="p-5">
-          <FaturaConferencia />
+          <ComprovanteAvulso />
+          <p className="mt-2 text-xs text-slate-500">
+            O sistema lê a placa: achando o carro cadastrado, a cobrança entra como{" "}
+            <strong>custo dele</strong> — pós-venda, se já vendido. Só quando a placa{" "}
+            <strong>não existe no sistema</strong> ela entra como despesa administrativa. O
+            comprovante fica anexado ao título e, quando há ficha, também nela. O mesmo
+            comprovante nunca é cobrado duas vezes.
+          </p>
         </div>
       </Card>
 
       <Card className="mt-4">
         <CardHeader
-          title="Comprovante de um carro sem ficha no sistema"
-          description="Quando não há onde anexar: o carro foi vendido antes da implantação, ou a loja entrou só como agente da comunicação."
+          title="Conferir"
+          description="Todo mês, quando a fatura e o boleto chegam: a fatura tem que bater com os títulos do sistema, e os dois juntos unificam o mês num pagamento só."
         />
         <div className="p-5">
-          <ComprovanteAvulso />
-          <p className="mt-2 text-xs text-slate-500">
-            Achando a placa em um carro cadastrado, a cobrança entra como <strong>custo dele</strong>{" "}
-            — pós-venda, se já vendido —, como sempre. Só quando a placa <strong>não existe no
-            sistema</strong> ela entra como despesa administrativa, sem vínculo com carro nenhum. O
-            comprovante fica anexado ao título e, quando há ficha, também nela.
-          </p>
+          <FaturaConferencia />
         </div>
       </Card>
 

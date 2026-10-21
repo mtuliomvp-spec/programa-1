@@ -8,7 +8,8 @@ import { createManualPayable, resolveSupplierByName } from "@/lib/finance";
  *
  * A loja comunica a venda ao SENATRAN por uma prestadora (hoje a R30), que
  * cobra por serviço prestado e fatura tudo num boleto mensal. Cada comprovante
- * anexado na ficha do carro vira UM título a pagar vinculado àquele veículo —
+ * lançado em Financeiro › Comunicação de venda vira UM título a pagar
+ * vinculado ao veículo da placa —
  * assim o custo cai na margem do carro certo, e o boleto único do mês é pago
  * marcando os títulos em lote (ou por um combo de pagamento).
  *
@@ -130,7 +131,7 @@ export function motivoNaoReconhecido(buffer: Buffer, mimeType?: string): string 
   if (!ehPdf(buffer, mimeType)) {
     return (
       "O arquivo é uma imagem, então a cobrança da comunicação de venda NÃO foi lançada — " +
-      "a foto não tem texto para o sistema ler. Anexe o PDF original da prestadora (ele lança " +
+      "a foto não tem texto para o sistema ler. Use o PDF original da prestadora (ele lança " +
       "o título sozinho) ou lance o título à mão em Contas a pagar."
     );
   }
@@ -150,7 +151,7 @@ export function motivoNaoReconhecido(buffer: Buffer, mimeType?: string): string 
   if (!texto) {
     return (
       "Não consegui ler o texto deste PDF (ele parece ser só imagem digitalizada), então a " +
-      "cobrança da comunicação de venda NÃO foi lançada. Anexe o PDF original da prestadora ou " +
+      "cobrança da comunicação de venda NÃO foi lançada. Use o PDF original da prestadora ou " +
       "lance o título à mão em Contas a pagar."
     );
   }

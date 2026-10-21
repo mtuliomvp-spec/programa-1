@@ -2183,28 +2183,35 @@ export async function uploadVehicleAttachmentAction(
     }
   }
 
-  // Comprovante de comunicação de venda (SICOVE): a prestadora cobra por
-  // serviço, então anexar o comprovante lança sozinho o título daquele custo no
-  // carro. Como no CRLV, nada aqui pode derrubar o anexo — o documento fica
-  // guardado mesmo que a cobrança não seja lançada.
+  // Comprovante de comunicação de venda (SICOVE): o título da cobrança NÃO
+  // nasce mais aqui — é lançado em Financeiro › Comunicação de venda, que acha
+  // o carro pela placa e anexa o comprovante na ficha também. Aqui o documento
+  // só fica guardado; se for um comprovante ainda sem título, a tela avisa onde
+  // lançar. Nada disto pode derrubar o anexo.
   if (kind === "DOCUMENTO" && !TRANSFER_QUOTE_RE.test(description)) {
     try {
-      const { lancarCobrancaSicove } = await import("@/lib/sicove");
-      const cobranca = await lancarCobrancaSicove({
-        vehicleId,
-        buffer,
-        mimeType,
-        // A descrição diz se o anexo TENTA ser uma comunicação de venda: só
-        // nesse caso o não-reconhecimento vira aviso na tela.
-        descricao: description,
-      });
-      if (cobranca.mensagem) {
-        if (cobranca.ok) read.filled = [...read.filled, cobranca.mensagem];
-        else read.warnings = [...read.warnings, cobranca.mensagem];
+      const { lerComprovanteSicove } = await import("@/lib/sicove");
+      const comprovante = lerComprovanteSicove(buffer);
+      if (comprovante) {
+        const jaLancado = comprovante.numero
+          ? await prisma.payable.findFirst({
+              where: {
+                documentNumber: comprovante.numero,
+                ...(comprovante.tipo === "CANCELAMENTO" ? { description: { startsWith: "Cancelamento" } } : {}),
+              },
+              select: { id: true },
+            })
+          : null;
+        if (!jaLancado) {
+          read.warnings = [
+            ...read.warnings,
+            "Comprovante guardado na ficha, mas a cobrança da comunicação de venda não é lançada por aqui: lance o título em Financeiro › Comunicação de venda.",
+          ];
+        }
       }
     } catch {
       // Silencioso de propósito: anexar documento não pode falhar por causa
-      // de uma cobrança automática.
+      // de um aviso.
     }
   }
 

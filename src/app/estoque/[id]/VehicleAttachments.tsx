@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { Button, Field, Input } from "@/components/ui";
 import { formatDate } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
@@ -173,6 +174,13 @@ export default function VehicleAttachments({
         </div>
         <p className="text-xs text-slate-400">
           O arquivo fica guardado com segurança e pode ser aberto ou baixado a qualquer momento. Máximo 15 MB.
+        </p>
+        <p className="text-xs text-slate-500">
+          A cobrança da comunicação de venda é lançada em{" "}
+          <Link href="/financeiro/comunicacao-venda" className="font-medium text-blue-700 hover:underline">
+            Financeiro › Comunicação de venda
+          </Link>{" "}
+          — lá o comprovante já vem para esta ficha sozinho.
         </p>
       </form>
     </div>
