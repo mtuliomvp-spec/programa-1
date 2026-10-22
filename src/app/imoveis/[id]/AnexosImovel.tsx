@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
 import ConfirmButton from "@/components/ConfirmButton";
 import { formatDate } from "@/lib/format";
-import { resizeImageToJpeg } from "@/lib/image-resize";
-import { CATEGORIAS_ANEXO_IMOVEL, PARTE_UPLOAD_IMOVEL, rotuloCategoriaAnexo } from "@/lib/imoveis";
-import { continuarAnexoImovelAction, excluirAnexoImovelAction, iniciarAnexoImovelAction } from "../actions";
+import { CATEGORIAS_ANEXO_IMOVEL, rotuloCategoriaAnexo } from "@/lib/imoveis";
+import { alterarAnexoImovelAction, excluirAnexoImovelAction, identificarAnexoImovelAction } from "../actions";
+import { enviarAnexoImovel } from "../enviarAnexo";
 
 export type AnexoImovel = {
   id: string;
@@ -34,55 +34,46 @@ export default function AnexosImovel({
   imovelId,
   anexos,
   podeCriar,
+  podeEditar,
   podeExcluir,
 }: {
   imovelId: string;
   anexos: AnexoImovel[];
   podeCriar: boolean;
+  podeEditar: boolean;
   podeExcluir: boolean;
 }) {
   const router = useRouter();
   const fileRef = useRef<HTMLInputElement>(null);
-  const [categoria, setCategoria] = useState<string>("ESCRITURA");
+  // "AUTO": a IA diz o tipo, o ano e a descrição de cada arquivo depois do envio.
+  const [categoria, setCategoria] = useState<string>("AUTO");
   const [exercicio, setExercicio] = useState(String(new Date().getFullYear()));
   const [descricao, setDescricao] = useState("");
   const [enviando, setEnviando] = useState<string | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [lidos, setLidos] = useState<string[]>([]);
+  const [editando, setEditando] = useState<string | null>(null);
+  const automatico = categoria === "AUTO";
   const porAno = CATEGORIAS_ANEXO_IMOVEL.find((c) => c.key === categoria)?.porAno ?? false;
 
-  async function enviarUm(original: File, descricaoDoArquivo: string) {
-    const file = original.type.startsWith("image/") ? await resizeImageToJpeg(original) : original;
-    let id: string | null = null;
-    for (let offset = 0; offset < file.size; offset += PARTE_UPLOAD_IMOVEL) {
-      const parte = file.slice(offset, offset + PARTE_UPLOAD_IMOVEL);
-      const fd = new FormData();
-      fd.set("parte", parte);
-      setEnviando(
-        `Enviando ${original.name}${file.size > PARTE_UPLOAD_IMOVEL ? ` — ${Math.min(100, Math.round(((offset + parte.size) / file.size) * 100))}%` : ""}…`,
-      );
-      let r;
-      if (!id) {
-        fd.set("imovelId", imovelId);
-        fd.set("categoria", categoria);
-        if (porAno) fd.set("exercicio", exercicio);
-        fd.set("description", descricaoDoArquivo);
-        fd.set("filename", file.name || original.name);
-        fd.set("mimeType", file.type || original.type);
-        fd.set("size", String(file.size));
-        r = await iniciarAnexoImovelAction(fd);
-        id = r.id ?? null;
-      } else {
-        fd.set("id", id);
-        fd.set("offset", String(offset));
-        r = await continuarAnexoImovelAction(fd);
-      }
-      if (!r.ok) {
-        // O pedaço que já subiu não serve para nada: sai.
-        if (id) await excluirAnexoImovelAction(id);
-        throw new Error(`${original.name}: ${r.error || "falha no envio"}`);
-      }
-    }
+  async function enviarUm(original: File, descricaoDoArquivo: string): Promise<string> {
+    const id = await enviarAnexoImovel(
+      original,
+      {
+        imovelId,
+        categoria: automatico ? "OUTRO" : categoria,
+        exercicio: porAno ? exercicio : undefined,
+        description: descricaoDoArquivo,
+      },
+      (pct) => setEnviando(`Enviando ${original.name}${pct < 100 ? ` — ${pct}%` : ""}…`),
+    );
+    if (!automatico) return `${original.name}: anexado`;
+    setEnviando(`Identificando ${original.name}…`);
+    const r = await identificarAnexoImovelAction(id, Boolean(descricaoDoArquivo));
+    return r.ok
+      ? `${original.name}: ${r.resumo}`
+      : `${original.name}: anexado como "Outro documento" — ${(r.error || "não identifiquei").replace(/\.+$/, "")}. Ajuste o tipo em "Editar".`;
   }
 
   async function enviar() {
@@ -90,10 +81,13 @@ export default function AnexosImovel({
     if (!arquivos.length) return;
     setErro(null);
     setOk(null);
+    setLidos([]);
     try {
+      const resultado: string[] = [];
       for (const f of arquivos) {
         // Vários arquivos de uma vez: cada um leva o próprio nome como descrição.
-        await enviarUm(f, arquivos.length === 1 ? descricao : "");
+        resultado.push(await enviarUm(f, arquivos.length === 1 ? descricao : ""));
+        setLidos([...resultado]);
       }
       setOk(arquivos.length === 1 ? "Documento anexado." : `${arquivos.length} documentos anexados.`);
       setDescricao("");
@@ -147,6 +141,15 @@ export default function AnexosImovel({
                         </a>
                       </>
                     ) : null}
+                    {podeEditar && a.completo ? (
+                      <button
+                        type="button"
+                        onClick={() => setEditando(editando === a.id ? null : a.id)}
+                        className="text-slate-600 hover:underline"
+                      >
+                        Editar
+                      </button>
+                    ) : null}
                     {podeExcluir || (!a.completo && podeCriar) ? (
                       <ConfirmButton
                         confirmLabel="Excluir"
@@ -162,6 +165,16 @@ export default function AnexosImovel({
                       </ConfirmButton>
                     ) : null}
                   </div>
+                  {editando === a.id ? (
+                    <EditarAnexo
+                      anexo={a}
+                      onFim={(erroEdicao) => {
+                        if (erroEdicao) setErro(erroEdicao);
+                        setEditando(null);
+                        router.refresh();
+                      }}
+                    />
+                  ) : null}
                 </li>
               ))}
             </ul>
@@ -174,6 +187,7 @@ export default function AnexosImovel({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <Field label="Tipo do documento">
               <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+                <option value="AUTO">🤖 Identificar automaticamente</option>
                 {CATEGORIAS_ANEXO_IMOVEL.map((c) => (
                   <option key={c.key} value={c.key}>
                     {c.label}
@@ -190,7 +204,7 @@ export default function AnexosImovel({
               <Input
                 value={descricao}
                 onChange={(e) => setDescricao(e.target.value)}
-                placeholder={rotuloCategoriaAnexo(categoria)}
+                placeholder={automatico ? "a IA descreve o documento" : rotuloCategoriaAnexo(categoria)}
               />
             </Field>
           </div>
@@ -207,14 +221,55 @@ export default function AnexosImovel({
             </Button>
           </div>
           <p className="text-xs text-slate-400">
-            Pode escolher vários arquivos de uma vez (todos entram no tipo escolhido). Arquivos grandes, como
-            o registro do cartório escaneado, sobem em partes — até 60 MB.
+            Pode escolher vários arquivos de uma vez. Em &quot;Identificar automaticamente&quot;, a IA diz o tipo e o
+            ano de cada um (declaração e recibo do ITR, DARF, comprovante…) e, no registro, completa os campos vazios
+            da ficha. Arquivos grandes, como o registro do cartório escaneado, sobem em partes — até 60 MB.
           </p>
           {enviando ? <p className="text-sm text-slate-600">⏳ {enviando}</p> : null}
           {erro ? <p className="text-sm text-rose-700">{erro}</p> : null}
           {ok ? <p className="text-sm text-emerald-700">✓ {ok}</p> : null}
+          {lidos.length ? (
+            <ul className="list-disc pl-5 text-xs text-slate-600">
+              {lidos.map((l, i) => (
+                <li key={i}>{l}</li>
+              ))}
+            </ul>
+          ) : null}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** Corrige o tipo, o ano ou a descrição de um documento. */
+function EditarAnexo({ anexo, onFim }: { anexo: AnexoImovel; onFim: (erro?: string) => void }) {
+  const [categoria, setCategoria] = useState(anexo.categoria);
+  const [exercicio, setExercicio] = useState(anexo.exercicio ? String(anexo.exercicio) : "");
+  const [descricao, setDescricao] = useState(anexo.description);
+  const [salvando, setSalvando] = useState(false);
+  return (
+    <div className="mt-2 grid w-full grid-cols-1 gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:grid-cols-[1fr_6rem_1fr_auto]">
+      <Select value={categoria} onChange={(e) => setCategoria(e.target.value)}>
+        {CATEGORIAS_ANEXO_IMOVEL.map((c) => (
+          <option key={c.key} value={c.key}>
+            {c.label}
+          </option>
+        ))}
+      </Select>
+      <Input value={exercicio} onChange={(e) => setExercicio(e.target.value)} placeholder="Ano" inputMode="numeric" maxLength={4} />
+      <Input value={descricao} onChange={(e) => setDescricao(e.target.value)} />
+      <Button
+        type="button"
+        disabled={salvando}
+        onClick={async () => {
+          setSalvando(true);
+          const r = await alterarAnexoImovelAction({ id: anexo.id, categoria, exercicio, description: descricao });
+          setSalvando(false);
+          onFim(r.ok ? undefined : r.error || "Não foi possível salvar.");
+        }}
+      >
+        {salvando ? "Salvando…" : "Salvar"}
+      </Button>
     </div>
   );
 }

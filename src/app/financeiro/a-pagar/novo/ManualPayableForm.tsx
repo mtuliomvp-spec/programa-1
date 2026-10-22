@@ -60,6 +60,23 @@ export default function ManualPayableForm({
         </Select>
       </Field>
 
+      {imoveis.length ? (
+        <Field label="Imóvel (opcional)">
+          <Select name="imovelId" defaultValue={imovelInicial ?? ""}>
+            <option value="">— nenhum —</option>
+            {imoveis.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nome}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-slate-400">
+            Conta de um imóvel (ITR, IPTU, honorários): aparece também na ficha dele. O fluxo acima continua
+            dizendo quem paga — Administrativo (loja) ou Capital (sócio).
+          </p>
+        </Field>
+      ) : null}
+
       {flow === "VEICULOS" ? (
         <Field label="Veículo (opcional)">
           <Select name="vehicleId" defaultValue="">
@@ -193,19 +210,6 @@ export default function ManualPayableForm({
       <p className="text-xs text-slate-400">
         O título nasce pendente — a baixa é feita em Contas a pagar (na data do caixa) conforme for pago.
       </p>
-      {imoveis.length ? (
-        <Field label="Imóvel (opcional)">
-          <Select name="imovelId" defaultValue={imovelInicial ?? ""}>
-            <option value="">— nenhum —</option>
-            {imoveis.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.nome}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-1 text-xs text-slate-400">A conta aparece também na ficha do imóvel.</p>
-        </Field>
-      ) : null}
       <Field label="Observações">
         <Textarea name="notes" rows={3} />
       </Field>

@@ -189,6 +189,23 @@ export default function RecurringForm({
           </Select>
         </Field>
 
+        {imoveis.length ? (
+          <Field label="Imóvel (opcional)">
+            <Select name="imovelId" defaultValue={initial?.imovelId ?? ""}>
+              <option value="">— nenhum —</option>
+              {imoveis.map((i) => (
+                <option key={i.id} value={i.id}>
+                  {i.name}
+                </option>
+              ))}
+            </Select>
+            <p className="mt-1 text-xs text-slate-400">
+              Conta de um imóvel (ITR, IPTU, honorários): os títulos ficam na ficha dele. O fluxo
+              continua dizendo quem paga — Administrativo (loja) ou Capital (sócio).
+            </p>
+          </Field>
+        ) : null}
+
         <Field label="Periodicidade" required>
           <Select
             name="periodicidade"
@@ -312,22 +329,6 @@ export default function RecurringForm({
         </Field>
       </div>
 
-      {imoveis.length ? (
-        <Field label="Imóvel (opcional)">
-          <Select name="imovelId" defaultValue={initial?.imovelId ?? ""}>
-            <option value="">— nenhum —</option>
-            {imoveis.map((i) => (
-              <option key={i.id} value={i.id}>
-                {i.name}
-              </option>
-            ))}
-          </Select>
-          <p className="mt-1 text-xs text-slate-400">
-            Os títulos gerados ficam ligados ao imóvel e aparecem na ficha dele (ITR, IPTU,
-            honorários).
-          </p>
-        </Field>
-      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" rows={2} defaultValue={initial?.notes ?? ""} />
