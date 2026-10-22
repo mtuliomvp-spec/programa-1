@@ -1619,6 +1619,7 @@ async function applyTransferQuote(input: {
   if (soServicos) {
     filled.push(
       `orçamento SEM transferência (${linhasCobradas.map((i) => i.descricao).join(", ")}): o processo de transferência não é aberto`,
+      `o arquivo foi para o card "Documentos do veículo", como "Orçamento de serviços (despachante)"`,
     );
   } else if (cancelamento) {
     if (vehicle.transferToName) {
