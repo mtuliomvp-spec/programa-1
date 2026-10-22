@@ -25,7 +25,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
   });
   if (!entry) notFound();
 
-  const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories] = await Promise.all([
+  const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories, imoveis] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.capitalBeneficiary.findMany({
@@ -35,6 +35,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
     }),
     listCategoryNames("DESPESA"),
     listCategoryNames("RECEITA"),
+    prisma.imovel.findMany({ orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
   ]);
 
   // Rótulo da categoria para preencher o campo (fallback no enum quando o
@@ -69,12 +70,13 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
             beneficiaries={beneficiaries}
             despesaCategories={despesaCategories}
             receitaCategories={receitaCategories}
+            imoveis={imoveis.map((i) => ({ id: i.id, name: i.nome }))}
             initial={{
               kind: entry.kind,
               description: entry.description,
               amount: entry.amount,
               structuralKey: entry.structuralKey ?? "ADMINISTRATIVO",
-              periodicidade: entry.intervalDays ? "DIAS" : "MENSAL",
+              periodicidade: entry.intervalDays ? "DIAS" : entry.intervalMonths === 12 ? "ANUAL" : "MENSAL",
               dayOfMonth: entry.dayOfMonth,
               intervalDays: entry.intervalDays,
               anticipateToBusinessDay: entry.anticipateToBusinessDay,
@@ -87,6 +89,7 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
               startDate: toDateInputValue(entry.startDate),
               endDate: entry.endDate ? toDateInputValue(entry.endDate) : null,
               notes: entry.notes,
+              imovelId: entry.imovelId,
             }}
           />
         </div>

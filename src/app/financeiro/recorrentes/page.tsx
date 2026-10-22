@@ -164,7 +164,11 @@ export default async function RecorrentesPage({
                   </Td>
                   <Td>{e.capitalBeneficiary?.name || e.supplier?.name || e.customer?.name || "-"}</Td>
                   <Td className="text-right tabular-nums">
-                    {e.intervalDays && e.intervalDays > 0 ? `a cada ${e.intervalDays} dias` : `dia ${e.dayOfMonth}`}
+                    {e.intervalDays && e.intervalDays > 0
+                      ? `a cada ${e.intervalDays} dias`
+                      : e.intervalMonths === 12
+                        ? `anual · ${String(e.dayOfMonth).padStart(2, "0")}/${String(e.startDate.getUTCMonth() + 1).padStart(2, "0")}`
+                        : `dia ${e.dayOfMonth}`}
                     {e.anticipateToBusinessDay ? (
                       <span className="block text-xs font-normal text-slate-400">antecipa p/ dia útil</span>
                     ) : null}

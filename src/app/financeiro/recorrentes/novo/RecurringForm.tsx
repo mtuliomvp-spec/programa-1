@@ -18,7 +18,7 @@ export type RecurringInitial = {
   description: string;
   amount: number;
   structuralKey: string;
-  periodicidade: "MENSAL" | "DIAS";
+  periodicidade: "MENSAL" | "DIAS" | "ANUAL";
   dayOfMonth: number;
   intervalDays: number | null;
   anticipateToBusinessDay: boolean;
@@ -31,6 +31,8 @@ export type RecurringInitial = {
   startDate: string; // yyyy-mm-dd
   endDate: string | null;
   notes: string | null;
+  /** Imóvel a que a conta se refere (ITR, IPTU…). */
+  imovelId?: string | null;
 };
 
 export default function RecurringForm({
@@ -42,6 +44,7 @@ export default function RecurringForm({
   initial,
   id,
   documentos = [],
+  imoveis = [],
 }: {
   suppliers: Option[];
   customers: Option[];
@@ -52,6 +55,8 @@ export default function RecurringForm({
   id?: string;
   /** Documentos já anexados (edição). */
   documentos?: DocumentoRecorrencia[];
+  /** Imóveis cadastrados, para ligar a conta a um deles. */
+  imoveis?: Option[];
 }) {
   const editing = !!id;
   const [state, formAction, pending] = useActionState(
@@ -59,7 +64,7 @@ export default function RecurringForm({
     {} as RecurringFormState,
   );
   const [kind, setKind] = useState<"PAGAR" | "RECEBER">(initial?.kind ?? "PAGAR");
-  const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS">(initial?.periodicidade ?? "MENSAL");
+  const [periodicidade, setPeriodicidade] = useState<"MENSAL" | "DIAS" | "ANUAL">(initial?.periodicidade ?? "MENSAL");
   const [flow, setFlow] = useState<string>(initial?.structuralKey ?? "ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
   // Fornecedor: campo com digitação livre e sugestões (mais fácil de achar numa
@@ -188,13 +193,35 @@ export default function RecurringForm({
           <Select
             name="periodicidade"
             value={periodicidade}
-            onChange={(e) => setPeriodicidade(e.target.value as "MENSAL" | "DIAS")}
+            onChange={(e) => setPeriodicidade(e.target.value as "MENSAL" | "DIAS" | "ANUAL")}
           >
             <option value="MENSAL">Mensal (dia do mês)</option>
+            <option value="ANUAL">Anual (todo ano, no dia de &quot;Começa em&quot;)</option>
             <option value="DIAS">A cada N dias</option>
           </Select>
         </Field>
-        {periodicidade === "MENSAL" ? (
+        {periodicidade === "ANUAL" ? (
+          <Field label="Vencimento anual">
+            <p className="text-xs text-slate-500">
+              O primeiro vencimento é a data em <strong>&quot;Começa em&quot;</strong>; os seguintes caem
+              no mesmo dia e mês dos anos seguintes (ex.: ITR em 30/09). O título de cada ano aparece
+              no Contas a pagar uns dias antes de vencer.
+            </p>
+            <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
+              <input
+                type="checkbox"
+                name="anticipateToBusinessDay"
+                value="true"
+                defaultChecked={initial?.anticipateToBusinessDay ?? false}
+                className="mt-0.5"
+              />
+              <span>
+                Antecipar para o <strong>último dia útil</strong> quando cair em fim de semana ou
+                feriado (padrão de guias como o DARF).
+              </span>
+            </label>
+          </Field>
+        ) : periodicidade === "MENSAL" ? (
           <Field label="Dia do vencimento (1 a 31)" required>
             <Input type="number" name="dayOfMonth" min={1} max={31} defaultValue={initial?.dayOfMonth ?? 5} required />
             <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
@@ -284,6 +311,23 @@ export default function RecurringForm({
           <Input type="date" name="endDate" defaultValue={initial?.endDate ?? ""} />
         </Field>
       </div>
+
+      {imoveis.length ? (
+        <Field label="Imóvel (opcional)">
+          <Select name="imovelId" defaultValue={initial?.imovelId ?? ""}>
+            <option value="">— nenhum —</option>
+            {imoveis.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.name}
+              </option>
+            ))}
+          </Select>
+          <p className="mt-1 text-xs text-slate-400">
+            Os títulos gerados ficam ligados ao imóvel e aparecem na ficha dele (ITR, IPTU,
+            honorários).
+          </p>
+        </Field>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" rows={2} defaultValue={initial?.notes ?? ""} />

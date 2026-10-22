@@ -2856,6 +2856,8 @@ export async function createManualPayable(input: {
   notes?: string | null;
   alreadyPaid: boolean;
   purchaseRequestId?: string | null;
+  /** Imóvel a que a conta se refere (ITR, IPTU, honorários…). */
+  imovelId?: string | null;
 }) {
   return createExpensePayable({
     description: input.description,
@@ -2872,6 +2874,7 @@ export async function createManualPayable(input: {
     structuralKey: input.structuralKey,
     notes: input.notes || null,
     purchaseRequestId: input.purchaseRequestId || null,
+    imovelId: input.imovelId || null,
   });
 }
 
@@ -3396,6 +3399,8 @@ export async function createExpensePayable(input: {
   notes?: string | null;
   avulso?: boolean;
   purchaseRequestId?: string | null;
+  /** Imóvel a que a conta se refere (ITR, IPTU, honorários…). */
+  imovelId?: string | null;
 }) {
   // Se o veículo já foi vendido, a despesa é pós-venda: sai do centro Veículos
   // (o carro não está mais no estoque) e vira despesa Administrativa; o custo é
@@ -3449,6 +3454,7 @@ export async function createExpensePayable(input: {
         notes: input.notes || null,
         avulso: input.avulso ?? false,
         purchaseRequestId: input.purchaseRequestId || null,
+        imovelId: input.imovelId || null,
       },
     });
     if (input.vehicleId && !isVehiclePurchase(input.category)) {
@@ -3558,6 +3564,8 @@ export async function createInstallmentPayables(input: {
   structuralKey?: StructuralKey;
   notes?: string | null;
   purchaseRequestId?: string | null;
+  /** Imóvel a que a conta se refere (ITR, IPTU, honorários…). */
+  imovelId?: string | null;
   /** Ids dos títulos criados, na ordem das parcelas. */
 }): Promise<string[]> {
   if (input.parcels.length === 0) return [];
@@ -3593,6 +3601,7 @@ export async function createInstallmentPayables(input: {
     capitalBeneficiaryId: input.capitalBeneficiaryId || null,
     notes: input.notes || null,
     purchaseRequestId: input.purchaseRequestId || null,
+    imovelId: input.imovelId || null,
   }));
 
   // A descrição é única dentro do lote ("Parcela i/N"), então serve de chave
@@ -3661,6 +3670,8 @@ export async function updateManualPayable(input: {
   structuralKey?: StructuralKey;
   vehicleId?: string | null;
   capitalBeneficiaryId?: string | null;
+  /** Imóvel ligado; undefined = não mexe no vínculo atual. */
+  imovelId?: string | null;
 }) {
   let vehicleSold = false;
   if (input.vehicleId) {
@@ -3694,6 +3705,7 @@ export async function updateManualPayable(input: {
         notes: input.notes || null,
         vehicleId: input.vehicleId || null,
         capitalBeneficiaryId: input.capitalBeneficiaryId || null,
+        ...(input.imovelId !== undefined ? { imovelId: input.imovelId } : {}),
         costCenterId: centerId,
       },
     });

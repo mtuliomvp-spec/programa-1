@@ -21,7 +21,8 @@ const recurringSchema = z.object({
   amount: z.coerce.number().min(0, "Informe um valor válido"),
   cardInvoice: z.coerce.boolean().optional(),
   structuralKey: z.enum(STRUCTURAL_KEY_VALUES).default("ADMINISTRATIVO"),
-  periodicidade: z.enum(["MENSAL", "DIAS"]).default("MENSAL"),
+  // ANUAL: todo ano no dia e mês de "Começa em" (ITR, IPVA, licenciamento).
+  periodicidade: z.enum(["MENSAL", "DIAS", "ANUAL"]).default("MENSAL"),
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
   intervalDays: z.coerce.number().int().min(1).max(365).optional(),
   // Antecipa o vencimento para o último dia útil (fim de semana/feriado).
@@ -32,6 +33,8 @@ const recurringSchema = z.object({
   supplierName: z.string().optional(),
   customerId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
+  // Imóvel a que a conta se refere (os títulos nascem ligados a ele).
+  imovelId: z.string().optional(),
   startDate: z.string().min(1),
   endDate: z.string().optional(),
   notes: z.string().optional(),
@@ -80,6 +83,7 @@ export async function createRecurringAction(
     return { error: "Informe um valor maior que zero." };
   }
   const porDias = data.periodicidade === "DIAS";
+  const anual = data.periodicidade === "ANUAL";
   if (porDias && !data.intervalDays) {
     return { error: "Informe de quantos em quantos dias (1 a 365)." };
   }
@@ -133,8 +137,11 @@ export async function createRecurringAction(
         description: data.description,
         amount: data.amount,
         structuralKey: data.structuralKey,
-        dayOfMonth: data.dayOfMonth,
+        // Anual: o dia vem do "Começa em" (o primeiro vencimento).
+        dayOfMonth: anual ? parseDateInput(data.startDate).getUTCDate() : data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
+        intervalMonths: anual ? 12 : null,
+        imovelId: data.imovelId || null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
         firstReference: competencia.valor,
         cardInvoice: isCard,
@@ -190,6 +197,7 @@ export async function updateRecurringAction(
     return { error: "Informe um valor maior que zero." };
   }
   const porDias = data.periodicidade === "DIAS";
+  const anual = data.periodicidade === "ANUAL";
   if (porDias && !data.intervalDays) {
     return { error: "Informe de quantos em quantos dias (1 a 365)." };
   }
@@ -244,8 +252,11 @@ export async function updateRecurringAction(
         description: data.description,
         amount: data.amount,
         structuralKey: data.structuralKey,
-        dayOfMonth: data.dayOfMonth,
+        // Anual: o dia vem do "Começa em" (o primeiro vencimento).
+        dayOfMonth: anual ? parseDateInput(data.startDate).getUTCDate() : data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
+        intervalMonths: anual ? 12 : null,
+        imovelId: data.imovelId || null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
         firstReference: competencia.valor,
         cardInvoice: isCard,

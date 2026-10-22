@@ -6,10 +6,15 @@ import ManualPayableForm from "./ManualPayableForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NovaContaPagarPage() {
+export default async function NovaContaPagarPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ imovel?: string }>;
+}) {
   await requireModule("financeiro");
   await requireAction("financeiro", "criar");
-  const [suppliers, costCenters, stockVehicles, beneficiaries, categories] = await Promise.all([
+  const { imovel } = await searchParams;
+  const [suppliers, costCenters, stockVehicles, beneficiaries, categories, imoveis] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.costCenter.findMany({
       where: { active: true, structural: false },
@@ -27,6 +32,7 @@ export default async function NovaContaPagarPage() {
       select: { id: true, name: true },
     }),
     listCategoryNames("DESPESA"),
+    prisma.imovel.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
   ]);
 
   const vehicles = stockVehicles.map((v) => ({
@@ -46,6 +52,8 @@ export default async function NovaContaPagarPage() {
             vehicles={vehicles}
             beneficiaries={beneficiaries}
             categories={categories}
+            imoveis={imoveis}
+            imovelInicial={imoveis.some((i) => i.id === imovel) ? imovel : null}
           />
         </div>
       </Card>
