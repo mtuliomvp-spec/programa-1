@@ -25,6 +25,7 @@ export const AI_FEATURES = {
   fatura: "Fatura de cartão",
   orcamento: "Orçamento do despachante",
   documentosCompra: "Documentos da compra (identificação)",
+  imovel: "Documentos de imóvel",
   parecer: "Parecer IA",
 } as const;
 

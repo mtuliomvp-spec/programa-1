@@ -139,6 +139,7 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
           imovelId={imovel.id}
           anexos={imovel.anexos.map((a) => ({ ...a, createdAt: a.createdAt.toISOString() }))}
           podeCriar={podeCriar}
+          podeEditar={podeEditar}
           podeExcluir={podeExcluir}
         />
       </Card>

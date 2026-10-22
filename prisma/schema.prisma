@@ -2465,8 +2465,11 @@ model Imovel {
 /// só fica true quando a última parte chega.
 model ImovelAnexo {
   id          String   @id @default(cuid())
-  imovelId    String
-  imovel      Imovel   @relation(fields: [imovelId], references: [id], onDelete: Cascade)
+  // Vazio = RASCUNHO: o registro enviado no "Novo imóvel" para a IA ler, antes
+  // de o imóvel existir. Ao salvar, ele é ligado ao imóvel criado; rascunho
+  // abandonado some depois de um dia.
+  imovelId    String?
+  imovel      Imovel?  @relation(fields: [imovelId], references: [id], onDelete: Cascade)
   // ESCRITURA | PLANTA | ITR_DECLARACAO | ITR_RECIBO | DARF | COMPROVANTE | CONTRATO | OUTRO
   categoria   String
   // Ano a que o documento se refere (exercício do ITR, por exemplo).
