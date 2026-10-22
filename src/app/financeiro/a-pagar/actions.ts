@@ -842,6 +842,7 @@ export async function updatePayableAction(
       category: true,
       amount: true,
       description: true,
+      notes: true,
       vehicleId: true,
       costCenter: { select: { key: true } },
       vehicle: { select: { consigned: true, payoffAmount: true, debtsAmount: true } },
@@ -908,6 +909,16 @@ export async function updatePayableAction(
   const round2 = (n: number) => Math.round(n * 100) / 100;
   const repasseDelta = repasseDebito ? round2(d.amount - current.amount) : 0;
 
+  // Valor corrigido à mão e a observação ficou como estava: ela costuma trazer
+  // o valor antigo (ex.: "Lançado da leitura do orçamento… R$ 1.552,00", quando
+  // a IA leu errado). Sem esta linha, o título dizia um valor e a observação
+  // outro. Quem reescreveu a observação já disse o que queria.
+  let notes = d.notes?.trim() || null;
+  if (notes && Math.abs(amount - current.amount) > 0.005 && notes === (current.notes ?? "").trim()) {
+    const hoje = new Date().toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    notes = `${notes}\nValor corrigido à mão em ${hoje}: de ${brl(current.amount)} para ${brl(amount)}.`;
+  }
+
   await updateManualPayable({
     id: d.id,
     description: d.description,
@@ -924,7 +935,7 @@ export async function updatePayableAction(
     // É o caso da conta de consumo que chega com data diferente da combinada.
     dueDate: parseDateInput(d.dueDate),
     supplierId: d.supplierId || null,
-    notes: d.notes?.trim() || null,
+    notes,
     structuralKey: flow,
     vehicleId,
     capitalBeneficiaryId,
