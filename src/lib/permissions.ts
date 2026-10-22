@@ -198,6 +198,11 @@ export const MODULES: ModuleConfig[] = [
     label: "Documentos da empresa",
     acoes: [VER, CRIAR, EXCLUIR],
   },
+  {
+    key: "imoveis",
+    label: "Imóveis (documentos e contas)",
+    acoes: [VER, CRIAR, EDITAR, EXCLUIR],
+  },
 ];
 
 export type ModuleKey = (typeof MODULES)[number]["key"];

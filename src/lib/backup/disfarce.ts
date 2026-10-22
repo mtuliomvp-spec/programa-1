@@ -136,6 +136,13 @@ export const REGRAS: Record<string, Record<string, Regra>> = {
   RenaveRegistro: { codigoCrvAtual: "digitos", atpveNumero: "digitos" },
   RenaveOperacao: { userName: "pessoa" },
   DevolucaoCompra: { supplierNome: "fornecedor", veiculoPlaca: "placa", nfeChave: "digitos", userName: "pessoa" },
+  Imovel: {
+    proprietario: "pessoa",
+    endereco: "endereco",
+    cib: "digitos",
+    inscricaoMunicipal: "digitos",
+    matricula: "digitos",
+  },
 };
 
 /** Campos que são códigos do sistema: nem a troca dentro do texto mexe. */

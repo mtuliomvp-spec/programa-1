@@ -29,6 +29,8 @@ type Payable = {
   structuralKey: string;
   vehicleId: string | null;
   capitalBeneficiaryId: string | null;
+  /** Imóvel a que a conta se refere (ITR, IPTU, honorários…). */
+  imovelId: string | null;
   /** Venda que gerou o título (comissão, indicação, transferência DETRAN). */
   saleId: string | null;
   /** É a compra do carro: valor e destino vêm do cadastro do veículo. */
@@ -49,6 +51,7 @@ export default function EditPayableForm({
   beneficiaries,
   categories,
   returnTo,
+  imoveis = [],
 }: {
   payable: Payable;
   suppliers: Supplier[];
@@ -56,6 +59,7 @@ export default function EditPayableForm({
   beneficiaries: Beneficiary[];
   categories: string[];
   returnTo?: string;
+  imoveis?: { id: string; nome: string }[];
 }) {
   const [state, formAction, pending] = useActionState(updatePayableAction, {} as EditPayableState);
   const [flow, setFlow] = useState(payable.structuralKey || "ADMINISTRATIVO");
@@ -261,6 +265,19 @@ export default function EditPayableForm({
         emptyLabel="Sem fornecedor"
         defaultValue={payable.supplierId || ""}
       />
+
+      {imoveis.length ? (
+        <Field label="Imóvel (opcional)">
+          <Select name="imovelId" defaultValue={payable.imovelId || ""}>
+            <option value="">— nenhum —</option>
+            {imoveis.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.nome}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      ) : null}
 
       <Field label="Observações">
         <Textarea name="notes" rows={2} defaultValue={payable.notes || ""} />

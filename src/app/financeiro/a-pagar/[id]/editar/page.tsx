@@ -76,7 +76,7 @@ export default async function EditarPayablePage({
   // Título pago não é editável (reverter antes); os demais podem.
   if (payable.status === "PAGO") redirect(safeReturn);
 
-  const [suppliers, stockVehicles, beneficiaries, categories] = await Promise.all([
+  const [suppliers, stockVehicles, beneficiaries, categories, imoveis] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.vehicle.findMany({
       orderBy: [{ status: "asc" }, { createdAt: "desc" }],
@@ -88,6 +88,7 @@ export default async function EditarPayablePage({
       select: { id: true, name: true },
     }),
     listCategoryNames("DESPESA"),
+    prisma.imovel.findMany({ orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
   ]);
   const vehicles = stockVehicles.map((v) => ({
     id: v.id,
@@ -200,6 +201,7 @@ export default async function EditarPayablePage({
               structuralKey: flow,
               vehicleId: payable.vehicleId,
               capitalBeneficiaryId: payable.capitalBeneficiaryId,
+              imovelId: payable.imovelId,
               // Título gerado por uma venda: o destino contábil é travado (o
               // custo já pertence àquela venda).
               saleId: payable.saleId,
@@ -219,6 +221,7 @@ export default async function EditarPayablePage({
             suppliers={suppliers}
             vehicles={vehicles}
             beneficiaries={beneficiaries}
+            imoveis={imoveis}
             categories={categories}
             returnTo={safeReturn}
           />

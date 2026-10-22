@@ -81,6 +81,24 @@ function monthlyDueDates(dayOfMonth: number, startDate: Date, horizon: Date): Da
   return out;
 }
 
+/**
+ * Vencimentos "a cada N meses" (12 = anual: ITR, IPVA) no dia do início, a
+ * partir do mês do início até o horizonte. Mesma âncora (meio-dia UTC) e mesmo
+ * dia corrigido para meses curtos da mensal.
+ */
+function everyMonthsDueDates(dayOfMonth: number, startDate: Date, everyMonths: number, horizon: Date): Date[] {
+  const CAP = 40;
+  const step = Math.max(1, Math.round(everyMonths));
+  const out: Date[] = [];
+  let idx = startDate.getUTCFullYear() * 12 + startDate.getUTCMonth();
+  const endIdx = horizon.getUTCFullYear() * 12 + horizon.getUTCMonth();
+  while (idx <= endIdx && out.length < CAP) {
+    out.push(monthDue(Math.floor(idx / 12), idx % 12, dayOfMonth));
+    idx += step;
+  }
+  return out;
+}
+
 /** Vencimentos "a cada N dias" desde startDate até o horizonte (com teto). */
 function intervalDueDates(startDate: Date, everyDays: number, endDate: Date | null, horizon: Date): Date[] {
   const CAP = 120; // nunca gera em massa, mesmo com startDate muito antigo
@@ -210,9 +228,13 @@ async function recurringGenerated(leadDays: number): Promise<number> {
 
     // Datas de vencimento candidatas: mensal (mês corrente + próximo) ou por
     // intervalo. Só entram as que vencem até o horizonte e a partir do início.
-    const candidates = monthly
-      ? monthlyDueDates(entry.dayOfMonth, entry.startDate, horizon)
-      : intervalDueDates(entry.startDate, entry.intervalDays!, entry.endDate, horizon);
+    // "A cada N meses" (anual) também usa a ocorrência AAAA-MM da mensal.
+    const everyMonths = entry.intervalMonths && entry.intervalMonths > 1 ? entry.intervalMonths : null;
+    const candidates = !monthly
+      ? intervalDueDates(entry.startDate, entry.intervalDays!, entry.endDate, horizon)
+      : everyMonths
+        ? everyMonthsDueDates(entry.dayOfMonth, entry.startDate, everyMonths, horizon)
+        : monthlyDueDates(entry.dayOfMonth, entry.startDate, horizon);
     const startAnchor = new Date(
       Date.UTC(entry.startDate.getUTCFullYear(), entry.startDate.getUTCMonth(), entry.startDate.getUTCDate(), 0, 0),
     );
@@ -288,6 +310,7 @@ async function recurringGenerated(leadDays: number): Promise<number> {
             status: "PENDENTE",
             supplierId: entry.supplierId,
             capitalBeneficiaryId,
+            imovelId: entry.imovelId,
             recurringId: entry.id,
             recurringPeriod: periodo,
             referencePeriod,

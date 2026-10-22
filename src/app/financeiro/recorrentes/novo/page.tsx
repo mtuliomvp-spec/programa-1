@@ -6,10 +6,16 @@ import RecurringForm from "./RecurringForm";
 
 export const dynamic = "force-dynamic";
 
-export default async function NovaRecorrenciaPage() {
+export default async function NovaRecorrenciaPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ imovel?: string }>;
+}) {
   await requireModule("financeiro");
   await requireAction("financeiro", "recorrentes");
-  const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories] = await Promise.all([
+  // Vindo da ficha de um imóvel ("Nova conta recorrente"): já nasce ligada a ele.
+  const { imovel } = await searchParams;
+  const [suppliers, customers, beneficiaries, despesaCategories, receitaCategories, imoveis] = await Promise.all([
     prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
     prisma.capitalBeneficiary.findMany({
@@ -19,7 +25,9 @@ export default async function NovaRecorrenciaPage() {
     }),
     listCategoryNames("DESPESA"),
     listCategoryNames("RECEITA"),
+    prisma.imovel.findMany({ where: { ativo: true }, orderBy: { nome: "asc" }, select: { id: true, nome: true } }),
   ]);
+  const imovelInicial = imoveis.find((i) => i.id === imovel) ?? null;
 
   return (
     <div className="mx-auto max-w-2xl">
@@ -36,6 +44,31 @@ export default async function NovaRecorrenciaPage() {
             beneficiaries={beneficiaries}
             despesaCategories={despesaCategories}
             receitaCategories={receitaCategories}
+            imoveis={imoveis.map((i) => ({ id: i.id, name: i.nome }))}
+            initial={
+              imovelInicial
+                ? {
+                    kind: "PAGAR",
+                    description: "",
+                    amount: 0,
+                    structuralKey: "ADMINISTRATIVO",
+                    periodicidade: "ANUAL",
+                    dayOfMonth: 5,
+                    intervalDays: null,
+                    anticipateToBusinessDay: true,
+                    firstReference: null,
+                    cardInvoice: false,
+                    categoryLabel: null,
+                    supplierName: "",
+                    customerId: null,
+                    capitalBeneficiaryId: null,
+                    startDate: new Date().toISOString().slice(0, 10),
+                    endDate: null,
+                    notes: null,
+                    imovelId: imovelInicial.id,
+                  }
+                : undefined
+            }
           />
         </div>
       </Card>

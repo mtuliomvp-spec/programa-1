@@ -590,6 +590,7 @@ const manualSchema = z.object({
   structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
+  imovelId: z.string().optional(),
   notes: z.string().optional(),
   alreadyPaid: z.coerce.boolean().optional(),
 });
@@ -660,6 +661,7 @@ export async function createManualPayableAction(
     structuralKey: d.structuralKey,
     vehicleId: d.structuralKey === "VEICULOS" ? d.vehicleId || null : null,
     capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
+    imovelId: d.imovelId || null,
     notes: d.notes || null,
   };
 
@@ -688,6 +690,11 @@ export async function createManualPayableAction(
   revalidatePath("/estoque");
   revalidatePath("/capital");
   revalidatePath("/");
+  // Lançada a partir da ficha do imóvel: volta para ela.
+  if (d.imovelId) {
+    revalidatePath(`/imoveis/${d.imovelId}`);
+    redirect(`/imoveis/${d.imovelId}`);
+  }
   redirect("/financeiro/a-pagar");
 }
 
@@ -807,6 +814,7 @@ const updatePayableSchema = z.object({
   structuralKey: z.enum(STRUCTURAL_KEY_VALUES).optional(),
   vehicleId: z.string().optional(),
   capitalBeneficiaryId: z.string().optional(),
+  imovelId: z.string().optional(),
 });
 
 export type EditPayableState = { error?: string };
@@ -939,6 +947,9 @@ export async function updatePayableAction(
     structuralKey: flow,
     vehicleId,
     capitalBeneficiaryId,
+    // Só quando o formulário mostra o campo (há imóveis cadastrados): sem ele,
+    // o vínculo que já existe não é apagado.
+    imovelId: formData.has("imovelId") ? d.imovelId || null : undefined,
   });
   // Débitos/quitação da compra: a contrapartida da mudança de valor é um CUSTO
   // de ajuste do veículo (acréscimo = perda; desconto = ganho, custo negativo),

@@ -78,6 +78,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       },
       { href: "/combustiveis", label: "Combustíveis", icon: "⛽", module: "administrativo" },
       { href: "/consorcios", label: "Consórcios", icon: "🎯", module: "administrativo" },
+      { href: "/imoveis", label: "Imóveis", icon: "🏡", module: "imoveis" },
       { href: "/centros-custo", label: "Centros de custo", icon: "🏗️", module: "administrativo" },
     ],
   },
