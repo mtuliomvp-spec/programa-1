@@ -14,6 +14,11 @@ export type SolicitedCombo = {
   userName: string | null;
   count: number;
   total: number;
+  /** Parte do total que cobre o saldo devedor de capital do beneficiário (vira aporte). */
+  abate: number;
+  /** O que sai do banco: total − abate. */
+  liquido: number;
+  beneficiaryName: string | null;
   /**
    * Pré-lançado: o comprovante do borderô já chegou (o dinheiro saiu do banco)
    * e a baixa espera o movimento do caixa alcançar o dia, em Contas e caixas.
@@ -93,7 +98,25 @@ export default function SolicitedCombosCard({
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-3">
-              <p className="text-base font-bold text-slate-900">{formatCurrency(c.total)}</p>
+              {c.abate > 0.005 ? (
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">
+                    Total dos títulos <span className="tabular-nums">{formatCurrency(c.total)}</span>
+                  </p>
+                  <p className="text-xs text-amber-700">
+                    − <span className="tabular-nums">{formatCurrency(c.abate)}</span> saldo devedor
+                    {c.beneficiaryName ? ` de ${c.beneficiaryName}` : ""} (vira aporte)
+                  </p>
+                  <p className="text-base font-bold text-slate-900">
+                    <span className="mr-1 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                      Líquido a pagar
+                    </span>
+                    <span className="tabular-nums">{formatCurrency(c.liquido)}</span>
+                  </p>
+                </div>
+              ) : (
+                <p className="text-base font-bold text-slate-900">{formatCurrency(c.total)}</p>
+              )}
               <Link
                 href={`/financeiro/combos/${c.id}`}
                 className="text-sm font-medium text-blue-700 hover:underline"
@@ -103,6 +126,9 @@ export default function SolicitedCombosCard({
               {canPay && accounts.length > 0 ? (
                 confirming === c.id ? (
                   <span className="flex flex-wrap items-center gap-2">
+                    <span className="basis-full text-xs font-medium text-slate-700 sm:basis-auto">
+                      Sai da conta: <span className="tabular-nums">{formatCurrency(c.liquido)}</span>
+                    </span>
                     <select
                       value={accountId}
                       onChange={(e) => setAccountId(e.target.value)}

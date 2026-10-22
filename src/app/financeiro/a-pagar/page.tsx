@@ -105,6 +105,8 @@ export default async function ContasAPagarPage({
               id: true,
               name: true,
               status: true,
+              userId: true,
+              payFull: true,
               user: { select: { name: true } },
               // Pré-lançado: o comprovante do borderô já chegou e o combo
               // espera o movimento do caixa alcançar o dia do pagamento.
@@ -146,6 +148,9 @@ export default async function ContasAPagarPage({
       userName: combo.user?.name ?? null,
       count: 0,
       total: 0,
+      abate: 0,
+      liquido: 0,
+      beneficiaryName: null,
       queued: combo.pendingPaymentDate
         ? {
             date: combo.pendingPaymentDate.toISOString(),
@@ -157,7 +162,28 @@ export default async function ContasAPagarPage({
     entry.total = Math.round((entry.total + p.amount) * 100) / 100;
     solicitedComboMap.set(combo.id, entry);
   }
-  const solicitedCombos = Array.from(solicitedComboMap.values());
+  // O que de fato sai do banco: parte do total pode cobrir o saldo devedor de
+  // capital do beneficiário (vira aporte). É a MESMA conta do borderô e da
+  // baixa (combo-capital) — sem ela o card mostrava só o total, e quem pagava
+  // por aqui transferia o valor cheio.
+  const { abatimentoDoCombo } = await import("@/lib/combo-capital");
+  const solicitedCombos = await Promise.all(
+    Array.from(solicitedComboMap.values()).map(async (c) => {
+      const titulos = withStatus.filter((p) => p.paymentCombo?.id === c.id && inSolicitedCombo(p));
+      const combo = titulos[0].paymentCombo!;
+      const previsto = await abatimentoDoCombo({
+        userId: combo.userId,
+        payFull: combo.payFull,
+        payables: titulos.map((p) => ({ amount: p.amount, capitalBeneficiaryId: p.capitalBeneficiaryId })),
+      });
+      return {
+        ...c,
+        abate: previsto.abate,
+        liquido: Math.round((c.total - previsto.abate) * 100) / 100,
+        beneficiaryName: previsto.beneficiaryName,
+      };
+    }),
+  );
 
   // Opções distintas presentes nos títulos, para os filtros separados.
   const supplierOptions = Array.from(

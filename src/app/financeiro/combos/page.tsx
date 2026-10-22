@@ -30,8 +30,29 @@ export default async function CombosPage() {
     sessionUser && (await userCan("combos", "saque")) ? await disponivelParaSaque(sessionUser.id) : null;
   const combos = await prisma.paymentCombo.findMany({
     orderBy: [{ status: "asc" }, { createdAt: "desc" }],
-    include: { user: { select: { name: true } }, payables: { select: { amount: true } } },
+    include: {
+      user: { select: { name: true } },
+      payables: { select: { amount: true, status: true, capitalBeneficiaryId: true } },
+    },
   });
+  // Líquido de cada combo: parte do total pode cobrir o saldo devedor de
+  // capital do beneficiário (vira aporte). Pago: o abatimento gravado na baixa;
+  // em aberto/solicitado: a mesma previsão do borderô.
+  const { abatimentoDoCombo } = await import("@/lib/combo-capital");
+  const abatimentos = new Map(
+    await Promise.all(
+      combos.map(async (c) => {
+        if (c.status === "PAGO") return [c.id, c.capitalAbatement ?? 0] as const;
+        if (c.status === "CANCELADO") return [c.id, 0] as const;
+        const r = await abatimentoDoCombo({
+          userId: c.userId,
+          payFull: c.payFull,
+          payables: c.payables.filter((p) => p.status !== "PAGO"),
+        });
+        return [c.id, r.abate] as const;
+      }),
+    ),
+  );
 
   return (
     <div>
@@ -77,7 +98,10 @@ export default async function CombosPage() {
             </Thead>
             <tbody>
               {combos.map((c) => {
-                const total = c.payables.reduce((s, p) => s + p.amount, 0);
+                const total = c.payables
+                  .filter((p) => c.status === "PAGO" || p.status !== "PAGO")
+                  .reduce((s, p) => s + p.amount, 0);
+                const abate = abatimentos.get(c.id) ?? 0;
                 const info = statusInfo[c.status];
                 return (
                   <Tr key={c.id}>
@@ -97,7 +121,19 @@ export default async function CombosPage() {
                     </Td>
                     <Td>{c.user?.name || "—"}</Td>
                     <Td className="text-right tabular-nums">{c.payables.length}</Td>
-                    <Td className="text-right tabular-nums">{formatCurrency(total)}</Td>
+                    <Td className="text-right tabular-nums">
+                      {abate > 0.005 ? (
+                        <>
+                          <span className="font-semibold text-slate-900">{formatCurrency(total - abate)}</span>
+                          <span className="block text-xs font-normal text-slate-500">
+                            {c.status === "PAGO" ? "líquido pago" : "líquido"} · total {formatCurrency(total)} −{" "}
+                            {formatCurrency(abate)} saldo devedor
+                          </span>
+                        </>
+                      ) : (
+                        formatCurrency(total)
+                      )}
+                    </Td>
                     <Td>
                       <div className="flex items-center gap-3">
                         <Badge tone={info.tone}>{info.label}</Badge>
