@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { Badge, Table, Td, Th, Thead, Tr } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import {
@@ -128,6 +128,7 @@ export default function PayablesTable({
   const [msg, setMsg] = useState<string | null>(null);
   // Títulos que a exclusão recusou, com o motivo e o caminho da origem.
   const [recusados, setRecusados] = useState<SkippedPayable[]>([]);
+  const avisoRef = useRef<HTMLDivElement>(null);
   const [reverting, startRevert] = useTransition();
   const [removing, startRemove] = useTransition();
   const [addingCombo, startAddCombo] = useTransition();
@@ -255,11 +256,40 @@ export default function PayablesTable({
       setMsg(`${res.deleted} excluído(s)` + (res.skipped > 0 ? ` · ${res.skipped} não pôde(m) ser excluído(s):` : ""));
       setRecusados(res.skippedDetails ?? []);
       setSelected(new Set());
+      requestAnimationFrame(() => avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     });
   }
 
   return (
     <>
+      {/* Resultado da exclusão no TOPO da lista (e a tela rola até ele): no
+          rodapé, abaixo de dezenas de linhas e atrás da barra fixa, a recusa
+          ficava invisível — parecia que o "Excluir" não fazia nada. */}
+      <div ref={avisoRef} className="scroll-mt-24">
+        {msg && selected.size === 0 ? <p className="px-5 py-2 text-sm text-slate-600">{msg}</p> : null}
+        {/*
+          Recusa da exclusão com nome e caminho: título com origem é espelho de
+          outra coisa (compra, venda, peça...), e apagar só o espelho deixaria a
+          origem apontando para o nada — então a exclusão se faz lá.
+        */}
+        {recusados.length > 0 ? (
+          <ul className="mx-5 my-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            {recusados.map((r, i) => (
+              <li key={i}>
+                <strong>{r.titulo}</strong>: {r.motivo}
+                {r.href ? (
+                  <>
+                    {" — "}
+                    <Link href={r.href} className="font-medium underline">
+                      abrir a origem
+                    </Link>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
       <Table>
         <Thead>
           <Tr>
@@ -692,29 +722,6 @@ export default function PayablesTable({
           ) : null}
           {msg ? <p className="mt-2 text-sm text-slate-600">{msg}</p> : null}
         </div>
-      ) : null}
-      {msg && selected.size === 0 ? <p className="px-5 py-2 text-sm text-slate-600">{msg}</p> : null}
-      {/*
-        Recusa da exclusão com nome e caminho: título com origem é espelho de
-        outra coisa (compra, venda, peça...), e apagar só o espelho deixaria a
-        origem apontando para o nada — então a exclusão se faz lá.
-      */}
-      {recusados.length > 0 ? (
-        <ul className="mx-5 mb-3 space-y-1 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          {recusados.map((r, i) => (
-            <li key={i}>
-              <strong>{r.titulo}</strong>: {r.motivo}
-              {r.href ? (
-                <>
-                  {" — "}
-                  <Link href={r.href} className="font-medium underline">
-                    abrir a origem
-                  </Link>
-                </>
-              ) : null}
-            </li>
-          ))}
-        </ul>
       ) : null}
     </>
   );
