@@ -7,6 +7,8 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import AnexosImovel from "./AnexosImovel";
 import ExcluirImovel from "./ExcluirImovel";
+import VincularContas from "./VincularContas";
+import Desvincular from "./Desvincular";
 
 export const dynamic = "force-dynamic";
 
@@ -62,6 +64,9 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
           dueDate: true,
           paymentDate: true,
           status: true,
+          category: true,
+          categoryLabel: true,
+          recurringId: true,
           supplier: { select: { name: true } },
           _count: { select: { attachments: true } },
         },
@@ -83,6 +88,21 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
     .filter((p) => p.status === "PAGO" && p.paymentDate && p.paymentDate.getUTCFullYear() === anoAtual)
     .reduce((s, p) => s + p.amount, 0);
   const emAberto = imovel.payables.filter((p) => p.status !== "PAGO").reduce((s, p) => s + p.amount, 0);
+
+  // GASTOS = o que já foi pago, pelo ano do pagamento e pelo tipo de despesa.
+  const pagos = imovel.payables.filter((p) => p.status === "PAGO");
+  const totalPago = pagos.reduce((s, p) => s + p.amount, 0);
+  const porAno = new Map<number, number>();
+  const porCategoria = new Map<string, { total: number; qtd: number }>();
+  for (const p of pagos) {
+    const ano = (p.paymentDate ?? p.dueDate).getUTCFullYear();
+    porAno.set(ano, (porAno.get(ano) ?? 0) + p.amount);
+    const cat = p.categoryLabel || "Outros";
+    const c = porCategoria.get(cat) ?? { total: 0, qtd: 0 };
+    porCategoria.set(cat, { total: c.total + p.amount, qtd: c.qtd + 1 });
+  }
+  const anos = [...porAno.entries()].sort((a, b) => b[0] - a[0]);
+  const categorias = [...porCategoria.entries()].sort((a, b) => b[1].total - a[1].total);
 
   const dados: [string, string | null][] = [
     ["Em nome de", imovel.proprietario || imovel.capitalBeneficiary?.name || null],
@@ -131,6 +151,51 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
       </Card>
 
       <Card className="mt-4">
+        <CardHeader title="Gastos no imóvel" description="O que já foi pago nas contas ligadas a ele" />
+        <div className="grid grid-cols-1 gap-4 p-5 sm:grid-cols-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Total pago</p>
+            <p className="mt-1 text-2xl font-bold text-slate-900">{formatCurrency(totalPago)}</p>
+            <p className="text-xs text-slate-500">
+              {pagos.length} pagamento(s){emAberto > 0 ? ` · ${formatCurrency(emAberto)} em aberto` : ""}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Por ano</p>
+            {anos.length ? (
+              <ul className="mt-1 space-y-0.5 text-sm">
+                {anos.map(([ano, v]) => (
+                  <li key={ano} className="flex justify-between gap-2">
+                    <span className="text-slate-600">{ano}</span>
+                    <span className="tabular-nums text-slate-900">{formatCurrency(v)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs uppercase tracking-wide text-slate-500">Por tipo de despesa</p>
+            {categorias.length ? (
+              <ul className="mt-1 space-y-0.5 text-sm">
+                {categorias.map(([cat, v]) => (
+                  <li key={cat} className="flex justify-between gap-2">
+                    <span className="text-slate-600">
+                      {cat} <span className="text-xs text-slate-400">({v.qtd})</span>
+                    </span>
+                    <span className="tabular-nums text-slate-900">{formatCurrency(v.total)}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="mt-1 text-sm text-slate-500">—</p>
+            )}
+          </div>
+        </div>
+      </Card>
+
+      <Card className="mt-4">
         <CardHeader
           title="Documentos"
           description="Registro, planta e, a cada ano, a declaração e o recibo do ITR, o DARF e o comprovante"
@@ -164,6 +229,7 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
           }
         />
         <div className="space-y-4 p-5">
+          {podeEditar ? <VincularContas imovelId={imovel.id} /> : null}
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Recorrentes</p>
             {imovel.recorrencias.length === 0 ? (
@@ -189,7 +255,10 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
                         {!r.active ? " · inativa" : ""}
                       </span>
                     </span>
-                    <span className="tabular-nums text-slate-900">{formatCurrency(r.amount)}</span>
+                    <span className="flex items-center gap-3">
+                      <span className="tabular-nums text-slate-900">{formatCurrency(r.amount)}</span>
+                      {podeEditar ? <Desvincular tipo="recorrencia" id={r.id} /> : null}
+                    </span>
                   </li>
                 ))}
               </ul>
@@ -228,8 +297,14 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
                             {p.description}
                           </Link>
                           <span className="block text-xs text-slate-500">
-                            {p.supplier?.name ?? ""}
+                            {[p.categoryLabel, p.supplier?.name].filter(Boolean).join(" · ")}
+                            {p.recurringId ? " · 🔁" : ""}
                             {p._count.attachments ? ` · 📎 ${p._count.attachments}` : ""}
+                            {podeEditar && !p.recurringId ? (
+                              <span className="ml-2">
+                                <Desvincular tipo="titulo" id={p.id} />
+                              </span>
+                            ) : null}
                           </span>
                         </Td>
                         <Td className="whitespace-nowrap">{formatDate(p.dueDate)}</Td>

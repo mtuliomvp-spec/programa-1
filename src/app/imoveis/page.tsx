@@ -15,7 +15,7 @@ export default async function ImoveisPage() {
       include: {
         capitalBeneficiary: { select: { name: true } },
         _count: { select: { anexos: { where: { completo: true } }, recorrencias: true } },
-        payables: { where: { status: { not: "PAGO" } }, select: { amount: true } },
+        payables: { select: { amount: true, status: true } },
       },
     }),
     userCan("imoveis", "criar"),
@@ -38,7 +38,8 @@ export default async function ImoveisPage() {
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {imoveis.map((i) => {
-            const emAberto = i.payables.reduce((s, p) => s + p.amount, 0);
+            const emAberto = i.payables.filter((p) => p.status !== "PAGO").reduce((s, p) => s + p.amount, 0);
+            const gasto = i.payables.filter((p) => p.status === "PAGO").reduce((s, p) => s + p.amount, 0);
             return (
               <Link
                 key={i.id}
@@ -59,6 +60,7 @@ export default async function ImoveisPage() {
                 ) : null}
                 <p className="mt-2 text-xs text-slate-600">
                   📎 {i._count.anexos} documento(s) · 🔁 {i._count.recorrencias} conta(s) recorrente(s)
+                  {gasto > 0 ? <span> · 💸 {formatCurrency(gasto)} gastos</span> : null}
                   {emAberto > 0 ? <span className="text-amber-700"> · {formatCurrency(emAberto)} em aberto</span> : null}
                   {!i.ativo ? " · inativo" : ""}
                 </p>

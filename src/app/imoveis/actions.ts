@@ -371,3 +371,152 @@ export async function identificarAnexoImovelAction(
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível identificar o documento." };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Vincular contas que já existem (recorrentes e avulsas, pagas ou não)
+// ---------------------------------------------------------------------------
+
+export type ContaParaVincular = {
+  id: string;
+  descricao: string;
+  valor: number;
+  detalhe: string;
+};
+
+/**
+ * Procura contas a pagar e recorrências ainda SEM imóvel para ligar a este.
+ * Vale para título já pago: o vínculo é só a etiqueta "conta deste imóvel",
+ * não mexe em valor, data, fluxo nem no caixa.
+ */
+export async function buscarContasParaVincularAction(
+  busca: string,
+): Promise<{ ok: boolean; error?: string; recorrencias?: ContaParaVincular[]; titulos?: ContaParaVincular[] }> {
+  try {
+    await assertCan("imoveis", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const q = busca.trim();
+  if (q.length < 2) return { ok: false, error: "Digite ao menos 2 letras (descrição ou fornecedor)." };
+  const texto = { contains: q, mode: "insensitive" as const };
+  const [recorrencias, titulos] = await Promise.all([
+    prisma.recurringEntry.findMany({
+      where: { kind: "PAGAR", imovelId: null, OR: [{ description: texto }, { supplier: { name: texto } }] },
+      orderBy: { description: "asc" },
+      take: 30,
+      select: {
+        id: true,
+        description: true,
+        amount: true,
+        dayOfMonth: true,
+        intervalDays: true,
+        intervalMonths: true,
+        active: true,
+        supplier: { select: { name: true } },
+        _count: { select: { payables: true } },
+      },
+    }),
+    prisma.payable.findMany({
+      where: { imovelId: null, OR: [{ description: texto }, { supplier: { name: texto } }] },
+      orderBy: { dueDate: "desc" },
+      take: 60,
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        amount: true,
+        dueDate: true,
+        status: true,
+        paymentDate: true,
+        recurringId: true,
+        supplier: { select: { name: true } },
+      },
+    }),
+  ]);
+  const data = (d: Date) => d.toLocaleDateString("pt-BR", { timeZone: "UTC" });
+  return {
+    ok: true,
+    recorrencias: recorrencias.map((r) => ({
+      id: r.id,
+      descricao: r.description,
+      valor: r.amount,
+      detalhe: [
+        r.intervalMonths === 12 ? "anual" : r.intervalDays ? `a cada ${r.intervalDays} dias` : `mensal · dia ${r.dayOfMonth}`,
+        r.supplier?.name,
+        `${r._count.payables} título(s) já gerado(s) — vão junto`,
+        r.active ? null : "inativa",
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    })),
+    titulos: titulos.map((t) => ({
+      id: t.id,
+      descricao: `${String(t.orderNumber).padStart(4, "0")} — ${t.description}`,
+      valor: t.amount,
+      detalhe: [
+        t.status === "PAGO" ? `pago${t.paymentDate ? ` em ${data(t.paymentDate)}` : ""}` : `vence ${data(t.dueDate)}`,
+        t.supplier?.name,
+        t.recurringId ? "de recorrência" : null,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+    })),
+  };
+}
+
+/** Liga ao imóvel as recorrências (com os títulos já gerados) e os títulos escolhidos. */
+export async function vincularContasImovelAction(input: {
+  imovelId: string;
+  recorrencias: string[];
+  titulos: string[];
+}): Promise<{ ok: boolean; error?: string; vinculados?: number }> {
+  try {
+    await assertCan("imoveis", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const imovel = await prisma.imovel.findUnique({ where: { id: input.imovelId }, select: { id: true } });
+  if (!imovel) return { ok: false, error: "Imóvel não encontrado." };
+  const [rec, tit, gerados] = await prisma.$transaction([
+    prisma.recurringEntry.updateMany({
+      where: { id: { in: input.recorrencias }, imovelId: null },
+      data: { imovelId: imovel.id },
+    }),
+    prisma.payable.updateMany({ where: { id: { in: input.titulos }, imovelId: null }, data: { imovelId: imovel.id } }),
+    prisma.payable.updateMany({
+      where: { recurringId: { in: input.recorrencias }, imovelId: null },
+      data: { imovelId: imovel.id },
+    }),
+  ]);
+  revalidatePath(`/imoveis/${imovel.id}`);
+  revalidatePath("/imoveis");
+  return { ok: true, vinculados: rec.count + tit.count + gerados.count };
+}
+
+/** Tira o vínculo (a conta continua no financeiro, só sai da ficha do imóvel). */
+export async function desvincularContaImovelAction(input: {
+  tipo: "recorrencia" | "titulo";
+  id: string;
+}): Promise<{ ok: boolean; error?: string }> {
+  try {
+    await assertCan("imoveis", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (input.tipo === "recorrencia") {
+    const r = await prisma.recurringEntry.findUnique({ where: { id: input.id }, select: { imovelId: true } });
+    if (!r?.imovelId) return { ok: true };
+    await prisma.$transaction([
+      prisma.recurringEntry.update({ where: { id: input.id }, data: { imovelId: null } }),
+      prisma.payable.updateMany({ where: { recurringId: input.id, imovelId: r.imovelId }, data: { imovelId: null } }),
+    ]);
+    revalidatePath(`/imoveis/${r.imovelId}`);
+  } else {
+    const t = await prisma.payable.findUnique({ where: { id: input.id }, select: { imovelId: true } });
+    if (!t?.imovelId) return { ok: true };
+    await prisma.payable.update({ where: { id: input.id }, data: { imovelId: null } });
+    revalidatePath(`/imoveis/${t.imovelId}`);
+  }
+  revalidatePath("/imoveis");
+  return { ok: true };
+}
