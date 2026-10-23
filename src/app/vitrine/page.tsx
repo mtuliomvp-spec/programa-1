@@ -21,13 +21,22 @@ import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
-  const company = await getCompany().catch(() => null);
+  const [company, base] = await Promise.all([getCompany().catch(() => null), getBaseUrl().catch(() => "")]);
   const nome = company?.nomeFantasia || "MVP Veículos";
-  const description = `Confira os veículos seminovos à venda na ${nome}. Fotos, preços e contato direto pelo WhatsApp.`;
+  // O que quem procura carro digita no Google ("carros seminovos são luís",
+  // "veículos usados são luís"): é o título e a descrição que aparecem no
+  // resultado da busca — e a página de destino dos anúncios.
+  const cidade = company?.city ? `${company.city}${company.uf ? ` - ${company.uf}` : ""}` : null;
+  const desde = company?.anoFundacao ? ` desde ${company.anoFundacao}` : "";
+  const title = `Carros seminovos${cidade ? ` em ${cidade}` : ""} | ${nome}`;
+  const description =
+    `Carros e veículos seminovos e usados à venda${cidade ? ` em ${cidade}` : ""} na ${nome}, loja${desde || " de confiança"}. ` +
+    "Fotos, preços, financiamento, troca e contato direto pelo WhatsApp.";
   return {
-    title: `${nome} — Veículos à venda`,
+    title,
     description,
-    openGraph: { title: `${nome} — Veículos à venda`, description },
+    alternates: base ? { canonical: `${base}/vitrine` } : undefined,
+    openGraph: { title, description, siteName: nome, locale: "pt_BR", type: "website" },
   };
 }
 
@@ -164,9 +173,15 @@ export default async function VitrinePage({
       {/* Faixa de boas-vindas (slogan da loja + diferenciais) */}
       <section className="bg-slate-900">
         <div className="mx-auto max-w-6xl px-4 py-8 text-center sm:py-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">Desde 2001</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">
+            Desde {company?.anoFundacao ?? 2001}
+          </p>
           <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
             Fazendo mais por você!
+            {/* O que o cliente procura no Google, no título da página. */}
+            <span className="mt-1 block text-base font-semibold tracking-normal text-emerald-300 sm:text-lg">
+              Carros seminovos{company?.city ? ` em ${company.city}` : ""}
+            </span>
           </h1>
           <p className="mt-2 text-sm text-slate-300">
             Seminovos selecionados{cidade ? ` em ${cidade}` : ""} — negociação direta pelo WhatsApp.

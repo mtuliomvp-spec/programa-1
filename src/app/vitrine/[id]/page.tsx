@@ -38,8 +38,10 @@ export async function generateMetadata({
   const base = await getBaseUrl();
   const showPrice = !v.adHiddenFields.includes("preco");
   const precoTitle = showPrice ? ` — ${formatCurrency(v.salePrice)}` : "";
+  const cidade = company?.city ? ` em ${company.city}` : "";
   return {
-    title: `${titulo}${precoTitle} | ${nome}`,
+    title: `${titulo}${precoTitle} — seminovo${cidade} | ${nome}`,
+    alternates: { canonical: `${base}/vitrine/${v.id}` },
     description: `${titulo} à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}.${showPrice ? ` ${formatCurrency(v.salePrice)}.` : ""} Fale com a equipe pelo WhatsApp.`,
     openGraph: v.photoIds[0]
       ? { images: [`${base}/vitrine/foto/${v.photoIds[0]}`], title: `${titulo}${precoTitle}` }
@@ -151,8 +153,44 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
       : `Olá! Tenho interesse no ${titulo} anunciado no site da ${nome}.`,
   );
 
+  // Dados do anúncio no formato que o Google lê (schema.org Car + Offer): ano,
+  // km, cor, preço e a loja que vende — é o que alimenta o resultado rico da
+  // busca e os anúncios de veículos.
+  const anuncio = {
+    "@context": "https://schema.org",
+    "@type": "Car",
+    name: titulo,
+    brand: { "@type": "Brand", name: v.brand },
+    model: v.model,
+    ...(versao ? { vehicleConfiguration: versao } : {}),
+    vehicleModelDate: String(v.modelYear),
+    productionDate: String(v.manufactureYear),
+    itemCondition: "https://schema.org/UsedCondition",
+    mileageFromOdometer: { "@type": "QuantitativeValue", value: v.km, unitCode: "KMT" },
+    ...(v.color ? { color: v.color } : {}),
+    ...(v.fuel ? { fuelType: v.fuel } : {}),
+    ...(v.transmission ? { vehicleTransmission: v.transmission } : {}),
+    url: `${base}/vitrine/${v.id}`,
+    ...(v.photoIds.length ? { image: v.photoIds.slice(0, 5).map((f) => `${base}/vitrine/foto/${f}`) } : {}),
+    ...(showPrice
+      ? {
+          offers: {
+            "@type": "Offer",
+            price: v.salePrice,
+            priceCurrency: "BRL",
+            availability: "https://schema.org/InStock",
+            seller: { "@type": "AutoDealer", name: nome },
+          },
+        }
+      : {}),
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(anuncio).replace(/</g, "\\u003c") }}
+      />
       <ThemeScript />
       {/* Conta a visita a este anúncio (só visitante, não a equipe logada). */}
       <RegistraVisita alvo={v.id} />

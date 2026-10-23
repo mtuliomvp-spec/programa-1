@@ -20,6 +20,11 @@ const schema = z.object({
   logoDataUrl: z.string().optional(),
   publicUrl: z.string().optional(),
   instagram: z.string().optional(),
+  googleAdsId: z.string().optional(),
+  googleAdsLeadLabel: z.string().optional(),
+  googleAnalyticsId: z.string().optional(),
+  googleSiteVerification: z.string().optional(),
+  anoFundacao: z.string().optional(),
   aiProvider: z.string().optional(),
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
@@ -64,6 +69,26 @@ export async function saveCompanyAction(
     return { error: "Domínio do site inválido. Ex.: mvpveiculos.com.br" };
   }
 
+  // Google: IDs públicos das tags. Validados pelo formato para um código
+  // trocado (o do Analytics no lugar do Ads) não ir parar na tag errada.
+  const googleAdsId = (d.googleAdsId || "").trim().toUpperCase();
+  if (googleAdsId && !/^AW-\d{6,}$/.test(googleAdsId)) {
+    return { error: 'ID do Google Ads inválido — é o "AW-" seguido de números (ex.: AW-123456789).' };
+  }
+  const googleAnalyticsId = (d.googleAnalyticsId || "").trim().toUpperCase();
+  if (googleAnalyticsId && !/^G-[A-Z0-9]{4,}$/.test(googleAnalyticsId)) {
+    return { error: 'ID do Google Analytics inválido — é o "G-" seguido de letras e números (ex.: G-AB12CD34EF).' };
+  }
+  const googleAdsLeadLabel = (d.googleAdsLeadLabel || "").trim();
+  if (googleAdsLeadLabel && !/^[A-Za-z0-9_-]{4,}$/.test(googleAdsLeadLabel)) {
+    return { error: "Rótulo da conversão inválido — copie só o código depois da barra em send_to (ex.: AbCdEfGhIjK)." };
+  }
+  // Search Console: aceita só o código ou a meta tag inteira colada.
+  const verif = (d.googleSiteVerification || "").trim();
+  const googleSiteVerification = (verif.match(/content=["']([^"']+)["']/)?.[1] ?? verif).trim();
+  const ano = Number((d.anoFundacao || "").trim());
+  const anoFundacao = Number.isInteger(ano) && ano >= 1900 && ano <= new Date().getFullYear() ? ano : null;
+
   const data = {
     razaoSocial: d.razaoSocial,
     nomeFantasia: d.nomeFantasia,
@@ -76,6 +101,11 @@ export async function saveCompanyAction(
     uf: d.uf ? d.uf.toUpperCase() : null,
     ...(podeChaves ? { publicUrl } : {}),
     instagram: d.instagram?.trim() || null,
+    googleAdsId: googleAdsId || null,
+    googleAdsLeadLabel: googleAdsLeadLabel || null,
+    googleAnalyticsId: googleAnalyticsId || null,
+    googleSiteVerification: googleSiteVerification || null,
+    anoFundacao,
     // Parecer IA e consulta por placa: só o Super Admin mexe. Provedor/modelo
     // acompanham a chave (são a configuração do mesmo serviço). A chave só muda
     // quando uma nova é digitada (em branco = mantém) ou quando pedem remoção.
