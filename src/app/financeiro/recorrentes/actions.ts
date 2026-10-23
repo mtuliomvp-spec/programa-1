@@ -241,7 +241,7 @@ export async function updateRecurringAction(
   const supplierId =
     data.kind === "PAGAR" && supplierName ? await resolveSupplierByName(supplierName) : null;
 
-  const existing = await prisma.recurringEntry.findUnique({ where: { id: data.id }, select: { id: true } });
+  const existing = await prisma.recurringEntry.findUnique({ where: { id: data.id }, select: { id: true, imovelId: true } });
   if (!existing) return { error: "Recorrência não encontrada." };
 
   try {
@@ -271,6 +271,14 @@ export async function updateRecurringAction(
         notes: data.notes || null,
       },
     });
+    // Imóvel trocado: os títulos que a recorrência JÁ gerou (pagos ou não)
+    // acompanham — o vínculo é só a etiqueta "conta deste imóvel", sem efeito
+    // contábil, e os gastos passados têm de aparecer na ficha dele.
+    const novoImovel = data.imovelId || null;
+    if (formData.has("imovelId") && novoImovel !== existing.imovelId) {
+      await prisma.payable.updateMany({ where: { recurringId: data.id }, data: { imovelId: novoImovel } });
+      for (const i of [novoImovel, existing.imovelId]) if (i) revalidatePath(`/imoveis/${i}`);
+    }
     await salvarDocumentos(data.id, formData);
     await ensureRecurringGenerated();
   } catch {
