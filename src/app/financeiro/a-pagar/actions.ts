@@ -1753,6 +1753,13 @@ export type NfeParcelaPlano = {
 
 /** Uma nota do PDF, já lida e conferida contra o que existe no financeiro. */
 export type NfeNotaPlano = {
+  /** NF-e ou orçamento/ordem de serviço (oficina): os dois viram título. */
+  tipo: "NFE" | "ORCAMENTO";
+  /** Placa citada no documento e o veículo do cadastro que casou com ela. */
+  placa: string | null;
+  veiculoSugeridoId: string | null;
+  /** Tipo de despesa lido dos itens (Peças, Serviço…). */
+  categoria: string | null;
   numero: string;
   emitenteNome: string | null;
   emitenteCnpj: string | null;
@@ -1787,6 +1794,8 @@ export type ApplyNfePayload = {
   /** Quantas notas o PDF tinha (define se o anexo é a página da nota ou o PDF inteiro). */
   totalNotas: number;
   notas: {
+    tipo?: "NFE" | "ORCAMENTO";
+    categoria?: string | null;
     numero: string;
     emitenteNome: string | null;
     emitidaEm: string | null;
@@ -1823,6 +1832,7 @@ async function casarParcelasDaNfe(
   numero: string,
   supplierId: string | null,
   parcelas: { valor: number; vencimento: string; parcela: number; total: number }[],
+  prefixo = "NF",
 ) {
   const candidatos = await prisma.payable.findMany({
     where: {
@@ -1847,15 +1857,21 @@ async function casarParcelasDaNfe(
 
   return parcelas.map((parc) => {
     const due = new Date(`${parc.vencimento}T12:00:00Z`);
-    const docNum = `NF ${numero} parc. ${parc.parcela}`;
+    const docNum = `${prefixo} ${numero} parc. ${parc.parcela}`;
     const mesmoValor = (p: (typeof candidatos)[number]) => Math.abs(p.amount - parc.valor) <= 0.005;
     const mesmoDoc = (p: (typeof candidatos)[number]) =>
       p.documentNumber === docNum ||
       soDigitos(p.documentNumber).replace(/^0+/, "").includes(numero);
+    // Título lançado de um ORÇAMENTO do mesmo fornecedor e mesmo valor: é o
+    // serviço cuja NF chegou agora — casa mesmo vencendo em outro dia.
+    const doOrcamento = (p: (typeof candidatos)[number]) =>
+      prefixo === "NF" && supplierId != null && p.supplierId === supplierId && (p.documentNumber || "").startsWith("Orç.");
     const possiveis = disponiveis.filter(
       (p) =>
         mesmoValor(p) &&
-        (mesmoDoc(p) || (supplierId != null && p.supplierId === supplierId && mesmoDiaUTC(p.dueDate, due))),
+        (mesmoDoc(p) ||
+          doOrcamento(p) ||
+          (supplierId != null && p.supplierId === supplierId && mesmoDiaUTC(p.dueDate, due))),
     );
     const match =
       possiveis.find((p) => mesmoDoc(p) && mesmoDiaUTC(p.dueDate, due)) ??
@@ -1878,7 +1894,8 @@ function resumoDosItens(itens: { descricao: string; quantidade: number | null }[
 }
 
 /**
- * ETAPA 1 de "Importar NFs do fornecedor": a IA lê o PDF (uma ou várias DANFEs)
+ * ETAPA 1 de "Importar NFs e orçamentos": a IA lê o PDF (uma ou várias DANFEs,
+ * ou orçamento/ordem de serviço de oficina)
  * e devolve o PLANO — fornecedor identificado, itens e, parcela a parcela, se o
  * título seria criado ou se a nota seria anexada a um título já lançado.
  *
@@ -1927,7 +1944,11 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   for (const nfe of notas) {
     const numero = soDigitos(nfe.numero).replace(/^0+/, "");
     if (!numero) {
-      avisos.push("Uma das notas está sem número identificado — não dá para lançar.");
+      avisos.push(
+        nfe.tipoDocumento === "ORCAMENTO"
+          ? "Um dos orçamentos está sem número identificado — não dá para lançar."
+          : "Uma das notas está sem número identificado — não dá para lançar.",
+      );
       continue;
     }
 
@@ -1968,9 +1989,21 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
     }
 
     const parcelas = bruto.map((b, i) => ({ ...b, parcela: i + 1, total: bruto.length }));
-    const casadas = await casarParcelasDaNfe(numero, cadastrado?.id ?? null, parcelas);
+    const orcamento = nfe.tipoDocumento === "ORCAMENTO";
+    const casadas = await casarParcelasDaNfe(numero, cadastrado?.id ?? null, parcelas, orcamento ? "Orç." : "NF");
+
+    // Placa no documento (orçamento de oficina sempre traz): o carro em estoque
+    // com essa placa é a sugestão — vendido só se não houver um em estoque.
+    const placa = (nfe.placa || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const chavePlaca = (p: string) => p.toUpperCase().replace(/[^A-Z0-9]/g, "");
+    const comPlaca = placa.length >= 7 ? veiculos.filter((v) => chavePlaca(v.plate) === placa) : [];
+    const sugerido = comPlaca.find((v) => v.status !== "VENDIDO") ?? comPlaca[0] ?? null;
 
     plano.push({
+      tipo: orcamento ? "ORCAMENTO" : "NFE",
+      placa: placa || null,
+      veiculoSugeridoId: sugerido?.id ?? null,
+      categoria: nfe.categoria,
       numero,
       emitenteNome: nfe.emitenteNome,
       emitenteCnpj: nfe.emitenteCnpj,
@@ -2049,6 +2082,11 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
   for (const nota of notas) {
     const numero = soDigitos(nota.numero).replace(/^0+/, "");
     if (!numero) continue;
+    // Orçamento / ordem de serviço: mesmo caminho da NF, com o nome certo no
+    // título, no documento e no anexo — e sem a checagem de devolução de NF.
+    const orcamento = nota.tipo === "ORCAMENTO";
+    const doc = orcamento ? "Orç." : "NF";
+    const docAnexo = orcamento ? `Orçamento ${numero}` : `NF-e ${numero}`;
 
     // Fornecedor: o escolhido na revisão; se o usuário optou por cadastrar, é
     // agora que o cadastro nasce (nunca na leitura).
@@ -2060,14 +2098,14 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         select: { id: true, name: true },
       });
       if (!s) {
-        outcomes.push(`NF ${numero}: fornecedor escolhido não existe mais — pulada.`);
+        outcomes.push(`${doc} ${numero}: fornecedor escolhido não existe mais — pulada.`);
         continue;
       }
       supplierNome = s.name;
     } else {
       const nome = (nota.newSupplierName || nota.emitenteNome || "").trim();
       if (!nome) {
-        outcomes.push(`NF ${numero}: fornecedor não identificado — pulada.`);
+        outcomes.push(`${doc} ${numero}: fornecedor não identificado — pulada.`);
         continue;
       }
       supplierId = await resolveSupplierByName(nome);
@@ -2097,7 +2135,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
 
     const anexarNfe = async (payableId: string) => {
       const already = await prisma.payableAttachment.findFirst({
-        where: { payableId, description: `NF-e ${numero}` },
+        where: { payableId, description: docAnexo },
         select: { id: true },
       });
       if (already) return;
@@ -2105,11 +2143,11 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         data: {
           payableId,
           kind: "OUTRO",
-          description: `NF-e ${numero}`,
+          description: docAnexo,
           filename:
             payload.totalNotas > 1
-              ? `nfe-${numero}.pdf`
-              : payload.filename || `nfe-${numero}.pdf`,
+              ? `${orcamento ? "orcamento" : "nfe"}-${numero}.pdf`
+              : payload.filename || `${orcamento ? "orcamento" : "nfe"}-${numero}.pdf`,
           mimeType: "application/pdf",
           size: notaBytes.byteLength,
           data: new Uint8Array(notaBytes),
@@ -2145,7 +2183,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
           })
         : null;
       if (!b) {
-        outcomes.push(`NF ${numero}: escolha o beneficiário do capital — pulada.`);
+        outcomes.push(`${doc} ${numero}: escolha o beneficiário do capital — pulada.`);
         continue;
       }
       capitalBeneficiaryId = b.id;
@@ -2154,40 +2192,47 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     // Compra DEVOLVIDA por inteiro (título cancelado por NF de devolução): não
     // volta a virar título — é justamente a cobrança por engano que o registro
     // da devolução existe para barrar.
-    const devolvida = await devolucaoTotalDaNf(supplierId, numero);
+    const devolvida = orcamento ? null : await devolucaoTotalDaNf(supplierId, numero);
     if (devolvida) {
       outcomes.push(`NF ${numero}: ${devolvida} — não lançada.`);
       continue;
     }
 
-    const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas);
+    const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas, doc);
+    // Orçamento de oficina (peças + mão de obra): o tipo de despesa lido dos
+    // itens; a NF continua como compra de peças, como sempre foi.
+    const catOrcamento = orcamento ? await resolveDespesaCategory(nota.categoria || "Serviço") : null;
 
     for (const { parc, due, docNum, match } of casadas) {
-      const label = `NF ${numero} parc. ${parc.parcela}/${parc.total} — ${brl(parc.valor)} (venc. ${parc.vencimento})`;
+      const label = `${doc} ${numero} parc. ${parc.parcela}/${parc.total} — ${brl(parc.valor)} (venc. ${parc.vencimento})`;
 
       if (match) {
         await anexarNfe(match.id);
+        // NF do serviço que entrou como orçamento: o título passa a ter o nº da NF.
+        if (!orcamento && (match.documentNumber || "").startsWith("Orç.")) {
+          await prisma.payable.update({ where: { id: match.id }, data: { documentNumber: docNum } });
+        }
         // Peças entram nas observações do título existente (sem duplicar).
-        if (itensResumo && !(match.notes || "").includes("Itens NF")) {
+        if (itensResumo && !(match.notes || "").includes(`Itens ${doc}`)) {
           await prisma.payable.update({
             where: { id: match.id },
             data: {
-              notes: [(match.notes || "").trim() || null, `Itens NF ${numero}: ${itensResumo}`]
+              notes: [(match.notes || "").trim() || null, `Itens ${doc} ${numero}: ${itensResumo}`]
                 .filter(Boolean)
                 .join(" · "),
             },
           });
         }
         outcomes.push(
-          `${label} → NF anexada ao título nº ${String(match.orderNumber).padStart(4, "0")} (já lançado)`,
+          `${label} → ${orcamento ? "orçamento anexado" : "NF anexada"} ao título nº ${String(match.orderNumber).padStart(4, "0")} (já lançado)`,
         );
         continue;
       }
 
       const payable = await createManualPayable({
-        description: `Peças ${supplierNome} - NF ${numero}${parc.total > 1 ? ` (parc. ${parc.parcela}/${parc.total})` : ""}${itensResumo ? ` — ${itensResumo.slice(0, 120)}` : ""}`,
-        category: "COMPRA_PECA",
-        categoryLabel: "Compra de peças",
+        description: `${orcamento ? "" : "Peças "}${supplierNome} - ${orcamento ? "Orçamento" : "NF"} ${numero}${parc.total > 1 ? ` (parc. ${parc.parcela}/${parc.total})` : ""}${itensResumo ? ` — ${itensResumo.slice(0, 120)}` : ""}`,
+        category: catOrcamento?.category ?? "COMPRA_PECA",
+        categoryLabel: catOrcamento?.label ?? "Compra de peças",
         documentNumber: docNum,
         amount: parc.valor,
         dueDate: due,
@@ -2196,9 +2241,9 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         vehicleId,
         capitalBeneficiaryId,
         notes: [
-          itensResumo ? `Itens NF ${numero}: ${itensResumo}` : null,
+          itensResumo ? `Itens ${doc} ${numero}: ${itensResumo}` : null,
           nota.emitidaEm ? `emissão ${nota.emitidaEm}` : null,
-          vehicleId ? "importado da NF-e" : "importado da NF-e — vincule o veículo",
+          `importado ${orcamento ? "do orçamento" : "da NF-e"}${vehicleId || fluxo !== "VEICULOS" ? "" : " — vincule o veículo"}`,
         ]
           .filter(Boolean)
           .join(" · "),
@@ -2206,7 +2251,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
       });
       await anexarNfe(payable.id);
       outcomes.push(
-        `${label} → título nº ${String(payable.orderNumber).padStart(4, "0")} criado (com as peças)`,
+        `${label} → título nº ${String(payable.orderNumber).padStart(4, "0")} criado (${orcamento ? "com os itens do orçamento" : "com as peças"})`,
       );
     }
   }
@@ -3454,7 +3499,7 @@ export type BoletoFornecedorLido = {
 export async function lerBoletoFornecedorAction(
   base64: string,
   nome: string,
-): Promise<{ ok: boolean; error?: string; boleto?: BoletoFornecedorLido | null }> {
+): Promise<{ ok: boolean; error?: string; boleto?: BoletoFornecedorLido | null; orcamento?: boolean }> {
   try {
     await assertCan("financeiro", "importarnf");
   } catch (e) {
@@ -3471,6 +3516,10 @@ export async function lerBoletoFornecedorAction(
   }
   // DANFE também pode trazer número parecido com linha digitável: nota é nota.
   if (/DANFE|DOCUMENTO AUXILIAR DA NOTA FISCAL/i.test(texto)) return { ok: true, boleto: null };
+  // Orçamento / ordem de serviço: vai pelo caminho das notas (a mesma leitura).
+  if (/OR[ÇC]AMENTO|ORDEM DE SERVI[ÇC]O/i.test(texto) && !/LINHA DIGIT[ÁA]VEL/i.test(texto)) {
+    return { ok: true, boleto: null, orcamento: true };
+  }
   const { lerBoletoSicove } = await import("@/lib/sicove");
   const lido = lerBoletoSicove(buffer);
   const { getCompany } = await import("@/lib/company");
