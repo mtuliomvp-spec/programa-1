@@ -55,6 +55,14 @@ function looksLikeNfe(name: string): boolean {
   return /procnfe/i.test(name) || /\d{44}/.test(name);
 }
 
+/** Orçamento / ordem de serviço pelo nome (o escaneado não tem texto para ler). */
+function looksLikeOrcamento(name: string): boolean {
+  return /or[cç]amento|ordem.de.servi[cç]o/i.test(name);
+}
+
+/** "NF 123" ou "Orçamento 9131" — como o documento é chamado na tela. */
+const nomeDoc = (n: { tipo: string; numero: string }) => `${n.tipo === "ORCAMENTO" ? "Orçamento" : "NF"} ${n.numero}`;
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const r = new FileReader();
@@ -65,9 +73,10 @@ function fileToBase64(file: File): Promise<string> {
 }
 
 /**
- * "Importar NFs do fornecedor" em duas etapas, para os dois tipos de arquivo:
+ * "Importar NFs e orçamentos" em duas etapas, para os dois tipos de arquivo:
  *
- *  • NF-e/DANFE: a IA lê as notas e o sistema mostra, parcela a parcela, o que
+ *  • NF-e/DANFE ou orçamento/ordem de serviço (com a placa, o carro já vem
+ *    escolhido): a IA lê e o sistema mostra, parcela a parcela, o que
  *    vai acontecer (criar título novo ou anexar a um já lançado). Nada entra no
  *    financeiro antes do "Confirmar e lançar" — antes o título era criado
  *    direto, e um número errado da leitura entrava sem ninguém ver.
@@ -152,11 +161,13 @@ export default function ImportDuplicatasButton() {
       // títulos depois do lançamento (mesmo valor e vencimento da parcela).
       const lidosBoleto: BoletoArquivo[] = [];
       const resto: { file: File; base64: string }[] = [];
+      let algumOrcamento = false;
       for (const f of files) {
         const base64 = await fileToBase64(f);
         const r = await lerBoletoFornecedorAction(base64, f.name).catch(() => null);
         if (r?.ok && r.boleto) lidosBoleto.push({ ...r.boleto, base64, filename: f.name });
         else resto.push({ file: f, base64 });
+        if (r?.orcamento || looksLikeOrcamento(f.name)) algumOrcamento = true;
       }
       setBoletos(lidosBoleto);
       if (!resto.length) {
@@ -165,7 +176,10 @@ export default function ImportDuplicatasButton() {
       }
       files = resto.map((r) => r.file);
       const base64De = new Map(resto.map((r) => [r.file, r.base64]));
-      const ehNfe = files.every((f) => looksLikeNfe(f.name)) || files.length > 1 || lidosBoleto.length > 0;
+      // Orçamento / ordem de serviço vai pela mesma leitura das notas; só o
+      // relatório de duplicatas (arquivo único) segue o caminho próprio.
+      const ehNfe =
+        files.every((f) => looksLikeNfe(f.name)) || files.length > 1 || lidosBoleto.length > 0 || algumOrcamento;
       if (ehNfe) {
         const lidos: ArquivoLido[] = [];
         const encontradas: NotaRevisao[] = [];
@@ -192,9 +206,11 @@ export default function ImportDuplicatasButton() {
               escolhaFornecedor: n.supplierId ?? NEW_SUPPLIER,
               // Fluxo em branco de propósito: é escolha do usuário, não palpite
               // do sistema — a mesma nota de peça pode ser custo do carro,
-              // reposição do almoxarifado ou despesa da loja.
-              fluxo: "",
-              veiculoId: "",
+              // reposição do almoxarifado ou despesa da loja. Exceção: o
+              // documento cita a placa de um carro do cadastro (o orçamento da
+              // oficina sempre cita) — aí já vem Veículos com ele, para conferir.
+              fluxo: n.veiculoSugeridoId ? "VEICULOS" : "",
+              veiculoId: n.veiculoSugeridoId ?? "",
               beneficiarioId: "",
               // Tudo marcado; o usuário desmarca o que não quiser lançar.
               marcadas: new Set(n.parcelas.map((p) => p.parcela)),
@@ -243,17 +259,17 @@ export default function ImportDuplicatasButton() {
     const comMarcadas = notas.filter((n) => n.marcadas.size > 0);
     const semFluxo = comMarcadas.find((n) => !n.fluxo);
     if (semFluxo) {
-      setError(`Escolha o fluxo da NF ${semFluxo.numero}.`);
+      setError(`Escolha o fluxo do documento ${nomeDoc(semFluxo)}.`);
       return;
     }
     const semVeiculo = comMarcadas.find((n) => n.fluxo === "VEICULOS" && !n.veiculoId);
     if (semVeiculo) {
-      setError(`No fluxo Veículos, indique o veículo da NF ${semVeiculo.numero}.`);
+      setError(`No fluxo Veículos, indique o veículo do documento ${nomeDoc(semVeiculo)}.`);
       return;
     }
     const semBeneficiario = comMarcadas.find((n) => n.fluxo === "CAPITAL" && !n.beneficiarioId);
     if (semBeneficiario) {
-      setError(`No fluxo Capital, escolha o beneficiário da NF ${semBeneficiario.numero}.`);
+      setError(`No fluxo Capital, escolha o beneficiário do documento ${nomeDoc(semBeneficiario)}.`);
       return;
     }
     setError(null);
@@ -264,6 +280,8 @@ export default function ImportDuplicatasButton() {
         const doArquivo = notas
           .filter((n) => n.arquivo === i)
           .map((n) => ({
+            tipo: n.tipo,
+            categoria: n.categoria,
             numero: n.numero,
             emitenteNome: n.emitenteNome,
             emitidaEm: n.emitidaEm,
@@ -368,31 +386,47 @@ export default function ImportDuplicatasButton() {
         }}
       />
       <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
-        {busy ? "Lendo as notas…" : "🧾 Importar NFs do fornecedor"}
+        {busy ? "Lendo os documentos…" : "🧾 Importar NFs e orçamentos"}
       </Button>
 
       {open ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5">
-            <h2 className="text-base font-semibold text-slate-900">Importar NFs do fornecedor</h2>
+            <h2 className="text-base font-semibold text-slate-900">Importar NFs e orçamentos do fornecedor</h2>
+            <p className="mt-0.5 text-xs text-slate-500">
+              NF-e/DANFE, orçamento ou ordem de serviço (oficina, funilaria, peças), relatório de duplicatas e o
+              boleto junto.
+            </p>
             {error ? <p className="mt-3 text-sm font-medium text-rose-600">{error}</p> : null}
 
             {/* ---------------- Revisão das NF-e (antes de lançar) ---------------- */}
             {emRevisaoNfe ? (
               <div className="mt-3 space-y-4 text-sm">
                 <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
-                  <strong>Nada foi lançado ainda.</strong> Confira as notas abaixo, desmarque o que
-                  não quiser e confirme no fim.
+                  <strong>Nada foi lançado ainda.</strong> Confira os documentos abaixo, desmarque o
+                  que não quiser e confirme no fim.
                 </p>
 
                 {notas.map((n, i) => (
                   <div key={`${n.numero}-${i}`} className="rounded-lg border border-slate-200 p-3">
                     <p className="font-semibold text-slate-800">
-                      NF {n.numero}
+                      {nomeDoc(n)}
                       {n.emitidaEm ? (
-                        <span className="font-normal text-slate-500"> · emitida {n.emitidaEm}</span>
+                        <span className="font-normal text-slate-500"> · {n.tipo === "ORCAMENTO" ? "de" : "emitida"} {n.emitidaEm}</span>
                       ) : null}
                     </p>
+                    {n.tipo === "ORCAMENTO" ? (
+                      <p className="text-xs text-amber-700">
+                        Orçamento / ordem de serviço — não é nota fiscal. Quando a NF chegar, importe-a: ela é anexada
+                        a este título (mesmo valor e fornecedor), sem lançar de novo.
+                      </p>
+                    ) : null}
+                    {n.placa ? (
+                      <p className="text-xs text-slate-500">
+                        Placa no documento: <strong>{n.placa}</strong>
+                        {n.veiculoSugeridoId ? " — veículo já escolhido abaixo, confira." : " — nenhum veículo do cadastro com essa placa."}
+                      </p>
+                    ) : null}
                     <p className="text-xs text-slate-500">
                       Emitente: {n.emitenteNome || "não identificado"}
                       {n.emitenteCnpj ? ` · CNPJ ${n.emitenteCnpj}` : ""}
@@ -740,8 +774,7 @@ export default function ImportDuplicatasButton() {
                   ))}
                 </ul>
                 <p className="text-xs text-slate-400">
-                  Nos títulos criados, as peças da nota já estão na descrição/observações — falta só
-                  vincular o veículo.
+                  Nos títulos criados, os itens do documento já estão na descrição e nas observações.
                 </p>
               </div>
             ) : null}

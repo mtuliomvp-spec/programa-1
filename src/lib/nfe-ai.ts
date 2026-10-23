@@ -248,6 +248,12 @@ export async function extractNfe(base64: string, mimeType: string): Promise<NfeE
 const nfeLoteNotaSchema = nfeSchema.extend({
   paginaInicial: z.number().int().nullable(),
   paginaFinal: z.number().int().nullable(),
+  // Orçamento / ordem de serviço (oficina, funilaria, peças) também entra pela
+  // importação: não é NF, mas é a cobrança que vira título.
+  tipoDocumento: z.enum(["NFE", "ORCAMENTO"]).default("NFE"),
+  // Placa do veículo citada no documento ("" quando não há) — é por ela que o
+  // custo vai sozinho para a ficha do carro.
+  placa: z.string().default(""),
 });
 
 const nfeLoteSchema = z.object({ notas: z.array(nfeLoteNotaSchema) });
@@ -263,9 +269,19 @@ const NFE_LOTE_JSON_SCHEMA = {
       type: "array",
       items: {
         ...NFE_JSON_SCHEMA,
-        required: [...NFE_JSON_SCHEMA.required, "paginaInicial", "paginaFinal"],
+        required: [...NFE_JSON_SCHEMA.required, "paginaInicial", "paginaFinal", "tipoDocumento", "placa"],
         properties: {
           ...NFE_JSON_SCHEMA.properties,
+          tipoDocumento: {
+            type: "string",
+            enum: ["NFE", "ORCAMENTO"],
+            description:
+              "NFE = nota fiscal (DANFE, NFS-e, cupom fiscal); ORCAMENTO = orçamento, ordem de serviço (OS), pedido ou recibo sem valor fiscal",
+          },
+          placa: {
+            type: "string",
+            description: "placa do veículo citada no documento, só letras e números (ex.: SMS2I04); string vazia se não houver",
+          },
           // Não-anuláveis (limite de 16 unions do structured output): a página
           // sempre existe — é onde a nota está no PDF.
           paginaInicial: {
@@ -286,7 +302,12 @@ const LOTE_PROMPT =
   SYSTEM_PROMPT +
   " ATENÇÃO: este PDF pode conter VÁRIAS notas fiscais (DANFEs) — uma por página ou em blocos de " +
   "páginas. Devolva UMA entrada por nota (não misture itens de notas diferentes) e informe, em cada " +
-  "uma, a primeira e a última página em que ela aparece (contando a partir de 1).";
+  "uma, a primeira e a última página em que ela aparece (contando a partir de 1). " +
+  "O documento também pode ser um ORÇAMENTO ou ORDEM DE SERVIÇO de oficina/fornecedor (sem chave de acesso): " +
+  "aí tipoDocumento = ORCAMENTO; numero = o número do orçamento/OS (só dígitos); emitidaEm = a data de abertura " +
+  "ou emissão; emitente = a oficina/empresa do cabeçalho; valorTotal = o TOTAL GERAL (produtos + serviços, " +
+  "já com desconto); itens = produtos E serviços; chaveAcesso e serie = null; duplicatas só se houver parcelas " +
+  "com vencimento. Em qualquer documento, a placa do veículo citada vai em placa.";
 
 /** Lê um PDF com uma ou várias NF-e; cada nota volta com o intervalo de páginas. */
 export async function extractNfeLote(base64: string): Promise<NfeLoteNota[]> {
