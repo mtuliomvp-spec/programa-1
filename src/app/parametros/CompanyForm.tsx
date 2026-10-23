@@ -18,6 +18,11 @@ type Company = {
   logoDataUrl: string | null;
   publicUrl: string | null;
   instagram: string | null;
+  googleAdsId: string | null;
+  googleAdsLeadLabel: string | null;
+  googleAnalyticsId: string | null;
+  googleSiteVerification: string | null;
+  anoFundacao: number | null;
   // Parecer IA: provedor/modelo aparecem; a chave NUNCA vem ao cliente (só o
   // indicador de que existe).
   aiProvider: string | null;
@@ -200,6 +205,41 @@ export default function CompanyForm({
         </div>
         <p className="mt-2 text-xs text-slate-500">
           Aparece no rodapé da vitrine pública. Pode ser o @usuario ou o link completo do perfil.
+        </p>
+      </div>
+
+      <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
+        <p className="mb-1 text-sm font-semibold text-slate-800">📈 Google — anúncios e buscador (vitrine)</p>
+        <p className="mb-3 text-xs text-slate-500">
+          Com o Google Ads preenchido, cada clique no WhatsApp ou no telefone da vitrine vira uma{" "}
+          <strong>conversão (lead)</strong> no Google Ads — é com ela que as campanhas aprendem quem
+          procura carro de verdade. São códigos públicos das tags, não senhas.
+        </p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Google Ads — ID da conta (tag)">
+            <Input name="googleAdsId" defaultValue={company.googleAdsId || ""} placeholder="AW-123456789" />
+          </Field>
+          <Field label="Google Ads — rótulo da conversão “lead”">
+            <Input name="googleAdsLeadLabel" defaultValue={company.googleAdsLeadLabel || ""} placeholder="AbCdEfGhIjK" />
+          </Field>
+          <Field label="Google Analytics 4 (opcional)">
+            <Input name="googleAnalyticsId" defaultValue={company.googleAnalyticsId || ""} placeholder="G-AB12CD34EF" />
+          </Field>
+          <Field label="Search Console — código de verificação">
+            <Input
+              name="googleSiteVerification"
+              defaultValue={company.googleSiteVerification || ""}
+              placeholder="cole o código ou a meta tag inteira"
+            />
+          </Field>
+          <Field label="Loja existe desde (ano)">
+            <Input name="anoFundacao" defaultValue={company.anoFundacao ?? ""} placeholder="2001" inputMode="numeric" maxLength={4} />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          O ID e o rótulo saem do Google Ads em <em>Metas › Conversões › nova ação de conversão › Site</em>{" "}
+          (no “snippet do evento”: <code>send_to: &apos;AW-…/rótulo&apos;</code>). O ano de fundação vai para os
+          dados que o Google lê da loja e para o texto da vitrine.
         </p>
       </div>
 
