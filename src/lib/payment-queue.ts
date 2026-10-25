@@ -363,7 +363,7 @@ export type PagamentoNaFila = {
    * todos os títulos deles juntos — a diferença é que o combo é um borderô
    * montado antes, e o lote nasce do comprovante único no ato do pagamento.
    */
-  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno";
+  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno" | "seguro";
   /**
    * Dinheiro que SAI (pagamento) ou que ENTRA (recebimento). É o que decide o
    * sinal na tela e o lado da baixa quando o ok é dado.
@@ -666,16 +666,17 @@ export async function desenfileirarRecebimento(receivableId: string) {
 }
 
 /**
- * REPASSE e RETORNO da financeira na fila. Não são títulos: a baixa deles é a
- * transferência da conta da financeira para a conta da empresa. Então a fila
- * fica na própria venda, e o id da linha diz qual das duas baixas ela é
- * ("financiamento:<venda>" ou "retorno:<venda>") — o mesmo id serve para o ok
- * e para o "tirar da fila".
+ * REPASSE e RETORNO da financeira — e a COMISSÃO DO SEGURO — na fila. Não são
+ * títulos: o repasse e o retorno são a transferência da conta da financeira
+ * para a da empresa, e o seguro é a comissão que a seguradora credita. Então a
+ * fila fica na própria venda, e o id da linha diz qual baixa ela é
+ * ("financiamento:<venda>", "retorno:<venda>" ou "seguro:<venda>") — o mesmo
+ * id serve para o ok e para o "tirar da fila".
  */
-export type VendaNaFila = { tipo: "financiamento" | "retorno"; saleId: string };
+export type VendaNaFila = { tipo: "financiamento" | "retorno" | "seguro"; saleId: string };
 
 export function vendaDaFila(id: string): VendaNaFila | null {
-  const m = /^(financiamento|retorno):(.+)$/.exec(id);
+  const m = /^(financiamento|retorno|seguro):(.+)$/.exec(id);
   return m ? { tipo: m[1] as VendaNaFila["tipo"], saleId: m[2] } : null;
 }
 
@@ -685,12 +686,16 @@ export function vendaDaFila(id: string): VendaNaFila | null {
  * que no ok, dias depois.
  */
 export async function enfileirarVenda(input: {
-  tipo: "financiamento" | "retorno";
+  tipo: "financiamento" | "retorno" | "seguro";
   saleId: string;
   data: Date;
   accountId: string;
-  /** Retorno: o valor que a financeira pagou de fato. */
+  /** Retorno: o valor que a financeira pagou de fato. Seguro: o que caiu. */
   valor?: number;
+  /** Seguro: a comissão do vendedor sobre ele. */
+  comissao?: number;
+  /** Seguro: quem creditou (a seguradora). */
+  pagador?: string | null;
 }) {
   const sale = await prisma.sale.findUniqueOrThrow({
     where: { id: input.saleId },
@@ -701,13 +706,36 @@ export async function enfileirarVenda(input: {
       financerSettledAt: true,
       returnNet: true,
       returnSettledAt: true,
+      insuranceSold: true,
+      insuranceSettledAt: true,
     },
   });
   if (sale.status !== "CONCLUIDA") throw new Error("A venda não está concluída.");
-  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
-  if (sale.financerAccountId === input.accountId) {
+  if (sale.financerAccountId && sale.financerAccountId === input.accountId) {
     throw new Error("Escolha uma conta da empresa (diferente da financeira).");
   }
+  if (input.tipo === "seguro") {
+    // O seguro não passa pela conta da financeira: a seguradora credita direto
+    // na conta da empresa. Mesmas validações da baixa (settleInsurance).
+    if (!sale.insuranceSold) throw new Error("Esta venda não tem seguro marcado.");
+    if (sale.insuranceSettledAt) throw new Error("A comissão de seguro desta venda já foi recebida.");
+    const valor = round2(input.valor ?? 0);
+    if (!Number.isFinite(valor) || valor <= 0) throw new Error("Informe o valor recebido do seguro.");
+    const comissao = Math.max(0, round2(input.comissao ?? 0));
+    if (comissao > valor) throw new Error("A comissão não pode ser maior que o valor recebido.");
+    await prisma.sale.update({
+      where: { id: input.saleId },
+      data: {
+        pendingInsuranceDate: input.data,
+        pendingInsuranceAmount: valor,
+        pendingInsuranceCommission: comissao,
+        pendingInsuranceAccountId: input.accountId,
+        pendingInsurancePayer: (input.pagador ?? "").trim().slice(0, 80) || null,
+      },
+    });
+    return;
+  }
+  if (!sale.financerAccountId) throw new Error("Esta venda não tem financeira cadastrada.");
   if (input.tipo === "financiamento") {
     if (!sale.financedAmount || sale.financedAmount <= 0) throw new Error("Sem valor financiado a receber.");
     if (sale.financerSettledAt) throw new Error("Este financiamento já foi recebido.");
@@ -727,20 +755,28 @@ export async function enfileirarVenda(input: {
   });
 }
 
-/** Tira o repasse/retorno da fila (sem creditar nada). */
+/** Tira o repasse/retorno/seguro da fila (sem creditar nada). */
 export async function desenfileirarVenda(v: VendaNaFila) {
   await prisma.sale.update({
     where: { id: v.saleId },
     data:
       v.tipo === "financiamento"
         ? { pendingFinancingDate: null, pendingFinancingAccountId: null }
-        : { pendingReturnDate: null, pendingReturnAmount: null, pendingReturnAccountId: null },
+        : v.tipo === "seguro"
+          ? {
+              pendingInsuranceDate: null,
+              pendingInsuranceAmount: null,
+              pendingInsuranceCommission: null,
+              pendingInsuranceAccountId: null,
+              pendingInsurancePayer: null,
+            }
+          : { pendingReturnDate: null, pendingReturnAmount: null, pendingReturnAccountId: null },
   });
 }
 
 type FiltroData = { not: null; lte?: Date; gt?: Date };
 
-/** Repasses e retornos informados cuja data do crédito cai em `quando`. */
+/** Repasses, retornos e seguros informados cuja data do crédito cai em `quando`. */
 async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
   const sales = await prisma.sale.findMany({
     where: {
@@ -748,6 +784,7 @@ async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
       OR: [
         { financerSettledAt: null, pendingFinancingDate: quando },
         { returnSettledAt: null, pendingReturnDate: quando },
+        { insuranceSettledAt: null, pendingInsuranceDate: quando },
       ],
     },
     select: {
@@ -765,6 +802,12 @@ async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
       pendingReturnDate: true,
       pendingReturnAmount: true,
       pendingReturnAccountId: true,
+      insuranceSettledAt: true,
+      pendingInsuranceDate: true,
+      pendingInsuranceAmount: true,
+      pendingInsuranceCommission: true,
+      pendingInsuranceAccountId: true,
+      pendingInsurancePayer: true,
       customer: { select: { name: true } },
       vehicle: { select: { brand: true, model: true, plate: true } },
     },
@@ -772,7 +815,9 @@ async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
   if (sales.length === 0) return [];
   const contaIds = [
     ...new Set(
-      sales.flatMap((v) => [v.pendingFinancingAccountId, v.pendingReturnAccountId]).filter(Boolean) as string[],
+      sales
+        .flatMap((v) => [v.pendingFinancingAccountId, v.pendingReturnAccountId, v.pendingInsuranceAccountId])
+        .filter(Boolean) as string[],
     ),
   ];
   const contas = new Map(
@@ -832,6 +877,25 @@ async function vendasNaFila(quando: FiltroData): Promise<PagamentoNaFila[]> {
           Math.abs(dif) > 0.005
             ? `programado ${formatCurrency(v.returnNet)} · pago ${formatCurrency(valor)} (${dif > 0 ? "+" : "−"}${formatCurrency(Math.abs(dif))} vira ${dif > 0 ? "receita" : "despesa"} administrativa no ok)`
             : null,
+      });
+    }
+    if (!v.insuranceSettledAt && dentro(v.pendingInsuranceDate)) {
+      const valor = v.pendingInsuranceAmount ?? 0;
+      const comissao = v.pendingInsuranceCommission ?? 0;
+      linhas.push({
+        ...base,
+        // Quem pagou é a seguradora, não a financeira da venda.
+        supplierName: `${v.pendingInsurancePayer || "Seguradora"} · ${v.customer.name}`,
+        id: `seguro:${v.id}`,
+        kind: "seguro",
+        direcao: "entrada",
+        description: `Comissão de seguro · ${veiculo}`,
+        amount: valor,
+        tituloAmount: valor,
+        paidAt: v.pendingInsuranceDate!.toISOString(),
+        accountId: v.pendingInsuranceAccountId,
+        accountName: v.pendingInsuranceAccountId ? (contas.get(v.pendingInsuranceAccountId) ?? null) : null,
+        note: comissao > 0 ? `comissão do vendedor ${formatCurrency(comissao)} lançada no ok` : null,
       });
     }
   }
@@ -1002,13 +1066,15 @@ export async function debitosPrelancados(): Promise<{
       },
     }),
     // Repasse/retorno informado: sai da conta da financeira e entra na da
-    // empresa — como a transferência, muda o previsto das duas.
+    // empresa — como a transferência, muda o previsto das duas. O seguro
+    // informado só entra (a seguradora credita direto).
     prisma.sale.findMany({
       where: {
         status: "CONCLUIDA",
         OR: [
           { financerSettledAt: null, pendingFinancingDate: { not: null } },
           { returnSettledAt: null, pendingReturnDate: { not: null } },
+          { insuranceSettledAt: null, pendingInsuranceDate: { not: null } },
         ],
       },
       select: {
@@ -1024,6 +1090,10 @@ export async function debitosPrelancados(): Promise<{
         pendingReturnDate: true,
         pendingReturnAmount: true,
         pendingReturnAccountId: true,
+        insuranceSettledAt: true,
+        pendingInsuranceDate: true,
+        pendingInsuranceAmount: true,
+        pendingInsuranceAccountId: true,
       },
     }),
     // Sinal / entrada antecipada AGUARDANDO CRÉDITO: o cliente já depositou
@@ -1113,6 +1183,11 @@ export async function debitosPrelancados(): Promise<{
       const item = { data: v.pendingReturnDate, descricao: `Retorno da financeira · ${placa(v.vehicle)}`, href };
       somar(v.financerAccountId, -v.returnNet, item);
       somar(v.pendingReturnAccountId, v.pendingReturnAmount ?? v.returnNet, item);
+    }
+    if (!v.insuranceSettledAt && v.pendingInsuranceDate) {
+      // A seguradora credita direto na conta da empresa: só entrada.
+      const item = { data: v.pendingInsuranceDate, descricao: `Comissão de seguro · ${placa(v.vehicle)}`, href };
+      somar(v.pendingInsuranceAccountId, v.pendingInsuranceAmount ?? 0, item);
     }
   }
   itens.sort((a, b) => (a.data?.getTime() ?? 0) - (b.data?.getTime() ?? 0));
@@ -1334,6 +1409,6 @@ export async function definirContaDaFila(
       });
     }
   } else {
-    throw new Error("Repasse/retorno já tem conta definida.");
+    throw new Error("Repasse/retorno/seguro já tem conta definida.");
   }
 }

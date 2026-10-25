@@ -1250,6 +1250,16 @@ model Sale {
   insuranceAmount            Float?
   insuranceCommissionAmount  Float                @default(0)
   insuranceSettledAt         DateTime?
+  // Quem creditou a comissão (a seguradora — ex.: Cardif do Brasil —, que nem
+  // sempre é a financeira da venda). Texto livre, só para identificar.
+  insurancePayer             String?
+  // FILA DO CAIXA do seguro, como a do repasse/retorno: já caiu num dia à
+  // frente do movimento; a baixa sai no ok do caixa daquele dia.
+  pendingInsuranceDate       DateTime?
+  pendingInsuranceAmount     Float?
+  pendingInsuranceCommission Float?
+  pendingInsuranceAccountId  String?
+  pendingInsurancePayer      String?
   // NFS-e de comissão do seguro que cobre esta venda (desfeito se a nota cair).
   insuranceNfseId            String?
   insuranceNfse              NotaServico?         @relation("SeguroNfse", fields: [insuranceNfseId], references: [id], onDelete: SetNull)

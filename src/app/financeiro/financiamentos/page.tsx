@@ -78,6 +78,16 @@ export default async function FinanciamentosPage({
   // Seguros marcados na venda cuja comissão ainda não caiu — é a fila que o
   // dono não tinha como acompanhar ("não sabemos quando pagam").
   const segurosPendentes = allSales.filter((v) => v.insuranceSold && !v.insuranceSettledAt).length;
+  // Seguradoras que já creditaram comissão (mais recentes primeiro): viram
+  // sugestão do "Pago por" — a Cardif paga seguros de vários bancos.
+  const pagadores = [
+    ...new Set(
+      [...allSales]
+        .filter((v) => v.insuranceSettledAt && v.insurancePayer)
+        .sort((a, b) => b.insuranceSettledAt!.getTime() - a.insuranceSettledAt!.getTime())
+        .map((v) => v.insurancePayer!),
+    ),
+  ];
   // Contas da empresa (não-financeira) que podem receber o repasse.
   const companyAccounts = accounts
     .filter((a) => a.active && a.type !== "FINANCEIRA")
@@ -125,7 +135,8 @@ export default async function FinanciamentosPage({
         <strong>Receber (dar baixa)</strong> na linha do financiamento e escolha a conta da empresa —
         o valor sai da financeira e entra no caixa automaticamente. Caiu num dia{" "}
         <strong>à frente do movimento</strong>? Informe a data do crédito: ele fica na fila e entra no
-        caixa daquele dia com um ok, em Contas e caixas.
+        caixa daquele dia com um ok, em Contas e caixas. Vale também para o retorno e para o{" "}
+        <strong>seguro</strong> — no seguro, informe quem pagou (ex.: Cardif do Brasil).
       </div>
 
       <Card>
@@ -251,10 +262,25 @@ export default async function FinanciamentosPage({
                                 ? ` · comissão ${formatCurrency(s.insuranceCommissionAmount)}`
                                 : ""}
                             </span>
+                            {s.insurancePayer ? (
+                              <span className="text-[11px] text-slate-400">pago por {s.insurancePayer}</span>
+                            ) : null}
                             <Badge tone="success">Recebido {formatDate(s.insuranceSettledAt)}</Badge>
                             {canEstornar ? <ReverseSettleButton saleId={s.id} mode="insurance" /> : null}
                             <NfseSelo nota={s.insuranceNfse} />
                           </>
+                        ) : s.pendingInsuranceDate ? (
+                          <QueuedSettleChip
+                            saleId={s.id}
+                            tipo="seguro"
+                            data={s.pendingInsuranceDate.toISOString()}
+                            valor={s.pendingInsuranceAmount ?? 0}
+                            conta={
+                              s.pendingInsuranceAccountId ? (nomeConta.get(s.pendingInsuranceAccountId) ?? null) : null
+                            }
+                            pagador={s.pendingInsurancePayer}
+                            podeTirar={canReceber}
+                          />
                         ) : (
                           <>
                             <Badge tone="warning">A receber</Badge>
@@ -263,6 +289,8 @@ export default async function FinanciamentosPage({
                                 saleId={s.id}
                                 accounts={companyAccounts}
                                 sellerPercent={s.financerAccount?.sellerReturnPercent ?? 0}
+                                workDate={workDate}
+                                pagadores={pagadores}
                               />
                             ) : null}
                           </>
