@@ -98,7 +98,7 @@ export default function PaymentQueueCard({
           ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
             // fila o apaga, em vez de deixar um título solto no a pagar.
             "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
-          : r.kind === "financiamento" || r.kind === "retorno"
+          : r.kind === "financiamento" || r.kind === "retorno" || r.kind === "seguro"
             ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
             : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
@@ -216,7 +216,7 @@ export default function PaymentQueueCard({
                         setContas((p) => ({ ...p, [r.id]: accountId }));
                         // Grava já no pré-lançamento: o previsto da conta
                         // passa a contar com ele, mesmo sem o ok agora.
-                        if (accountId && r.kind !== "financiamento" && r.kind !== "retorno") {
+                        if (accountId && r.kind !== "financiamento" && r.kind !== "retorno" && r.kind !== "seguro") {
                           void definirContaDaFilaAction({ kind: r.kind, ids: idsDaLinha(r), accountId }).then(() =>
                             router.refresh(),
                           );

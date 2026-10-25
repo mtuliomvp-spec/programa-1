@@ -134,12 +134,12 @@ export async function settleReturnAction(
 }
 
 /**
- * Tira da fila o repasse/retorno informado (engano de data, de conta, de
- * valor): nada foi creditado, a venda volta a mostrar o "Receber".
+ * Tira da fila o repasse/retorno/seguro informado (engano de data, de conta,
+ * de valor): nada foi creditado, a venda volta a mostrar o "Receber".
  */
 export async function tirarDaFilaAction(
   saleId: string,
-  tipo: "financiamento" | "retorno",
+  tipo: "financiamento" | "retorno" | "seguro",
 ): Promise<SettleResult> {
   try {
     await assertCan("financeiro", "receber");
@@ -157,6 +157,9 @@ export async function settleInsuranceAction(
   accountId: string,
   amount: number,
   commission: number,
+  dataCredito?: string,
+  /** Quem creditou (a seguradora — ex.: Cardif do Brasil). */
+  pagador?: string,
 ): Promise<SettleResult> {
   if (!accountId) return { ok: false, error: "Escolha a conta que vai receber." };
   if (!Number.isFinite(amount) || amount <= 0) {
@@ -164,12 +167,29 @@ export async function settleInsuranceAction(
   }
   try {
     await assertCan("financeiro", "receber");
+    // Mesma fila do repasse/retorno: caiu à frente do movimento, espera o
+    // caixa daquele dia ("já caiu").
+    const fila = await dataDaFila(dataCredito);
+    if (fila) {
+      const { enfileirarVenda } = await import("@/lib/payment-queue");
+      await enfileirarVenda({
+        tipo: "seguro",
+        saleId,
+        data: fila,
+        accountId,
+        valor: amount,
+        comissao: commission,
+        pagador,
+      });
+      revalidateFinancing();
+      return { ok: true, enfileirado: true, data: fila.toISOString() };
+    }
     await assertBooksBalanced();
     await assertCashboxOpen();
     // Mesma regra das demais baixas: data de trabalho do caixa aberto.
     const date = await getCashboxWorkDate();
     await assertMonthOpen(date);
-    await settleInsurance(saleId, accountId, amount, commission, date);
+    await settleInsurance(saleId, accountId, amount, commission, date, pagador);
   } catch (e) {
     return {
       ok: false,

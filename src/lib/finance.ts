@@ -3225,6 +3225,8 @@ export async function settleInsurance(
   amount: number,
   commission: number,
   date: Date,
+  /** Quem creditou (a seguradora — ex.: Cardif do Brasil). Opcional. */
+  payer?: string | null,
 ) {
   const sale = await prisma.sale.findUniqueOrThrow({
     where: { id: saleId },
@@ -3245,6 +3247,7 @@ export async function settleInsurance(
   if (comissao > valor) throw new Error("A comissão não pode ser maior que o valor recebido.");
 
   const label = `${sale.customer.name} · ${sale.vehicle.brand} ${sale.vehicle.model} (${sale.vehicle.plate})`;
+  const pagador = (payer ?? "").trim().slice(0, 80) || null;
   const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
   // Vendedor beneficiário do capital: a comissão vira aporte, não dinheiro.
   const beneficiary = sale.sellerId
@@ -3256,7 +3259,7 @@ export async function settleInsurance(
       data: {
         // Prefixo próprio: os estornos do retorno apagam por texto + placa e
         // engoliriam esta perna se ela dissesse "Retorno financiamento".
-        description: `Comissão de seguro — ${label}`,
+        description: `Comissão de seguro${pagador ? ` (${pagador})` : ""} — ${label}`,
         category: "COMISSAO_SEGURO",
         amount: valor,
         dueDate: date,
@@ -3302,6 +3305,7 @@ export async function settleInsurance(
         insuranceAmount: valor,
         insuranceCommissionAmount: comissao,
         insuranceSettledAt: date,
+        insurancePayer: pagador,
       },
     });
   });
@@ -3323,7 +3327,7 @@ export async function reverseInsurance(saleId: string) {
     });
     return tx.sale.update({
       where: { id: saleId },
-      data: { insuranceAmount: null, insuranceCommissionAmount: 0, insuranceSettledAt: null },
+      data: { insuranceAmount: null, insuranceCommissionAmount: 0, insuranceSettledAt: null, insurancePayer: null },
     });
   });
 }

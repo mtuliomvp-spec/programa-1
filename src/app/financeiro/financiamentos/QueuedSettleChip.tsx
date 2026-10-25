@@ -5,9 +5,9 @@ import { formatCurrency, formatDate } from "@/lib/format";
 import { tirarDaFilaAction } from "./actions";
 
 /**
- * Repasse/retorno informado à frente do movimento: no lugar do "Receber", a
- * linha mostra que o dinheiro já caiu e espera o caixa daquele dia. O "tirar
- * da fila" desfaz o informe (nada foi creditado ainda).
+ * Repasse/retorno/seguro informado à frente do movimento: no lugar do
+ * "Receber", a linha mostra que o dinheiro já caiu e espera o caixa daquele
+ * dia. O "tirar da fila" desfaz o informe (nada foi creditado ainda).
  */
 export default function QueuedSettleChip({
   saleId,
@@ -15,14 +15,17 @@ export default function QueuedSettleChip({
   data,
   valor,
   conta,
+  pagador,
   podeTirar,
 }: {
   saleId: string;
-  tipo: "financiamento" | "retorno";
+  tipo: "financiamento" | "retorno" | "seguro";
   /** ISO da data do crédito. */
   data: string;
   valor: number;
   conta: string | null;
+  /** Seguro: quem creditou (a seguradora). */
+  pagador?: string | null;
   podeTirar: boolean;
 }) {
   const [confirmando, setConfirmando] = useState(false);
@@ -37,6 +40,7 @@ export default function QueuedSettleChip({
       <span className="text-[11px] text-slate-500">
         +{formatCurrency(valor)}
         {conta ? ` em ${conta}` : ""}
+        {pagador ? ` · de ${pagador}` : ""}
       </span>
       {podeTirar ? (
         confirmando ? (

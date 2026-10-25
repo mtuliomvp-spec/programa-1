@@ -63,7 +63,7 @@ export default function FuturePaymentsCard({
           ? // Avulso nasceu no movimento de caixa só para ser pago: tirar da
             // fila o apaga, em vez de deixar um título solto no a pagar.
             "Este lançamento foi feito no movimento de caixa e será APAGADO (não é um título do Contas a pagar). Continuar?"
-          : p.kind === "financiamento" || p.kind === "retorno"
+          : p.kind === "financiamento" || p.kind === "retorno" || p.kind === "seguro"
             ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
             : "Tirar este pré-lançamento da fila? O anexo continua no título.";
     if (!confirm(pergunta)) return;
@@ -197,7 +197,7 @@ export default function FuturePaymentsCard({
                             {p.note ? (
                               <p className="mt-1 text-xs font-medium text-amber-700">⚠ {p.note}</p>
                             ) : null}
-                            {canPagar && !p.accountId && p.kind !== "financiamento" && p.kind !== "retorno" ? (
+                            {canPagar && !p.accountId && p.kind !== "financiamento" && p.kind !== "retorno" && p.kind !== "seguro" ? (
                               <DefinirContaFila
                                 kind={p.kind}
                                 ids={idsDaLinha(p)}

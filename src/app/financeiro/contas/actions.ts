@@ -922,9 +922,8 @@ export async function confirmQueuedPaymentsAction(
     vendaDaFila,
   } = await import("@/lib/payment-queue");
   const { payComboAction } = await import("@/app/financeiro/combos/actions");
-  const { receiveReceivable, settleFinancing, settleReturn, creditarSinalDaDevolucao } = await import(
-    "@/lib/finance"
-  );
+  const { receiveReceivable, settleFinancing, settleReturn, settleInsurance, creditarSinalDaDevolucao } =
+    await import("@/lib/finance");
   // ENTRADAS primeiro: o dinheiro que entrou no dia vem antes do que saiu —
   // ex.: o crédito de um sinal antes da devolução dele.
   const recebiveisNaLista = new Set(
@@ -933,8 +932,9 @@ export async function confirmQueuedPaymentsAction(
   ids = [...ids.filter((id) => recebiveisNaLista.has(id)), ...ids.filter((id) => !recebiveisNaLista.has(id))];
   let paid = 0;
   for (const id of ids) {
-    // Repasse/retorno da financeira: a baixa é a mesma do botão da tela
-    // Financiamentos, agora na data do caixa que alcançou o dia do crédito.
+    // Repasse/retorno da financeira e comissão do seguro: a baixa é a mesma
+    // do botão da tela Financiamentos, agora na data do caixa que alcançou o
+    // dia do crédito.
     const venda = vendaDaFila(id);
     if (venda) {
       const sale = await prisma.sale.findUnique({
@@ -948,17 +948,34 @@ export async function confirmQueuedPaymentsAction(
           pendingReturnDate: true,
           pendingReturnAmount: true,
           pendingReturnAccountId: true,
+          insuranceSettledAt: true,
+          pendingInsuranceDate: true,
+          pendingInsuranceAmount: true,
+          pendingInsuranceCommission: true,
+          pendingInsuranceAccountId: true,
+          pendingInsurancePayer: true,
         },
       });
       if (!sale) continue;
-      const financiamento = venda.tipo === "financiamento";
-      if (!(financiamento ? sale.pendingFinancingDate : sale.pendingReturnDate)) continue;
-      if (financiamento ? sale.financerSettledAt : sale.returnSettledAt) {
+      const fila = {
+        financiamento: {
+          data: sale.pendingFinancingDate,
+          recebido: sale.financerSettledAt,
+          conta: sale.pendingFinancingAccountId,
+        },
+        retorno: { data: sale.pendingReturnDate, recebido: sale.returnSettledAt, conta: sale.pendingReturnAccountId },
+        seguro: {
+          data: sale.pendingInsuranceDate,
+          recebido: sale.insuranceSettledAt,
+          conta: sale.pendingInsuranceAccountId,
+        },
+      }[venda.tipo];
+      if (!fila.data) continue;
+      if (fila.recebido) {
         await desenfileirarVenda(venda);
         continue;
       }
-      const accountId =
-        accountByPayable[id] || (financiamento ? sale.pendingFinancingAccountId : sale.pendingReturnAccountId);
+      const accountId = accountByPayable[id] || fila.conta;
       if (!accountId) {
         return {
           ok: false,
@@ -967,7 +984,16 @@ export async function confirmQueuedPaymentsAction(
         };
       }
       try {
-        if (financiamento) await settleFinancing(venda.saleId, accountId, date);
+        if (venda.tipo === "financiamento") await settleFinancing(venda.saleId, accountId, date);
+        else if (venda.tipo === "seguro")
+          await settleInsurance(
+            venda.saleId,
+            accountId,
+            sale.pendingInsuranceAmount ?? 0,
+            sale.pendingInsuranceCommission ?? 0,
+            date,
+            sale.pendingInsurancePayer,
+          );
         else await settleReturn(venda.saleId, accountId, sale.pendingReturnAmount ?? sale.returnNet, date);
       } catch (e) {
         return { ok: false, paid, error: e instanceof Error ? e.message : "Não foi possível receber." };
@@ -1133,8 +1159,8 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
   }
   const { desenfileirarPagamento, desenfileirarCombo, desenfileirarRecebimento, desenfileirarVenda, vendaDaFila } =
     await import("@/lib/payment-queue");
-  // Repasse/retorno da financeira: só sai da fila — a venda volta a mostrar o
-  // "Receber" na tela Financiamentos.
+  // Repasse/retorno da financeira e seguro: só sai da fila — a venda volta a
+  // mostrar o "Receber" na tela Financiamentos.
   const venda = vendaDaFila(id);
   if (venda) {
     await desenfileirarVenda(venda);
@@ -1225,7 +1251,7 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
  * esperar o ok do caixa, para o previsto da conta já contar com ele.
  */
 export async function definirContaDaFilaAction(input: {
-  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno";
+  kind: "titulo" | "combo" | "lote" | "recebimento" | "financiamento" | "retorno" | "seguro";
   ids: string[];
   accountId: string;
 }): Promise<{ ok: boolean; error?: string }> {
