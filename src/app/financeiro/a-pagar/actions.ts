@@ -2134,7 +2134,8 @@ export async function readGuiasAction(base64: string): Promise<ReadNfeResult> {
       : [];
     const achados = porPlaca.length ? porPlaca : porRenavam;
     const sugerido = achados.find((v) => v.status !== "VENDIDO") ?? achados[0] ?? null;
-    const orgao = (g.cedente || "").trim() || (g.tipo === "IPVA" ? "SEFAZ" : "DETRAN");
+    const { orgaoDaGuia } = await import("@/lib/boleto-ai");
+    const orgao = orgaoDaGuia(g);
     const cadastrado = suppliers.find((s) => s.name.trim().toLowerCase() === orgao.toLowerCase()) ?? null;
     const existente = await tituloDaGuia(linha, valor);
     const ident = [
