@@ -1482,7 +1482,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           <Card>
             <CardHeader
               title="Boletos e guias (IPVA, multas, quitação)"
-              description="Anexe o boleto e o sistema lê valor e vencimento, casando com os descontos da negociação — a diferença segue a regra de desconto/acréscimo"
+              description="Anexe o boleto e o sistema lê valor e vencimento: casa com os descontos da negociação (a diferença segue a regra de desconto/acréscimo) ou, se não veio dela, vira título a pagar e custo do veículo"
             />
             <VehicleBoletos
               vehicleId={vehicle.id}

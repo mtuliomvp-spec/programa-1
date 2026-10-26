@@ -2325,7 +2325,9 @@ function tipoLabelOf(b: { tipo: string | null; descricao: string | null }): stri
  * sem que um upload atropele o anterior. Quando não vierem mais guias, o botão
  * "encerrar" (encerrarDebitosVeiculoAction) transforma a sobra em ganho.
  * Sem título-mãe (já consumido), cada guia nova é gasto ALÉM do descontado:
- * nasce o título e o mesmo valor entra como custo.
+ * nasce o título e o mesmo valor entra como custo. O mesmo vale quando o
+ * usuário marca que a guia NÃO veio da negociação (gasto novo da loja): o
+ * título-mãe, se houver, fica intocado.
  *
  * QUITAÇÃO — ajusta o título de quitação pendente para o valor do boleto e
  * lança a diferença como custo de ajuste (mesma regra).
@@ -2423,16 +2425,29 @@ export async function uploadVehicleBoletoAction(
 
     // ---------------- GUIAS (IPVA, multa, licenciamento, taxa) -------------
     const guias = boletos.filter((b) => b.tipo !== "QUITACAO" && valorDe(b) != null);
+    // Guia que NÃO veio da negociação (gasto novo da loja — IPVA/licenciamento
+    // do ano, multa de depois da compra): não toca no saldo descontado; nasce
+    // o título e o mesmo valor vira custo, como quando não há título-mãe.
+    const foraNegociacao = formData.get("foraNegociacao") === "1";
     if (guias.length) {
-      const mae = await prisma.payable.findFirst({
-        where: {
-          vehicleId,
-          category: "COMPRA_VEICULO",
-          status: { not: "PAGO" },
-          description: { startsWith: DEBITOS_MAE_PREFIX },
-        },
-        select: { id: true, amount: true, dueDate: true, supplierId: true, costCenterId: true, paymentComboId: true },
-      });
+      const mae = foraNegociacao
+        ? null
+        : await prisma.payable.findFirst({
+            where: {
+              vehicleId,
+              category: "COMPRA_VEICULO",
+              status: { not: "PAGO" },
+              description: { startsWith: DEBITOS_MAE_PREFIX },
+            },
+            select: {
+              id: true,
+              amount: true,
+              dueDate: true,
+              supplierId: true,
+              costCenterId: true,
+              paymentComboId: true,
+            },
+          });
       if (mae?.paymentComboId) {
         warnings.push(
           "O título de débitos está num combo de pagamento — remova-o do combo para as guias serem lançadas separadamente.",
@@ -2494,7 +2509,13 @@ export async function uploadVehicleBoletoAction(
         } else if (mae && Math.abs(saldoDepois) <= 0.005) {
           filled.push(`as guias fecharam exatamente o descontado (${brl(saldoAntes)}) — título de débitos encerrado`);
         } else if (excesso > 0.005) {
-          filled.push(`${brl(excesso)} acima do descontado entrou como custo do veículo`);
+          filled.push(
+            foraNegociacao
+              ? `${brl(excesso)} entrou como custo do veículo (gasto da loja, fora da negociação — o saldo descontado não mudou)`
+              : mae
+                ? `${brl(excesso)} acima do descontado entrou como custo do veículo`
+                : `${brl(excesso)} entrou como custo do veículo (não há desconto da negociação em aberto)`,
+          );
         }
       }
     }
