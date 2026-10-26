@@ -8,6 +8,7 @@ import {
   readDuplicatasAction,
   createDuplicatasAction,
   readNfeAction,
+  readGuiasAction,
   applyNfeAction,
   lerBoletoFornecedorAction,
   anexarBoletosFornecedorAction,
@@ -60,8 +61,11 @@ function looksLikeOrcamento(name: string): boolean {
   return /or[cç]amento|ordem.de.servi[cç]o/i.test(name);
 }
 
-/** "NF 123" ou "Orçamento 9131" — como o documento é chamado na tela. */
-const nomeDoc = (n: { tipo: string; numero: string }) => `${n.tipo === "ORCAMENTO" ? "Orçamento" : "NF"} ${n.numero}`;
+/** "NF 123", "Orçamento 9131" ou "Guia: IPVA 2026…" — como o documento é chamado na tela. */
+const nomeDoc = (n: { tipo: string; numero: string; itensResumo?: string }) =>
+  n.tipo === "GUIA"
+    ? `Guia: ${(n.itensResumo || n.numero).split(" — ")[0]}`
+    : `${n.tipo === "ORCAMENTO" ? "Orçamento" : "NF"} ${n.numero}`;
 
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -75,8 +79,9 @@ function fileToBase64(file: File): Promise<string> {
 /**
  * "Importar NFs e orçamentos" em duas etapas, para os dois tipos de arquivo:
  *
- *  • NF-e/DANFE ou orçamento/ordem de serviço (com a placa, o carro já vem
- *    escolhido): a IA lê e o sistema mostra, parcela a parcela, o que
+ *  • NF-e/DANFE, orçamento/ordem de serviço (com a placa, o carro já vem
+ *    escolhido) ou GUIA de órgão (IPVA, licenciamento, multa — inclusive de
+ *    carro fora do cadastro): a IA lê e o sistema mostra, parcela a parcela, o que
  *    vai acontecer (criar título novo ou anexar a um já lançado). Nada entra no
  *    financeiro antes do "Confirmar e lançar" — antes o título era criado
  *    direto, e um número errado da leitura entrava sem ninguém ver.
@@ -162,11 +167,15 @@ export default function ImportDuplicatasButton() {
       const lidosBoleto: BoletoArquivo[] = [];
       const resto: { file: File; base64: string }[] = [];
       let algumOrcamento = false;
+      // Guias de órgão (DARE de IPVA, licenciamento, multas): leitura própria,
+      // mesma revisão das notas.
+      const guias = new Set<File>();
       for (const f of files) {
         const base64 = await fileToBase64(f);
         const r = await lerBoletoFornecedorAction(base64, f.name).catch(() => null);
         if (r?.ok && r.boleto) lidosBoleto.push({ ...r.boleto, base64, filename: f.name });
         else resto.push({ file: f, base64 });
+        if (r?.guia) guias.add(f);
         if (r?.orcamento || looksLikeOrcamento(f.name)) algumOrcamento = true;
       }
       setBoletos(lidosBoleto);
@@ -179,7 +188,11 @@ export default function ImportDuplicatasButton() {
       // Orçamento / ordem de serviço vai pela mesma leitura das notas; só o
       // relatório de duplicatas (arquivo único) segue o caminho próprio.
       const ehNfe =
-        files.every((f) => looksLikeNfe(f.name)) || files.length > 1 || lidosBoleto.length > 0 || algumOrcamento;
+        files.every((f) => looksLikeNfe(f.name)) ||
+        files.length > 1 ||
+        lidosBoleto.length > 0 ||
+        algumOrcamento ||
+        guias.size > 0;
       if (ehNfe) {
         const lidos: ArquivoLido[] = [];
         const encontradas: NotaRevisao[] = [];
@@ -189,7 +202,7 @@ export default function ImportDuplicatasButton() {
         let socios: { id: string; name: string }[] = [];
         for (const f of files) {
           const base64 = base64De.get(f) ?? (await fileToBase64(f));
-          const res = await readNfeAction(base64);
+          const res = guias.has(f) ? await readGuiasAction(base64) : await readNfeAction(base64);
           if (!res.ok || !res.notas) {
             todosAvisos.push(`${f.name}: ${res.error || "não foi possível ler."}`);
             continue;
@@ -281,6 +294,7 @@ export default function ImportDuplicatasButton() {
           .filter((n) => n.arquivo === i)
           .map((n) => ({
             tipo: n.tipo,
+            linhaDigitavel: n.linhaDigitavel ?? null,
             categoria: n.categoria,
             numero: n.numero,
             emitenteNome: n.emitenteNome,
@@ -394,8 +408,8 @@ export default function ImportDuplicatasButton() {
           <div className="max-h-full w-full max-w-lg overflow-y-auto rounded-xl bg-white p-5">
             <h2 className="text-base font-semibold text-slate-900">Importar NFs e orçamentos do fornecedor</h2>
             <p className="mt-0.5 text-xs text-slate-500">
-              NF-e/DANFE, orçamento ou ordem de serviço (oficina, funilaria, peças), relatório de duplicatas e o
-              boleto junto.
+              NF-e/DANFE, orçamento ou ordem de serviço (oficina, funilaria, peças), guias de IPVA,
+              licenciamento e multas (DETRAN/SEFAZ), relatório de duplicatas e o boleto junto.
             </p>
             {error ? <p className="mt-3 text-sm font-medium text-rose-600">{error}</p> : null}
 
@@ -415,6 +429,13 @@ export default function ImportDuplicatasButton() {
                         <span className="font-normal text-slate-500"> · {n.tipo === "ORCAMENTO" ? "de" : "emitida"} {n.emitidaEm}</span>
                       ) : null}
                     </p>
+                    {n.tipo === "GUIA" ? (
+                      <p className="text-xs text-sky-700">
+                        Guia de órgão — vira um título com a guia anexada
+                        {n.linhaDigitavel ? " e a linha digitável pronta para pagar" : ""}. Carro fora do cadastro
+                        (vendido antes do sistema)? Use o fluxo Administrativo ou Capital.
+                      </p>
+                    ) : null}
                     {n.tipo === "ORCAMENTO" ? (
                       <p className="text-xs text-amber-700">
                         Orçamento / ordem de serviço — não é nota fiscal. Quando a NF chegar, importe-a: ela é anexada
@@ -424,7 +445,11 @@ export default function ImportDuplicatasButton() {
                     {n.placa ? (
                       <p className="text-xs text-slate-500">
                         Placa no documento: <strong>{n.placa}</strong>
-                        {n.veiculoSugeridoId ? " — veículo já escolhido abaixo, confira." : " — nenhum veículo do cadastro com essa placa."}
+                        {n.veiculoSugeridoId
+                          ? " — veículo já escolhido abaixo, confira."
+                          : n.tipo === "GUIA"
+                            ? " — não está no cadastro: escolha Administrativo ou Capital."
+                            : " — nenhum veículo do cadastro com essa placa."}
                       </p>
                     ) : null}
                     <p className="text-xs text-slate-500">
@@ -455,7 +480,17 @@ export default function ImportDuplicatasButton() {
                         ))}
                       </Select>
                     </label>
-                    {n.supplierId ? (
+                    {n.tipo === "GUIA" ? (
+                      <p className="mt-1 text-xs text-slate-400">
+                        {n.supplierId ? (
+                          <>
+                            Órgão já cadastrado: <strong>{n.supplierNome}</strong>.
+                          </>
+                        ) : (
+                          "O órgão é cadastrado como fornecedor no lançamento."
+                        )}
+                      </p>
+                    ) : n.supplierId ? (
                       <p className="mt-1 text-xs text-slate-400">
                         Casou pelo CNPJ com <strong>{n.supplierNome}</strong>.
                       </p>

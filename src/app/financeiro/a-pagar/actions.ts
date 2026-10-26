@@ -1753,8 +1753,13 @@ export type NfeParcelaPlano = {
 
 /** Uma nota do PDF, já lida e conferida contra o que existe no financeiro. */
 export type NfeNotaPlano = {
-  /** NF-e ou orçamento/ordem de serviço (oficina): os dois viram título. */
-  tipo: "NFE" | "ORCAMENTO";
+  /**
+   * NF-e, orçamento/ordem de serviço (oficina) ou GUIA de órgão (IPVA,
+   * licenciamento, multa, taxa — DETRAN/SEFAZ): todos viram título.
+   */
+  tipo: "NFE" | "ORCAMENTO" | "GUIA";
+  /** Guia: a linha digitável (vai para o título, pronta para pagar). */
+  linhaDigitavel?: string | null;
   /** Placa citada no documento e o veículo do cadastro que casou com ela. */
   placa: string | null;
   veiculoSugeridoId: string | null;
@@ -1794,7 +1799,8 @@ export type ApplyNfePayload = {
   /** Quantas notas o PDF tinha (define se o anexo é a página da nota ou o PDF inteiro). */
   totalNotas: number;
   notas: {
-    tipo?: "NFE" | "ORCAMENTO";
+    tipo?: "NFE" | "ORCAMENTO" | "GUIA";
+    linhaDigitavel?: string | null;
     categoria?: string | null;
     numero: string;
     emitenteNome: string | null;
@@ -2041,6 +2047,146 @@ export async function readNfeAction(base64: string): Promise<ReadNfeResult> {
   };
 }
 
+/** Categoria de despesa da guia, pelo tipo lido. */
+function categoriaDaGuia(tipo: string | null): string {
+  if (tipo === "MULTA") return "Multas de trânsito";
+  if (tipo === "IPVA" || tipo === "LICENCIAMENTO" || tipo === "TAXA") return "Documentação de veículo";
+  return "Outros";
+}
+
+/**
+ * Título já lançado com a MESMA linha digitável (a guia importada de novo, ou
+ * lançada à mão com o código colado). É a identidade da guia: duas multas do
+ * mesmo carro podem ter o mesmo valor e vencimento.
+ */
+async function tituloDaGuia(linhaDigitavel: string | null, valor: number) {
+  const { barcodeDigits } = await import("@/lib/barcode-line");
+  const digitos = barcodeDigits(linhaDigitavel);
+  if (digitos.length < 44) return null;
+  const candidatos = await prisma.payable.findMany({
+    where: { barcode: { not: null }, amount: { gte: valor - 0.01, lte: valor + 0.01 } },
+    select: { id: true, orderNumber: true, barcode: true, documentNumber: true, notes: true },
+  });
+  return candidatos.find((c) => barcodeDigits(c.barcode) === digitos) ?? null;
+}
+
+/**
+ * "Importar NFs e orçamentos" também lê GUIAS de órgão — IPVA (DARE da SEFAZ),
+ * licenciamento, multas e taxas do DETRAN —, inclusive de carro que não está
+ * no cadastro (vendido antes do sistema). Cada guia do arquivo vira uma linha
+ * da mesma revisão das notas: o usuário escolhe o fluxo (Veículos, se o carro
+ * está no cadastro; senão Administrativo ou Capital) e confirma. Nada é gravado
+ * aqui — o lançamento é o `applyNfeAction`, como nas notas.
+ */
+export async function readGuiasAction(base64: string): Promise<ReadNfeResult> {
+  try {
+    await assertCan("financeiro", "importarnf");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!base64) return { ok: false, error: "Anexe o PDF da guia." };
+  let guias;
+  try {
+    const { extractBoletos } = await import("@/lib/boleto-ai");
+    guias = await extractBoletos(base64, "application/pdf");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Não foi possível ler a guia." };
+  }
+  if (guias.length === 0) return { ok: false, error: "Nenhuma guia encontrada no PDF." };
+
+  const [suppliers, veiculos, beneficiarios] = await Promise.all([
+    prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.vehicle.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, renavam: true, status: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+  const { normalizeBarcodeLine, barcodeDigits } = await import("@/lib/barcode-line");
+  const chave = (v: string | null | undefined) => (v || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+
+  const plano: NfeNotaPlano[] = [];
+  const avisos: string[] = [];
+  for (const [i, g] of guias.entries()) {
+    const rotulo = (g.descricao || g.tipo || "Guia").trim();
+    const venc = g.vencimento && /^\d{4}-\d{2}-\d{2}$/.test(g.vencimento) ? g.vencimento : null;
+    if (g.valor == null || !(g.valor > 0) || !venc) {
+      avisos.push(`${rotulo}: valor ou vencimento não identificados — não dá para lançar.`);
+      continue;
+    }
+    if (g.tipo === "QUITACAO") {
+      avisos.push(`${rotulo}: boleto de quitação de financiamento — lance pela ficha do veículo.`);
+      continue;
+    }
+    const valor = Math.round(g.valor * 100) / 100;
+    const linha = normalizeBarcodeLine(g.linhaDigitavel);
+    // O carro: pela placa (em estoque antes do vendido) ou pelo RENAVAM — o
+    // DARE do IPVA só traz o RENAVAM.
+    const placa = chave(g.placa);
+    const renavam = (g.renavam || "").replace(/\D/g, "").replace(/^0+/, "");
+    const porPlaca = placa.length >= 7 ? veiculos.filter((v) => chave(v.plate) === placa) : [];
+    const porRenavam = renavam
+      ? veiculos.filter((v) => (v.renavam || "").replace(/\D/g, "").replace(/^0+/, "") === renavam)
+      : [];
+    const achados = porPlaca.length ? porPlaca : porRenavam;
+    const sugerido = achados.find((v) => v.status !== "VENDIDO") ?? achados[0] ?? null;
+    const orgao = (g.cedente || "").trim() || (g.tipo === "IPVA" ? "SEFAZ" : "DETRAN");
+    const cadastrado = suppliers.find((s) => s.name.trim().toLowerCase() === orgao.toLowerCase()) ?? null;
+    const existente = await tituloDaGuia(linha, valor);
+    const ident = [
+      placa ? `placa ${placa}` : sugerido ? `placa ${sugerido.plate}` : null,
+      renavam && !placa ? `RENAVAM ${renavam}` : null,
+      g.referencia ? `ref. ${g.referencia}` : null,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+    plano.push({
+      tipo: "GUIA",
+      linhaDigitavel: linha,
+      placa: placa || sugerido?.plate || null,
+      veiculoSugeridoId: sugerido?.id ?? null,
+      categoria: categoriaDaGuia(g.tipo),
+      // Número da guia: o fim da linha digitável (o nosso número da guia está
+      // lá); sem linha, a ordem no arquivo.
+      numero: barcodeDigits(linha).slice(-12) || String(i + 1),
+      emitenteNome: orgao,
+      emitenteCnpj: null,
+      emitidaEm: null,
+      paginaInicial: null,
+      paginaFinal: null,
+      itensResumo: [rotulo, ident].filter(Boolean).join(" — "),
+      supplierId: cadastrado?.id ?? null,
+      supplierNome: cadastrado?.name ?? orgao,
+      parcelas: [
+        {
+          parcela: 1,
+          total: 1,
+          valor,
+          vencimento: venc,
+          acao: existente ? "ANEXAR" : "CRIAR",
+          tituloExistente: existente ? String(existente.orderNumber).padStart(4, "0") : null,
+        },
+      ],
+    });
+  }
+  if (plano.length === 0) return { ok: false, error: avisos[0] || "Nenhuma guia utilizável no PDF." };
+  return {
+    ok: true,
+    notas: plano,
+    avisos,
+    suppliers,
+    vehicles: veiculos.map((v) => ({
+      id: v.id,
+      label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+    })),
+    beneficiaries: beneficiarios,
+  };
+}
+
 /**
  * ETAPA 2: cria/anexa SÓ o que o usuário marcou na revisão. A conferência
  * contra o que já existe é refeita aqui (e não herdada da tela), para o caso de
@@ -2085,8 +2231,11 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     // Orçamento / ordem de serviço: mesmo caminho da NF, com o nome certo no
     // título, no documento e no anexo — e sem a checagem de devolução de NF.
     const orcamento = nota.tipo === "ORCAMENTO";
-    const doc = orcamento ? "Orç." : "NF";
-    const docAnexo = orcamento ? `Orçamento ${numero}` : `NF-e ${numero}`;
+    // Guia de órgão (IPVA, licenciamento, multa): o anexo vai no espaço do
+    // BOLETO e a linha digitável fica no título, pronta na Ordem de Pagamento.
+    const guia = nota.tipo === "GUIA";
+    const doc = guia ? "Guia" : orcamento ? "Orç." : "NF";
+    const docAnexo = guia ? `Guia ${numero}` : orcamento ? `Orçamento ${numero}` : `NF-e ${numero}`;
 
     // Fornecedor: o escolhido na revisão; se o usuário optou por cadastrar, é
     // agora que o cadastro nasce (nunca na leitura).
@@ -2116,6 +2265,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     // intervalo inválido, o anexo é o PDF inteiro.
     let notaBytes: Buffer = fullBytes;
     if (
+      !guia &&
       payload.totalNotas > 1 &&
       nota.paginaInicial != null &&
       nota.paginaFinal != null &&
@@ -2139,13 +2289,17 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         select: { id: true },
       });
       if (already) return;
+      if (guia) await prisma.payableAttachment.deleteMany({ where: { payableId, kind: "BOLETO" } });
       await prisma.payableAttachment.create({
         data: {
           payableId,
-          kind: "OUTRO",
+          kind: guia ? "BOLETO" : "OUTRO",
           description: docAnexo,
-          filename:
-            payload.totalNotas > 1
+          // Guia: o PDF do órgão inteiro (um arquivo com várias guias vai para
+          // cada título; a linha digitável de cada um diz qual pagar).
+          filename: guia
+            ? payload.filename || `guia-${numero}.pdf`
+            : payload.totalNotas > 1
               ? `${orcamento ? "orcamento" : "nfe"}-${numero}.pdf`
               : payload.filename || `${orcamento ? "orcamento" : "nfe"}-${numero}.pdf`,
           mimeType: "application/pdf",
@@ -2192,22 +2346,42 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     // Compra DEVOLVIDA por inteiro (título cancelado por NF de devolução): não
     // volta a virar título — é justamente a cobrança por engano que o registro
     // da devolução existe para barrar.
-    const devolvida = orcamento ? null : await devolucaoTotalDaNf(supplierId, numero);
+    const devolvida = orcamento || guia ? null : await devolucaoTotalDaNf(supplierId, numero);
     if (devolvida) {
       outcomes.push(`NF ${numero}: ${devolvida} — não lançada.`);
       continue;
     }
 
-    const casadas = await casarParcelasDaNfe(numero, supplierId, nota.parcelas, doc);
+    // Guia: casa pela LINHA DIGITÁVEL (duas multas podem ter o mesmo valor e
+    // vencimento); as notas, pelas regras de sempre.
+    const casadas = guia
+      ? await Promise.all(
+          nota.parcelas.map(async (parc) => ({
+            parc,
+            due: new Date(`${parc.vencimento}T12:00:00Z`),
+            docNum: `Guia ${numero}`,
+            match: await tituloDaGuia(nota.linhaDigitavel ?? null, parc.valor),
+          })),
+        )
+      : await casarParcelasDaNfe(numero, supplierId, nota.parcelas, doc);
     // Orçamento de oficina (peças + mão de obra): o tipo de despesa lido dos
-    // itens; a NF continua como compra de peças, como sempre foi.
-    const catOrcamento = orcamento ? await resolveDespesaCategory(nota.categoria || "Serviço") : null;
+    // itens; a NF continua como compra de peças, como sempre foi. Guia: a
+    // categoria do tipo lido (documentação do veículo, multas).
+    const catOrcamento = guia
+      ? await resolveDespesaCategory(nota.categoria || "Documentação de veículo")
+      : orcamento
+        ? await resolveDespesaCategory(nota.categoria || "Serviço")
+        : null;
 
     for (const { parc, due, docNum, match } of casadas) {
       const label = `${doc} ${numero} parc. ${parc.parcela}/${parc.total} — ${brl(parc.valor)} (venc. ${parc.vencimento})`;
 
       if (match) {
         await anexarNfe(match.id);
+        if (guia) {
+          outcomes.push(`${label} → guia já lançada no título nº ${String(match.orderNumber).padStart(4, "0")} (anexada)`);
+          continue;
+        }
         // NF do serviço que entrou como orçamento: o título passa a ter o nº da NF.
         if (!orcamento && (match.documentNumber || "").startsWith("Orç.")) {
           await prisma.payable.update({ where: { id: match.id }, data: { documentNumber: docNum } });
@@ -2225,6 +2399,31 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         }
         outcomes.push(
           `${label} → ${orcamento ? "orçamento anexado" : "NF anexada"} ao título nº ${String(match.orderNumber).padStart(4, "0")} (já lançado)`,
+        );
+        continue;
+      }
+
+      if (guia) {
+        const payable = await createManualPayable({
+          description: `${itensResumo || "Guia"} (${supplierNome})`.slice(0, 300),
+          category: catOrcamento?.category ?? "OUTROS",
+          categoryLabel: catOrcamento?.label ?? "Outros",
+          documentNumber: docNum,
+          amount: parc.valor,
+          dueDate: due,
+          supplierId,
+          structuralKey: fluxo,
+          vehicleId,
+          capitalBeneficiaryId,
+          notes: `importado da guia${vehicleId || fluxo !== "VEICULOS" ? "" : " — vincule o veículo"}`,
+          alreadyPaid: false,
+        });
+        const { normalizeBarcodeLine } = await import("@/lib/barcode-line");
+        const linha = normalizeBarcodeLine(nota.linhaDigitavel);
+        if (linha) await prisma.payable.update({ where: { id: payable.id }, data: { barcode: linha } });
+        await anexarNfe(payable.id);
+        outcomes.push(
+          `${itensResumo || "Guia"} — ${brl(parc.valor)} (venc. ${parc.vencimento}) → título nº ${String(payable.orderNumber).padStart(4, "0")} criado${linha ? ", com a linha digitável" : ""}`,
         );
         continue;
       }
@@ -3499,7 +3698,14 @@ export type BoletoFornecedorLido = {
 export async function lerBoletoFornecedorAction(
   base64: string,
   nome: string,
-): Promise<{ ok: boolean; error?: string; boleto?: BoletoFornecedorLido | null; orcamento?: boolean }> {
+): Promise<{
+  ok: boolean;
+  error?: string;
+  boleto?: BoletoFornecedorLido | null;
+  orcamento?: boolean;
+  /** Guia de órgão (IPVA, licenciamento, multa): vira título pela revisão. */
+  guia?: boolean;
+}> {
   try {
     await assertCan("financeiro", "importarnf");
   } catch (e) {
@@ -3522,6 +3728,17 @@ export async function lerBoletoFornecedorAction(
   }
   const { lerBoletoSicove } = await import("@/lib/sicove");
   const lido = lerBoletoSicove(buffer);
+  // GUIA de órgão (DARE/DAE/GRU — IPVA, licenciamento, multa, taxa do DETRAN):
+  // não é boleto de fornecedor a casar com título já lançado — ela CRIA o
+  // título (pela revisão), mesmo de carro fora do cadastro. Escaneada, sem
+  // texto, vale o nome do arquivo. Boleto BANCÁRIO (linha de 47 dígitos) que
+  // só cita IPVA segue o caminho de boleto de fornecedor, como sempre.
+  const textoGuia =
+    /DOCUMENTO DE ARRECADA[ÇC][ÃA]O|\bDARE\b|\bDAE\b|\bGRU\b|DEPARTAMENTO ESTADUAL DE TR[ÂA]NSITO|LICENCIAMENTO DO VE[ÍI]CULO|\bIPVA\b|AUTO DE INFRA[ÇC][ÃA]O/i;
+  const semTexto = texto.replace(/\s/g, "").length <= 40;
+  if (!lido && (textoGuia.test(texto) || (semTexto && /dare|ipva|licenc|multa|detran|guia|extrato.de.ve/i.test(nome)))) {
+    return { ok: true, boleto: null, guia: true };
+  }
   const { getCompany } = await import("@/lib/company");
   const empresa = await getCompany();
   const cnpjLoja = (empresa.cnpj || "").replace(/\D/g, "");

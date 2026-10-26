@@ -43,6 +43,10 @@ const boletoSchema = z.object({
   // luz, a mensalidade de setembro, a parcela do exercício. Não confundir com
   // o vencimento — a conta de agosto vence em setembro.
   referencia: z.string().nullable().optional(),
+  // Guia de veículo (DETRAN/SEFAZ): placa e RENAVAM impressos — o importador do
+  // Contas a pagar casa com o carro do cadastro por eles.
+  placa: z.string().nullable().optional(),
+  renavam: z.string().nullable().optional(),
 });
 
 export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
@@ -79,6 +83,8 @@ const BOLETO_ITEM_SCHEMA = {
     "desconto",
     "descontoAte",
     "referencia",
+    "placa",
+    "renavam",
   ],
   properties: {
     valor: {
@@ -125,6 +131,14 @@ const BOLETO_ITEM_SCHEMA = {
       description:
         "competência/referência do que o boleto cobra, como impressa: mês de consumo da conta de luz/água/telefone ('AGO/2026'), mês da mensalidade ('Setembro/2026'), exercício do IPVA ('2026') ou o período ('01/08/2026 a 31/08/2026'). NÃO é o vencimento. null quando o documento não traz",
     },
+    placa: {
+      type: ["string", "null"],
+      description: "placa do veículo impressa na guia (ex.: 'ROD7B33'); null se não houver",
+    },
+    renavam: {
+      type: ["string", "null"],
+      description: "RENAVAM do veículo, só dígitos (no DARE do IPVA vem em 'Inscrição Estadual/RENAVAM'); null se não houver",
+    },
   },
 } as const;
 
@@ -148,7 +162,10 @@ const SYSTEM_PROMPT =
   "quitação de financiamento de veículo). Leia o documento e devolva os campos pedidos. Regras: " +
   "1) VALOR: o valor A PAGAR ATÉ O VENCIMENTO, número em reais com ponto decimal. " +
   "SOMENTE em guias de MULTA de trânsito existe desconto por pontualidade (20% por lei): nesse " +
-  "caso VALOR é o já descontado e VALORSEMDESCONTO é o valor cheio. Em IPVA, licenciamento, taxas " +
+  "caso VALOR é o já descontado e VALORSEMDESCONTO é o valor cheio — mas SÓ quando a guia imprime o " +
+  "desconto ou os dois valores. Multa VENCIDA (guia reemitida, 'Pagar exatamente o valor cobrado', um " +
+  "'Valor do Documento' só) não tem desconto: VALOR é o valor do documento e VALORSEMDESCONTO é null. " +
+  "Em IPVA, licenciamento, taxas " +
   "e quitação, VALORSEMDESCONTO é SEMPRE null e VALOR é o valor do documento. " +
   "Não use valores com juros/mora de atraso HIPOTÉTICOS (instruções do tipo 'após o vencimento cobrar…'). " +
   "EXCEÇÃO — guia REEMITIDA com o atraso já calculado (DARE/DAE/GRU com colunas de juros e multa, " +
@@ -176,8 +193,11 @@ const SYSTEM_PROMPT =
   "Sem referência impressa, vai null. " +
   "7) LINHA DIGITÁVEL: o código de barras em números, como impresso (47/48 dígitos em boleto bancário, " +
   "48 em guia de concessionária/órgão). É o que o usuário copia para pagar — transcreva sem trocar dígito. " +
-  "8) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
-  "9) Responda somente com o JSON pedido.";
+  "8) PLACA e RENAVAM: os do veículo, quando impressos na guia (DETRAN/SEFAZ). Guias de multas diferentes " +
+  "podem ter o MESMO valor e vencimento — são boletos distintos se a linha digitável ou o nosso número " +
+  "diferem: devolva os dois. " +
+  "9) Não invente nada: campo que você não conseguir ler com segurança vai null. " +
+  "10) Responda somente com o JSON pedido.";
 
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 type ImageMediaType = (typeof IMAGE_TYPES)[number];
@@ -261,14 +281,27 @@ export async function extractBoletos(base64: string, mimeType: string): Promise<
   if (!result.success) {
     throw new Error("A IA não devolveu os dados do boleto no formato esperado. Tente novamente.");
   }
-  // Dedupe defensivo: 2ª via / canhoto do MESMO boleto (mesmo valor e
-  // vencimento) não pode virar dois ajustes.
-  const seen = new Set<string>();
+  // Dedupe defensivo: 2ª via / canhoto do MESMO boleto não pode virar dois
+  // ajustes. A identidade é a LINHA DIGITÁVEL quando lida — duas multas do
+  // mesmo carro costumam ter o mesmo valor e vencimento e são guias distintas;
+  // sem ela, vale o par valor + vencimento.
+  const linhas = new Set<string>();
+  const pares = new Set<string>();
   const out: BoletoExtraido[] = [];
-  for (const b of result.data.boletos) {
-    const key = `${b.valor ?? ""}|${b.vencimento ?? ""}`;
-    if (b.valor != null && seen.has(key)) continue;
-    if (b.valor != null) seen.add(key);
+  // Os que trazem a linha vêm primeiro: a via lida pela metade é que cede.
+  const temLinha = (b: { linhaDigitavel?: string | null }) =>
+    (b.linhaDigitavel ?? "").replace(/\D/g, "").length >= 40;
+  const ordem = [...result.data.boletos.filter(temLinha), ...result.data.boletos.filter((b) => !temLinha(b))];
+  for (const b of ordem) {
+    const linha = (b.linhaDigitavel ?? "").replace(/\D/g, "");
+    const par = `${b.valor ?? ""}|${b.vencimento ?? ""}`;
+    if (b.valor != null) {
+      // Com linha: repetida só se a MESMA linha já veio. Sem linha (a 2ª via
+      // lida pela metade): repetida se o par já apareceu.
+      if (linha.length >= 40 ? linhas.has(linha) : pares.has(par)) continue;
+      if (linha.length >= 40) linhas.add(linha);
+      pares.add(par);
+    }
     out.push({ ...b, tipo: normalizeTipo(b.tipo) });
   }
   return out;
