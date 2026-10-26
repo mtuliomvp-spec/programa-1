@@ -280,6 +280,23 @@ export default function VehicleBoletos({
             className="block w-full text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700 hover:file:bg-slate-200"
           />
         </Field>
+        {saldoDebitos != null && saldoDebitos > 0.005 ? (
+          // Com saldo da negociação em aberto, a guia abate dele — a não ser
+          // que seja um gasto novo da loja (IPVA/licenciamento do ano, multa
+          // de depois da compra), que não foi descontado de ninguém.
+          <label className="flex items-start gap-2 text-sm text-slate-700">
+            <input type="checkbox" name="foraNegociacao" value="1" className="mt-0.5" />
+            <span>
+              Esta guia <strong>não veio da negociação</strong> — é gasto da loja (não abate o saldo
+              acima; vira título próprio e custo do veículo).
+            </span>
+          </label>
+        ) : (
+          <p className="text-xs text-slate-500">
+            Sem desconto da negociação em aberto: cada guia vira um título a pagar próprio e o valor
+            entra como custo do veículo.
+          </p>
+        )}
         <div className="flex justify-end">
           <Button type="button" onClick={handleSend} disabled={pending || preparing}>
             {preparing ? "Preparando…" : pending ? "Lendo o boleto…" : "Anexar boleto"}

@@ -84,14 +84,17 @@ const BOLETO_ITEM_SCHEMA = {
     valor: {
       type: ["number", "null"],
       description:
-        "valor A PAGAR ATÉ O VENCIMENTO, em reais — em guia de MULTA, já com o desconto de 20% por pontualidade; nos demais tipos, o valor do documento",
+        "valor A PAGAR ATÉ O VENCIMENTO, em reais — em guia de MULTA, já com o desconto de 20% por pontualidade; em guia REEMITIDA com juros e multa já calculados, o TOTAL A RECOLHER; nos demais tipos, o valor do documento",
     },
     valorSemDesconto: {
       type: ["number", "null"],
       description:
         "SOMENTE em guia de MULTA com desconto por pontualidade: o valor cheio (sem o desconto). Em IPVA, licenciamento, taxa e quitação é sempre null",
     },
-    vencimento: { type: ["string", "null"], description: "data de vencimento em yyyy-mm-dd" },
+    vencimento: {
+      type: ["string", "null"],
+      description: "data de vencimento em yyyy-mm-dd — na guia reemitida, a data 'válido até'/'pagável até'",
+    },
     tipo: {
       type: ["string", "null"],
       description:
@@ -147,8 +150,13 @@ const SYSTEM_PROMPT =
   "SOMENTE em guias de MULTA de trânsito existe desconto por pontualidade (20% por lei): nesse " +
   "caso VALOR é o já descontado e VALORSEMDESCONTO é o valor cheio. Em IPVA, licenciamento, taxas " +
   "e quitação, VALORSEMDESCONTO é SEMPRE null e VALOR é o valor do documento. " +
-  "Não use valores com juros/mora de atraso. " +
-  "2) VENCIMENTO: a data de vencimento no formato yyyy-mm-dd. " +
+  "Não use valores com juros/mora de atraso HIPOTÉTICOS (instruções do tipo 'após o vencimento cobrar…'). " +
+  "EXCEÇÃO — guia REEMITIDA com o atraso já calculado (DARE/DAE/GRU com colunas de juros e multa, " +
+  "'Total a recolher', 'Valor total' e 'Válido até'/'Pagável até'): VALOR é o TOTAL A RECOLHER " +
+  "(principal + juros + multa), pois é o que se paga — o principal sozinho não quita a guia. " +
+  "2) VENCIMENTO: a data de vencimento no formato yyyy-mm-dd. Na guia reemitida, é a data " +
+  "'VÁLIDO ATÉ'/'PAGÁVEL ATÉ' (o último dia em que a guia pode ser paga); o vencimento original do " +
+  "imposto, que aparece na relação de débitos, é passado e NÃO é o vencimento da guia. " +
   "3) TIPO: QUITACAO quando for boleto de quitação/liquidação de financiamento emitido por " +
   "banco/financeira; IPVA, LICENCIAMENTO, MULTA ou TAXA para guias de órgãos; OUTRO nos demais. " +
   "4) O arquivo pode conter MAIS DE UM boleto/guia (uma por página, ou várias na mesma página): " +
