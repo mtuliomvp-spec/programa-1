@@ -2429,7 +2429,84 @@ export async function uploadVehicleBoletoAction(
     // do ano, multa de depois da compra): não toca no saldo descontado; nasce
     // o título e o mesmo valor vira custo, como quando não há título-mãe.
     const foraNegociacao = formData.get("foraNegociacao") === "1";
-    if (guias.length) {
+
+    // Cada título de guia leva o que o banco pede para pagar: o ÓRGÃO como
+    // fornecedor, a LINHA DIGITÁVEL (copiar e colar na Ordem de Pagamento) e a
+    // própria guia anexada no espaço do boleto.
+    const { normalizeBarcodeLine, barcodeDigits } = await import("@/lib/barcode-line");
+    const { orgaoDaGuia } = await import("@/lib/boleto-ai");
+    const { resolveSupplierByName } = await import("@/lib/finance");
+    const arquivoGuia = {
+      kind: "BOLETO",
+      description: "Guia de pagamento",
+      filename: file.name || "guia.pdf",
+      mimeType,
+      size: file.size,
+      data: new Uint8Array(buffer),
+    };
+    const dia = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : "");
+
+    // Guia JÁ LANÇADA (anexada de novo, ou lançada antes sem o código): não
+    // vira outro título nem custo de novo — só completa o que faltava. Casa
+    // pela linha digitável; título antigo sem ela, por valor + vencimento.
+    const existentes = guias.length
+      ? await prisma.payable.findMany({
+          where: { vehicleId, category: "COMPRA_VEICULO", description: { startsWith: "Débitos do veículo:" } },
+          select: {
+            id: true,
+            orderNumber: true,
+            amount: true,
+            dueDate: true,
+            barcode: true,
+            supplierId: true,
+            attachments: { where: { kind: "BOLETO" }, select: { id: true } },
+          },
+        })
+      : [];
+    const usados = new Set<string>();
+    const completadas: { b: (typeof guias)[number]; t: (typeof existentes)[number] }[] = [];
+    const novas: typeof guias = [];
+    for (const b of guias) {
+      const digitos = barcodeDigits(b.linhaDigitavel);
+      const t =
+        existentes.find((e) => !usados.has(e.id) && digitos.length >= 44 && barcodeDigits(e.barcode) === digitos) ??
+        existentes.find(
+          (e) =>
+            !usados.has(e.id) &&
+            !e.barcode &&
+            Math.abs(e.amount - (valorDe(b) as number)) <= 0.005 &&
+            dia(e.dueDate) === dia(vencDe(b)),
+        );
+      if (t) {
+        usados.add(t.id);
+        completadas.push({ b, t });
+      } else novas.push(b);
+    }
+    for (const { b, t } of completadas) {
+      const linha = normalizeBarcodeLine(b.linhaDigitavel);
+      const faltava: string[] = [];
+      const data: { supplierId?: string; barcode?: string } = {};
+      if (!t.supplierId) {
+        data.supplierId = await resolveSupplierByName(orgaoDaGuia(b));
+        faltava.push("fornecedor");
+      }
+      if (!t.barcode && linha) {
+        data.barcode = linha;
+        faltava.push("linha digitável");
+      }
+      if (Object.keys(data).length) await prisma.payable.update({ where: { id: t.id }, data });
+      if (t.attachments.length === 0) {
+        await prisma.payableAttachment.create({ data: { payableId: t.id, ...arquivoGuia } });
+        faltava.push("guia anexada");
+      }
+      filled.push(
+        `${b.descricao || tipoLabelOf(b)}: já lançada no título nº ${String(t.orderNumber).padStart(4, "0")}${
+          faltava.length ? ` — completado: ${faltava.join(", ")}` : " — nada a completar"
+        }`,
+      );
+    }
+
+    if (novas.length) {
       const mae = foraNegociacao
         ? null
         : await prisma.payable.findFirst({
@@ -2453,16 +2530,18 @@ export async function uploadVehicleBoletoAction(
           "O título de débitos está num combo de pagamento — remova-o do combo para as guias serem lançadas separadamente.",
         );
       } else {
-        const soma = round2(guias.reduce((acc, b) => acc + (valorDe(b) as number), 0));
+        const soma = round2(novas.reduce((acc, b) => acc + (valorDe(b) as number), 0));
         const saldoAntes = mae ? round2(mae.amount) : 0;
         const saldoDepois = round2(saldoAntes - soma);
         // Excesso sobre o saldo (ou a guia inteira, quando não há mais saldo):
         // dinheiro que a loja paga ALÉM do descontado → custo do veículo.
         const excesso = mae ? Math.max(0, -saldoDepois) : soma;
 
+        // Fornecedor de cada guia (fora da transação: pode cadastrar o órgão).
+        const fornecedores = await Promise.all(novas.map((b) => resolveSupplierByName(orgaoDaGuia(b))));
         await prisma.$transaction(async (tx) => {
-          for (const b of guias) {
-            await tx.payable.create({
+          for (const [i, b] of novas.entries()) {
+            const titulo = await tx.payable.create({
               data: {
                 description: `Débitos do veículo: ${b.descricao || tipoLabelOf(b)} ${label}`.slice(0, 300),
                 category: "COMPRA_VEICULO",
@@ -2470,10 +2549,12 @@ export async function uploadVehicleBoletoAction(
                 dueDate: vencDe(b) ?? mae?.dueDate ?? new Date(),
                 status: "PENDENTE",
                 vehicleId,
-                supplierId: mae?.supplierId ?? null,
+                supplierId: fornecedores[i],
+                barcode: normalizeBarcodeLine(b.linhaDigitavel),
                 costCenterId: mae?.costCenterId ?? (await structuralCenterId("VEICULOS")),
               },
             });
+            await tx.payableAttachment.create({ data: { payableId: titulo.id, ...arquivoGuia } });
           }
           if (mae) {
             if (saldoDepois > 0.005) {
@@ -2498,9 +2579,19 @@ export async function uploadVehicleBoletoAction(
           }
         });
 
-        const nomes = guias.map((b) => b.descricao || tipoLabelOf(b)).join(", ");
+        for (const b of novas) {
+          if (!normalizeBarcodeLine(b.linhaDigitavel)) {
+            warnings.push(
+              `${b.descricao || tipoLabelOf(b)}: não deu para ler a linha digitável — copie da guia e cole no título (Editar).`,
+            );
+          }
+        }
+        const nomes = novas.map((b) => b.descricao || tipoLabelOf(b)).join(", ");
+        const comLinha = novas.filter((b) => normalizeBarcodeLine(b.linhaDigitavel)).length;
         filled.push(
-          `${guias.length} guia(s) lançada(s) como título próprio (${nomes}) somando ${brl(soma)}`,
+          `${novas.length} guia(s) lançada(s) como título próprio (${nomes}) somando ${brl(soma)} — com o órgão como fornecedor, a guia anexada${
+            comLinha === novas.length ? " e a linha digitável" : comLinha ? ` e a linha digitável em ${comLinha}` : ""
+          }`,
         );
         if (mae && saldoDepois > 0.005) {
           filled.push(
@@ -2518,6 +2609,16 @@ export async function uploadVehicleBoletoAction(
           );
         }
       }
+    }
+
+    // Reanexou guias que já estavam lançadas (só completou os títulos) e o
+    // mesmo arquivo já está na ficha: não repete o PDF na lista de boletos.
+    if (completadas.length && !novas.length && !boletos.some((b) => b.tipo === "QUITACAO")) {
+      const igual = await prisma.vehicleAttachment.findFirst({
+        where: { vehicleId, id: { not: attachment.id }, size: file.size, filename: attachment.filename },
+        select: { id: true },
+      });
+      if (igual) await prisma.vehicleAttachment.delete({ where: { id: attachment.id } });
     }
 
     // ---------------- QUITAÇÃO DO FINANCIAMENTO ----------------------------

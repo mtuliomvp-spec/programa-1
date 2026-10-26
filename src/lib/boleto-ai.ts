@@ -53,6 +53,14 @@ export type BoletoExtraido = Omit<z.infer<typeof boletoSchema>, "tipo"> & {
   tipo: BoletoTipo | null;
 };
 
+/**
+ * A quem se paga a guia (vira o FORNECEDOR do título): o cedente impresso ou,
+ * sem ele, o órgão de praxe — SEFAZ no IPVA, DETRAN no resto.
+ */
+export function orgaoDaGuia(b: { cedente: string | null; tipo: string | null }): string {
+  return (b.cedente || "").trim() || (b.tipo === "IPVA" ? "SEFAZ" : "DETRAN");
+}
+
 /** Texto devolvido pela IA → um dos tipos conhecidos (ou null). */
 function normalizeTipo(raw: string | null): BoletoTipo | null {
   const value = (raw ?? "").trim().toUpperCase();
