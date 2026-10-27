@@ -875,6 +875,34 @@ export async function lookupPlateAction(plate: string) {
 }
 
 /**
+ * Só o valor FIPE de uma placa — para o preço de venda do carro da TROCA que
+ * chegou da pré-venda sem ele. Primeiro procura uma AVALIAÇÃO da mesma placa
+ * (já tem a FIPE e não gasta consulta); sem ela, consulta o provedor (paga).
+ */
+export async function fipeDaPlacaAction(
+  plate: string,
+): Promise<{ ok: true; fipePrice: number; origem: "avaliacao" | "consulta" } | { ok: false; error: string }> {
+  if (!(await canUseFormLookup())) {
+    return { ok: false, error: "Você não tem permissão para consultar a placa." };
+  }
+  const placa = plate.toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (placa.length < 7) return { ok: false, error: "Placa inválida." };
+  const avaliacao = await prisma.vehicleAppraisal.findFirst({
+    where: { plate: { equals: placa, mode: "insensitive" }, fipePrice: { gt: 0 } },
+    orderBy: { createdAt: "desc" },
+    select: { fipePrice: true },
+  });
+  if (avaliacao?.fipePrice) return { ok: true, fipePrice: avaliacao.fipePrice, origem: "avaliacao" };
+  const { lookupPlate } = await import("@/lib/plate-lookup");
+  const r = await lookupPlate(placa);
+  if (!r.ok) return { ok: false, error: r.error };
+  if (!r.data.fipePrice || !(r.data.fipePrice > 0)) {
+    return { ok: false, error: "A consulta da placa não trouxe o valor FIPE." };
+  }
+  return { ok: true, fipePrice: r.data.fipePrice, origem: "consulta" };
+}
+
+/**
  * Lê o CONTRATO DE COMPRA (PDF/imagem em base64) via IA e devolve os dados do
  * veículo e da compra para preencher o formulário de "Novo veículo". Não grava
  * nada — o anexo é enviado junto no cadastro (createVehicleAction).

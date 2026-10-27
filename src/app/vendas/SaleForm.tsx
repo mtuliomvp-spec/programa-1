@@ -5,7 +5,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
 import { checkPreSaleConflictAction } from "./actions";
-import { lookupPlateAction } from "@/app/estoque/actions";
+import { fipeDaPlacaAction, lookupPlateAction } from "@/app/estoque/actions";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import type { VehicleDebtItem } from "@/lib/vehicle-debts";
 import DebtItemsField from "@/components/DebtItemsField";
@@ -356,6 +356,24 @@ export default function SaleForm({
           : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
+  // Troca que chegou (da pré-venda) com a placa mas sem o preço de venda: a
+  // FIPE vem sozinha — de uma avaliação da mesma placa ou, sem ela, da consulta
+  // por placa. Só preenche o preço; os demais dados ficam como vieram.
+  const fipeAutoPedida = useRef(false);
+  useEffect(() => {
+    if (fipeAutoPedida.current) return;
+    if (!initial?.tradeIn || !initial.tiPlate || (initial.tiSalePrice ?? 0) > 0) return;
+    fipeAutoPedida.current = true;
+    void fipeDaPlacaAction(initial.tiPlate)
+      .then((r) => {
+        if (!r.ok) return;
+        setTiSalePrice((atual) => (atual > 0 ? atual : r.fipePrice));
+        setTiMsg(
+          `Preço de venda da troca: FIPE ${formatCurrency(r.fipePrice)}${r.origem === "avaliacao" ? " (da avaliação desta placa)" : ""} — confira.`,
+        );
+      })
+      .catch(() => {});
+  }, [initial]);
 
   function setTiField(name: string, value: string | number | undefined) {
     if (value === undefined || value === "") return;

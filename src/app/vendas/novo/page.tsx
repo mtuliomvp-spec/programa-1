@@ -75,6 +75,7 @@ export default async function NovaVendaPage({
         tiDebts: pre.tiDebts ?? undefined,
         tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
         tiSupplierName: pre.tiSupplierName ?? undefined,
+        tiSalePrice: pre.tiSalePrice ?? undefined,
       };
     }
   }
