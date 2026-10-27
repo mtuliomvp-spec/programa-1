@@ -1106,6 +1106,9 @@ model PreSale {
   /// Detalhamento dos débitos do veículo da troca (ver Vehicle.debtsItems).
   tiDebtsItems               Json           @default("[]")
   tiSupplierName             String?
+  // Preço de venda (anúncio) do carro da troca — a FIPE buscada pela placa;
+  // passa para a venda na conversão.
+  tiSalePrice                Float?
   // Retorno da financeira (nível R-xx; 0 = sem retorno)
   returnLevel                Int            @default(0)
   // Comissão do vendedor (R$) — convertida em conta a pagar ao fechar a venda.

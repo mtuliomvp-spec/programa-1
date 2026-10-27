@@ -120,6 +120,7 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     tiDebts: d.tradeIn ? d.tiDebts ?? null : null,
     tiDebtsItems: d.tradeIn ? d.tiDebtsItems : [],
     tiSupplierName: d.tradeIn ? d.tiSupplierName || null : null,
+    tiSalePrice: d.tradeIn && d.tiSalePrice && d.tiSalePrice > 0 ? d.tiSalePrice : null,
   };
 
   // Documentos do veículo digitados no formulário (só aparecem quando faltam):
@@ -239,6 +240,7 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     tiDebts: pre.tiDebts ?? undefined,
     tiDebtsItems: parseDebtItems(pre.tiDebtsItems),
     tiSupplierName: pre.tiSupplierName ?? undefined,
+    tiSalePrice: pre.tiSalePrice ?? undefined,
   };
 
   try {
