@@ -41,6 +41,38 @@ export type PlateLookupResult =
 
 const DEFAULT_URL_TEMPLATE = "https://wdapi2.com.br/consulta/{placa}/{token}";
 
+/**
+ * Resposta de ERRO do provedor em palavras: o motivo que ele mesmo escreveu
+ * (token inválido, sem saldo…) e, sem ele, o que o código HTTP costuma
+ * significar. O "HTTP 403" sozinho não dizia ao usuário o que fazer.
+ */
+async function erroDoProvedor(response: Response): Promise<string> {
+  let motivo = "";
+  try {
+    const texto = (await response.text()).slice(0, 2000);
+    try {
+      const j = JSON.parse(texto) as Record<string, unknown>;
+      motivo = firstString(j, ["mensagem", "message", "msg", "erro", "error", "MENSAGEM", "detail"]) ?? "";
+    } catch {
+      motivo = /<[a-z]/i.test(texto) ? "" : texto.trim().slice(0, 200);
+    }
+  } catch {
+    motivo = "";
+  }
+  const status = response.status;
+  const significado =
+    status === 401 || status === 403
+      ? "o provedor recusou o token — inválido, vencido ou sem saldo de consultas"
+      : status === 402
+        ? "o provedor informa falta de saldo/créditos"
+        : status === 404
+          ? "placa não encontrada no provedor"
+          : status === 429
+            ? "limite de consultas atingido — tente mais tarde"
+            : "falha no provedor";
+  return `A consulta da placa falhou (HTTP ${status}: ${motivo.replace(/[.\s]+$/, "") || significado}). Confira o token e o saldo no painel do provedor e em Parâmetros › Consulta por placa.`;
+}
+
 function firstString(obj: Record<string, unknown>, keys: string[]): string | undefined {
   for (const key of keys) {
     const value = obj[key];
@@ -273,7 +305,7 @@ export async function lookupPlateRaw(
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(15000), cache: "no-store" });
     if (!response.ok) {
-      return { ok: false, error: `O provedor respondeu HTTP ${response.status}.` };
+      return { ok: false, error: await erroDoProvedor(response) };
     }
     const json = (await response.json()) as Record<string, unknown>;
     return { ok: true, json, normalized: normalize(json) };
@@ -302,10 +334,7 @@ export async function lookupPlate(plateInput: string): Promise<PlateLookupResult
       cache: "no-store",
     });
     if (!response.ok) {
-      return {
-        ok: false,
-        error: `A consulta da placa falhou (HTTP ${response.status}). Verifique o token ou tente novamente.`,
-      };
+      return { ok: false, error: await erroDoProvedor(response) };
     }
     const json = (await response.json()) as Record<string, unknown>;
     const data = normalize(json);

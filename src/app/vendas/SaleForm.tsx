@@ -356,6 +356,8 @@ export default function SaleForm({
           : "financiado";
   const [tiLooking, startTiLookup] = useTransition();
   const [tiMsg, setTiMsg] = useState<string | null>(null);
+  // Erro da busca (placa inválida, provedor recusou) sai em vermelho.
+  const [tiMsgErro, setTiMsgErro] = useState(false);
   // Troca que chegou (da pré-venda) com a placa mas sem o preço de venda: a
   // FIPE vem sozinha — de uma avaliação da mesma placa ou, sem ela, da consulta
   // por placa. Só preenche o preço; os demais dados ficam como vieram.
@@ -368,6 +370,7 @@ export default function SaleForm({
       .then((r) => {
         if (!r.ok) return;
         setTiSalePrice((atual) => (atual > 0 ? atual : r.fipePrice));
+        setTiMsgErro(false);
         setTiMsg(
           `Preço de venda da troca: FIPE ${formatCurrency(r.fipePrice)}${r.origem === "avaliacao" ? " (da avaliação desta placa)" : ""} — confira.`,
         );
@@ -385,6 +388,7 @@ export default function SaleForm({
     const el = formRef.current?.elements.namedItem("tiPlate");
     const plate = el instanceof HTMLInputElement ? el.value.trim() : "";
     if (!plate) {
+      setTiMsgErro(true);
       setTiMsg("Digite a placa do veículo da troca antes de buscar.");
       return;
     }
@@ -392,6 +396,7 @@ export default function SaleForm({
     startTiLookup(async () => {
       const result = await lookupPlateAction(plate);
       if (!result.ok) {
+        setTiMsgErro(true);
         setTiMsg(result.error);
         return;
       }
@@ -407,6 +412,7 @@ export default function SaleForm({
       setTiField("tiChassi", dt.chassi);
       // Preço de venda (anúncio) do carro recebido = valor FIPE (editável).
       if (dt.fipePrice && dt.fipePrice > 0) setTiSalePrice(dt.fipePrice);
+      setTiMsgErro(false);
       setTiMsg(
         `Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}` +
           (dt.fipePrice ? ` · FIPE ${formatCurrency(dt.fipePrice)}` : "") +
@@ -1183,7 +1189,9 @@ export default function SaleForm({
                 {tiLooking ? "Buscando..." : "🔍 Buscar dados"}
               </Button>
             </div>
-            {tiMsg ? <p className="text-sm font-medium text-emerald-700">{tiMsg}</p> : null}
+            {tiMsg ? (
+              <p className={`text-sm font-medium ${tiMsgErro ? "text-rose-700" : "text-emerald-700"}`}>{tiMsg}</p>
+            ) : null}
 
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
               <Field label="Marca">
