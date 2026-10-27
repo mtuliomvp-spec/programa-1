@@ -5,7 +5,8 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { type SaleFormState } from "./sale-core";
 import { createPreSaleAction } from "./pre-vendas/actions";
 import { checkPreSaleConflictAction } from "./actions";
-import { fipeDaPlacaAction, lookupPlateAction } from "@/app/estoque/actions";
+import { fipeDaPlacaAction, fipePublicaAction, lookupPlateAction } from "@/app/estoque/actions";
+import type { FipePublicaOpcao } from "@/lib/fipe-publica";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import type { VehicleDebtItem } from "@/lib/vehicle-debts";
 import DebtItemsField from "@/components/DebtItemsField";
@@ -358,6 +359,10 @@ export default function SaleForm({
   const [tiMsg, setTiMsg] = useState<string | null>(null);
   // Erro da busca (placa inválida, provedor recusou) sai em vermelho.
   const [tiMsgErro, setTiMsgErro] = useState(false);
+  // Versões candidatas da TABELA FIPE pública (quando o preço veio dela): o
+  // usuário troca a versão e o preço acompanha.
+  const [tiFipeOpcoes, setTiFipeOpcoes] = useState<FipePublicaOpcao[]>([]);
+  const [tiFipeBuscando, startTiFipe] = useTransition();
   // Troca que chegou (da pré-venda) com a placa mas sem o preço de venda: a
   // FIPE vem sozinha — de uma avaliação da mesma placa ou, sem ela, da consulta
   // por placa. Só preenche o preço; os demais dados ficam como vieram.
@@ -366,13 +371,27 @@ export default function SaleForm({
     if (fipeAutoPedida.current) return;
     if (!initial?.tradeIn || !initial.tiPlate || (initial.tiSalePrice ?? 0) > 0) return;
     fipeAutoPedida.current = true;
-    void fipeDaPlacaAction(initial.tiPlate)
+    void fipeDaPlacaAction(initial.tiPlate, {
+      marca: initial.tiBrand,
+      modelo: initial.tiModel,
+      versao: initial.tiVersion,
+      anoModelo: initial.tiModelYear ?? initial.tiManufactureYear,
+      combustivel: initial.tiFuel,
+      cambio: initial.tiTransmission,
+    })
       .then((r) => {
         if (!r.ok) return;
         setTiSalePrice((atual) => (atual > 0 ? atual : r.fipePrice));
+        if (r.opcoes) setTiFipeOpcoes(r.opcoes);
         setTiMsgErro(false);
         setTiMsg(
-          `Preço de venda da troca: FIPE ${formatCurrency(r.fipePrice)}${r.origem === "avaliacao" ? " (da avaliação desta placa)" : ""} — confira.`,
+          `Preço de venda da troca: FIPE ${formatCurrency(r.fipePrice)}${
+            r.origem === "avaliacao"
+              ? " (da avaliação desta placa)"
+              : r.origem === "tabela"
+                ? ` (tabela FIPE pública: ${r.opcoes?.[0]?.modelo ?? ""})`
+                : ""
+          } — confira.`,
         );
       })
       .catch(() => {});
@@ -382,6 +401,45 @@ export default function SaleForm({
     if (value === undefined || value === "") return;
     const el = formRef.current?.elements.namedItem(name);
     if (el instanceof HTMLInputElement) el.value = String(value);
+  }
+
+  /** Dados do carro da troca como estão no formulário agora. */
+  function dadosDaTroca() {
+    const v = (name: string) => {
+      const el = formRef.current?.elements.namedItem(name);
+      return el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.value.trim() : "";
+    };
+    return {
+      marca: v("tiBrand"),
+      modelo: v("tiModel"),
+      versao: v("tiVersion"),
+      anoModelo: Number(v("tiModelYear")) || Number(v("tiManufactureYear")) || null,
+      combustivel: v("tiFuel"),
+      cambio: v("tiTransmission"),
+    };
+  }
+
+  /**
+   * FIPE pela TABELA PÚBLICA (marca, modelo, versão, ano) — não depende do
+   * token da consulta por placa. `antes` é o aviso da consulta que falhou.
+   */
+  async function buscarFipeTabela(antes?: string) {
+    const r = await fipePublicaAction(dadosDaTroca());
+    if (!r.ok) {
+      setTiFipeOpcoes([]);
+      setTiMsgErro(true);
+      setTiMsg([antes, r.error].filter(Boolean).join(" · "));
+      return;
+    }
+    const melhor = r.opcoes[0];
+    setTiFipeOpcoes(r.opcoes);
+    setTiSalePrice(melhor.price);
+    setTiMsgErro(false);
+    setTiMsg(
+      `${antes ? "Consulta da placa indisponível — " : ""}FIPE pela tabela pública: ${melhor.modelo} — ${formatCurrency(melhor.price)}${
+        melhor.mesReferencia ? ` (ref. ${melhor.mesReferencia})` : ""
+      }.${r.opcoes.length > 1 ? " Confira a versão abaixo do preço." : ""}`,
+    );
   }
 
   function handleTiLookup() {
@@ -396,8 +454,9 @@ export default function SaleForm({
     startTiLookup(async () => {
       const result = await lookupPlateAction(plate);
       if (!result.ok) {
-        setTiMsgErro(true);
-        setTiMsg(result.error);
+        // Sem a consulta por placa (token sem saldo, provedor fora): a FIPE
+        // ainda sai da tabela pública, pelos dados já preenchidos.
+        await buscarFipeTabela(result.error);
         return;
       }
       const dt = result.data;
@@ -411,7 +470,14 @@ export default function SaleForm({
       setTiField("tiTransmission", dt.transmission);
       setTiField("tiChassi", dt.chassi);
       // Preço de venda (anúncio) do carro recebido = valor FIPE (editável).
-      if (dt.fipePrice && dt.fipePrice > 0) setTiSalePrice(dt.fipePrice);
+      if (dt.fipePrice && dt.fipePrice > 0) {
+        setTiSalePrice(dt.fipePrice);
+        setTiFipeOpcoes([]);
+      } else {
+        // A consulta veio sem a FIPE: completa pela tabela pública.
+        await buscarFipeTabela();
+        return;
+      }
       setTiMsgErro(false);
       setTiMsg(
         `Dados encontrados: ${[dt.brand, dt.model].filter(Boolean).join(" ")}` +
@@ -1255,6 +1321,32 @@ export default function SaleForm({
                   onChange={(e) => setTiSalePrice(Number(e.target.value) || 0)}
                   placeholder="Vem da FIPE ao buscar a placa"
                 />
+                {tiFipeOpcoes.length > 1 ? (
+                  <select
+                    className="mt-1 w-full rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700"
+                    defaultValue={0}
+                    onChange={(e) => {
+                      const o = tiFipeOpcoes[Number(e.target.value)];
+                      if (o) setTiSalePrice(o.price);
+                    }}
+                    title="Versões encontradas na tabela FIPE — escolha a do carro"
+                  >
+                    {tiFipeOpcoes.map((o, i) => (
+                      <option key={`${o.codigoFipe ?? o.modelo}-${i}`} value={i}>
+                        {o.modelo} — {formatCurrency(o.price)}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <button
+                  type="button"
+                  disabled={tiFipeBuscando}
+                  onClick={() => startTiFipe(() => buscarFipeTabela())}
+                  className="mt-1 text-xs font-medium text-blue-700 hover:underline disabled:opacity-50"
+                  title="Busca pela marca, modelo, versão e ano preenchidos — não usa a consulta por placa"
+                >
+                  {tiFipeBuscando ? "Buscando na tabela FIPE…" : "📊 Buscar na tabela FIPE"}
+                </button>
               </Field>
               <Field label="Saldo devedor / quitação">
                 <Input

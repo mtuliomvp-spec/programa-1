@@ -875,13 +875,45 @@ export async function lookupPlateAction(plate: string) {
 }
 
 /**
- * Só o valor FIPE de uma placa — para o preço de venda do carro da TROCA que
+ * Versões FIPE pela TABELA PÚBLICA (marca, modelo, versão, ano) — sem o token
+ * pago da consulta por placa. Reserva para quando a consulta falha ou não
+ * traz a FIPE.
+ */
+export async function fipePublicaAction(
+  dados: import("@/lib/fipe-publica").FipePublicaEntrada,
+): Promise<{ ok: true; opcoes: import("@/lib/fipe-publica").FipePublicaOpcao[] } | { ok: false; error: string }> {
+  if (!(await canUseFormLookup())) {
+    return { ok: false, error: "Você não tem permissão para consultar a FIPE." };
+  }
+  if (!dados.marca || !dados.modelo || !dados.anoModelo) {
+    return { ok: false, error: "Preencha marca, modelo e ano modelo para buscar na tabela FIPE." };
+  }
+  const { fipePublica } = await import("@/lib/fipe-publica");
+  const opcoes = await fipePublica(dados);
+  if (!opcoes.length) {
+    return { ok: false, error: "Não encontrei este carro na tabela FIPE pública — confira marca, modelo e ano." };
+  }
+  return { ok: true, opcoes };
+}
+
+/**
+ * Só o valor FIPE de um carro — para o preço de venda do carro da TROCA que
  * chegou da pré-venda sem ele. Primeiro procura uma AVALIAÇÃO da mesma placa
- * (já tem a FIPE e não gasta consulta); sem ela, consulta o provedor (paga).
+ * (já tem a FIPE e não gasta consulta); depois a consulta por placa (paga);
+ * por fim a TABELA PÚBLICA, pelos dados do carro.
  */
 export async function fipeDaPlacaAction(
   plate: string,
-): Promise<{ ok: true; fipePrice: number; origem: "avaliacao" | "consulta" } | { ok: false; error: string }> {
+  dados?: import("@/lib/fipe-publica").FipePublicaEntrada,
+): Promise<
+  | {
+      ok: true;
+      fipePrice: number;
+      origem: "avaliacao" | "consulta" | "tabela";
+      opcoes?: import("@/lib/fipe-publica").FipePublicaOpcao[];
+    }
+  | { ok: false; error: string }
+> {
   if (!(await canUseFormLookup())) {
     return { ok: false, error: "Você não tem permissão para consultar a placa." };
   }
@@ -895,11 +927,15 @@ export async function fipeDaPlacaAction(
   if (avaliacao?.fipePrice) return { ok: true, fipePrice: avaliacao.fipePrice, origem: "avaliacao" };
   const { lookupPlate } = await import("@/lib/plate-lookup");
   const r = await lookupPlate(placa);
-  if (!r.ok) return { ok: false, error: r.error };
-  if (!r.data.fipePrice || !(r.data.fipePrice > 0)) {
-    return { ok: false, error: "A consulta da placa não trouxe o valor FIPE." };
+  if (r.ok && r.data.fipePrice && r.data.fipePrice > 0) {
+    return { ok: true, fipePrice: r.data.fipePrice, origem: "consulta" };
   }
-  return { ok: true, fipePrice: r.data.fipePrice, origem: "consulta" };
+  if (dados?.marca && dados.modelo && dados.anoModelo) {
+    const { fipePublica } = await import("@/lib/fipe-publica");
+    const opcoes = await fipePublica(dados);
+    if (opcoes.length) return { ok: true, fipePrice: opcoes[0].price, origem: "tabela", opcoes };
+  }
+  return { ok: false, error: r.ok ? "A consulta da placa não trouxe o valor FIPE." : r.error };
 }
 
 /**
