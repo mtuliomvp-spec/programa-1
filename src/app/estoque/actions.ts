@@ -888,12 +888,14 @@ export async function fipePublicaAction(
   if (!dados.marca || !dados.modelo || !dados.anoModelo) {
     return { ok: false, error: "Preencha marca, modelo e ano modelo para buscar na tabela FIPE." };
   }
-  const { fipePublica } = await import("@/lib/fipe-publica");
-  const opcoes = await fipePublica(dados);
-  if (!opcoes.length) {
-    return { ok: false, error: "Não encontrei este carro na tabela FIPE pública — confira marca, modelo e ano." };
+  const { fipePublicaDetalhada } = await import("@/lib/fipe-publica");
+  const r = await fipePublicaDetalhada(dados);
+  if (!r.opcoes.length) {
+    // O motivo exato (etapa e código HTTP), não um "não encontrei" genérico.
+    const motivo = r.erro || "nada encontrado";
+    return { ok: false, error: `FIPE pela tabela pública: ${motivo.charAt(0).toLowerCase()}${motivo.slice(1)}.` };
   }
-  return { ok: true, opcoes };
+  return { ok: true, opcoes: r.opcoes };
 }
 
 /**
