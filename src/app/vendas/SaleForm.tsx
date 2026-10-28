@@ -25,6 +25,12 @@ import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import NewCustomerInline from "@/components/NewCustomerInline";
 
+/** "(HTTP 403: Token Invalido)" → " (Token Invalido)" — o motivo da falha da placa, curto. */
+const motivoDaPlaca = (erro: string) => {
+  const m = /HTTP \d+: ([^)]+)\)/.exec(erro);
+  return m ? ` (${m[1].trim()})` : "";
+};
+
 type Vehicle = {
   id: string;
   brand: string;
@@ -436,7 +442,7 @@ export default function SaleForm({
     setTiSalePrice(melhor.price);
     setTiMsgErro(false);
     setTiMsg(
-      `${antes ? "Consulta da placa indisponível — " : ""}FIPE pela tabela pública: ${melhor.modelo} — ${formatCurrency(melhor.price)}${
+      `${antes ? `Consulta da placa indisponível${motivoDaPlaca(antes)} — ` : ""}FIPE pela tabela pública: ${melhor.modelo} — ${formatCurrency(melhor.price)}${
         melhor.mesReferencia ? ` (ref. ${melhor.mesReferencia})` : ""
       }.${r.opcoes.length > 1 ? " Confira a versão abaixo do preço." : ""}`,
     );

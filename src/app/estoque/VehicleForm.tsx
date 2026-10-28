@@ -9,6 +9,7 @@ import {
   createVehicleAction,
   updateVehicleAction,
   lookupPlateAction,
+  fipePublicaAction,
   lerDocumentoCompraAction,
   consolidarDocumentosCompraAction,
   type VehicleFormState,
@@ -25,6 +26,12 @@ import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
+
+/** "(HTTP 403: Token Invalido)" → " (Token Invalido)" — o motivo da falha da placa, curto. */
+const motivoDaPlaca = (erro: string) => {
+  const m = /HTTP \d+: ([^)]+)\)/.exec(erro);
+  return m ? ` (${m[1].trim()})` : "";
+};
 
 type Supplier = { id: string; name: string };
 
@@ -118,6 +125,45 @@ export default function VehicleForm({
     }
   }
 
+  /**
+   * FIPE pela TABELA PÚBLICA (marca, modelo, versão, ano preenchidos) — não
+   * depende do token da consulta por placa. `antes` é o erro da consulta.
+   */
+  async function buscarFipeTabela(antes?: string) {
+    const v = (name: string) => {
+      const el = formRef.current?.elements.namedItem(name);
+      return el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.value.trim() : "";
+    };
+    const r = await fipePublicaAction({
+      marca: v("brand"),
+      modelo: v("model"),
+      versao: v("version"),
+      anoModelo: Number(v("modelYear")) || Number(v("manufactureYear")) || null,
+      combustivel: v("fuel"),
+      cambio: v("transmission"),
+    });
+    if (!r.ok) {
+      setLookupMsg({ tone: "err", text: [antes, r.error].filter(Boolean).join(" · ") });
+      return;
+    }
+    const melhor = r.opcoes[0];
+    const saleEl = formRef.current?.elements.namedItem("salePrice");
+    if (saleEl instanceof HTMLInputElement) saleEl.value = String(melhor.price);
+    setFipeOptions(r.opcoes.map((o) => ({ modelo: o.modelo, price: o.price, ano: o.mesReferencia ?? undefined })));
+    setFipeChoice(0);
+    setShowAllFipe(false);
+    setLookupMsg({
+      tone: "ok",
+      text: `${antes ? `Consulta da placa indisponível${motivoDaPlaca(antes)} — ` : ""}FIPE pela tabela pública: ${melhor.modelo} — ${formatCurrency(melhor.price)}. Confira a versão abaixo.`,
+    });
+  }
+
+  function handleFipeTabela() {
+    setLookupMsg(null);
+    setFipeOptions([]);
+    startLookup(() => buscarFipeTabela());
+  }
+
   function handlePlateLookup() {
     const plateEl = formRef.current?.elements.namedItem("plate");
     const plate = plateEl instanceof HTMLInputElement ? plateEl.value.trim() : "";
@@ -130,7 +176,9 @@ export default function VehicleForm({
     startLookup(async () => {
       const result = await lookupPlateAction(plate);
       if (!result.ok) {
-        setLookupMsg({ tone: "err", text: result.error });
+        // Sem a consulta por placa (token inválido, sem saldo): a FIPE ainda
+        // sai da tabela pública, pelos dados já preenchidos.
+        await buscarFipeTabela(result.error);
         return;
       }
       const d = result.data;
@@ -157,6 +205,11 @@ export default function VehicleForm({
       setFipeOptions(d.fipeOptions ?? []);
       setFipeChoice(0);
       setShowAllFipe(false);
+      if (!d.fipePrice) {
+        // A consulta veio sem a FIPE: completa pela tabela pública.
+        await buscarFipeTabela();
+        return;
+      }
       const found = [d.brand, d.model, d.modelYear].filter(Boolean).join(" ");
       setLookupMsg({
         tone: "ok",
@@ -359,6 +412,15 @@ export default function VehicleForm({
             <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking}>
               {looking ? "Buscando..." : "🔍 Buscar dados pela placa"}
             </Button>
+            <button
+              type="button"
+              onClick={handleFipeTabela}
+              disabled={looking}
+              className="text-sm font-medium text-blue-700 hover:underline disabled:opacity-50"
+              title="Pela marca, modelo, versão e ano preenchidos — não usa a consulta por placa"
+            >
+              📊 Buscar FIPE na tabela pública
+            </button>
           </div>
         </Field>
         <p className="mt-2 text-xs text-slate-500">
