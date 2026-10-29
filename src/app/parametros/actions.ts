@@ -91,8 +91,8 @@ export async function saveCompanyAction(
   const anoFundacao = Number.isInteger(ano) && ano >= 1900 && ano <= new Date().getFullYear() ? ano : null;
   // Link da loja no Google Maps (Perfil da Empresa › Compartilhar).
   const googleMapsUrl = (d.googleMapsUrl || "").trim();
-  if (googleMapsUrl && !/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|g\.co\/kgs)\//i.test(googleMapsUrl)) {
-    return { error: "Link do Google Maps inválido — no Maps, abra a MVP Veículos, toque em Compartilhar e copie o link (https://maps.app.goo.gl/…)." };
+  if (googleMapsUrl && !/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|g\.co\/kgs|g\.page)\//i.test(googleMapsUrl)) {
+    return { error: "Link do Google Maps inválido — no Maps, abra a MVP Veículos, toque em Compartilhar e copie o link (https://maps.app.goo.gl/… ou https://g.page/…)." };
   }
 
   const data = {
