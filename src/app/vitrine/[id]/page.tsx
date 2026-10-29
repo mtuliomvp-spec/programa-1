@@ -22,6 +22,7 @@ import ShareButton from "../ShareButton";
 import ContatoWhatsApp from "../ContatoWhatsApp";
 import ThemeToggle from "../ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
+import { cidadeDaLoja } from "@/lib/loja-local";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export async function generateMetadata({
   const base = await getBaseUrl();
   const showPrice = !v.adHiddenFields.includes("preco");
   const precoTitle = showPrice ? ` — ${formatCurrency(v.salePrice)}` : "";
-  const cidade = company?.city ? ` em ${company.city}` : "";
+  const cidade = cidadeDaLoja(company) ? ` em ${cidadeDaLoja(company)}` : "";
   return {
     title: `${titulo}${precoTitle} — seminovo${cidade} | ${nome}`,
     alternates: { canonical: `${base}/vitrine/${v.id}` },

@@ -1,5 +1,6 @@
 import type { CompanySettings } from "@prisma/client";
 import ContatoWhatsApp from "./ContatoWhatsApp";
+import { enderecoDaLoja, linksDeMapaDaLoja } from "@/lib/loja-local";
 
 /** Peças compartilhadas das páginas públicas da vitrine (tema, rodapé, zap flutuante). */
 
@@ -28,14 +29,10 @@ function instagramHandle(v: string): string {
 
 export function PublicFooter({ company }: { company: CompanySettings | null }) {
   const nome = company?.nomeFantasia || "MVP Veículos";
-  // Mesmo formato de endereço da página de login (Waze/Apple acham melhor assim).
-  const endereco = [
-    company?.address,
-    company?.city ? `${company.city}${company?.uf ? ` - ${company.uf}` : ""}` : null,
-  ]
-    .filter(Boolean)
-    .join(", ");
-  const mapsQuery = encodeURIComponent(endereco);
+  // Mesmo endereço e links da página de login: o mapa procura a LOJA (nome +
+  // endereço, ou o link do Perfil da Empresa), não só o endereço.
+  const endereco = enderecoDaLoja(company);
+  const mapas = linksDeMapaDaLoja(company);
   const telDigits = (company?.phone || "").replace(/\D/g, "");
 
   const navBtn =
@@ -44,13 +41,13 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
   return (
     <footer className="mt-10 border-t border-slate-200 pt-8 pb-24 text-center dark:border-slate-800">
       {/* Onde estamos: endereço + atalhos de navegação (Google Maps/Waze/Apple) */}
-      {endereco ? (
+      {endereco && mapas ? (
         <div className="mb-6">
           <h2 className="text-lg font-bold text-slate-900 dark:text-white">📍 Onde estamos</h2>
           <p className="mt-1.5 text-sm leading-relaxed text-slate-600 dark:text-slate-300">{endereco}</p>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <a
-              href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+              href={mapas.google}
               target="_blank"
               rel="noopener noreferrer"
               className={navBtn}
@@ -58,7 +55,7 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
               🗺️ Google Maps
             </a>
             <a
-              href={`https://waze.com/ul?q=${mapsQuery}&navigate=yes`}
+              href={mapas.waze}
               target="_blank"
               rel="noopener noreferrer"
               className={navBtn}
@@ -66,7 +63,7 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
               🚗 Waze
             </a>
             <a
-              href={`https://maps.apple.com/?q=${mapsQuery}`}
+              href={mapas.apple}
               target="_blank"
               rel="noopener noreferrer"
               className={navBtn}

@@ -23,6 +23,7 @@ type Company = {
   googleAnalyticsId: string | null;
   googleSiteVerification: string | null;
   anoFundacao: number | null;
+  googleMapsUrl: string | null;
   // Parecer IA: provedor/modelo aparecem; a chave NUNCA vem ao cliente (só o
   // indicador de que existe).
   aiProvider: string | null;
@@ -235,11 +236,19 @@ export default function CompanyForm({
           <Field label="Loja existe desde (ano)">
             <Input name="anoFundacao" defaultValue={company.anoFundacao ?? ""} placeholder="2001" inputMode="numeric" maxLength={4} />
           </Field>
+          <Field label="Link da loja no Google Maps">
+            <Input
+              name="googleMapsUrl"
+              defaultValue={company.googleMapsUrl || ""}
+              placeholder="https://maps.app.goo.gl/…"
+            />
+          </Field>
         </div>
         <p className="mt-2 text-xs text-slate-500">
           O ID e o rótulo saem do Google Ads em <em>Metas › Conversões › nova ação de conversão › Site</em>{" "}
           (no “snippet do evento”: <code>send_to: &apos;AW-…/rótulo&apos;</code>). O ano de fundação vai para os
-          dados que o Google lê da loja e para o texto da vitrine.
+          dados que o Google lê da loja e para o texto da vitrine. O link do Google Maps (no Maps, abra a loja ›
+          Compartilhar › copiar link) faz o botão &quot;Google Maps&quot; da vitrine abrir exatamente a MVP.
         </p>
       </div>
 

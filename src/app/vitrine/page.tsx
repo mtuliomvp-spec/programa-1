@@ -17,6 +17,7 @@ import ContatoWhatsApp from "./ContatoWhatsApp";
 import RepasseTag from "./RepasseTag";
 import ThemeToggle from "./ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
+import { cidadeDaLoja, cidadeUfDaLoja } from "@/lib/loja-local";
 
 export const dynamic = "force-dynamic";
 
@@ -26,7 +27,7 @@ export async function generateMetadata(): Promise<Metadata> {
   // O que quem procura carro digita no Google ("carros seminovos são luís",
   // "veículos usados são luís"): é o título e a descrição que aparecem no
   // resultado da busca — e a página de destino dos anúncios.
-  const cidade = company?.city ? `${company.city}${company.uf ? ` - ${company.uf}` : ""}` : null;
+  const cidade = cidadeUfDaLoja(company);
   const desde = company?.anoFundacao ? ` desde ${company.anoFundacao}` : "";
   const title = `Carros seminovos${cidade ? ` em ${cidade}` : ""} | ${nome}`;
   const description =
@@ -80,7 +81,7 @@ export default async function VitrinePage({
     getBaseUrl(),
   ]);
   const nome = company?.nomeFantasia || "MVP Veículos";
-  const cidade = company?.city ? `${company.city}${company.uf ? `/${company.uf}` : ""}` : null;
+  const cidade = cidadeUfDaLoja(company, "/");
   const zapGeral = whatsappLink(
     company?.phone,
     `Olá! Vi os veículos no site da ${nome} e gostaria de mais informações.`,
@@ -180,7 +181,7 @@ export default async function VitrinePage({
             Fazendo mais por você!
             {/* O que o cliente procura no Google, no título da página. */}
             <span className="mt-1 block text-base font-semibold tracking-normal text-emerald-300 sm:text-lg">
-              Carros seminovos{company?.city ? ` em ${company.city}` : ""}
+              Carros seminovos{cidadeDaLoja(company) ? ` em ${cidadeDaLoja(company)}` : ""}
             </span>
           </h1>
           <p className="mt-2 text-sm text-slate-300">

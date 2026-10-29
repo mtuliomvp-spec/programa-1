@@ -50,14 +50,11 @@ export default async function LoginPage({
   // Localização da loja (Parâmetros) para abrir no Waze/Google Maps/Apple Maps.
   const company = await prisma.companySettings.findUnique({
     where: { id: "company" },
-    select: { address: true, city: true, uf: true, phone: true },
+    select: { nomeFantasia: true, address: true, city: true, uf: true, phone: true, googleMapsUrl: true },
   });
-  const fullAddress = company
-    ? [company.address, company.city ? `${company.city}${company.uf ? ` - ${company.uf}` : ""}` : null]
-        .filter(Boolean)
-        .join(", ")
-    : "";
-  const mapsQuery = encodeURIComponent(fullAddress);
+  const { enderecoDaLoja, linksDeMapaDaLoja } = await import("@/lib/loja-local");
+  const fullAddress = enderecoDaLoja(company);
+  const mapas = linksDeMapaDaLoja(company);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -106,14 +103,14 @@ export default async function LoginPage({
         </div>
 
         {/* Onde estamos: endereço da loja com atalhos de navegação, logo no topo */}
-        {fullAddress ? (
+        {fullAddress && mapas ? (
           <div className="mx-auto mt-8 max-w-3xl">
             <h2 className="text-xl font-bold text-slate-900">📍 Onde estamos</h2>
             <p className="mt-2 text-sm leading-relaxed text-slate-600">{fullAddress}</p>
             {company?.phone ? <p className="mt-1 text-sm text-slate-500">📞 {company.phone}</p> : null}
             <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
               <a
-                href={`https://www.google.com/maps/search/?api=1&query=${mapsQuery}`}
+                href={mapas.google}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -121,7 +118,7 @@ export default async function LoginPage({
                 🗺️ Google Maps
               </a>
               <a
-                href={`https://waze.com/ul?q=${mapsQuery}&navigate=yes`}
+                href={mapas.waze}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
@@ -129,7 +126,7 @@ export default async function LoginPage({
                 🚗 Waze
               </a>
               <a
-                href={`https://maps.apple.com/?q=${mapsQuery}`}
+                href={mapas.apple}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm hover:bg-slate-50"

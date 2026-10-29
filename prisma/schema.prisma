@@ -2197,6 +2197,10 @@ model CompanySettings {
   // Ano de fundação da loja (vai para os dados estruturados do Google e para o
   // texto da vitrine: "desde 2001").
   anoFundacao              Int?
+  // Link do Perfil da Empresa no Google Maps ("Compartilhar" no Maps): o botão
+  // "Google Maps" da vitrine abre exatamente a loja — pesquisar só o endereço
+  // levava ao vizinho (outra loja no mesmo ponto).
+  googleMapsUrl            String?
   // Bloqueio do sistema (modo manutenção): só admins navegam; os demais veem o
   // aviso e as ações são recusadas até desbloquear.
   systemLocked             Boolean   @default(false)

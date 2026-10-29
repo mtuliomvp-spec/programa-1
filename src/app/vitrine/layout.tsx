@@ -3,6 +3,7 @@ import { getCompany } from "@/lib/company";
 import { getSessionUser } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import GoogleTags from "./GoogleTags";
+import { cidadeDaLoja } from "@/lib/loja-local";
 
 /** Verificação do Search Console (meta tag) para o domínio da vitrine. */
 export async function generateMetadata(): Promise<Metadata> {
@@ -40,11 +41,12 @@ export default async function VitrineLayout({ children }: { children: React.Reac
           address: {
             "@type": "PostalAddress",
             ...(company.address ? { streetAddress: company.address } : {}),
-            addressLocality: company.city,
+            addressLocality: cidadeDaLoja(company),
             ...(company.uf ? { addressRegion: company.uf } : {}),
             addressCountry: "BR",
           },
-          areaServed: { "@type": "City", name: company.city },
+          areaServed: { "@type": "City", name: cidadeDaLoja(company) },
+          ...(company.googleMapsUrl ? { hasMap: company.googleMapsUrl } : {}),
         }
       : {}),
     ...(company?.instagram
