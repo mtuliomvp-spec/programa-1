@@ -25,6 +25,7 @@ const schema = z.object({
   googleAnalyticsId: z.string().optional(),
   googleSiteVerification: z.string().optional(),
   anoFundacao: z.string().optional(),
+  googleMapsUrl: z.string().optional(),
   aiProvider: z.string().optional(),
   aiModel: z.string().optional(),
   aiApiKey: z.string().optional(),
@@ -88,6 +89,11 @@ export async function saveCompanyAction(
   const googleSiteVerification = (verif.match(/content=["']([^"']+)["']/)?.[1] ?? verif).trim();
   const ano = Number((d.anoFundacao || "").trim());
   const anoFundacao = Number.isInteger(ano) && ano >= 1900 && ano <= new Date().getFullYear() ? ano : null;
+  // Link da loja no Google Maps (Perfil da Empresa › Compartilhar).
+  const googleMapsUrl = (d.googleMapsUrl || "").trim();
+  if (googleMapsUrl && !/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|g\.co\/kgs)\//i.test(googleMapsUrl)) {
+    return { error: "Link do Google Maps inválido — no Maps, abra a MVP Veículos, toque em Compartilhar e copie o link (https://maps.app.goo.gl/…)." };
+  }
 
   const data = {
     razaoSocial: d.razaoSocial,
@@ -106,6 +112,7 @@ export async function saveCompanyAction(
     googleAnalyticsId: googleAnalyticsId || null,
     googleSiteVerification: googleSiteVerification || null,
     anoFundacao,
+    googleMapsUrl: googleMapsUrl || null,
     // Parecer IA e consulta por placa: só o Super Admin mexe. Provedor/modelo
     // acompanham a chave (são a configuração do mesmo serviço). A chave só muda
     // quando uma nova é digitada (em branco = mantém) ou quando pedem remoção.
