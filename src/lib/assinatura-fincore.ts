@@ -23,3 +23,12 @@ export function emailComercial(): string {
 
 /** Prazo de análise do cadastro prometido ao lojista (dias corridos). */
 export const DIAS_ANALISE = 3;
+
+/** Leituras automáticas de documento (IA) incluídas na mensalidade. */
+export const FRANQUIA_LEITURAS = 500;
+
+/** Cada leitura acima da franquia, em reais. */
+export const PRECO_LEITURA_EXCEDENTE = 0.4;
+
+/** Taxa de implantação (pagamento único), em reais. */
+export const TAXA_IMPLANTACAO = 790;

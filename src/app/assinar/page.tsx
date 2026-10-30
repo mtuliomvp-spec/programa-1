@@ -2,15 +2,25 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { UFS } from "@/lib/endereco";
-import { DIAS_ANALISE, PRECO_MENSAL, emailComercial, paginaAssinaturaAtiva } from "@/lib/assinatura-fincore";
+import { isDemoMode } from "@/lib/demo-mode";
+import {
+  DIAS_ANALISE,
+  FRANQUIA_LEITURAS,
+  PRECO_LEITURA_EXCEDENTE,
+  PRECO_MENSAL,
+  TAXA_IMPLANTACAO,
+  emailComercial,
+  paginaAssinaturaAtiva,
+} from "@/lib/assinatura-fincore";
 import PedidoForm from "./PedidoForm";
+import { entrarNaDemoAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Fincore360 | Sistema para revendas de veículos com integração ao Renave",
   description:
-    "Sistema de gestão para revendas de carros novos e seminovos: estoque, vendas, financeiro, notas, títulos e integração com o Renave. Assinatura mensal, cadastro analisado em até 3 dias corridos.",
+    "Sistema de gestão para revendas de carros novos e seminovos: estoque, vendas, financeiro, notas, títulos e integração com o Renave. Teste o sistema antes de contratar. Assinatura mensal, cadastro analisado em até 3 dias corridos.",
   openGraph: {
     title: "Fincore360 — sistema para revendas de veículos",
     description: "Estoque, vendas, financeiro e Renave num só sistema.",
@@ -20,7 +30,8 @@ export const metadata: Metadata = {
   },
 };
 
-const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 0 });
+const brl = (v: number) =>
+  v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: Number.isInteger(v) ? 0 : 2 });
 
 // Só o que o sistema faz hoje — o anúncio e esta página não prometem além disso.
 const RECURSOS: { titulo: string; texto: string }[] = [
@@ -52,7 +63,10 @@ const RECURSOS: { titulo: string; texto: string }[] = [
 ];
 
 const PASSOS: { titulo: string; texto: string }[] = [
-  { titulo: "Envie o seu pedido", texto: "Pelo formulário abaixo ou por e-mail. O seu cadastro começa a ser analisado." },
+  {
+    titulo: "Envie o seu pedido",
+    texto: "Pelo formulário abaixo ou por e-mail — de preferência depois de testar a demonstração. O seu cadastro começa a ser analisado.",
+  },
   {
     titulo: `Análise em até ${DIAS_ANALISE} dias corridos`,
     texto: "Terminada a análise, entramos em contato pelo WhatsApp ou e-mail informado.",
@@ -67,6 +81,7 @@ const PASSOS: { titulo: string; texto: string }[] = [
 export default function AssinarPage() {
   if (!paginaAssinaturaAtiva()) notFound();
   const email = emailComercial();
+  const podeTestar = isDemoMode();
   const btn =
     "inline-flex min-h-12 items-center justify-center rounded-full px-6 text-base font-semibold transition-colors";
 
@@ -102,6 +117,11 @@ export default function AssinarPage() {
                 <a href="#pedido" className={`${btn} bg-[#2BD18A] text-[#0F1B2D] hover:bg-[#5BE3A8]`}>
                   Solicite seu acesso
                 </a>
+                {podeTestar ? (
+                  <a href="#testar" className={`${btn} border border-[#2BD18A] text-[#2BD18A] hover:bg-[#2BD18A]/10`}>
+                    Testar o sistema
+                  </a>
+                ) : null}
                 <a
                   href="/documentos/fincore360-apresentacao.pdf"
                   target="_blank"
@@ -121,9 +141,14 @@ export default function AssinarPage() {
               </p>
               <ul className="mt-5 space-y-2 text-slate-200">
                 <li>Sistema completo, 100% online</li>
+                <li>Inclui até {FRANQUIA_LEITURAS} leituras automáticas de documentos por mês</li>
+                <li>Leitura excedente: {brl(PRECO_LEITURA_EXCEDENTE)} cada</li>
                 <li>Cadastro analisado em até {DIAS_ANALISE} dias corridos</li>
-                <li>Ajuda na configuração inicial</li>
               </ul>
+              <p className="mt-5 border-t border-[#2A3B57] pt-4 text-sm text-slate-300">
+                Implantação: <strong className="text-white">{brl(TAXA_IMPLANTACAO)}</strong> (pagamento único) —
+                configuração, cadastro inicial e treinamento da equipe.
+              </p>
             </div>
           </div>
         </div>
@@ -147,6 +172,31 @@ export default function AssinarPage() {
             software privado, sem vínculo com o SENATRAN, o SERPRO ou os DETRANs.
           </p>
         </section>
+
+        {podeTestar ? (
+          <section id="testar" className="scroll-mt-6 border-y border-emerald-200 bg-emerald-50" aria-labelledby="testar-titulo">
+            <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-6 px-4 py-12 sm:px-6">
+              <div className="max-w-2xl">
+                <h2 id="testar-titulo" className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+                  Teste o sistema antes de contratar
+                </h2>
+                <p className="mt-3 leading-relaxed text-slate-700">
+                  Entre agora na demonstração, já preenchida com veículos, vendas e lançamentos fictícios, e
+                  experimente à vontade: cadastre um carro, faça uma venda, veja o financeiro e os relatórios.
+                </p>
+                <p className="mt-2 text-sm leading-relaxed text-slate-600">
+                  O ambiente de demonstração é <strong>compartilhado com outros interessados</strong>: não
+                  cadastre dados reais de clientes. Renave, NF-e e NFS-e ficam desligados aqui.
+                </p>
+              </div>
+              <form action={entrarNaDemoAction}>
+                <button type="submit" className={`${btn} bg-[#0F1B2D] text-white hover:bg-[#1A3D8F]`}>
+                  Entrar na demonstração
+                </button>
+              </form>
+            </div>
+          </section>
+        ) : null}
 
         <section className="bg-slate-50" aria-labelledby="como">
           <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
