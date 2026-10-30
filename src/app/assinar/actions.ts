@@ -4,6 +4,10 @@ import { prisma } from "@/lib/prisma";
 import { emailLayout, isEmailConfigured, sendEmail } from "@/lib/email";
 import { cnpjValido } from "@/lib/renave-ws-dados";
 import { UFS } from "@/lib/endereco";
+import { redirect } from "next/navigation";
+import { isDemoMode } from "@/lib/demo-mode";
+import { setSessionCookie } from "@/lib/auth";
+import { garantirVisitante } from "@/lib/demo-visitante";
 import { emailComercial, paginaAssinaturaAtiva } from "@/lib/assinatura-fincore";
 
 export type PedidoState = { ok?: boolean; error?: string; valores?: Record<string, string> };
@@ -83,4 +87,16 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
   }
 
   return { ok: true };
+}
+
+/**
+ * "Testar o sistema": entra no demo como o visitante compartilhado. Só na
+ * instalação de DEMONSTRAÇÃO — PAGINA_ASSINATURA sozinha não basta, para nunca
+ * abrir os dados de uma loja de verdade.
+ */
+export async function entrarNaDemoAction(): Promise<void> {
+  if (!isDemoMode()) redirect("/assinar");
+  const visitante = await garantirVisitante();
+  await setSessionCookie(visitante);
+  redirect("/");
 }
