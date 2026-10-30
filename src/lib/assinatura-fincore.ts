@@ -14,7 +14,7 @@ export function paginaAssinaturaAtiva(): boolean {
 }
 
 /** Mensalidade anunciada, em reais. */
-export const PRECO_MENSAL = Number(process.env.FINCORE_PRECO_MENSAL) || 399;
+export const PRECO_MENSAL = Number(process.env.FINCORE_PRECO_MENSAL) || 599;
 
 /** Para onde vão os pedidos de cadastro — e o contato mostrado na página. */
 export function emailComercial(): string {
