@@ -11,6 +11,8 @@ import {
   superPassword,
 } from "@/lib/super-admin";
 import { listOnlineUsers, listRecentLogins, loginSummary } from "@/lib/presence";
+import { prisma } from "@/lib/prisma";
+import { paginaAssinaturaAtiva } from "@/lib/assinatura-fincore";
 import { Badge, Card, CardHeader } from "@/components/ui";
 import OnlineUsers from "./OnlineUsers";
 import {
@@ -109,7 +111,8 @@ export default async function SuperPage() {
     );
   }
 
-  const [logado, lock, supers, promoveis, online, acessos, resumo] = await Promise.all([
+  const vendeAssinatura = paginaAssinaturaAtiva();
+  const [logado, lock, supers, promoveis, online, acessos, resumo, pedidos] = await Promise.all([
     currentSuperAdmin(),
     getSystemLock(),
     listSuperAdmins(),
@@ -117,6 +120,7 @@ export default async function SuperPage() {
     listOnlineUsers(),
     listRecentLogins(12),
     loginSummary(),
+    vendeAssinatura ? prisma.pedidoAssinatura.findMany({ orderBy: { createdAt: "desc" }, take: 30 }) : [],
   ]);
   const euNaLista = supers.find((s) => s.id === logado?.id);
 
@@ -161,6 +165,52 @@ export default async function SuperPage() {
           />
         </div>
       </Card>
+
+      {vendeAssinatura ? (
+        <Card className="mt-4">
+          <CardHeader
+            title="Pedidos de assinatura"
+            description="Lojistas que pediram acesso pela página /assinar (destino do anúncio do Fincore360)."
+            action={<Badge tone={pedidos.length > 0 ? "info" : "default"}>{pedidos.length}</Badge>}
+          />
+          <div className="p-5">
+            {pedidos.length === 0 ? (
+              <p className="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                Nenhum pedido ainda.{" "}
+                <Link href="/assinar" className="font-medium text-blue-700 hover:underline">
+                  Ver a página de assinatura →
+                </Link>
+              </p>
+            ) : (
+              <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
+                {pedidos.map((p) => (
+                  <li key={p.id} className="space-y-0.5 px-4 py-3 text-sm">
+                    <div className="flex flex-wrap items-baseline justify-between gap-2">
+                      <p className="font-medium text-slate-800">
+                        {p.nomeLoja} <span className="font-normal text-slate-500">· {p.cidade}/{p.uf}</span>
+                      </p>
+                      <span className="text-xs tabular-nums text-slate-500">{dataHora(p.createdAt)}</span>
+                    </div>
+                    <p className="text-xs text-slate-600">
+                      {p.responsavel} ·{" "}
+                      <a href={`https://wa.me/55${p.whatsapp.replace(/^55/, "")}`} target="_blank" rel="noopener noreferrer" className="text-blue-700 hover:underline">
+                        WhatsApp {p.whatsapp}
+                      </a>{" "}
+                      ·{" "}
+                      <a href={`mailto:${p.email}`} className="text-blue-700 hover:underline">
+                        {p.email}
+                      </a>
+                      {p.cnpj ? ` · CNPJ ${p.cnpj}` : ""}
+                      {p.avisado ? "" : " · e-mail de aviso não enviado"}
+                    </p>
+                    {p.mensagem ? <p className="text-xs whitespace-pre-line text-slate-500">“{p.mensagem}”</p> : null}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </Card>
+      ) : null}
 
       <Card className="mt-4">
         <CardHeader
