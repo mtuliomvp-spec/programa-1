@@ -2514,3 +2514,26 @@ model ImovelAnexo {
   @@index([imovelId])
   @@map("imovel_anexos")
 }
+
+/// Pedido de assinatura do Fincore360 feito por um lojista na página pública
+/// /assinar (anúncio do sistema). Fica fora da carga de demonstração: recarregar
+/// os dados fictícios não apaga os pedidos recebidos.
+model PedidoAssinatura {
+  id          String   @id @default(cuid())
+  nomeLoja    String
+  cnpj        String?
+  responsavel String
+  cidade      String
+  uf          String
+  whatsapp    String
+  email       String
+  mensagem    String?
+  // NOVO | EM_ANALISE | APROVADO | RECUSADO
+  status      String   @default("NOVO")
+  // O e-mail de aviso ao dono do sistema saiu? (sem provedor configurado, não)
+  avisado     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@map("pedidos_assinatura")
+}

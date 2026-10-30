@@ -56,6 +56,10 @@ export default function proxy(request: NextRequest) {
   // Vitrine pública dos veículos à venda (inclui as fotos públicas).
   if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();
 
+  // Página de venda do sistema (destino do anúncio). A própria página devolve
+  // 404 fora da instalação de demonstração.
+  if (pathname === "/assinar" || pathname.startsWith("/assinar/")) return NextResponse.next();
+
   // Estado do bloqueio do sistema (a própria rota trata sessão ausente).
   if (pathname === "/api/system-lock") return NextResponse.next();
 
