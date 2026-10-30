@@ -31,8 +31,6 @@ MVP (809-803-7592), em nome do **CNPJ da Fincore**.
 
 ## Pendências
 
-- [ ] No demo, em Parâmetros → Nome fantasia, trocar "MVP Veículos" por um nome
-      neutro (ex.: "Revenda Demonstração").
 - [ ] Recarregar os dados do demo de vez em quando (/demo), porque os
       visitantes mexem nos dados.
 - [ ] Contador: confirmar o anexo do Simples Nacional da Fincore (6% ou 15,5%).
@@ -41,8 +39,17 @@ MVP (809-803-7592), em nome do **CNPJ da Fincore**.
 - [ ] Vercel Pro, porque o plano gratuito não permite uso comercial.
 - [ ] Configurar um provedor de e-mail no demo (Brevo), para os pedidos chegarem
       no e-mail.
-- [ ] Antes do 1º cliente: tirar o que é fixo da MVP (slogan "Desde 2001 —
-      Fazendo mais por você!" na vitrine e remetente "MVP Veículos" nos e-mails).
+- [ ] **Antes de anunciar:** trocar o "MVP Veículos" que está fixo no código pelo
+      nome fantasia de Parâmetros. O demo já se chama "Demo Veículos", mas o nome
+      da MVP ainda aparece em cerca de 25 pontos, entre eles:
+      - painel inicial ("Visão geral da MVP Veículos"), Parâmetros e Relatórios;
+      - tela de login, título da aba do navegador e cabeçalho dos relatórios
+        impressos/PDF;
+      - texto do documento de venda;
+      - opção "MVP Veículos (empresa)" nas contas financeiras;
+      - marca d'água da foto do cliente;
+      - assunto e remetente dos e-mails;
+      - slogan "Desde 2001 — Fazendo mais por você!" na vitrine.
 - [ ] Opcional: domínio próprio para o Fincore360.
 
 ## Campanha da MVP (acompanhar)
