@@ -7,6 +7,7 @@ import { Button, Input } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
 import { formatCurrency } from "@/lib/format";
 import { resizeImageToJpeg } from "@/lib/image-resize";
+import { guiaFeito } from "@/lib/guia/eventos";
 import {
   conferirComprovanteLoteAction,
   preLancarPagamentoEmLoteAction,
@@ -121,6 +122,14 @@ export default function PreLancarLote({
       // Faltando a senha o arquivo tem de continuar escolhido; deu certo, some.
       if (fileRef.current) fileRef.current.value = "";
       router.refresh();
+      guiaFeito("apagar.japaguei.confirmar", [
+        umTitulo && parcial
+          ? `Pagamento parcial de ${formatCurrency(valorParcial)} na fila do caixa para ${dataBr(data)}, saindo de ${accountName ?? "a conta escolhida"}.`
+          : `${r.enfileirados} título(s) na fila do caixa para ${dataBr(data)}, saindo de ${accountName ?? "a conta escolhida"}.`,
+        r.attached ? "O comprovante foi anexado a todos." : "Nenhum comprovante anexado.",
+        `O saldo ainda não mudou: quando o caixa chegar a ${dataBr(data)}, confirme em Contas e caixas.`,
+        ...(r.avisos?.length ? [`Confira: ${r.avisos.join("; ")}.`] : []),
+      ]);
       // Os avisos da conferência vão junto da mensagem: o painel se fecha com a
       // seleção, e eles não podem sumir com ele.
       onDone(
@@ -226,7 +235,12 @@ export default function PreLancarLote({
             />
           </label>
         ) : null}
-        <Button type="button" onClick={confirmar} disabled={pending || lendo || !ids.length || parcialInvalido}>
+        <Button
+          type="button"
+          onClick={confirmar}
+          disabled={pending || lendo || !ids.length || parcialInvalido}
+          data-guia="apagar.japaguei.confirmar"
+        >
           {pending ? "Pré-lançando…" : "Confirmar o pagamento"}
         </Button>
       </div>

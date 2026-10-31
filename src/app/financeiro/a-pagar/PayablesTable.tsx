@@ -18,6 +18,7 @@ import { addPayablesToComboAction } from "../combos/actions";
 import CommissionPayButton from "./CommissionPayButton";
 import PartialPayButton from "./PartialPayButton";
 import PreLancarLote from "./PreLancarLote";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 type Account = { id: string; name: string };
 
@@ -152,6 +153,10 @@ export default function PayablesTable({
       }
       setSelected(new Set());
       setMsg(`${r.added} título(s) adicionado(s) ao combo.`);
+      guiaFeito("apagar.combo", [
+        `${r.added} título(s) adicionado(s) ao combo "${openCombos.find((c) => c.id === comboId)?.name ?? ""}".`,
+        "Nada foi pago ainda: o pagamento acontece quando o combo for quitado.",
+      ]);
       router.refresh();
     });
   }
@@ -203,6 +208,10 @@ export default function PayablesTable({
       setSubAppAccountId("");
       setSubSubstituteId("");
       setMsg(`${res.paid} título(s) pago(s) com substituição.`);
+      guiaFeito("apagar.substituicao", [
+        `${res.paid} título(s) pago(s) com substituição, saindo de ${accounts.find((a) => a.id === accountId)?.name ?? "a conta escolhida"}.`,
+        "O valor virou retirada do sócio, e o outro sócio assumiu a fatia aplicada.",
+      ]);
     });
   }
 
@@ -228,6 +237,9 @@ export default function PayablesTable({
       return;
     }
     const ids = [...selected];
+    // Guardados antes: a seleção é limpa quando o pagamento dá certo.
+    const total = selectedTotal;
+    const conta = accounts.find((a) => a.id === accountId)?.name ?? "a conta escolhida";
     setMsg(null);
     startTransition(async () => {
       const res = await payBatchAction(ids, accountId);
@@ -236,6 +248,11 @@ export default function PayablesTable({
         return;
       }
       setSelected(new Set());
+      guiaFeito("apagar.pagar", [
+        `${res.paid} título(s) marcado(s) como pago(s).`,
+        `${formatCurrency(total)} saíram de ${conta}${cashboxDate ? ` com data de ${cashboxDate}` : ""}.`,
+        "O pagamento já aparece no Livro caixa, no Fluxo de caixa e no extrato da conta.",
+      ]);
     });
   }
 
@@ -256,6 +273,10 @@ export default function PayablesTable({
       setMsg(`${res.deleted} excluído(s)` + (res.skipped > 0 ? ` · ${res.skipped} não pôde(m) ser excluído(s):` : ""));
       setRecusados(res.skippedDetails ?? []);
       setSelected(new Set());
+      guiaFeito("apagar.excluir", [
+        `${res.deleted} título(s) excluído(s).`,
+        ...(res.skipped > 0 ? [`${res.skipped} não pôde(m) ser excluído(s) — o motivo está no topo da lista.`] : []),
+      ]);
       requestAnimationFrame(() => avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     });
   }
@@ -548,6 +569,7 @@ export default function PayablesTable({
                   <select
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
+                    data-guia="apagar.conta"
                     className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
                   >
                     {accounts.map((a) => (
@@ -559,7 +581,7 @@ export default function PayablesTable({
                 </label>
                 <div className="flex flex-col gap-1 text-xs text-slate-500">
                   Data do pagamento
-                  <span className="flex h-9 items-center rounded-lg bg-slate-100 px-2 text-sm font-medium text-slate-700">
+                  <span data-guia="apagar.data" className="flex h-9 items-center rounded-lg bg-slate-100 px-2 text-sm font-medium text-slate-700">
                     {cashboxDate ? `${cashboxDate} (caixa)` : "—"}
                   </span>
                 </div>
@@ -567,6 +589,7 @@ export default function PayablesTable({
                   type="button"
                   disabled={pending || removing}
                   onClick={pay}
+                  data-guia="apagar.pagar"
                   className="h-9 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
                   {pending
@@ -580,6 +603,7 @@ export default function PayablesTable({
                     type="button"
                     disabled={pending || removing}
                     onClick={() => setShowPre((v) => !v)}
+                    data-guia={showPre ? undefined : "apagar.japaguei"}
                     className="h-9 rounded-lg border border-emerald-300 bg-white px-4 text-sm font-semibold text-emerald-800 hover:bg-emerald-50 disabled:opacity-50"
                     title="O dinheiro já saiu do banco: informe a data e anexe o comprovante (um só para todos)"
                   >
@@ -591,6 +615,7 @@ export default function PayablesTable({
                     type="button"
                     disabled={subbing || pending}
                     onClick={() => setShowSub((v) => !v)}
+                    data-guia={showSub ? undefined : "apagar.substituicao"}
                     className="h-9 rounded-lg border border-amber-300 bg-white px-4 text-sm font-semibold text-amber-800 hover:bg-amber-50 disabled:opacity-50"
                     title="O capital do sócio está aplicado; outro sócio assume a fatia"
                   >
@@ -622,6 +647,7 @@ export default function PayablesTable({
                     type="button"
                     disabled={addingCombo || !comboId}
                     onClick={addToCombo}
+                    data-guia="apagar.combo"
                     className="h-9 bg-blue-50 px-3 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:opacity-50"
                     title={`Adicionar os títulos selecionados ao combo "${openCombos.find((c) => c.id === comboId)?.name ?? ""}"`}
                   >
@@ -637,6 +663,7 @@ export default function PayablesTable({
                 type="button"
                 disabled={removing || pending}
                 onClick={remove}
+                data-guia="apagar.excluir"
                 className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
               >
                 {removing ? "Excluindo..." : "Excluir selecionados"}
@@ -645,6 +672,7 @@ export default function PayablesTable({
             <button
               type="button"
               onClick={() => setSelected(new Set())}
+              data-guia="apagar.limpar"
               className="h-9 px-2 text-sm text-slate-400 hover:underline"
             >
               Limpar
