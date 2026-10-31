@@ -1,13 +1,15 @@
 import type { ReactNode } from "react";
 import { Card, Input, Button, LinkButton } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 /**
  * Barra padrão de filtros + PDF das listagens. Some na impressão (print:hidden)
  * e, no lugar, imprime um cabeçalho com o título e a data. Os filtros usam um
  * form GET: cada campo vira parâmetro na URL e a página filtra as linhas.
  */
-export default function ReportToolbar({
+export default async function ReportToolbar({
   basePath,
   printTitle,
   q,
@@ -44,6 +46,7 @@ export default function ReportToolbar({
    */
   filtersKey?: string;
 }) {
+  const loja = nomeDaLoja(await getCompany().catch(() => null));
   const emittedAt = new Date().toLocaleString("pt-BR", {
     day: "2-digit",
     month: "2-digit",
@@ -56,7 +59,7 @@ export default function ReportToolbar({
     <>
       {/* Cabeçalho que só aparece na impressão / PDF */}
       <div className="mb-3 hidden print:block">
-        <p className="text-sm font-semibold text-slate-900">MVP Veículos · {printTitle}</p>
+        <p className="text-sm font-semibold text-slate-900">{loja} · {printTitle}</p>
         <p className="text-xs text-slate-500">Emitido em {emittedAt}</p>
       </div>
 

@@ -101,7 +101,7 @@ export async function restoreBackupAction(
     return { error: "Arquivo inválido — não parece ser um JSON de backup." };
   }
   if (!data || data._meta?.app !== "MVP Veículos") {
-    return { error: "Este arquivo não é um backup do MVP Veículos." };
+    return { error: "Este arquivo não é um backup deste sistema." };
   }
 
   const arr = (k: string) => (Array.isArray(data[k]) ? (data[k] as never[]) : []);

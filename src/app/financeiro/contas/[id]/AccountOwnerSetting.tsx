@@ -39,13 +39,13 @@ export default function AccountOwnerSetting({
     <Card className="mb-4">
       <CardHeader
         title="Titular da conta"
-        description="Quando a conta é de um sócio mas opera como se fosse da MVP, identifique aqui o dono verdadeiro. Só informativo — não altera saldos nem a equação patrimonial."
+        description="Quando a conta é de um sócio mas opera como se fosse da empresa, identifique aqui o dono verdadeiro. Só informativo — não altera saldos nem a equação patrimonial."
       />
       <div className="flex flex-wrap items-end gap-3 p-5">
         <div className="w-64">
           <Field label="Dono verdadeiro">
             <Select value={ownerId} onChange={(e) => setOwnerId(e.target.value)}>
-              <option value="">MVP Veículos (empresa)</option>
+              <option value="">A própria empresa</option>
               {beneficiaries.map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name}

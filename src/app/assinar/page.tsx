@@ -62,6 +62,43 @@ const RECURSOS: { titulo: string; texto: string }[] = [
   },
 ];
 
+// O que a mensalidade cobre (serviços que a Fincore contrata e paga) e o que é
+// da loja — o anúncio diz "certificado e emissor de notas à parte", e esta
+// lista é o detalhe. Mudou um fornecedor? Atualize aqui e no anúncio.
+const INCLUIDO: string[] = [
+  "Hospedagem, banco de dados, cópias de segurança e atualizações do sistema",
+  `Leitura automática de documentos com inteligência artificial (CRLV, notas, boletos e guias): até ${FRANQUIA_LEITURAS} por mês`,
+  "E-mails do sistema (acesso liberado, redefinição de senha)",
+  "Busca de CEP e CNPJ e tabela FIPE pública por marca, modelo e ano",
+  "Vitrine online dos seus carros no endereço do sistema",
+  "Configuração dos serviços que a loja contratar (certificado, emissor de notas, consulta por placa)",
+];
+
+const DA_LOJA: { titulo: string; texto: string; obrigatorio?: boolean }[] = [
+  {
+    titulo: "Certificado digital e-CNPJ (A1)",
+    texto: "Exigido para operar o Renave. Comprado numa autoridade certificadora de sua escolha e renovado todo ano.",
+    obrigatorio: true,
+  },
+  {
+    titulo: "Acesso ao Renave",
+    texto: "Adesão e contrato da loja com o SERPRO, conforme o DETRAN do seu estado. Eventuais tarifas são cobradas pelo SERPRO.",
+    obrigatorio: true,
+  },
+  {
+    titulo: "Emissor de NF-e e NFS-e",
+    texto: "Plano da loja na Focus NFe, só se for emitir notas pelo sistema. A regra fiscal é definida pelo seu contador.",
+  },
+  {
+    titulo: "Consulta por placa e débitos",
+    texto: "Créditos num provedor de consulta veicular. Sem ela, os dados do carro vêm do CRLV e a FIPE, da tabela pública.",
+  },
+  {
+    titulo: "Domínio próprio e Google Ads",
+    texto: "Endereço da loja (ex.: sualoja.com.br) para a vitrine e anúncios no Google, se quiser.",
+  },
+];
+
 const PASSOS: { titulo: string; texto: string }[] = [
   {
     titulo: "Envie o seu pedido",
@@ -144,6 +181,12 @@ export default function AssinarPage() {
                 <li>Inclui até {FRANQUIA_LEITURAS} leituras automáticas de documentos por mês</li>
                 <li>Leitura excedente: {brl(PRECO_LEITURA_EXCEDENTE)} cada</li>
                 <li>Cadastro analisado em até {DIAS_ANALISE} dias corridos</li>
+                <li className="text-slate-300">
+                  Certificado digital, Renave/SERPRO e emissor de notas são contratados pela loja —{" "}
+                  <a href="#incluido" className="font-semibold text-[#2BD18A] underline-offset-4 hover:underline">
+                    veja o que está incluído
+                  </a>
+                </li>
               </ul>
               <p className="mt-5 border-t border-[#2A3B57] pt-4 text-sm text-slate-300">
                 Implantação: <strong className="text-white">{brl(TAXA_IMPLANTACAO)}</strong> (pagamento único) —
@@ -171,6 +214,51 @@ export default function AssinarPage() {
             O Renave de veículos usados funciona conforme a adesão do DETRAN de cada estado. O Fincore360 é um
             software privado, sem vínculo com o SENATRAN, o SERPRO ou os DETRANs.
           </p>
+        </section>
+
+        <section id="incluido" className="scroll-mt-6 border-t border-slate-200" aria-labelledby="incluido-titulo">
+          <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6">
+            <h2 id="incluido-titulo" className="text-2xl font-extrabold tracking-tight sm:text-3xl">
+              O que está incluído e o que a loja contrata
+            </h2>
+            <div className="mt-8 grid gap-6 lg:grid-cols-2">
+              <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-6">
+                <h3 className="text-lg font-bold">Incluído nos {brl(PRECO_MENSAL)} por mês</h3>
+                <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-slate-700">
+                  {INCLUIDO.map((t) => (
+                    <li key={t} className="flex gap-2.5">
+                      <span className="mt-0.5 font-bold text-emerald-700" aria-hidden="true">✓</span>
+                      <span>{t}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="rounded-2xl border border-slate-200 p-6">
+                <h3 className="text-lg font-bold">Contratado pela loja, pago direto ao fornecedor</h3>
+                <ul className="mt-4 space-y-3.5 text-sm leading-relaxed text-slate-700">
+                  {DA_LOJA.map((d) => (
+                    <li key={d.titulo}>
+                      <p className="font-semibold text-slate-900">
+                        {d.titulo}{" "}
+                        <span
+                          className={`ml-1 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                            d.obrigatorio ? "bg-amber-100 text-amber-800" : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {d.obrigatorio ? "necessário para o Renave" : "opcional"}
+                        </span>
+                      </p>
+                      <p className="mt-0.5">{d.texto}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+            <p className="mt-6 text-sm leading-relaxed text-slate-600">
+              Os valores desses serviços são cobrados pelos próprios fornecedores e não fazem parte da assinatura.
+              Na implantação, ajudamos a contratar e deixamos tudo configurado no seu sistema.
+            </p>
+          </div>
         </section>
 
         {podeTestar ? (

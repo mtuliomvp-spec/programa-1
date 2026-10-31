@@ -2,6 +2,8 @@ import Link from "next/link";
 import { getMonthlyDre, getStockAging, getPerformanceStats } from "@/lib/reports";
 import { formatCurrency } from "@/lib/format";
 import { Card, PageHeader, StatCard } from "@/components/ui";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +59,7 @@ export default async function RelatoriosPage() {
     <div>
       <PageHeader
         title="Central de relatórios"
-        description="Todos os números da MVP Veículos para decidir com segurança"
+        description={`Todos os números da ${nomeDaLoja(await getCompany().catch(() => null))} para decidir com segurança`}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">

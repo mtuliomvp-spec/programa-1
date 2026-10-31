@@ -18,12 +18,13 @@ import RepasseTag from "./RepasseTag";
 import ThemeToggle from "./ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "./PublicChrome";
 import { cidadeDaLoja, cidadeUfDaLoja } from "@/lib/loja-local";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(): Promise<Metadata> {
   const [company, base] = await Promise.all([getCompany().catch(() => null), getBaseUrl().catch(() => "")]);
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   // O que quem procura carro digita no Google ("carros seminovos são luís",
   // "veículos usados são luís"): é o título e a descrição que aparecem no
   // resultado da busca — e a página de destino dos anúncios.
@@ -80,7 +81,7 @@ export default async function VitrinePage({
     getShowroomVehicles(),
     getBaseUrl(),
   ]);
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   const cidade = cidadeUfDaLoja(company, "/");
   const zapGeral = whatsappLink(
     company?.phone,
@@ -174,11 +175,13 @@ export default async function VitrinePage({
       {/* Faixa de boas-vindas (slogan da loja + diferenciais) */}
       <section className="bg-slate-900">
         <div className="mx-auto max-w-6xl px-4 py-8 text-center sm:py-10">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">
-            Desde {company?.anoFundacao ?? 2001}
-          </p>
+          {company?.anoFundacao ? (
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-400">
+              Desde {company.anoFundacao}
+            </p>
+          ) : null}
           <h1 className="mt-1 text-3xl font-black tracking-tight text-white sm:text-4xl">
-            Fazendo mais por você!
+            {company?.slogan || nome}
             {/* O que o cliente procura no Google, no título da página. */}
             <span className="mt-1 block text-base font-semibold tracking-normal text-emerald-300 sm:text-lg">
               Carros seminovos{cidadeDaLoja(company) ? ` em ${cidadeDaLoja(company)}` : ""}

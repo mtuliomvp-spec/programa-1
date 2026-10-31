@@ -157,7 +157,7 @@ export default function AccountForm({
       {beneficiaries.length > 0 ? (
         <Field label="Titular da conta">
           <Select name="ownerBeneficiaryId" defaultValue={initial?.ownerBeneficiaryId ?? ""}>
-            <option value="">MVP Veículos (empresa)</option>
+            <option value="">A própria empresa</option>
             {beneficiaries.map((b) => (
               <option key={b.id} value={b.id}>
                 {b.name}
@@ -165,7 +165,7 @@ export default function AccountForm({
             ))}
           </Select>
           <p className="mt-1 text-xs text-slate-400">
-            Quando a conta é de um sócio mas opera como se fosse da MVP, escolha o dono
+            Quando a conta é de um sócio mas opera como se fosse da empresa, escolha o dono
             verdadeiro. Só identifica o titular nas telas — não altera a contabilidade.
           </p>
         </Field>

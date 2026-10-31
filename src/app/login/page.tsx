@@ -2,6 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import BrandMark from "@/components/BrandMark";
 import LoginForm from "./LoginForm";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -50,8 +51,9 @@ export default async function LoginPage({
   // Localização da loja (Parâmetros) para abrir no Waze/Google Maps/Apple Maps.
   const company = await prisma.companySettings.findUnique({
     where: { id: "company" },
-    select: { nomeFantasia: true, address: true, city: true, uf: true, phone: true, googleMapsUrl: true },
+    select: { nomeFantasia: true, razaoSocial: true, logoDataUrl: true, address: true, city: true, uf: true, phone: true, googleMapsUrl: true },
   });
+  const loja = nomeDaLoja(company);
   const { enderecoDaLoja, linksDeMapaDaLoja } = await import("@/lib/loja-local");
   const fullAddress = enderecoDaLoja(company);
   const mapas = linksDeMapaDaLoja(company);
@@ -61,7 +63,7 @@ export default async function LoginPage({
       {/* Cabeçalho */}
       <header className="sticky top-0 z-40 border-b border-slate-200 bg-white/95 backdrop-blur">
         <div className="mx-auto flex h-16 max-w-5xl items-center justify-between px-4">
-          <BrandMark />
+          <BrandMark name={loja} logoDataUrl={company?.logoDataUrl ?? null} />
           <a
             href="#entrar"
             className="inline-flex items-center gap-1.5 rounded-lg bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-600"
@@ -89,7 +91,7 @@ export default async function LoginPage({
             >
               🔒 Entrar no sistema
             </a>
-            <p className="mt-1 text-xs text-slate-400">Acesso restrito à equipe da MVP Veículos</p>
+            <p className="mt-1 text-xs text-slate-400">Acesso restrito à equipe da {loja}</p>
           </div>
           <div>
             <Link
@@ -170,14 +172,14 @@ export default async function LoginPage({
           <p className="mb-5 mt-1 text-sm text-slate-500">
             {isSetup
               ? "Primeiro acesso: crie o usuário dono do sistema. Só você poderá cadastrar outros usuários."
-              : "Acesso restrito à equipe da MVP Veículos — use seu e-mail e senha cadastrados."}
+              : `Acesso restrito à equipe da ${loja} — use seu e-mail e senha cadastrados.`}
           </p>
-          <LoginForm isSetup={isSetup} next={params.next} />
+          <LoginForm isSetup={isSetup} next={params.next} loja={loja} />
         </div>
       </section>
 
       <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-400">
-        MVP Veículos · Gestão de seminovos · acesso restrito
+        {loja} · Gestão de seminovos · acesso restrito
       </footer>
     </div>
   );

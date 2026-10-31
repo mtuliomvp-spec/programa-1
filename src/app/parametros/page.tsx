@@ -34,7 +34,7 @@ export default async function ParametrosPage() {
     <div className="mx-auto max-w-3xl">
       <PageHeader
         title="Parâmetros da empresa"
-        description="Dados da MVP Veículos usados nos documentos impressos (ordem de compra, contrato e venda)"
+        description="Dados da loja usados nos documentos impressos (ordem de compra, contrato e venda), nas telas e na vitrine"
         action={
           <div className="flex flex-wrap gap-2">
             <LinkButton href="/parametros/renave" variant="secondary">

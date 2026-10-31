@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export default async function VerificarPagamentoPage({ params }: { params: Promi
     getCompany().catch(() => null),
   ]);
 
-  const empresa = company?.nomeFantasia || "MVP Veículos";
+  const empresa = nomeDaLoja(company);
 
   return (
     <div className="mx-auto flex min-h-screen max-w-lg flex-col justify-center px-4 py-10">

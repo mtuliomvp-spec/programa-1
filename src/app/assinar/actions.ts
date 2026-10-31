@@ -69,6 +69,7 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
       `<p style="margin:0 0 6px;font-size:14px;color:#0f172a"><strong>${rotulo}:</strong> ${escapar(valor)}</p>`;
     const r = await sendEmail({
       to: emailComercial(),
+      remetente: "Fincore360",
       subject: `Fincore360 — pedido de assinatura: ${nomeLoja} (${cidade}/${uf})`,
       html: emailLayout(
         "Novo pedido de assinatura",
@@ -81,6 +82,7 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
           linha("E-mail", email),
           mensagem ? linha("Mensagem", mensagem) : "",
         ].join(""),
+        "Fincore360",
       ),
     });
     if (r.ok) await prisma.pedidoAssinatura.update({ where: { id: pedido.id }, data: { avisado: true } });

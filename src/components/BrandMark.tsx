@@ -1,9 +1,10 @@
 import clsx from "@/lib/clsx";
 import { buildDateLabel, versaoLabel } from "@/lib/app-version";
+import { NOME_LOJA_PADRAO } from "@/lib/nome-loja";
 
 export default function BrandMark({
   dark = false,
-  name = "MVP Veículos",
+  name = NOME_LOJA_PADRAO,
   logoDataUrl = null,
 }: {
   dark?: boolean;

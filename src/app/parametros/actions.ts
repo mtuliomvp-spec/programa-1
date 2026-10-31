@@ -20,6 +20,7 @@ const schema = z.object({
   logoDataUrl: z.string().optional(),
   publicUrl: z.string().optional(),
   instagram: z.string().optional(),
+  slogan: z.string().max(80).optional(),
   googleAdsId: z.string().optional(),
   googleAdsLeadLabel: z.string().optional(),
   googleAnalyticsId: z.string().optional(),
@@ -67,7 +68,7 @@ export async function saveCompanyAction(
   // Domínio do site: valida e normaliza (aceita só o domínio; adiciona https://).
   const publicUrl = normalizePublicUrl(d.publicUrl);
   if (podeChaves && d.publicUrl && d.publicUrl.trim() && !publicUrl) {
-    return { error: "Domínio do site inválido. Ex.: mvpveiculos.com.br" };
+    return { error: "Domínio do site inválido. Ex.: sualoja.com.br" };
   }
 
   // Google: IDs públicos das tags. Validados pelo formato para um código
@@ -92,7 +93,7 @@ export async function saveCompanyAction(
   // Link da loja no Google Maps (Perfil da Empresa › Compartilhar).
   const googleMapsUrl = (d.googleMapsUrl || "").trim();
   if (googleMapsUrl && !/^https:\/\/(maps\.app\.goo\.gl|goo\.gl\/maps|(www\.)?google\.[a-z.]+\/maps|maps\.google\.[a-z.]+|g\.co\/kgs|g\.page)\//i.test(googleMapsUrl)) {
-    return { error: "Link do Google Maps inválido — no Maps, abra a MVP Veículos, toque em Compartilhar e copie o link (https://maps.app.goo.gl/… ou https://g.page/…)." };
+    return { error: "Link do Google Maps inválido — no Maps, abra a sua loja, toque em Compartilhar e copie o link (https://maps.app.goo.gl/… ou https://g.page/…)." };
   }
 
   const data = {
@@ -107,6 +108,7 @@ export async function saveCompanyAction(
     uf: d.uf ? d.uf.toUpperCase() : null,
     ...(podeChaves ? { publicUrl } : {}),
     instagram: d.instagram?.trim() || null,
+    slogan: d.slogan?.trim() || null,
     googleAdsId: googleAdsId || null,
     googleAdsLeadLabel: googleAdsLeadLabel || null,
     googleAnalyticsId: googleAnalyticsId || null,
