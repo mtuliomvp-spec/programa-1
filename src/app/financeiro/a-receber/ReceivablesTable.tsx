@@ -167,6 +167,7 @@ export default function ReceivablesTable({
                 <input
                   type="checkbox"
                   aria-label="Selecionar todas"
+                  data-guia="areceber.selecionar"
                   checked={allSelected}
                   onChange={toggleAll}
                   className="h-4 w-4 rounded border-slate-300"
@@ -197,6 +198,7 @@ export default function ReceivablesTable({
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${r.description}`}
+                      data-guia="areceber.selecionar"
                       checked={selected.has(r.id)}
                       onChange={() => toggle(r.id)}
                       className="h-4 w-4 rounded border-slate-300"

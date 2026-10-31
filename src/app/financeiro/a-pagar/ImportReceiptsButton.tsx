@@ -66,7 +66,7 @@ export default function ImportReceiptsButton() {
           if (f) void handleFile(f);
         }}
       />
-      <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+      <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy} data-guia="apagar.importcomprovantes">
         {busy ? "Lendo comprovantes…" : "📎 Importar comprovantes"}
       </Button>
 

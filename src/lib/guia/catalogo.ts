@@ -123,6 +123,55 @@ export const GUIA: Record<string, GuiaItem> = {
   },
 
   // --- Contas e caixas ------------------------------------------------------
+  "apagar.selecionar": {
+    titulo: "Selecionar contas",
+    oQueFaz: "Marca a conta (ou todas, no quadrinho do cabeçalho) para agir sobre ela.",
+    depois: [
+      "Aparece a barra azul com Pagar título, Já paguei, combo e Excluir (conforme a sua permissão).",
+      "Marcar não grava nada: dá para desmarcar à vontade.",
+    ],
+  },
+  "apagar.parcial": {
+    titulo: "Pagar parcial",
+    oQueFaz: "Paga só uma parte desta conta agora.",
+    precisa: ["Caixa aberto.", "Informar o valor pago agora e a conta de onde sai."],
+    depois: [
+      "A parte paga sai da conta escolhida, com a data de trabalho do caixa.",
+      "O saldo continua em aberto em Contas a pagar.",
+    ],
+  },
+  "apagar.reverter": {
+    titulo: "Reverter pagamento",
+    oQueFaz: "Desfaz a baixa de uma conta já paga.",
+    depois: [
+      "A conta volta a ficar em aberto, sem data de pagamento e sem conta de saída.",
+      "O valor deixa de contar como saída no saldo da conta.",
+    ],
+  },
+  "apagar.corrigirdata": {
+    titulo: "Corrigir data do pagamento",
+    oQueFaz: "Abre um campo para trocar só o dia em que este pagamento entrou no sistema.",
+    depois: ["O valor, a conta e o vencimento continuam como estão.", "Só grava depois do Confirmar."],
+  },
+  "apagar.importcomprovantes": {
+    titulo: "Importar comprovantes",
+    oQueFaz: "Lê o PDF de comprovantes do banco e anexa cada um à conta paga correspondente.",
+    precisa: ["O PDF de comprovantes (lote do banco)."],
+    depois: [
+      "O sistema procura a conta paga com o mesmo valor e data próxima e anexa o comprovante.",
+      "O que não encontrar volta numa lista para você anexar à mão.",
+      "Não paga nem muda valores.",
+    ],
+  },
+  "apagar.importnfs": {
+    titulo: "Importar NFs e orçamentos",
+    oQueFaz: "A IA lê NF-e (DANFE), orçamento, ordem de serviço, guia (IPVA, licenciamento, multa) ou relatório de duplicatas.",
+    precisa: ["O arquivo do fornecedor (PDF ou foto)."],
+    depois: [
+      "Mostra, parcela a parcela, o que vai lançar: conta nova ou anexo a uma já lançada.",
+      "Nada entra no financeiro antes de você conferir e clicar em \"Confirmar e lançar\".",
+    ],
+  },
   "caixa.data": {
     titulo: "Data de trabalho",
     oQueFaz: "O dia do movimento que vai ser aberto. Normalmente é hoje.",
@@ -367,6 +416,49 @@ export const GUIA: Record<string, GuiaItem> = {
   },
 
   // --- Renave (ficha do veículo) -------------------------------------------
+  "areceber.selecionar": {
+    titulo: "Selecionar contas",
+    oQueFaz: "Marca a conta (ou todas, no quadrinho do cabeçalho) para agir sobre ela.",
+    depois: [
+      "Aparece a barra com Receber título e Excluir (conforme a sua permissão).",
+      "Marcar não grava nada: dá para desmarcar à vontade.",
+    ],
+  },
+  "areceber.receberlinha": {
+    titulo: "Receber esta conta",
+    oQueFaz: "Abre os campos para registrar o recebimento só desta conta.",
+    precisa: ["Caixa aberto.", "Informar o valor recebido e a conta onde entrou.", "Observação é opcional."],
+    depois: [
+      "Só grava depois do Confirmar.",
+      "Recebendo menos que o total, o restante continua a receber (ou vira desconto, em venda de veículo).",
+    ],
+  },
+  "areceber.jacaiu": {
+    titulo: "Já caiu",
+    oQueFaz: "Para quando o dinheiro já entrou no banco, mas o caixa ainda não chegou nesse dia.",
+    precisa: ["Data em que entrou, valor e conta creditada.", "Comprovante é opcional (a IA lê a data)."],
+    depois: [
+      "A entrada fica pré-lançada (⏳), sem mexer no saldo ainda.",
+      "O crédito de verdade é confirmado em Contas e caixas, quando o caixa chegar nesse dia.",
+    ],
+    conferir: [{ rotulo: "Contas e caixas", href: "/financeiro/contas" }],
+  },
+  "areceber.nocapital": {
+    titulo: "Receber no capital",
+    oQueFaz: "Quita a conta abatendo do capital de um sócio, sem dinheiro entrar no caixa.",
+    precisa: ["Escolher o sócio e confirmar."],
+    depois: ["A conta fica recebida e o valor vira retirada de capital do sócio (o saldo dele diminui)."],
+  },
+  "areceber.reverter": {
+    titulo: "Reverter recebimento",
+    oQueFaz: "Desfaz o recebimento de uma conta já recebida.",
+    depois: ["A conta volta a ficar a receber.", "O valor deixa de contar como entrada no saldo da conta."],
+  },
+  "areceber.corrigirdata": {
+    titulo: "Corrigir data do recebimento",
+    oQueFaz: "Abre um campo para trocar só o dia em que este recebimento entrou no sistema.",
+    depois: ["O valor, a conta e o vencimento continuam como estão.", "Só grava depois do Confirmar."],
+  },
   "renave.atualizar": {
     titulo: "Atualizar do Renave",
     oQueFaz: "Busca no Renave a situação atual deste veículo: estoque, termos e anotações.",

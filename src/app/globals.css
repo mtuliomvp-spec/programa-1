@@ -36,3 +36,11 @@ body {
 @page {
   margin: 12mm;
 }
+
+/* Modo guia ligado: botões com explicação completa ficam com contorno tracejado. */
+@media screen {
+  html[data-guia-ligado] main [data-guia] {
+    outline: 2px dashed #818cf8;
+    outline-offset: 2px;
+  }
+}

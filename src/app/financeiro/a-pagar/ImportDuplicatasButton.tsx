@@ -399,7 +399,7 @@ export default function ImportDuplicatasButton() {
           if (fs.length) void handleFiles(fs);
         }}
       />
-      <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy}>
+      <Button type="button" variant="secondary" onClick={() => fileRef.current?.click()} disabled={busy} data-guia="apagar.importnfs">
         {busy ? "Lendo os documentos…" : "🧾 Importar NFs e orçamentos"}
       </Button>
 
