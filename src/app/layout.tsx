@@ -6,6 +6,8 @@ import SystemLockWatcher from "@/components/SystemLockWatcher";
 import PaymentBlockScreen from "@/components/PaymentBlockScreen";
 import { getSessionUser } from "@/lib/auth";
 import { nomeDaLoja } from "@/lib/nome-loja";
+import { isDemoMode } from "@/lib/demo-mode";
+import ModoGuia from "@/components/guia/ModoGuia";
 
 /** Título da aba com o nome da loja dos Parâmetros (cada instalação é de um cliente). */
 export async function generateMetadata(): Promise<Metadata> {
@@ -111,7 +113,10 @@ export default async function RootLayout({
         <Sidebar user={sessionUser} brand={brand} systemLocked={systemLocked} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <MobileNav user={sessionUser} brand={brand} systemLocked={systemLocked} />
-          <main className="flex-1 px-4 py-6 md:px-8 md:py-8">{children}</main>
+          <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
+            {isDemoMode() ? <ModoGuia /> : null}
+            {children}
+          </main>
         </div>
       </body>
     </html>
