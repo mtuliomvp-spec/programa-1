@@ -54,8 +54,11 @@ Contratado pela loja, pago direto ao fornecedor:
   Parâmetros › Consulta por placa.
 - Domínio próprio e Google Ads (opcional).
 
-No anúncio: a descrição 3 diz "Planos de R$ 399 e R$ 599/mês. Certificado
-digital e emissor de notas à parte".
+No anúncio: **sem preço** (decisão de 31/10/2026). Anúncio e banners
+destacam "Implantação grátis por tempo limitado" e a demonstração gratuita; os
+planos e preços ficam só na página /assinar, que mostra a data exata da
+promoção (até 15/11/2026) e o que a loja contrata à parte. A descrição 3 diz
+"Implantação grátis por tempo limitado. Certificado digital e notas à parte."
 
 Preço comparado com o mercado (31/10/2026): planos completos dos concorrentes
 ficam entre R$ 549 e R$ 799 por mês (Simples Veículo, GestorCar, Velix), e os
@@ -64,8 +67,10 @@ parte; por isso o plano de entrada.
 
 ## Pendências
 
-- [ ] **16/11/2026:** no Google Ads, pausar o título "Implantação Grátis até
-      15/11" e a frase de destaque da promoção; trocar os banners.
+- [ ] **16/11/2026:** se a promoção não for prorrogada, no Google Ads pausar o
+      título "Implantação Grátis", a frase de destaque e a descrição da
+      promoção; trocar os banners. Se for prorrogada, mudar a data em
+      `src/lib/assinatura-fincore.ts`.
 
 - [ ] Recarregar os dados do demo de vez em quando (/demo), porque os
       visitantes mexem nos dados.
