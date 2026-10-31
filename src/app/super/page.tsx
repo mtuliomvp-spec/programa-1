@@ -12,7 +12,7 @@ import {
 } from "@/lib/super-admin";
 import { listOnlineUsers, listRecentLogins, loginSummary } from "@/lib/presence";
 import { prisma } from "@/lib/prisma";
-import { paginaAssinaturaAtiva } from "@/lib/assinatura-fincore";
+import { implantacaoGratis, paginaAssinaturaAtiva, planoPorId } from "@/lib/assinatura-fincore";
 import { Badge, Card, CardHeader } from "@/components/ui";
 import OnlineUsers from "./OnlineUsers";
 import {
@@ -188,6 +188,14 @@ export default async function SuperPage() {
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <p className="font-medium text-slate-800">
                         {p.nomeLoja} <span className="font-normal text-slate-500">· {p.cidade}/{p.uf}</span>
+                        <span className="ml-2 inline-flex gap-1 align-middle">
+                          {planoPorId(p.plano) ? (
+                            <Badge tone="info">
+                              {planoPorId(p.plano)!.nome} · R$ {planoPorId(p.plano)!.preco}
+                            </Badge>
+                          ) : null}
+                          {implantacaoGratis(p.createdAt) ? <Badge tone="success">implantação grátis</Badge> : null}
+                        </span>
                       </p>
                       <span className="text-xs tabular-nums text-slate-500">{dataHora(p.createdAt)}</span>
                     </div>
