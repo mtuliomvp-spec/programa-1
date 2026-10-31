@@ -2531,6 +2531,8 @@ model PedidoAssinatura {
   whatsapp    String
   email       String
   mensagem    String?
+  // Plano escolhido no pedido: ESSENCIAL | COMPLETO
+  plano       String?
   // NOVO | EM_ANALISE | APROVADO | RECUSADO
   status      String   @default("NOVO")
   // O e-mail de aviso ao dono do sistema saiu? (sem provedor configurado, não)

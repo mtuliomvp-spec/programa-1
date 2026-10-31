@@ -5,12 +5,14 @@ import { UFS } from "@/lib/endereco";
 import { isDemoMode } from "@/lib/demo-mode";
 import {
   DIAS_ANALISE,
-  FRANQUIA_LEITURAS,
+  IMPLANTACAO_GRATIS_ATE,
+  PLANOS,
   PRECO_LEITURA_EXCEDENTE,
-  PRECO_MENSAL,
   TAXA_IMPLANTACAO,
   emailComercial,
+  implantacaoGratis,
   paginaAssinaturaAtiva,
+  planoPorId,
 } from "@/lib/assinatura-fincore";
 import PedidoForm from "./PedidoForm";
 import { entrarNaDemoAction } from "./actions";
@@ -20,7 +22,7 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
   title: "Fincore360 | Sistema para revendas de veículos com integração ao Renave",
   description:
-    "Sistema de gestão para revendas de carros novos e seminovos: estoque, vendas, financeiro, notas, títulos e integração com o Renave. Teste o sistema antes de contratar. Assinatura mensal, cadastro analisado em até 3 dias corridos.",
+    "Sistema de gestão para revendas de carros novos e seminovos: estoque, vendas, financeiro, notas, títulos e integração com o Renave. Teste o sistema antes de contratar. Planos a partir de R$ 399 por mês, cadastro analisado em até 3 dias corridos.",
   openGraph: {
     title: "Fincore360 — sistema para revendas de veículos",
     description: "Estoque, vendas, financeiro e Renave num só sistema.",
@@ -67,7 +69,7 @@ const RECURSOS: { titulo: string; texto: string }[] = [
 // lista é o detalhe. Mudou um fornecedor? Atualize aqui e no anúncio.
 const INCLUIDO: string[] = [
   "Hospedagem, banco de dados, cópias de segurança e atualizações do sistema",
-  `Leitura automática de documentos com inteligência artificial (CRLV, notas, boletos e guias): até ${FRANQUIA_LEITURAS} por mês`,
+  `Leitura automática de documentos com inteligência artificial (CRLV, notas, boletos e guias): ${PLANOS.map((p) => `até ${p.leituras} por mês no ${p.nome}`).join(" ou ")}`,
   "E-mails do sistema (acesso liberado, redefinição de senha)",
   "Busca de CEP e CNPJ e tabela FIPE pública por marca, modelo e ano",
   "Vitrine online dos seus carros no endereço do sistema",
@@ -115,8 +117,12 @@ const PASSOS: { titulo: string; texto: string }[] = [
  * Página de venda do Fincore360 — destino do anúncio do sistema. Pública, e
  * só existe onde `paginaAssinaturaAtiva()` (instalação de demonstração).
  */
-export default function AssinarPage() {
+export default async function AssinarPage({ searchParams }: { searchParams: Promise<{ plano?: string }> }) {
   if (!paginaAssinaturaAtiva()) notFound();
+  const sp = await searchParams;
+  // O botão de cada plano traz ?plano=… e o formulário já abre com ele marcado.
+  const planoInicial = planoPorId(sp.plano?.toUpperCase())?.id ?? "COMPLETO";
+  const gratis = implantacaoGratis();
   const email = emailComercial();
   const podeTestar = isDemoMode();
   const btn =
@@ -143,6 +149,11 @@ export default function AssinarPage() {
               <p className="text-sm font-semibold tracking-wider text-[#2BD18A] uppercase">
                 Para revendas de carros novos e seminovos
               </p>
+              {gratis ? (
+                <p className="mt-4 inline-flex rounded-full bg-[#2BD18A]/15 px-3 py-1 text-sm font-semibold text-[#5BE3A8]">
+                  Lançamento: implantação grátis para pedidos até {IMPLANTACAO_GRATIS_ATE}
+                </p>
+              ) : null}
               <h1 className="mt-4 text-4xl leading-tight font-extrabold tracking-tight sm:text-5xl">
                 Renave na sua revenda, sem complicação.
               </h1>
@@ -171,14 +182,29 @@ export default function AssinarPage() {
             </div>
 
             <div className="rounded-2xl border border-[#2A3B57] bg-[#17263D] p-6 sm:p-8">
-              <p className="text-sm font-semibold tracking-wider text-[#2BD18A] uppercase">Assinatura</p>
-              <p className="mt-2 text-5xl font-extrabold tracking-tight">
-                {brl(PRECO_MENSAL)}
-                <span className="text-lg font-semibold text-slate-300"> por mês</span>
-              </p>
+              <p className="text-sm font-semibold tracking-wider text-[#2BD18A] uppercase">Planos</p>
+              <div className="mt-3 space-y-3">
+                {PLANOS.map((p) => (
+                  <a
+                    key={p.id}
+                    href={`?plano=${p.id.toLowerCase()}#pedido`}
+                    className={`block rounded-xl border px-4 py-3 transition-colors hover:border-[#2BD18A] ${
+                      p.destaque ? "border-[#2BD18A]/60 bg-[#2BD18A]/5" : "border-[#2A3B57]"
+                    }`}
+                  >
+                    <span className="flex flex-wrap items-baseline justify-between gap-x-3">
+                      <span className="text-lg font-bold">{p.nome}</span>
+                      <span className="text-2xl font-extrabold tracking-tight">
+                        {brl(p.preco)}
+                        <span className="text-sm font-semibold text-slate-300"> /mês</span>
+                      </span>
+                    </span>
+                    <span className="block text-sm text-slate-300">até {p.leituras} leituras automáticas de documentos por mês</span>
+                  </a>
+                ))}
+              </div>
               <ul className="mt-5 space-y-2 text-slate-200">
-                <li>Sistema completo, 100% online</li>
-                <li>Inclui até {FRANQUIA_LEITURAS} leituras automáticas de documentos por mês</li>
+                <li>O mesmo sistema completo nos dois planos, 100% online</li>
                 <li>Leitura excedente: {brl(PRECO_LEITURA_EXCEDENTE)} cada</li>
                 <li>Cadastro analisado em até {DIAS_ANALISE} dias corridos</li>
                 <li className="text-slate-300">
@@ -189,8 +215,18 @@ export default function AssinarPage() {
                 </li>
               </ul>
               <p className="mt-5 border-t border-[#2A3B57] pt-4 text-sm text-slate-300">
-                Implantação: <strong className="text-white">{brl(TAXA_IMPLANTACAO)}</strong> (pagamento único) —
-                configuração, cadastro inicial e treinamento da equipe.
+                {gratis ? (
+                  <>
+                    Implantação: <strong className="text-[#5BE3A8]">grátis</strong> para pedidos enviados até{" "}
+                    {IMPLANTACAO_GRATIS_ATE} (depois, {brl(TAXA_IMPLANTACAO)}, pagamento único) — configuração,
+                    cadastro inicial e treinamento da equipe.
+                  </>
+                ) : (
+                  <>
+                    Implantação: <strong className="text-white">{brl(TAXA_IMPLANTACAO)}</strong> (pagamento único) —
+                    configuração, cadastro inicial e treinamento da equipe.
+                  </>
+                )}
               </p>
             </div>
           </div>
@@ -223,7 +259,7 @@ export default function AssinarPage() {
             </h2>
             <div className="mt-8 grid gap-6 lg:grid-cols-2">
               <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-6">
-                <h3 className="text-lg font-bold">Incluído nos {brl(PRECO_MENSAL)} por mês</h3>
+                <h3 className="text-lg font-bold">Incluído na assinatura (nos dois planos)</h3>
                 <ul className="mt-4 space-y-2.5 text-sm leading-relaxed text-slate-700">
                   {INCLUIDO.map((t) => (
                     <li key={t} className="flex gap-2.5">
@@ -317,7 +353,7 @@ export default function AssinarPage() {
             .
           </p>
           <div className="mt-6 rounded-2xl border border-slate-200 p-5 sm:p-7">
-            <PedidoForm ufs={UFS} email={email} dias={DIAS_ANALISE} />
+            <PedidoForm ufs={UFS} email={email} dias={DIAS_ANALISE} planos={PLANOS} planoInicial={planoInicial} />
           </div>
         </section>
       </main>

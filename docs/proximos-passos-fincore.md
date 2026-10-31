@@ -19,8 +19,12 @@ MVP (809-803-7592), em nome do **CNPJ da Fincore**.
 ## O que já está pronto
 
 - Página de venda: **programa-1-demo.vercel.app/assinar** (só no demo).
-  - R$ 599/mês, com até 500 leituras de documento incluídas (excedente de
-    R$ 0,40 cada) e implantação de R$ 790.
+  - Dois planos, o mesmo sistema: **Essencial R$ 399/mês** (150 leituras de
+    documento) e **Completo R$ 599/mês** (500 leituras). Excedente de R$ 0,40
+    por leitura. Implantação de R$ 790, **grátis para pedidos até 15/11/2026**
+    (a página volta a cobrar sozinha depois da data).
+  - O pedido grava o plano escolhido; o Painel Super Admin mostra o plano e se
+    a implantação é grátis.
   - Formulário "Solicite seu acesso": os pedidos aparecem no Painel Super
     Admin do demo.
   - Botão "Testar o sistema": entra no demo como visitante compartilhado. Não
@@ -37,8 +41,8 @@ Está na página /assinar, seção "O que está incluído e o que a loja contrat
 
 Incluído na mensalidade (contas da Fincore):
 - Hospedagem e banco (Vercel + Neon), backup e atualizações.
-- IA de leitura de documentos (Anthropic): franquia de 500 por mês, excedente
-  de R$ 0,40.
+- IA de leitura de documentos (Anthropic): franquia de 150 (Essencial) ou 500
+  (Completo) por mês, excedente de R$ 0,40.
 - E-mail do sistema (Brevo).
 - CEP (ViaCEP), CNPJ (BrasilAPI) e FIPE pública (parallelum): gratuitas.
 
@@ -50,10 +54,18 @@ Contratado pela loja, pago direto ao fornecedor:
   Parâmetros › Consulta por placa.
 - Domínio próprio e Google Ads (opcional).
 
-No anúncio: a descrição 3 diz "Certificado digital e emissor de notas
-contratados à parte".
+No anúncio: a descrição 3 diz "Planos de R$ 399 e R$ 599/mês. Certificado
+digital e emissor de notas à parte".
+
+Preço comparado com o mercado (31/10/2026): planos completos dos concorrentes
+ficam entre R$ 549 e R$ 799 por mês (Simples Veículo, GestorCar, Velix), e os
+de entrada entre R$ 120 e R$ 400. Vários incluem a NF-e, que no Fincore é à
+parte; por isso o plano de entrada.
 
 ## Pendências
+
+- [ ] **16/11/2026:** no Google Ads, pausar o título "Implantação Grátis até
+      15/11" e a frase de destaque da promoção; trocar os banners.
 
 - [ ] Recarregar os dados do demo de vez em quando (/demo), porque os
       visitantes mexem nos dados.

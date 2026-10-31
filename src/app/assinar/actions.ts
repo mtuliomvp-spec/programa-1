@@ -8,11 +8,11 @@ import { redirect } from "next/navigation";
 import { isDemoMode } from "@/lib/demo-mode";
 import { setSessionCookie } from "@/lib/auth";
 import { garantirVisitante } from "@/lib/demo-visitante";
-import { emailComercial, paginaAssinaturaAtiva } from "@/lib/assinatura-fincore";
+import { emailComercial, implantacaoGratis, paginaAssinaturaAtiva, planoPorId } from "@/lib/assinatura-fincore";
 
 export type PedidoState = { ok?: boolean; error?: string; valores?: Record<string, string> };
 
-const CAMPOS = ["nomeLoja", "cnpj", "responsavel", "whatsapp", "email", "cidade", "uf", "mensagem"] as const;
+const CAMPOS = ["plano", "nomeLoja", "cnpj", "responsavel", "whatsapp", "email", "cidade", "uf", "mensagem"] as const;
 
 const texto = (fd: FormData, k: string, max = 120) => String(fd.get(k) ?? "").trim().slice(0, max);
 
@@ -45,7 +45,9 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
   const whatsapp = texto(fd, "whatsapp", 30).replace(/\D/g, "");
   const cnpj = texto(fd, "cnpj", 30).replace(/\D/g, "");
   const mensagem = texto(fd, "mensagem", 1000);
+  const plano = planoPorId(texto(fd, "plano", 20));
 
+  if (!plano) return { error: "Escolha o plano." };
   if (!nomeLoja || !responsavel || !cidade) return { error: "Preencha o nome da loja, o responsável e a cidade." };
   if (!(UFS as readonly string[]).includes(uf)) return { error: "Escolha o estado (UF)." };
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: "Confira o e-mail." };
@@ -61,7 +63,7 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
   if (recente) return { ok: true };
 
   const pedido = await prisma.pedidoAssinatura.create({
-    data: { nomeLoja, responsavel, cidade, uf, email, whatsapp, cnpj: cnpj || null, mensagem: mensagem || null },
+    data: { plano: plano.id, nomeLoja, responsavel, cidade, uf, email, whatsapp, cnpj: cnpj || null, mensagem: mensagem || null },
   });
 
   if (isEmailConfigured()) {
@@ -74,6 +76,7 @@ async function validarEGravar(fd: FormData): Promise<PedidoState> {
       html: emailLayout(
         "Novo pedido de assinatura",
         [
+          linha("Plano", `${plano.nome} (R$ ${plano.preco}/mês)${implantacaoGratis() ? " · implantação grátis (lançamento)" : ""}`),
           linha("Loja", nomeLoja),
           cnpj ? linha("CNPJ", cnpj) : "",
           linha("Responsável", responsavel),

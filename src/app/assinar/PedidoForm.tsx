@@ -4,9 +4,22 @@ import Link from "next/link";
 import { useActionState } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { pedirAssinaturaAction, type PedidoState } from "./actions";
+import type { Plano } from "@/lib/assinatura-fincore";
 
 /** Formulário "Solicite seu acesso" da página /assinar. */
-export default function PedidoForm({ ufs, email, dias }: { ufs: readonly string[]; email: string; dias: number }) {
+export default function PedidoForm({
+  ufs,
+  email,
+  dias,
+  planos,
+  planoInicial,
+}: {
+  ufs: readonly string[];
+  email: string;
+  dias: number;
+  planos: readonly Plano[];
+  planoInicial: string;
+}) {
   const [state, action, pending] = useActionState(pedirAssinaturaAction, {} as PedidoState);
   const v = state.valores ?? {};
 
@@ -41,6 +54,33 @@ export default function PedidoForm({ ufs, email, dias }: { ufs: readonly string[
           <input name="site" tabIndex={-1} autoComplete="off" />
         </label>
       </div>
+
+      <fieldset>
+        <legend className="mb-2 text-sm font-medium text-slate-700">Plano</legend>
+        <div className="grid gap-3 sm:grid-cols-2">
+          {planos.map((p) => (
+            <label
+              key={p.id}
+              className="flex cursor-pointer items-center gap-3 rounded-xl border border-slate-300 px-4 py-3 has-[:checked]:border-[#1A3D8F] has-[:checked]:bg-blue-50"
+            >
+              <input
+                type="radio"
+                name="plano"
+                value={p.id}
+                required
+                defaultChecked={(v.plano || planoInicial) === p.id}
+                className="h-4 w-4 shrink-0"
+              />
+              <span className="text-sm">
+                <strong className="block text-slate-900">
+                  {p.nome} · R$ {p.preco}/mês
+                </strong>
+                <span className="text-slate-600">até {p.leituras} leituras de documento por mês</span>
+              </span>
+            </label>
+          ))}
+        </div>
+      </fieldset>
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Nome da loja" required>
