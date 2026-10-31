@@ -28,6 +28,30 @@ MVP (809-803-7592), em nome do **CNPJ da Fincore**.
   - Política de privacidade em /assinar/privacidade.
 - Layout do anúncio, com títulos, descrições, sitelinks e banners. URL final:
   `https://programa-1-demo.vercel.app/assinar`.
+- Nome da loja: vem de Parâmetros (nome fantasia) em todas as telas, nos e-mails,
+  no PDF e na vitrine. Slogan da vitrine também é um campo de Parâmetros.
+
+## APIs: o que a Fincore paga e o que a loja contrata
+
+Está na página /assinar, seção "O que está incluído e o que a loja contrata".
+
+Incluído na mensalidade (contas da Fincore):
+- Hospedagem e banco (Vercel + Neon), backup e atualizações.
+- IA de leitura de documentos (Anthropic): franquia de 500 por mês, excedente
+  de R$ 0,40.
+- E-mail do sistema (Brevo).
+- CEP (ViaCEP), CNPJ (BrasilAPI) e FIPE pública (parallelum): gratuitas.
+
+Contratado pela loja, pago direto ao fornecedor:
+- Certificado digital e-CNPJ A1 (obrigatório para o Renave).
+- Adesão e contrato da loja com o SERPRO para o Renave.
+- Focus NFe (opcional, só para emitir NF-e/NFS-e pelo sistema).
+- Consulta por placa e débitos, ex.: wdapi2 (opcional). O token vai em
+  Parâmetros › Consulta por placa.
+- Domínio próprio e Google Ads (opcional).
+
+No anúncio: a descrição 3 diz "Certificado digital e emissor de notas
+contratados à parte".
 
 ## Pendências
 
@@ -39,17 +63,6 @@ MVP (809-803-7592), em nome do **CNPJ da Fincore**.
 - [ ] Vercel Pro, porque o plano gratuito não permite uso comercial.
 - [ ] Configurar um provedor de e-mail no demo (Brevo), para os pedidos chegarem
       no e-mail.
-- [ ] **Antes de anunciar:** trocar o "MVP Veículos" que está fixo no código pelo
-      nome fantasia de Parâmetros. O demo já se chama "Demo Veículos", mas o nome
-      da MVP ainda aparece em cerca de 25 pontos, entre eles:
-      - painel inicial ("Visão geral da MVP Veículos"), Parâmetros e Relatórios;
-      - tela de login, título da aba do navegador e cabeçalho dos relatórios
-        impressos/PDF;
-      - texto do documento de venda;
-      - opção "MVP Veículos (empresa)" nas contas financeiras;
-      - marca d'água da foto do cliente;
-      - assunto e remetente dos e-mails;
-      - slogan "Desde 2001 — Fazendo mais por você!" na vitrine.
 - [ ] Opcional: domínio próprio para o Fincore360.
 
 ## Campanha da MVP (acompanhar)

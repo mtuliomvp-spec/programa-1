@@ -1,5 +1,7 @@
 import BrandMark from "@/components/BrandMark";
 import ResetForm from "./ResetForm";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -9,12 +11,13 @@ export default async function RedefinirSenhaPage({
   searchParams: Promise<{ token?: string }>;
 }) {
   const { token } = await searchParams;
+  const company = await getCompany().catch(() => null);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
       <div className="w-full max-w-sm">
         <div className="mb-6 flex justify-center">
-          <BrandMark />
+          <BrandMark name={nomeDaLoja(company)} logoDataUrl={company?.logoDataUrl ?? null} />
         </div>
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-xl">
           <h1 className="text-lg font-bold text-slate-900">Criar nova senha</h1>

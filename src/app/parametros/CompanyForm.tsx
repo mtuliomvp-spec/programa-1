@@ -18,6 +18,7 @@ type Company = {
   logoDataUrl: string | null;
   publicUrl: string | null;
   instagram: string | null;
+  slogan: string | null;
   googleAdsId: string | null;
   googleAdsLeadLabel: string | null;
   googleAnalyticsId: string | null;
@@ -175,13 +176,13 @@ export default function CompanyForm({
               <Input
                 name="publicUrl"
                 defaultValue={company.publicUrl || ""}
-                placeholder="mvpveiculos.com.br"
+                placeholder="sualoja.com.br"
               />
             </Field>
             <p className="mt-2 text-xs text-slate-500">
               Usado para montar os links públicos: os QR Codes da Ficha de Negócio e da Ordem de
               Pagamento, a vitrine e o endereço que aparece no Google. Pode digitar só o domínio
-              (ex.: <strong>mvpveiculos.com.br</strong>) — o <em>https://</em> é adicionado
+              (ex.: <strong>sualoja.com.br</strong>) — o <em>https://</em> é adicionado
               automaticamente. Deixe em branco para usar o endereço pelo qual o sistema for aberto.
             </p>
           </>
@@ -201,11 +202,19 @@ export default function CompanyForm({
         )}
         <div className="mt-3">
           <Field label="Instagram da loja">
-            <Input name="instagram" defaultValue={company.instagram || ""} placeholder="@mvpveiculos" />
+            <Input name="instagram" defaultValue={company.instagram || ""} placeholder="@sualoja" />
           </Field>
         </div>
         <p className="mt-2 text-xs text-slate-500">
           Aparece no rodapé da vitrine pública. Pode ser o @usuario ou o link completo do perfil.
+        </p>
+        <div className="mt-3">
+          <Field label="Slogan da loja">
+            <Input name="slogan" defaultValue={company.slogan || ""} placeholder="Ex.: Qualidade e confiança desde o primeiro dia" maxLength={80} />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Destaque da vitrine pública (faixa de boas-vindas e rodapé). Em branco, a vitrine mostra o nome da loja.
         </p>
       </div>
 
@@ -234,7 +243,7 @@ export default function CompanyForm({
             />
           </Field>
           <Field label="Loja existe desde (ano)">
-            <Input name="anoFundacao" defaultValue={company.anoFundacao ?? ""} placeholder="2001" inputMode="numeric" maxLength={4} />
+            <Input name="anoFundacao" defaultValue={company.anoFundacao ?? ""} placeholder="2010" inputMode="numeric" maxLength={4} />
           </Field>
           <Field label="Link da loja no Google Maps">
             <Input
@@ -248,7 +257,7 @@ export default function CompanyForm({
           O ID e o rótulo saem do Google Ads em <em>Metas › Conversões › nova ação de conversão › Site</em>{" "}
           (no “snippet do evento”: <code>send_to: &apos;AW-…/rótulo&apos;</code>). O ano de fundação vai para os
           dados que o Google lê da loja e para o texto da vitrine. O link do Google Maps (no Maps, abra a loja ›
-          Compartilhar › copiar link) faz o botão &quot;Google Maps&quot; da vitrine abrir exatamente a MVP.
+          Compartilhar › copiar link) faz o botão &quot;Google Maps&quot; da vitrine abrir exatamente a sua loja.
         </p>
       </div>
 

@@ -5,12 +5,17 @@ import MobileNav from "@/components/MobileNav";
 import SystemLockWatcher from "@/components/SystemLockWatcher";
 import PaymentBlockScreen from "@/components/PaymentBlockScreen";
 import { getSessionUser } from "@/lib/auth";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
-export const metadata: Metadata = {
-  title: "MVP Veículos — Gestão de Seminovos",
-  description:
-    "Sistema de gestão da MVP Veículos: estoque, vendas, custos, financeiro e relatórios integrados",
-};
+/** Título da aba com o nome da loja dos Parâmetros (cada instalação é de um cliente). */
+export async function generateMetadata(): Promise<Metadata> {
+  const { getCompany } = await import("@/lib/company");
+  const nome = nomeDaLoja(await getCompany().catch(() => null));
+  return {
+    title: `${nome} — Gestão de Seminovos`,
+    description: `Sistema de gestão da ${nome}: estoque, vendas, custos, financeiro e relatórios integrados`,
+  };
+}
 
 export const viewport: Viewport = {
   width: "device-width",
@@ -52,7 +57,7 @@ export default async function RootLayout({
   const { getCompany } = await import("@/lib/company");
   const company = await getCompany().catch(() => null);
   const brand = {
-    name: company?.nomeFantasia || "MVP Veículos",
+    name: nomeDaLoja(company),
     logoDataUrl: company?.logoDataUrl || null,
   };
   const systemLocked = !!company?.systemLocked;
@@ -98,7 +103,10 @@ export default async function RootLayout({
 
   return (
     <html lang="pt-BR" className="h-full antialiased">
-      <body className="flex h-full min-h-screen bg-[var(--background)] text-[var(--foreground)]">
+      <body
+        className="flex h-full min-h-screen bg-[var(--background)] text-[var(--foreground)]"
+        data-loja={brand.name}
+      >
         <SystemLockWatcher initialLocked={systemLocked} isAdmin={isAdmin} />
         <Sidebar user={sessionUser} brand={brand} systemLocked={systemLocked} />
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">

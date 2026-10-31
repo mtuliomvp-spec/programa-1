@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { getCompany } from "@/lib/company";
 import { formatCurrency, formatDate } from "@/lib/format";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +22,7 @@ export default async function VerificarFichaPage({ params }: { params: Promise<{
     getCompany().catch(() => null),
   ]);
 
-  const empresa = company?.nomeFantasia || "MVP Veículos";
+  const empresa = nomeDaLoja(company);
 
   const [vehicle, customer] = pre
     ? await Promise.all([

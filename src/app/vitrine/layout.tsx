@@ -4,6 +4,7 @@ import { getSessionUser } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import GoogleTags from "./GoogleTags";
 import { cidadeDaLoja } from "@/lib/loja-local";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 /** Verificação do Search Console (meta tag) para o domínio da vitrine. */
 export async function generateMetadata(): Promise<Metadata> {
@@ -26,7 +27,7 @@ export default async function VitrineLayout({ children }: { children: React.Reac
     getSessionUser().catch(() => null),
     getBaseUrl().catch(() => ""),
   ]);
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   const telefone = (company?.phone || "").replace(/\D/g, "");
   const loja = {
     "@context": "https://schema.org",

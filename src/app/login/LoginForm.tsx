@@ -13,7 +13,7 @@ import {
 
 type Mode = "login" | "signup" | "forgot";
 
-export default function LoginForm({ isSetup, next }: { isSetup: boolean; next?: string }) {
+export default function LoginForm({ isSetup, next, loja }: { isSetup: boolean; next?: string; loja: string }) {
   const [mode, setMode] = useState<Mode>("login");
   const [loginState, loginFormAction, loginPending] = useActionState(
     isSetup ? setupAdminAction : loginAction,
@@ -86,7 +86,7 @@ export default function LoginForm({ isSetup, next }: { isSetup: boolean; next?: 
                 />
               </Field>
               <p className="-mt-2 text-xs text-slate-400">
-                Peça o código ao administrador da MVP Veículos antes de se cadastrar — sem ele o cadastro não prossegue.
+                Peça o código ao administrador da {loja} antes de se cadastrar — sem ele o cadastro não prossegue.
               </p>
               <Button type="submit" disabled={signupPending} className="w-full">
                 {signupPending ? "Enviando..." : "Cadastrar meu acesso"}

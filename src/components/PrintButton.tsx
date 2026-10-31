@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Button } from "@/components/ui";
+import { nomeDaLojaNoNavegador } from "@/lib/nome-loja";
 
 /**
  * Limites de segurança para o canvas gerado pelo html2canvas. Navegadores têm
@@ -100,7 +101,7 @@ export default function PrintButton({
       doc.setFont("helvetica", "normal");
       doc.setFontSize(10);
       doc.setTextColor(30, 30, 30);
-      doc.text(`MVP Veículos · ${reportTitle}`, margin, margin + 8);
+      doc.text(`${nomeDaLojaNoNavegador()} · ${reportTitle}`, margin, margin + 8);
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
       doc.text(`Emitido em ${emittedAt} · pág. ${i}/${total}`, pageW - margin, margin + 8, {

@@ -1,6 +1,7 @@
 import type { CompanySettings } from "@prisma/client";
 import ContatoWhatsApp from "./ContatoWhatsApp";
 import { enderecoDaLoja, linksDeMapaDaLoja } from "@/lib/loja-local";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 /** Peças compartilhadas das páginas públicas da vitrine (tema, rodapé, zap flutuante). */
 
@@ -28,7 +29,7 @@ function instagramHandle(v: string): string {
 }
 
 export function PublicFooter({ company }: { company: CompanySettings | null }) {
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   // Mesmo endereço e links da página de login: o mapa procura a LOJA (nome +
   // endereço, ou o link do Perfil da Empresa), não só o endereço.
   const endereco = enderecoDaLoja(company);
@@ -75,7 +76,7 @@ export function PublicFooter({ company }: { company: CompanySettings | null }) {
       ) : null}
 
       <div className="space-y-1.5 text-xs text-slate-500 dark:text-slate-400">
-        <p className="font-semibold text-slate-700 dark:text-slate-300">{nome} · Desde 2001 — Fazendo mais por você!</p>
+        <p className="font-semibold text-slate-700 dark:text-slate-300">{[nome, company?.anoFundacao ? `Desde ${company.anoFundacao}` : null, company?.slogan].filter(Boolean).join(" · ")}</p>
         <p className="flex items-center justify-center gap-3">
           {company?.phone && telDigits.length >= 10 ? (
             <a href={`tel:+55${telDigits}`} className="hover:underline">

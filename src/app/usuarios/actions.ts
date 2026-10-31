@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { getSessionUser, hashPassword } from "@/lib/auth";
 import { ensureWaitingProfile } from "@/lib/waiting-profile";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 import { linkBeneficiaryToUser, unlinkBeneficiary, renameLinkedPair } from "@/lib/capital-user-link";
 import { syncUserSupplier } from "@/lib/user-supplier-link";
 
@@ -310,14 +312,17 @@ export async function approveUserAction(id: string) {
     // Quem cai em espera ainda não vê tela nenhuma: o aviso precisa dizer isso,
     // senão a pessoa entra, encontra o cadeado e acha que o sistema quebrou.
     const semPermissao = user.permissions.length === 0;
+    const loja = nomeDaLoja(await getCompany().catch(() => null));
     await sendEmail({
       to: user.email,
-      subject: "Seu acesso foi liberado - MVP Veículos",
+      remetente: loja,
+      subject: `Seu acesso foi liberado - ${loja}`,
       html: emailLayout(
         "Acesso liberado! 🎉",
         semPermissao
           ? `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado e você já consegue entrar com seu e-mail e a senha que criou. As telas do sistema aparecem assim que o gestor definir o seu perfil de acesso — até lá você verá um aviso ao entrar.</p>`
           : `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Seu cadastro foi aprovado. Você já pode entrar no sistema com seu e-mail e a senha que criou.</p>`,
+        loja,
       ),
     });
   }

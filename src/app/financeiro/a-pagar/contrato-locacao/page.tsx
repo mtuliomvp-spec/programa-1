@@ -8,18 +8,22 @@ export default async function ContratoLocacaoPage() {
   await requireModule("financeiro");
   await requireAction("financeiro", "contratolocacao");
 
-  // Pré-preenchido com o contrato atual (Leonardo × MVP); editável e reutilizável.
+  // Começa em branco: cada instalação é de uma loja, e o contrato de uma não
+  // pode aparecer pré-preenchido na outra. Primeiro vencimento sugerido: dia 10
+  // do mês que vem.
+  const hoje = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
   const defaults = {
-    locador: "Leonardo Costa de Souza",
-    valorAluguel: 4500,
-    descontoMensal: 1000,
-    mesesDesconto: 48,
-    totalMeses: 60,
-    mesesCarencia: 4,
-    primeiroVencimento: "2026-08-10",
+    locador: "",
+    valorAluguel: 0,
+    descontoMensal: 0,
+    mesesDesconto: 0,
+    totalMeses: 12,
+    mesesCarencia: 0,
+    primeiroVencimento: iso(new Date(Date.UTC(hoje.getFullYear(), hoje.getMonth() + 1, 10))),
     diaVencimento: 10,
-    caucaoValor: 4500,
-    caucaoData: "2026-07-10",
+    caucaoValor: 0,
+    caucaoData: iso(hoje),
   };
 
   return (

@@ -17,6 +17,8 @@ import CashFlowChart from "@/components/CashFlowChart";
 import PatrimonialCard from "@/components/PatrimonialCard";
 import DemoBanner from "@/components/DemoBanner";
 import { getSessionUser } from "@/lib/auth";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 import { hasModuleAccess } from "@/lib/permissions";
 import { firstAccessibleHref } from "@/lib/nav";
 
@@ -102,7 +104,7 @@ export default async function DashboardPage() {
     <div>
       <PageHeader
         title="Dashboard"
-        description="Visão geral da MVP Veículos: estoque, vendas e financeiro"
+        description={`Visão geral da ${nomeDaLoja(await getCompany().catch(() => null))}: estoque, vendas e financeiro`}
         action={
           <Link href="/relatorios" className="text-sm font-medium text-blue-700 hover:underline">
             Ver relatórios completos →

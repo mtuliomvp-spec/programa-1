@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { uploadClientPhotoAction } from "../actions";
+import { nomeDaLojaNoNavegador } from "@/lib/nome-loja";
 
 type Coords = { latitude: number; longitude: number; accuracy: number };
 
@@ -140,7 +141,7 @@ async function stampPhoto(file: File, coords: Coords | null, address: string | n
   const maxTextWidth = w - pad * 2;
 
   const now = new Date();
-  const linhas: string[] = [`MVP Veículos · ${now.toLocaleString("pt-BR")}`];
+  const linhas: string[] = [`${nomeDaLojaNoNavegador()} · ${now.toLocaleString("pt-BR")}`];
   if (address) linhas.push(...wrapText(ctx, `📍 ${address}`, maxTextWidth));
   linhas.push(
     coords

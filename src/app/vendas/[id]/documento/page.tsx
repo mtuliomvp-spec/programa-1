@@ -173,7 +173,7 @@ export default async function DocumentoVendaPage({ params }: { params: Promise<{
             </div>
             <p className="mt-2 text-xs text-slate-500">
               O(A) comprador(a) entrega o veículo acima como parte do pagamento. A COMPRADORA
-              (MVP Veículos) assume a quitação do financiamento e os débitos indicados, cabendo ao
+              ({company.razaoSocial}) assume a quitação do financiamento e os débitos indicados, cabendo ao
               comprador o valor líquido aproveitado como entrada desta venda.
             </p>
           </section>

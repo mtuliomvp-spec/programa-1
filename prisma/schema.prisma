@@ -2170,8 +2170,8 @@ model CompanySettings {
   id                       String    @id @default("company")
   // Simulador de financiamento na vitrine pública (desligado por padrão).
   showroomSimulator        Boolean   @default(false)
-  razaoSocial              String    @default("MVP Veículos")
-  nomeFantasia             String    @default("MVP Veículos")
+  razaoSocial              String    @default("Sua Revenda")
+  nomeFantasia             String    @default("Sua Revenda")
   cnpj                     String?
   inscricaoEstadual        String?
   phone                    String?
@@ -2185,6 +2185,9 @@ model CompanySettings {
   publicUrl                String?
   // Instagram da loja (@usuario ou URL) — aparece no rodapé da vitrine pública.
   instagram                String?
+  // Slogan da loja: o destaque da faixa de boas-vindas e do rodapé da vitrine.
+  // Vazio = a vitrine mostra só o nome da loja.
+  slogan                   String?
   // Google (vitrine pública): IDs PÚBLICOS das tags — nada aqui é senha.
   //  - googleAdsId "AW-123…" e o rótulo da conversão "lead" (clique no
   //    WhatsApp/telefone): é o que o Google Ads usa para otimizar as campanhas;

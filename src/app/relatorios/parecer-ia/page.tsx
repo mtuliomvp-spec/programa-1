@@ -20,7 +20,7 @@ export default async function ParecerIAPage() {
         <CardHeader title="Parecer geral da loja" />
         <div className="space-y-4 p-5">
           <p className="text-sm text-slate-600">
-            A IA analisa os números da MVP (saúde financeira, giro de estoque, desempenho de vendas e
+            A IA analisa os números da loja (saúde financeira, giro de estoque, desempenho de vendas e
             margem, caixa e inadimplência) desde o início das atividades da loja e emite um parecer
             com riscos e recomendações práticas — baixado em PDF.
           </p>

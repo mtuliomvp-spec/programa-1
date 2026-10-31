@@ -11,9 +11,11 @@ import "server-only";
  *
  * Sem nenhuma chave configurada, o sistema segue no modo "avisar o
  * administrador" (sem e-mail).
+ *
+ * O nome do remetente e o do cabeçalho vêm de quem chama (o nome da loja dos
+ * Parâmetros, ou "Fincore360" nos avisos comerciais) — cada instalação é de
+ * um cliente, então nada de nome de loja fixo aqui.
  */
-
-const FROM_NAME = "MVP Veículos";
 
 export function isEmailConfigured(): boolean {
   return Boolean(
@@ -25,6 +27,8 @@ export async function sendEmail(input: {
   to: string;
   subject: string;
   html: string;
+  /** Nome que aparece como remetente. */
+  remetente: string;
 }): Promise<{ ok: boolean; error?: string }> {
   const from = process.env.EMAIL_FROM;
   if (!from) return { ok: false, error: "EMAIL_FROM não configurado" };
@@ -39,7 +43,7 @@ export async function sendEmail(input: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          sender: { name: FROM_NAME, email: from },
+          sender: { name: input.remetente, email: from },
           to: [{ email: input.to }],
           subject: input.subject,
           htmlContent: input.html,
@@ -61,7 +65,7 @@ export async function sendEmail(input: {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          from: `${FROM_NAME} <${from}>`,
+          from: `${input.remetente.replace(/[<>"]/g, "")} <${from}>`,
           to: [input.to],
           subject: input.subject,
           html: input.html,
@@ -80,11 +84,15 @@ export async function sendEmail(input: {
   }
 }
 
-export function emailLayout(title: string, bodyHtml: string): string {
+function escaparHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+export function emailLayout(title: string, bodyHtml: string, marca: string): string {
   return `
   <div style="background:#f1f5f9;padding:32px 16px;font-family:Arial,Helvetica,sans-serif">
     <div style="max-width:480px;margin:0 auto;background:#ffffff;border-radius:12px;padding:32px">
-      <p style="margin:0 0 4px;font-size:18px;font-weight:bold;color:#1d4ed8">MVP Veículos</p>
+      <p style="margin:0 0 4px;font-size:18px;font-weight:bold;color:#1d4ed8">${escaparHtml(marca)}</p>
       <p style="margin:0 0 24px;font-size:12px;color:#64748b">Gestão de seminovos</p>
       <h1 style="margin:0 0 16px;font-size:20px;color:#0f172a">${title}</h1>
       ${bodyHtml}

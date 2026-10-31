@@ -23,6 +23,7 @@ import ContatoWhatsApp from "../ContatoWhatsApp";
 import ThemeToggle from "../ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
 import { cidadeDaLoja } from "@/lib/loja-local";
+import { nomeDaLoja } from "@/lib/nome-loja";
 
 export const dynamic = "force-dynamic";
 
@@ -34,7 +35,7 @@ export async function generateMetadata({
   const { id } = await params;
   const [v, company] = await Promise.all([getShowroomVehicle(id), getCompany().catch(() => null)]);
   if (!v) return { title: "Veículo indisponível" };
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   const titulo = vehicleTitle(v);
   const base = await getBaseUrl();
   const showPrice = !v.adHiddenFields.includes("preco");
@@ -77,7 +78,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
       where: { id },
       select: { brand: true, model: true, manufactureYear: true, modelYear: true },
     });
-    const nomeLoja = company?.nomeFantasia || "MVP Veículos";
+    const nomeLoja = nomeDaLoja(company);
     const carroTitulo = dbVehicle ? displayName(dbVehicle.brand, dbVehicle.model) : null;
     const zapIndisp = whatsappLink(
       company?.phone,
@@ -139,7 +140,7 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
     );
   }
 
-  const nome = company?.nomeFantasia || "MVP Veículos";
+  const nome = nomeDaLoja(company);
   const titulo = vehicleTitle(v);
   // Versão só com o que acrescenta ao modelo (cadastro "Polo Track MA" + "MA" → nada).
   const versao = displayVersion(v.brand, v.model, v.version);

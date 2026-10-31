@@ -7,6 +7,8 @@ import { createHash, randomBytes } from "node:crypto";
 import { prisma } from "@/lib/prisma";
 import { hashPassword, verifyPassword, setSessionCookie, clearSessionCookie } from "@/lib/auth";
 import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
 import { syncUserSupplier } from "@/lib/user-supplier-link";
 import {
   clientIp,
@@ -187,7 +189,7 @@ export async function signupAction(
   const accessCode = await prisma.accessCode.findUnique({ where: { code: codeInput } });
   if (!accessCode || accessCode.usedAt) {
     await registerFailure(codeKey, ACCESS_CODE_POLICY);
-    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador da MVP Veículos." };
+    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador do sistema." };
   }
 
   const created = await prisma.$transaction(async (tx) => {
@@ -212,7 +214,7 @@ export async function signupAction(
     throw e;
   });
   if (!created) {
-    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador da MVP Veículos." };
+    return { error: "Código de liberação inválido ou já utilizado — peça o código ao administrador do sistema." };
   }
   await syncUserSupplier(created.id);
   return {
@@ -257,13 +259,16 @@ export async function forgotPasswordAction(
         },
       });
       const link = `${await baseUrl()}/login/redefinir?token=${token}`;
+      const loja = nomeDaLoja(await getCompany().catch(() => null));
       await sendEmail({
         to: user.email,
-        subject: "Redefinir sua senha - MVP Veículos",
+        remetente: loja,
+        subject: `Redefinir sua senha - ${loja}`,
         html: emailLayout(
           "Redefinir sua senha",
           `<p style="margin:0 0 16px;font-size:14px;color:#334155">Olá, ${user.name}! Recebemos um pedido para redefinir sua senha. Clique no botão abaixo (válido por 1 hora):</p>
            <p style="margin:0 0 8px"><a href="${link}" style="display:inline-block;background:#1d4ed8;color:#ffffff;text-decoration:none;padding:12px 20px;border-radius:8px;font-size:14px;font-weight:bold">Criar nova senha</a></p>`,
+          loja,
         ),
       });
     } else {
