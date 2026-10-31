@@ -4,6 +4,7 @@ import { useActionState, useState } from "react";
 import { Button, Field, Input, Select } from "@/components/ui";
 import { formatCurrency } from "@/lib/format";
 import { createTransferAction, type ContaFormState } from "./actions";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 type Option = { id: string; name: string };
 
@@ -22,7 +23,17 @@ export default function TransferForm({
    */
   neutro?: { id: string; balance: number } | null;
 }) {
-  const [state, formAction, pending] = useActionState(createTransferAction, {} as ContaFormState);
+  const [state, formAction, pending] = useActionState(async (prev: ContaFormState, fd: FormData) => {
+    const res = await createTransferAction(prev, fd);
+    if (!res.error) {
+      const nome = (id: FormDataEntryValue | null) => accounts.find((a) => a.id === id)?.name ?? "a conta";
+      guiaFeito("conta.transferir", [
+        `${formatCurrency(Number(fd.get("amount")) || 0)} transferidos de ${nome(fd.get("fromId"))} para ${nome(fd.get("toId"))}.`,
+        `Data: ${cashboxDate ?? "a do caixa aberto"}. Já aparece em "Transferências entre contas" e no Livro caixa.`,
+      ]);
+    }
+    return res;
+  }, {} as ContaFormState);
   const [fromId, setFromId] = useState(accounts[0]?.id ?? "");
   const [toId, setToId] = useState(accounts[1]?.id ?? "");
 
@@ -86,7 +97,7 @@ export default function TransferForm({
       <Field label="Descrição">
         <Input name="description" placeholder="Ex: depósito do caixa no banco" />
       </Field>
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending} className="w-full" data-guia="conta.transferir">
         {pending ? "Transferindo..." : "Registrar transferência"}
       </Button>
     </form>

@@ -8,6 +8,7 @@ import { receiveBatchAction, deleteReceivablesAction } from "./actions";
 import ReceivableRowActions from "./ReceivableRowActions";
 import DeleteReceivableButton from "./DeleteReceivableButton";
 import ConfirmButton from "@/components/ConfirmButton";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 type Account = { id: string; name: string };
 
@@ -113,6 +114,9 @@ export default function ReceivablesTable({
       return;
     }
     const ids = [...selected];
+    // Guardados antes: a seleção é limpa quando o recebimento dá certo.
+    const total = selectedTotal;
+    const conta = accounts.find((a) => a.id === accountId)?.name ?? "a conta escolhida";
     setMsg(null);
     startTransition(async () => {
       const res = await receiveBatchAction(ids, accountId);
@@ -121,6 +125,11 @@ export default function ReceivablesTable({
         return;
       }
       setSelected(new Set());
+      guiaFeito("areceber.receber", [
+        `${res.received} título(s) marcado(s) como recebido(s).`,
+        `${formatCurrency(total)} entraram em ${conta}${cashboxDate ? ` com data de ${cashboxDate}` : ""}.`,
+        "O recebimento já aparece no Livro caixa, no Fluxo de caixa e no extrato da conta.",
+      ]);
     });
   }
 
@@ -141,6 +150,10 @@ export default function ReceivablesTable({
           (res.skipped > 0 ? ` · ${res.skipped} ignorado(s) (já recebido ou de venda — ajuste na venda)` : ""),
       );
       setSelected(new Set());
+      guiaFeito("areceber.excluir", [
+        `${res.deleted} título(s) excluído(s).`,
+        ...(res.skipped > 0 ? [`${res.skipped} ficou(aram) de fora: já recebido(s) ou de venda — ajuste na venda.`] : []),
+      ]);
     });
   }
 
@@ -286,6 +299,7 @@ export default function ReceivablesTable({
                   <select
                     value={accountId}
                     onChange={(e) => setAccountId(e.target.value)}
+                    data-guia="areceber.conta"
                     className="h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
                   >
                     {accounts.map((a) => (
@@ -297,7 +311,7 @@ export default function ReceivablesTable({
                 </label>
                 <div className="flex flex-col gap-1 text-xs text-slate-500">
                   Data do recebimento
-                  <span className="flex h-9 items-center rounded-lg bg-slate-100 px-2 text-sm font-medium text-slate-700">
+                  <span data-guia="areceber.data" className="flex h-9 items-center rounded-lg bg-slate-100 px-2 text-sm font-medium text-slate-700">
                     {cashboxDate ? `${cashboxDate} (caixa)` : "—"}
                   </span>
                 </div>
@@ -305,6 +319,7 @@ export default function ReceivablesTable({
                   type="button"
                   disabled={pending || removing}
                   onClick={receive}
+                  data-guia="areceber.receber"
                   className="h-9 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
                 >
                   {pending
@@ -319,6 +334,7 @@ export default function ReceivablesTable({
               <ConfirmButton
                 disabled={removing || pending}
                 onConfirm={remove}
+                guia="areceber.excluir"
                 confirmLabel="Excluir"
                 question={`Excluir ${selected.size} ${selected.size === 1 ? "título selecionado" : "títulos selecionados"}? Título recebido ou de venda fica de fora; de recorrência, só esta parcela sai (as próximas continuam).`}
                 className="h-9 rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
@@ -329,6 +345,7 @@ export default function ReceivablesTable({
             <button
               type="button"
               onClick={() => setSelected(new Set())}
+              data-guia="areceber.limpar"
               className="h-9 px-2 text-sm text-slate-400 hover:underline"
             >
               Limpar

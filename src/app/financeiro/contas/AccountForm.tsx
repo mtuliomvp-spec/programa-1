@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
 import BankInput from "@/components/BankInput";
 import { createAccountAction, updateAccountAction, type ContaFormState } from "./actions";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 type Beneficiary = { id: string; name: string };
 
@@ -47,6 +48,12 @@ export default function AccountForm({
         ? await updateAccountAction(prev, formData)
         : await createAccountAction(prev, formData);
       if (initial && !res.error) router.push("/financeiro/contas");
+      if (!initial && !res.error) {
+        guiaFeito("conta.nova", [
+          `Conta "${String(formData.get("name") ?? "")}" cadastrada.`,
+          "Ela já aparece na lista e como opção em pagamentos, recebimentos e transferências.",
+        ]);
+      }
       return res;
     },
     {} as ContaFormState,
@@ -197,7 +204,7 @@ export default function AccountForm({
           ) : null}
         </>
       ) : null}
-      <Button type="submit" disabled={pending} className="w-full">
+      <Button type="submit" disabled={pending} className="w-full" data-guia={editando ? undefined : "conta.nova"}>
         {pending ? "Salvando..." : editando ? "Salvar alterações" : "Cadastrar conta"}
       </Button>
     </form>

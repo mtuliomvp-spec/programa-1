@@ -19,6 +19,7 @@ type Company = {
   publicUrl: string | null;
   instagram: string | null;
   slogan: string | null;
+  modoGuia: boolean;
   googleAdsId: string | null;
   googleAdsLeadLabel: string | null;
   googleAnalyticsId: string | null;
@@ -216,6 +217,14 @@ export default function CompanyForm({
         <p className="mt-2 text-xs text-slate-500">
           Destaque da vitrine pública (faixa de boas-vindas e rodapé). Em branco, a vitrine mostra o nome da loja.
         </p>
+        <label className="mt-4 flex items-start gap-2.5 text-sm text-slate-700">
+          <input type="checkbox" name="modoGuia" defaultChecked={company.modoGuia} className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            <strong>Modo guia para a equipe</strong> — mostra no topo das telas o interruptor 🎓 que explica, antes do
+            clique, o que cada botão faz e, depois, o que foi feito. Bom para treinar funcionário novo; cada pessoa liga
+            ou desliga o seu.
+          </span>
+        </label>
       </div>
 
       <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
