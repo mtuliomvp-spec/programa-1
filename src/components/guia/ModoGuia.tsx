@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import { GUIA, type GuiaItem } from "@/lib/guia/catalogo";
-import { EVENTO_GUIA_FEITO, type GuiaFeitoDetalhe } from "@/lib/guia/eventos";
+import { EVENTO_GUIA_FEITO, entregarGuiaPendente, type GuiaFeitoDetalhe } from "@/lib/guia/eventos";
 
 /**
- * Modo guia da demonstração: um interruptor no topo da tela. Ligado, passar o
+ * Modo guia: um interruptor no topo da tela (sempre no demo; nas lojas, quando
+ * o administrador liga em Parâmetros). Ligado, passar o
  * mouse (ou o foco do teclado) num botão marcado com `data-guia` mostra o que
  * ele faz, o que precisa antes e o que acontece depois; no celular, o
  * primeiro toque explica e o "Continuar" executa. Depois da operação, a tela
@@ -58,6 +60,7 @@ function bloqueiaNoToque(el: HTMLElement): boolean {
 
 export default function ModoGuia() {
   const ligado = useSyncExternalStore(inscrever, lerLigado, () => false);
+  const caminho = usePathname();
   const [alvo, setAlvo] = useState<Alvo | null>(null);
   const [feito, setFeito] = useState<GuiaFeitoDetalhe | null>(null);
   const balaoRef = useRef<HTMLDivElement>(null);
@@ -118,7 +121,8 @@ export default function ModoGuia() {
     const aoTeclar = (e: KeyboardEvent) => {
       if (e.key === "Escape") setAlvo(null);
     };
-    const aoRolar = () => setAlvo((a) => (a && !a.toque ? null : a));
+    // Rolou a tela: o balão acompanha o botão (novo objeto = reposiciona).
+    const aoRolar = () => setAlvo((a) => (a ? { ...a } : a));
     const aoFeito = (e: Event) => {
       setAlvo(null);
       setFeito((e as CustomEvent<GuiaFeitoDetalhe>).detail);
@@ -145,6 +149,13 @@ export default function ModoGuia() {
       window.removeEventListener(EVENTO_GUIA_FEITO, aoFeito);
     };
   }, [ligado]);
+
+  // Operação que terminou noutra página (ex.: cadastrar veículo → ficha): o
+  // resumo guardado aparece quando a página de destino abre. Vem depois do
+  // efeito que escuta o evento, para ele já estar ouvindo.
+  useEffect(() => {
+    if (ligado) entregarGuiaPendente(caminho);
+  }, [ligado, caminho]);
 
   // Posiciona o balão junto do botão: embaixo se couber, senão em cima. Mexe
   // direto no estilo — a medida só existe depois de o balão estar na tela.
@@ -202,7 +213,7 @@ export default function ModoGuia() {
         </button>
         <p className="text-xs text-indigo-800">
           {ligado
-            ? "Passe o mouse sobre um botão para ver o que ele faz antes de clicar (no celular, o primeiro toque explica). Botões com explicação: barra de Contas a pagar."
+            ? "Passe o mouse sobre um botão para ver o que ele faz antes de clicar (no celular, o primeiro toque explica). Já explicados: Contas a pagar, Contas e caixas, Contas a receber, cadastro de veículo, vendas e Renave."
             : "Ligue para ver, antes de clicar, o que cada botão faz e o que acontece depois."}
         </p>
       </div>

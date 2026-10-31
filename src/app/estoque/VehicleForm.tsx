@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useRef, useState, useTransition } from "react";
+import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { isChassiPartial, CHASSI_LENGTH } from "@/lib/vehicle-doc";
 import DebtItemsField from "@/components/DebtItemsField";
@@ -26,6 +26,7 @@ import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import BankInput from "@/components/BankInput";
 import NewSupplierInline from "@/components/NewSupplierInline";
+import { cancelarGuiaPendente, guiaFeito, guiaFeitoAoChegar } from "@/lib/guia/eventos";
 
 /** "(HTTP 403: Token Invalido)" → " (Token Invalido)" — o motivo da falha da placa, curto. */
 const motivoDaPlaca = (erro: string) => {
@@ -81,6 +82,11 @@ export default function VehicleForm({
   const isEdit = Boolean(vehicle);
   const action = isEdit ? updateVehicleAction : createVehicleAction;
   const [state, formAction, pending] = useActionState(action, initialState);
+  // Modo guia: o cadastro termina na ficha (redirect do servidor); se voltar
+  // com erro, o resumo guardado no envio não vale.
+  useEffect(() => {
+    if (state.error) cancelarGuiaPendente();
+  }, [state]);
   const [acquisition, setAcquisition] = useState<
     "A_VISTA" | "PARCELADO" | "FINANCIADO" | "CONSORCIO"
   >(vehicle?.acquisitionType ?? "A_VISTA");
@@ -319,11 +325,36 @@ export default function VehicleForm({
         tone: "ok",
         text: `Documentos lidos: ${nome || "veículo"}${extras ? ` · ${extras}` : ""}. Confira os campos e finalize — cada documento será anexado no seu lugar da ficha.`,
       });
+      guiaFeito("estoque.lerdocs", [
+        `${lidos.length} documento(s) lido(s): ${lidos.map((l) => ROTULO_DOC_COMPRA[l.tipo]).join(", ")}.`,
+        `Preenchido: ${nome || "dados do veículo"}${extras ? ` · ${extras}` : ""}.`,
+        ...res.avisos.map((a) => `Confira: ${a}.`),
+        "Nada foi gravado ainda — confira os campos e clique em \"Cadastrar veículo\".",
+      ]);
     });
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-6">
+    <form
+      ref={formRef}
+      action={formAction}
+      onSubmit={(e) => {
+        if (isEdit) return;
+        const fd = new FormData(e.currentTarget);
+        const placa = String(fd.get("plate") ?? "").toUpperCase();
+        const carro = [fd.get("brand"), fd.get("model"), fd.get("modelYear")].filter(Boolean).join(" ");
+        guiaFeitoAoChegar(
+          "estoque.cadastrar",
+          [
+            `Veículo ${carro || ""}${placa ? ` (${placa})` : ""} cadastrado no estoque — esta é a ficha dele.`,
+            "As contas a pagar da compra foram geradas conforme a forma de aquisição; pague em Contas a pagar.",
+            "Os documentos importados estão anexados na ficha.",
+          ],
+          "/estoque/",
+        );
+      }}
+      className="space-y-6"
+    >
       <ProcessingOverlay
         show={pending}
         label={isEdit ? "Salvando as alterações… aguarde. Não feche esta página." : "Cadastrando o veículo… aguarde. Não feche esta página."}
@@ -362,7 +393,7 @@ export default function VehicleForm({
               accept="application/pdf,image/*"
               className="block max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-violet-600 file:px-3.5 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-violet-500"
             />
-            <Button type="button" variant="secondary" onClick={handleContract} disabled={reading}>
+            <Button type="button" variant="secondary" onClick={handleContract} disabled={reading} data-guia="estoque.lerdocs">
               {reading ? "Lendo os documentos…" : "✨ Ler documentos e preencher"}
             </Button>
           </div>
@@ -409,13 +440,14 @@ export default function VehicleForm({
               placeholder="ABC1D23"
               className="max-w-[180px] uppercase"
             />
-            <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking}>
+            <Button type="button" variant="secondary" onClick={handlePlateLookup} disabled={looking} data-guia="estoque.placa">
               {looking ? "Buscando..." : "🔍 Buscar dados pela placa"}
             </Button>
             <button
               type="button"
               onClick={handleFipeTabela}
               disabled={looking}
+              data-guia="estoque.fipe"
               className="text-sm font-medium text-blue-700 hover:underline disabled:opacity-50"
               title="Pela marca, modelo, versão e ano preenchidos — não usa a consulta por placa"
             >
@@ -858,7 +890,7 @@ export default function VehicleForm({
       </Field>
 
       <div className="flex justify-end gap-2">
-        <Button type="submit" disabled={pending}>
+        <Button type="submit" disabled={pending} data-guia={isEdit ? undefined : "estoque.cadastrar"}>
           {pending ? "Salvando..." : isEdit ? "Salvar alterações" : "Cadastrar veículo"}
         </Button>
       </div>

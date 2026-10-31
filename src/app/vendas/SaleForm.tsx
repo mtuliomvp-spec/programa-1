@@ -24,6 +24,7 @@ import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retor
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import NewCustomerInline from "@/components/NewCustomerInline";
+import { cancelarGuiaPendente, guiaFeitoAoChegar } from "@/lib/guia/eventos";
 
 /** "(HTTP 403: Token Invalido)" → " (Token Invalido)" — o motivo da falha da placa, curto. */
 const motivoDaPlaca = (erro: string) => {
@@ -177,6 +178,10 @@ export default function SaleForm({
   renavePrazo?: string;
 }) {
   const [state, formAction, pending] = useActionState(createPreSaleAction, initialState);
+  // Modo guia: a pré-venda abre noutra página; voltando com erro, o resumo não vale.
+  useEffect(() => {
+    if (state.error) cancelarGuiaPendente();
+  }, [state]);
   const formRef = useRef<HTMLFormElement>(null);
   const [vehicleId, setVehicleId] = useState(initial?.vehicleId || preselectedVehicleId || "");
   const [customerId, setCustomerId] = useState(initial?.customerId || "");
@@ -511,7 +516,21 @@ export default function SaleForm({
   }
 
   return (
-    <form ref={formRef} action={formAction} className="space-y-6">
+    <form
+      ref={formRef}
+      action={formAction}
+      onSubmit={() =>
+        guiaFeitoAoChegar(
+          "vendas.gerarpre",
+          [
+            "Pré-venda gerada — esta é a ficha do negócio, com o contrato pronto para imprimir.",
+            "Nada foi lançado no financeiro ainda. Revise e clique em \"Registrar venda\" quando fechar.",
+          ],
+          "/vendas/pre-vendas/",
+        )
+      }
+      className="space-y-6"
+    >
       <ProcessingOverlay show={pending} label="Gerando a pré-venda… aguarde. Não feche esta página." />
       {conflictMsg ? (
         <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
@@ -1257,7 +1276,7 @@ export default function SaleForm({
               <Field label="Placa do veículo recebido">
                 <Input name="tiPlate" defaultValue={initial?.tiPlate || ""} placeholder="ABC1D23" className="max-w-[160px] uppercase" />
               </Field>
-              <Button type="button" variant="secondary" onClick={handleTiLookup} disabled={tiLooking}>
+              <Button type="button" variant="secondary" onClick={handleTiLookup} disabled={tiLooking} data-guia="vendas.trocaplaca">
                 {tiLooking ? "Buscando..." : "🔍 Buscar dados"}
               </Button>
             </div>
@@ -1504,7 +1523,7 @@ export default function SaleForm({
           Ao gerar, cria-se uma <strong>pré-venda</strong> (ficha de negócio) para revisar e imprimir.
           Nada é lançado no financeiro até você clicar em “Registrar venda” na ficha.
         </p>
-        <Button type="submit" disabled={pending || !!conflictMsg}>
+        <Button type="submit" disabled={pending || !!conflictMsg} data-guia="vendas.gerarpre">
           {pending ? "Gerando..." : preSaleId ? "Salvar pré-venda →" : "Gerar pré-venda →"}
         </Button>
       </div>

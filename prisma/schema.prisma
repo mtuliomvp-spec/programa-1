@@ -2188,6 +2188,9 @@ model CompanySettings {
   // Slogan da loja: o destaque da faixa de boas-vindas e do rodapé da vitrine.
   // Vazio = a vitrine mostra só o nome da loja.
   slogan                   String?
+  // Modo guia (explicação de cada botão) para a equipe. No demo aparece
+  // sempre; nas lojas, só com esta chave ligada em Parâmetros.
+  modoGuia                 Boolean   @default(false)
   // Google (vitrine pública): IDs PÚBLICOS das tags — nada aqui é senha.
   //  - googleAdsId "AW-123…" e o rótulo da conversão "lead" (clique no
   //    WhatsApp/telefone): é o que o Google Ads usa para otimizar as campanhas;

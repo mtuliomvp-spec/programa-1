@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, useTransition } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LinkButton } from "@/components/ui";
 import PrintButton from "@/components/PrintButton";
 import ConfirmButton from "@/components/ConfirmButton";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
 import { convertPreSaleAction, deletePreSaleAction } from "../actions";
+import { cancelarGuiaPendente, guiaFeito, guiaFeitoAoChegar } from "@/lib/guia/eventos";
 
 /**
  * Ações da pré-venda. A confirmação é um bloco na tela, não o `confirm` do
@@ -28,9 +29,24 @@ export default function PreSaleActions({
   const [error, setError] = useState<string | null>(null);
   const [runningLabel, setRunningLabel] = useState("Registrando a venda… aguarde. Não feche esta página.");
   const router = useRouter();
+  // Registro recusado: o servidor volta para esta ficha com ?erro= — o resumo
+  // do modo guia guardado no clique não vale.
+  const erro = useSearchParams().get("erro");
+  useEffect(() => {
+    if (erro) cancelarGuiaPendente();
+  }, [erro]);
 
   function handleConvert() {
     setRunningLabel("Registrando a venda… aguarde. Não feche esta página.");
+    guiaFeitoAoChegar(
+      "vendas.registrar",
+      [
+        "Venda registrada — esta é a ficha dela. O veículo saiu do estoque como vendido.",
+        "As contas a receber foram geradas conforme a forma de pagamento.",
+        "Comissões, indicações e transferência cobrada (se havia) viraram contas a pagar; o carro da troca (se havia) entrou no estoque.",
+      ],
+      "/vendas/",
+    );
     start(() => convertPreSaleAction(id));
   }
   function handleDelete() {
@@ -42,6 +58,7 @@ export default function PreSaleActions({
         setError(res.error || "Não foi possível excluir a pré-venda.");
         return;
       }
+      guiaFeito("vendas.excluirpre", ["Pré-venda excluída. Nada tinha sido lançado no financeiro.", "O carro ficou livre para outro negócio."]);
       // Navega no cliente (mais confiável que redirect no servidor via transition).
       router.push("/vendas");
       router.refresh();
@@ -60,7 +77,7 @@ export default function PreSaleActions({
             ✏️ Editar
           </LinkButton>
         ) : null}
-        <LinkButton variant="secondary" href={`/vendas/pre-vendas/${id}/contrato`}>
+        <LinkButton variant="secondary" href={`/vendas/pre-vendas/${id}/contrato`} data-guia="vendas.contrato">
           📄 Contrato de venda
         </LinkButton>
         <PrintButton />
@@ -71,6 +88,7 @@ export default function PreSaleActions({
             cancelLabel="Manter"
             onConfirm={handleDelete}
             disabled={pending}
+            guia="vendas.excluirpre"
             className="inline-flex h-10 items-center justify-center rounded-lg border border-rose-300 px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
           >
             {pending ? "..." : "Excluir"}
@@ -82,6 +100,7 @@ export default function PreSaleActions({
             confirmLabel="Registrar a venda"
             onConfirm={handleConvert}
             disabled={pending}
+            guia="vendas.registrar"
             className="inline-flex h-10 items-center justify-center rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
           >
             {pending ? "Registrando..." : "✓ Registrar venda"}

@@ -7,6 +7,7 @@ import { Badge, Button, Card, CardHeader, Select } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { confirmQueuedPaymentsAction, dismissQueuedPaymentAction, definirContaDaFilaAction } from "./actions";
 import type { PagamentoNaFila } from "@/lib/payment-queue";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 /** Os ids de título que a linha carrega — o lote devolve todos os que cobre. */
 function idsDaLinha(r: PagamentoNaFila): string[] {
@@ -85,6 +86,12 @@ export default function PaymentQueueCard({
         return;
       }
       setMsg(`${res.paid} lançamento(s) confirmado(s) no caixa de ${workDateLabel}.`);
+      guiaFeito("fila.confirmar", [
+        `${res.paid} lançamento(s) confirmado(s) no caixa de ${workDateLabel}.`,
+        ...(totalSaida > 0.005 ? [`Saíram ${formatCurrency(totalSaida)} das contas.`] : []),
+        ...(totalEntrada > 0.005 ? [`Entraram ${formatCurrency(totalEntrada)} nas contas.`] : []),
+        "Os títulos passaram a pago/recebido, com o comprovante que já estava anexado.",
+      ]);
       router.refresh();
     });
   }
@@ -105,6 +112,7 @@ export default function PaymentQueueCard({
     setMsg(null);
     setRemovidas((prev) => [...prev, r.id]);
     startDismiss(async () => {
+      let falhou = false;
       for (const id of ids) {
         const res = await dismissQueuedPaymentAction(id);
         if (!res.ok) {
@@ -112,9 +120,14 @@ export default function PaymentQueueCard({
           // no banco de dados.
           setRemovidas((prev) => prev.filter((x) => x !== r.id));
           setMsg(res.error || "Não foi possível tirar da fila.");
+          falhou = true;
           break;
         }
       }
+      if (!falhou) guiaFeito("fila.tirar", [
+        ids.length > 1 ? `${ids.length} títulos tirados da fila, sem pagamento.` : "Lançamento tirado da fila, sem pagamento.",
+        r.avulso ? "Como era um lançamento avulso do movimento de caixa, ele foi apagado." : "O anexo continua no título.",
+      ]);
       router.refresh();
     });
   }
@@ -267,6 +280,7 @@ export default function PaymentQueueCard({
                 <button
                   type="button"
                   onClick={() => descartar(r)}
+                  data-guia="fila.tirar"
                   disabled={dismissing}
                   className="mt-1 text-[11px] font-medium text-slate-400 hover:text-rose-600 hover:underline"
                 >
@@ -289,7 +303,7 @@ export default function PaymentQueueCard({
           ) : null}
         </p>
         {canPagar ? (
-          <Button type="button" onClick={confirmar} disabled={pending || selected.size === 0}>
+          <Button type="button" onClick={confirmar} disabled={pending || selected.size === 0} data-guia="fila.confirmar">
             {pending ? "Lançando…" : "✓ Confirmar no caixa"}
           </Button>
         ) : (

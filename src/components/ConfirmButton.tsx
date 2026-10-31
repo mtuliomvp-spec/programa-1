@@ -21,6 +21,7 @@ export default function ConfirmButton({
   onConfirm,
   disabled = false,
   className = "",
+  guia,
 }: {
   /** Conteúdo do botão que abre a pergunta. */
   children: ReactNode;
@@ -32,6 +33,8 @@ export default function ConfirmButton({
   disabled?: boolean;
   /** Classes do botão de abrir (o visual é de quem chama). */
   className?: string;
+  /** Id da explicação do modo guia (src/lib/guia/catalogo.ts). */
+  guia?: string;
 }) {
   const [aberto, setAberto] = useState(false);
 
@@ -41,6 +44,7 @@ export default function ConfirmButton({
         type="button"
         onClick={() => setAberto(true)}
         disabled={disabled || aberto}
+        data-guia={guia}
         className={className}
       >
         {children}

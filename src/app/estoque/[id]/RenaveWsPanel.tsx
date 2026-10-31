@@ -31,6 +31,7 @@ import {
   sincronizarRenaveAction,
   type RenaveWsResult,
 } from "../renave-ws-actions";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 export type RenaveWsRegistro = {
   idEstoque: number | null;
@@ -117,7 +118,7 @@ export default function RenaveWsPanel(p: {
       avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [msg]);
 
-  function rodar(fn: () => Promise<RenaveWsResult>, confirmar?: string) {
+  function rodar(fn: () => Promise<RenaveWsResult>, confirmar?: string, guia?: string) {
     if (confirmar && !hom && !window.confirm(confirmar)) return;
     setMsg(null);
     setPendente(true);
@@ -125,6 +126,12 @@ export default function RenaveWsPanel(p: {
       .then((r) => {
         setMsg(r);
         if (r.aptidao) setAptidao(r.aptidao);
+        if (r.ok && guia) {
+          guiaFeito(guia, [
+            r.message || "Operação concluída no Renave.",
+            hom ? "Ambiente de homologação: teste, sem custo e sem valor legal." : "Registrado no Renave (produção).",
+          ]);
+        }
         // Atualiza a ficha sempre (o histórico de chamadas registra também os
         // erros); só a aptidão bem-sucedida não precisa, o quadro já mostra.
         if (!(r.ok && r.aptidao)) router.refresh();
@@ -219,7 +226,11 @@ export default function RenaveWsPanel(p: {
           </p>
         )}
         <div className="mt-2 flex flex-wrap gap-2">
-          <Mini disabled={pendente || !p.podeOperar || (hom && !mock)} onClick={() => rodar(() => sincronizarRenaveAction(p.vehicleId))}>
+          <Mini
+            disabled={pendente || !p.podeOperar || (hom && !mock)}
+            onClick={() => rodar(() => sincronizarRenaveAction(p.vehicleId), undefined, "renave.atualizar")}
+            data-guia="renave.atualizar"
+          >
             🔄 Atualizar do Renave
           </Mini>
           {aberto ? (
@@ -302,7 +313,7 @@ export default function RenaveWsPanel(p: {
               bloqueado={pendente || (hom && !mock)}
               hoje={p.hoje}
               aptidao={aptidao}
-              onAptidao={(d) => rodar(() => consultarAptidaoRenaveAction(p.vehicleId, d))}
+              onAptidao={(d) => rodar(() => consultarAptidaoRenaveAction(p.vehicleId, d), undefined, "renave.aptidao")}
               onBuscarCodigo={(numeroCrv) => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId, numeroCrv))}
               codigoBuscado={msg?.codigo ?? null}
               onEntrada={(d, proprio) =>
@@ -312,6 +323,7 @@ export default function RenaveWsPanel(p: {
                       ? entradaProprioRenaveAction(p.vehicleId, { ...d, dataEntrada: d.dataCompra })
                       : entradaRenaveAction(p.vehicleId, d),
                   cobrado,
+                  "renave.entrada",
                 )
               }
             />
@@ -323,7 +335,7 @@ export default function RenaveWsPanel(p: {
               anexos={p.anexos}
               enviada={!!reg!.assinaturaEnviadaEm}
               bloqueado={pendente}
-              onEnviar={(id) => rodar(() => enviarAssinaturaRenaveAction(p.vehicleId, id))}
+              onEnviar={(id) => rodar(() => enviarAssinaturaRenaveAction(p.vehicleId, id), undefined, "renave.assinatura")}
             />
           ) : null}
 
@@ -335,7 +347,7 @@ export default function RenaveWsPanel(p: {
               chaveFicha={p.chaves.entrada}
               hom={hom}
               bloqueado={pendente}
-              onEnviar={(c) => rodar(() => enviarNotaRenaveAction(p.vehicleId, "COMPRA", c))}
+              onEnviar={(c) => rodar(() => enviarNotaRenaveAction(p.vehicleId, "COMPRA", c), undefined, "renave.nota")}
             />
           ) : null}
 
@@ -363,7 +375,7 @@ export default function RenaveWsPanel(p: {
                 hoje={p.hoje}
                 onBuscarCodigo={(numeroCrv) => rodar(() => buscarCodigoCrvRenaveAction(p.vehicleId, numeroCrv))}
                 onMunicipio={async (cidade, uf) => municipioRenaveAction(cidade, uf)}
-                onSaida={(d) => rodar(() => saidaRenaveAction(p.vehicleId, d), cobrado)}
+                onSaida={(d) => rodar(() => saidaRenaveAction(p.vehicleId, d), cobrado, "renave.saida")}
                 codigoBuscado={msg?.codigo ?? null}
               />
             ) : (
@@ -397,7 +409,7 @@ export default function RenaveWsPanel(p: {
                 chaveFicha={p.chaves.saida}
                 hom={hom}
                 bloqueado={pendente}
-                onEnviar={(c) => rodar(() => enviarNotaRenaveAction(p.vehicleId, "VENDA", c))}
+                onEnviar={(c) => rodar(() => enviarNotaRenaveAction(p.vehicleId, "VENDA", c), undefined, "renave.nota")}
               />
             </>
           ) : null}
@@ -409,10 +421,10 @@ export default function RenaveWsPanel(p: {
               hoje={p.hoje}
               bloqueado={pendente}
               onCancelarEntrada={(d) =>
-                rodar(() => cancelarEntradaRenaveAction(p.vehicleId, d), "Cancelar a ENTRADA deste veículo no Renave?")
+                rodar(() => cancelarEntradaRenaveAction(p.vehicleId, d), "Cancelar a ENTRADA deste veículo no Renave?", "renave.cancelar")
               }
               onCancelarSaida={(d) =>
-                rodar(() => cancelarSaidaRenaveAction(p.vehicleId, d), "Cancelar a SAÍDA (venda) deste veículo no Renave?")
+                rodar(() => cancelarSaidaRenaveAction(p.vehicleId, d), "Cancelar a SAÍDA (venda) deste veículo no Renave?", "renave.cancelar")
               }
             />
           ) : null}
@@ -541,7 +553,7 @@ function EntradaForm({
         </Field>
         {proprio ? (
           <div className="flex items-end">
-            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)}>
+            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)} data-guia="renave.codigo">
               Buscar código no Renave
             </Button>
           </div>
@@ -577,10 +589,10 @@ function EntradaForm({
       </div>
       {aptidao ? <AptidaoBox a={aptidao} /> : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onAptidao({ tipoCrv: d.tipoCrv, numeroCrv: d.numeroCrv })}>
+        <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onAptidao({ tipoCrv: d.tipoCrv, numeroCrv: d.numeroCrv })} data-guia="renave.aptidao">
           Consultar aptidão (grátis)
         </Button>
-        <Button type="button" disabled={bloqueado} onClick={() => onEntrada(d, proprio)}>
+        <Button type="button" disabled={bloqueado} onClick={() => onEntrada(d, proprio)} data-guia="renave.entrada">
           Registrar entrada no Renave
         </Button>
       </div>
@@ -638,7 +650,7 @@ function Assinatura({
               ))}
             </Select>
           </Field>
-          <Button type="button" disabled={bloqueado || !id} onClick={() => onEnviar(id)}>
+          <Button type="button" disabled={bloqueado || !id} onClick={() => onEnviar(id)} data-guia="renave.assinatura">
             {enviada ? "Reenviar assinatura" : "Enviar assinatura"}
           </Button>
         </div>
@@ -679,7 +691,7 @@ function Nota({
             <Input value={chave} onChange={(e) => setChave(e.target.value)} inputMode="numeric" />
           </Field>
         </div>
-        <Button type="button" disabled={bloqueado || chave.replace(/\D/g, "").length !== 44} onClick={() => onEnviar(chave)}>
+        <Button type="button" disabled={bloqueado || chave.replace(/\D/g, "").length !== 44} onClick={() => onEnviar(chave)} data-guia="renave.nota">
           {feito ? "Reenviar" : "Enviar ao Renave"}
         </Button>
       </div>
@@ -740,7 +752,7 @@ function SaidaForm({
           <Input {...campo("codigoSegurancaCrv")} inputMode="numeric" />
         </Field>
         <div className="flex items-end">
-          <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)}>
+          <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onBuscarCodigo(d.numeroCrv)} data-guia="renave.codigo">
             Buscar código no Renave
           </Button>
         </div>
@@ -797,7 +809,7 @@ function SaidaForm({
       </div>
       {mun ? <p className="mt-1 text-xs text-slate-600">{mun}</p> : null}
       <div className="mt-3">
-        <Button type="button" disabled={bloqueado} onClick={() => onSaida(d)}>
+        <Button type="button" disabled={bloqueado} onClick={() => onSaida(d)} data-guia="renave.saida">
           Registrar saída no Renave
         </Button>
       </div>
@@ -834,11 +846,11 @@ function Cancelamentos({
         </Field>
         <div className="flex items-end gap-2">
           {finalizado ? (
-            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onCancelarSaida({ data, cpfOperador: cpfOp })}>
+            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onCancelarSaida({ data, cpfOperador: cpfOp })} data-guia="renave.cancelar">
               Cancelar saída
             </Button>
           ) : (
-            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onCancelarEntrada({ data, cpfOperador: cpfOp })}>
+            <Button type="button" variant="secondary" disabled={bloqueado} onClick={() => onCancelarEntrada({ data, cpfOperador: cpfOp })} data-guia="renave.cancelar">
               Cancelar entrada
             </Button>
           )}

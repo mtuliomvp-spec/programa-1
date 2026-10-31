@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { openCashboxAction, closeCashboxAction, revertCashboxAction } from "./actions";
 import { creditVehicleAdvanceAction } from "@/app/estoque/actions";
+import { guiaFeito } from "@/lib/guia/eventos";
 
 type Session = {
   id: string;
@@ -61,7 +62,15 @@ export default function CashboxCard({
     setCreditError(null);
     startCredit(async () => {
       const r = await creditVehicleAdvanceAction(id);
-      if (!r.ok) setCreditError(r.error || "Não foi possível creditar o sinal.");
+      if (!r.ok) {
+        setCreditError(r.error || "Não foi possível creditar o sinal.");
+        return;
+      }
+      const a = pendingAdvances.find((x) => x.id === id);
+      guiaFeito("caixa.creditarsinal", [
+        `Sinal de ${a ? formatCurrency(a.amount) : "valor indicado"} creditado${a?.accountName ? ` em ${a.accountName}` : ""}, com a data de trabalho do caixa.`,
+        ...(a?.vehicleLabel ? [`Ele passa a contar como recebido na venda do ${a.vehicleLabel}.`] : []),
+      ]);
     });
   }
 
@@ -73,14 +82,29 @@ export default function CashboxCard({
     setError(null);
     start(async () => {
       const r = await openCashboxAction(workDate);
-      if (!r.ok) setError(r.error || "Erro ao abrir o caixa.");
+      if (!r.ok) {
+        setError(r.error || "Erro ao abrir o caixa.");
+        return;
+      }
+      const [ano, mes, dia] = workDate.split("-");
+      guiaFeito("caixa.abrir", [
+        `Caixa ${willReopen ? "reaberto" : "aberto"} com data de trabalho ${dia}/${mes}/${ano}.`,
+        "Pagamentos, recebimentos e transferências já estão liberados, todos com essa data.",
+      ]);
     });
   }
   function doClose() {
     setError(null);
     start(async () => {
       const r = await closeCashboxAction();
-      if (!r.ok) setError(r.error || "Erro ao fechar o caixa.");
+      if (!r.ok) {
+        setError(r.error || "Erro ao fechar o caixa.");
+        return;
+      }
+      guiaFeito("caixa.fechar", [
+        `Caixa${session ? ` do dia ${formatDate(session.workDate)}` : ""} fechado.`,
+        "Os lançamentos ficam bloqueados até o caixa ser aberto de novo.",
+      ]);
     });
   }
   function doRevert() {
@@ -103,6 +127,10 @@ export default function CashboxCard({
       const partes = [`${r.revertidos ?? 0} baixa(s) estornada(s)`];
       if (r.pulados) partes.push(`${r.pulados} de venda/recorrência mantida(s) — reverta na origem`);
       setRevertMsg(partes.join(" · "));
+      guiaFeito("caixa.estornar", [
+        `${r.revertidos ?? 0} baixa(s) estornada(s): os títulos voltaram a pendente e os avulsos do dia foram apagados.`,
+        ...(r.pulados ? [`${r.pulados} baixa(s) de venda ou recorrência mantida(s) — reverta na origem.`] : []),
+      ]);
     });
   }
 
@@ -147,6 +175,7 @@ export default function CashboxCard({
                 type="date"
                 value={workDate}
                 onChange={(e) => setWorkDate(e.target.value)}
+                data-guia="caixa.data"
                 className="mt-1 block h-9 rounded-lg border border-slate-300 bg-white px-2 text-sm text-slate-900"
               />
             </label>
@@ -155,6 +184,7 @@ export default function CashboxCard({
           <button
             type="button"
             onClick={() => setShowHistory((v) => !v)}
+            data-guia="caixa.historico"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             🕘 Histórico
@@ -162,6 +192,7 @@ export default function CashboxCard({
 
           <a
             href="/financeiro/fechamento"
+            data-guia="caixa.fechamento"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             📋 Fechamento Mensal
@@ -173,6 +204,7 @@ export default function CashboxCard({
                 ? `/financeiro/boletim-caixa?de=${boletimDay(session.workDate)}&ate=${boletimDay(session.workDate)}`
                 : "/financeiro/boletim-caixa"
             }
+            data-guia="caixa.boletim"
             className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
           >
             📄 Boletim de Caixa
@@ -183,6 +215,7 @@ export default function CashboxCard({
               <button
                 type="button"
                 onClick={doRevert}
+                data-guia="caixa.estornar"
                 disabled={reverting || pending}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-rose-300 bg-white px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-60"
                 title="Volta todos os pagamentos e recebimentos do dia para pendente (e apaga os avulsos)"
@@ -192,6 +225,7 @@ export default function CashboxCard({
               <button
                 type="button"
                 onClick={doClose}
+                data-guia="caixa.fechar"
                 disabled={pending}
                 className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-60"
               >
@@ -202,6 +236,7 @@ export default function CashboxCard({
             <button
               type="button"
               onClick={doOpen}
+              data-guia="caixa.abrir"
               disabled={pending}
               className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
             >
@@ -241,6 +276,7 @@ export default function CashboxCard({
                     <button
                       type="button"
                       onClick={() => doCredit(a.id)}
+                      data-guia="caixa.creditarsinal"
                       disabled={crediting}
                       className="inline-flex h-8 items-center gap-1.5 rounded-lg bg-emerald-600 px-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-60"
                     >

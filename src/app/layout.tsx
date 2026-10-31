@@ -114,7 +114,7 @@ export default async function RootLayout({
         <div className="flex min-h-screen min-w-0 flex-1 flex-col">
           <MobileNav user={sessionUser} brand={brand} systemLocked={systemLocked} />
           <main className="flex-1 px-4 py-6 md:px-8 md:py-8">
-            {isDemoMode() ? <ModoGuia /> : null}
+            {isDemoMode() || company?.modoGuia ? <ModoGuia /> : null}
             {children}
           </main>
         </div>

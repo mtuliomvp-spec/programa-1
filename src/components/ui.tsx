@@ -89,15 +89,19 @@ export function LinkButton({
   variant = "primary",
   className,
   children,
+  "data-guia": guia,
 }: {
   href: string;
   variant?: keyof typeof buttonVariants;
   className?: string;
   children: ReactNode;
+  /** Id da explicação do modo guia (src/lib/guia/catalogo.ts). */
+  "data-guia"?: string;
 }) {
   return (
     <Link
       href={href}
+      data-guia={guia}
       className={clsx(
         "inline-flex items-center justify-center gap-1.5 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors",
         buttonVariants[variant],
