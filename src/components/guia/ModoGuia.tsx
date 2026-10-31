@@ -51,7 +51,39 @@ function inscrever(cb: () => void) {
   };
 }
 
-type Alvo = { el: HTMLElement; item: GuiaItem; toque: boolean };
+type Alvo = { el: HTMLElement; item: GuiaItem; toque: boolean; completo: boolean };
+
+/** Qualquer botão ou link da página (fora do próprio guia) também responde. */
+const CLICAVEIS = "button, a[href], summary, [role=button]";
+
+/** Botões comuns, iguais em várias telas: texto curto de quando não há id. */
+const COMUNS: Record<string, string> = {
+  filtrar: "Mostra só o que combina com os filtros escolhidos acima. Não altera nada.",
+  limpar: "Tira os filtros e volta a mostrar a lista inteira. Não altera nada.",
+  pdf: "Abre esta lista em PDF, para imprimir ou salvar. Não altera nada.",
+  editar: "Abre a tela de edição. Nada muda até você salvar lá.",
+};
+
+function rotuloDe(el: HTMLElement): string {
+  const texto = (el.innerText || el.getAttribute("aria-label") || el.getAttribute("title") || "").trim();
+  return texto.replace(/\s+/g, " ").slice(0, 60) || "Este botão";
+}
+
+/** Explicação do elemento: a completa do catálogo ou uma resumida. */
+function explicar(el: HTMLElement): { item: GuiaItem; completo: boolean } | null {
+  const id = el.dataset.guia;
+  if (id) return GUIA[id] ? { item: GUIA[id], completo: true } : null;
+  const titulo = rotuloDe(el);
+  const chave = titulo.toLowerCase().replace(/[^a-zà-ú ]/g, "").trim();
+  const dica = el.getAttribute("title")?.trim();
+  const comum = COMUNS[chave];
+  if (comum) return { item: { titulo, oQueFaz: comum }, completo: false };
+  if (el.tagName === "A") return { item: { titulo, oQueFaz: dica || "Abre outra tela ou arquivo." }, completo: false };
+  return {
+    item: { titulo, oQueFaz: dica || "Este botão ainda não tem explicação detalhada no guia. Ele funciona normalmente." },
+    completo: false,
+  };
+}
 
 /** Botões e links: no toque, o primeiro clique só explica. Campos não são bloqueados. */
 function bloqueiaNoToque(el: HTMLElement): boolean {
@@ -70,11 +102,17 @@ export default function ModoGuia() {
 
   useEffect(() => {
     if (!ligado) return;
-    const achar = (t: EventTarget | null) =>
-      t instanceof Element ? (t.closest("[data-guia]") as HTMLElement | null) : null;
+    const achar = (t: EventTarget | null): HTMLElement | null => {
+      if (!(t instanceof Element) || t.closest("[data-guia-ui]")) return null;
+      const marcado = t.closest("[data-guia]");
+      if (marcado) return marcado as HTMLElement;
+      const qualquer = t.closest(CLICAVEIS);
+      return qualquer && qualquer.closest("main") ? (qualquer as HTMLElement) : null;
+    };
     const mostrar = (el: HTMLElement, toque: boolean) => {
-      const item = GUIA[el.dataset.guia ?? ""];
-      if (item) setAlvo({ el, item, toque });
+      const e = explicar(el);
+      // No celular, só os botões com explicação completa param o toque.
+      if (e && (!toque || e.completo)) setAlvo({ el, toque, ...e });
     };
 
     const aoPonteiroDescer = (e: PointerEvent) => {
@@ -107,7 +145,7 @@ export default function ModoGuia() {
         return;
       }
       const el = achar(e.target);
-      if (!el || !GUIA[el.dataset.guia ?? ""]) return;
+      if (!el || !explicar(el)?.completo) return;
       if (liberadoRef.current === el) {
         liberadoRef.current = null;
         return;
@@ -148,6 +186,13 @@ export default function ModoGuia() {
       window.removeEventListener("scroll", aoRolar, true);
       window.removeEventListener(EVENTO_GUIA_FEITO, aoFeito);
     };
+  }, [ligado]);
+
+  // Ligado: os botões com explicação completa ganham contorno tracejado
+  // (regra em globals.css). Mexe só no atributo da página, não no estado.
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-guia-ligado", ligado);
+    return () => document.documentElement.removeAttribute("data-guia-ligado");
   }, [ligado]);
 
   // Operação que terminou noutra página (ex.: cadastrar veículo → ficha): o
@@ -193,7 +238,7 @@ export default function ModoGuia() {
 
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5">
+      <div data-guia-ui className="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-indigo-200 bg-indigo-50 px-4 py-2.5">
         <button
           type="button"
           role="switch"
@@ -213,7 +258,7 @@ export default function ModoGuia() {
         </button>
         <p className="text-xs text-indigo-800">
           {ligado
-            ? "Passe o mouse sobre um botão para ver o que ele faz antes de clicar (no celular, o primeiro toque explica). Já explicados: Contas a pagar, Contas e caixas, Contas a receber, cadastro de veículo, vendas e Renave."
+            ? "Passe o mouse sobre qualquer botão para ver o que ele faz antes de clicar. Os de contorno tracejado têm o passo a passo completo (no celular, o primeiro toque neles explica). Em Contas a pagar e a receber, marque uma conta para aparecerem os botões de pagamento."
             : "Ligue para ver, antes de clicar, o que cada botão faz e o que acontece depois."}
         </p>
       </div>
@@ -222,6 +267,7 @@ export default function ModoGuia() {
         <div
           ref={balaoRef}
           role="tooltip"
+          data-guia-ui
           style={{ top: -9999, left: -9999 }}
           className={`fixed z-[60] w-[min(22rem,calc(100vw-1rem))] rounded-xl bg-slate-900 p-4 text-sm text-slate-100 shadow-2xl ${alvo.toque ? "" : "pointer-events-none"}`}
         >
@@ -247,6 +293,11 @@ export default function ModoGuia() {
               </ul>
             </>
           ) : null}
+          {alvo.completo ? null : (
+            <p className="mt-3 text-xs text-slate-400">
+              Explicação resumida. Os botões com contorno tracejado têm o passo a passo completo.
+            </p>
+          )}
           {alvo.toque ? (
             <div className="mt-4 flex gap-2">
               {bloqueiaNoToque(alvo.el) ? (
@@ -265,6 +316,7 @@ export default function ModoGuia() {
       {ligado && feito ? (
         <div
           role="status"
+          data-guia-ui
           className="fixed top-16 right-4 left-4 z-[60] rounded-xl border border-emerald-300 bg-white p-4 text-sm shadow-2xl sm:left-auto sm:w-96 md:top-4"
         >
           <div className="flex items-start justify-between gap-3">

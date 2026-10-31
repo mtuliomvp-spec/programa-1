@@ -319,6 +319,7 @@ export default function PayablesTable({
                 <input
                   type="checkbox"
                   aria-label="Selecionar todas"
+                  data-guia="apagar.selecionar"
                   checked={allSelected}
                   onChange={toggleAll}
                   className="h-4 w-4 rounded border-slate-300"
@@ -352,6 +353,7 @@ export default function PayablesTable({
                     <input
                       type="checkbox"
                       aria-label={`Selecionar ${p.description}`}
+                      data-guia="apagar.selecionar"
                       checked={selected.has(p.id)}
                       onChange={() => toggle(p.id)}
                       className="h-4 w-4 rounded border-slate-300"
@@ -487,6 +489,7 @@ export default function PayablesTable({
                       <FixDateButton
                         currentDate={p.paymentDateInput}
                         kind="pagamento"
+                        guia="apagar.corrigirdata"
                         onSave={(d) => correctPaymentDateAction(p.id, d)}
                       />
                     ) : null}
@@ -495,6 +498,7 @@ export default function PayablesTable({
                         type="button"
                         disabled={reverting}
                         onClick={() => startRevert(() => markPendingAction(p.id))}
+                        data-guia="apagar.reverter"
                         className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
                       >
                         Reverter

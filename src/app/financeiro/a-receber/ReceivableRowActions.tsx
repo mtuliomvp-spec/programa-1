@@ -138,6 +138,7 @@ export default function ReceivableRowActions({
           <FixDateButton
             currentDate={receivedDateInput}
             kind="recebimento"
+            guia="areceber.corrigirdata"
             onSave={(d) => correctReceivedDateAction(id, d)}
           />
         ) : null}
@@ -146,6 +147,7 @@ export default function ReceivableRowActions({
             type="button"
             disabled={pending}
             onClick={() => startTransition(() => markPendingAction(id))}
+            data-guia="areceber.reverter"
             className="text-sm font-medium text-slate-500 hover:underline disabled:opacity-50"
           >
             Reverter
@@ -487,6 +489,7 @@ export default function ReceivableRowActions({
           setValue(String(amount));
           setChoosing(true);
         }}
+        data-guia="areceber.receberlinha"
         className="text-sm font-medium text-emerald-700 hover:underline disabled:opacity-50"
       >
         Receber
@@ -500,6 +503,7 @@ export default function ReceivableRowActions({
             setInformando(true);
           }}
           title="O dinheiro já caiu na conta, mas o movimento do caixa ainda não chegou nesse dia"
+          data-guia="areceber.jacaiu"
           className="text-sm font-medium text-sky-700 hover:underline disabled:opacity-50"
         >
           Já caiu
@@ -511,6 +515,7 @@ export default function ReceivableRowActions({
           disabled={pending}
           onClick={() => setCapitalChoosing(true)}
           title="Receber abatendo do capital de um sócio (sem dinheiro em caixa)"
+          data-guia="areceber.nocapital"
           className="text-sm font-medium text-violet-700 hover:underline disabled:opacity-50"
         >
           No capital

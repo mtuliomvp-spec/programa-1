@@ -17,11 +17,14 @@ export default function FixDateButton({
   currentDate,
   kind,
   onSave,
+  guia,
 }: {
   /** Data atual da baixa, em ISO (yyyy-mm-dd), para preencher o campo. */
   currentDate: string;
   kind: "recebimento" | "pagamento";
   onSave: (dateInput: string) => Promise<Result>;
+  /** Id do modo guia (src/lib/guia/catalogo.ts). */
+  guia?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(currentDate);
@@ -39,6 +42,7 @@ export default function FixDateButton({
         }}
         className="text-sm font-medium text-blue-700 hover:underline"
         title={`Corrigir o dia em que este ${kind} entrou no sistema`}
+        data-guia={guia}
       >
         Corrigir data
       </button>

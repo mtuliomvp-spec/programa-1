@@ -66,6 +66,7 @@ export default function PartialPayButton({
         onClick={() => setOpen(true)}
         className="text-sm font-medium text-blue-700 hover:underline"
         title="Pagar só uma parte agora; o saldo continua em aberto"
+        data-guia="apagar.parcial"
       >
         Pagar parcial
       </button>
