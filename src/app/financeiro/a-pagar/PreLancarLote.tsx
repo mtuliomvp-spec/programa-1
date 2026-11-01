@@ -182,6 +182,21 @@ export default function PreLancarLote({
         </label>
       ) : null}
       {umTitulo && parcial ? (
+        // O valor vem logo abaixo da caixa: não depende do comprovante (no
+        // celular, depois do "Escolher arquivo", ninguém achava o campo).
+        <label className="mt-2 flex flex-col gap-1 text-xs font-medium text-emerald-900">
+          Quanto foi pago agora?
+          <span className="max-w-[170px]">
+            <MoneyInput
+              key={sugestao ?? "vazio"}
+              name="valorParcialVisivel"
+              defaultValue={sugestao}
+              onValueChange={setValorParcial}
+            />
+          </span>
+        </label>
+      ) : null}
+      {umTitulo && parcial ? (
         <p className="mt-1 text-xs text-emerald-800">
           Título de {formatCurrency(total)}
           {valorParcial > 0 && valorParcial < total
@@ -224,17 +239,6 @@ export default function PreLancarLote({
             className="block w-full max-w-xs text-sm text-slate-600 file:mr-3 file:rounded-lg file:border-0 file:bg-white file:px-3 file:py-2 file:text-sm file:font-medium file:text-slate-700"
           />
         </label>
-        {umTitulo && parcial ? (
-          <label className="flex flex-col gap-1 text-xs text-slate-600">
-            Valor pago agora
-            <MoneyInput
-              key={sugestao ?? "vazio"}
-              name="valorParcialVisivel"
-              defaultValue={sugestao}
-              onValueChange={setValorParcial}
-            />
-          </label>
-        ) : null}
         <Button
           type="button"
           onClick={confirmar}
