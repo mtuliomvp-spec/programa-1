@@ -271,6 +271,9 @@ export async function markPaidAction(id: string, accountId?: string) {
   await assertBooksBalanced();
   await assertCashboxOpen();
   await assertNotInSolicitedCombo([id]);
+  const { separarParciaisPreLancados, assertSemPagamentoNaFila } = await import("@/lib/payment-queue");
+  await separarParciaisPreLancados([id]);
+  await assertSemPagamentoNaFila([id]);
   await markPayablePaid(id, await getCashboxWorkDate(), accountId || null);
   revalidatePath("/financeiro/a-pagar");
   revalidatePath("/financeiro/fluxo-caixa");
@@ -311,6 +314,11 @@ export async function payPartialAction(
   try {
     await assertMonthOpen(date);
     await assertNotInSolicitedCombo([id]);
+    // Parcial já informado no "Já paguei": a parte que espera o caixa vira um
+    // título à parte e o parcial de agora sai só do SALDO.
+    const { separarParciaisPreLancados, assertSemPagamentoNaFila } = await import("@/lib/payment-queue");
+    await separarParciaisPreLancados([id]);
+    await assertSemPagamentoNaFila([id]);
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -356,6 +364,9 @@ export async function payBatchAction(
   try {
     await assertMonthOpen(date);
     await assertNotInSolicitedCombo(ids);
+    const { separarParciaisPreLancados, assertSemPagamentoNaFila } = await import("@/lib/payment-queue");
+    await separarParciaisPreLancados(ids);
+    await assertSemPagamentoNaFila(ids);
   } catch (e) {
     return { ok: false, paid: 0, error: e instanceof Error ? e.message : "Mês fechado." };
   }
@@ -3489,6 +3500,13 @@ export async function preLancarPagamentoEmLoteAction(
   }
   if (!accountId) return { ok: false, error: "Escolha a conta debitada." };
 
+  // Parcial antigo (gravado no título inteiro): separa antes, para o valor e o
+  // saldo daqui saírem certos.
+  {
+    const { separarParciaisPreLancados } = await import("@/lib/payment-queue");
+    await separarParciaisPreLancados(ids);
+  }
+
   const rows = await prisma.payable.findMany({
     where: { id: { in: ids } },
     select: {
@@ -3669,6 +3687,16 @@ export async function preLancarPagamentoEmLoteAction(
       lote,
       parcial,
     });
+  }
+  // Parcial: a parte informada vira um título próprio já agora (vai para a
+  // fila com o comprovante) e o saldo fica livre para outro pagamento.
+  if (parcial) {
+    const { separarParcialPreLancado } = await import("@/lib/payment-queue");
+    try {
+      await separarParcialPreLancado(pagaveis[0].id);
+    } catch {
+      // Fica no formato antigo: o ok do caixa ainda desmembra.
+    }
   }
 
   revalidatePath("/financeiro/a-pagar");

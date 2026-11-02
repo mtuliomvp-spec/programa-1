@@ -525,6 +525,9 @@ export default function PayablesTable({
                       p.effective !== "PAGO" &&
                       !p.combo &&
                       !p.cardInvoice &&
+                      // Pagamento já informado ("Já paguei"): a baixa é na fila
+                      // de Contas e caixas — pagar aqui contaria duas vezes.
+                      !p.queued &&
                       accounts.length > 0 ? (
                       <PartialPayButton
                         payableId={p.id}

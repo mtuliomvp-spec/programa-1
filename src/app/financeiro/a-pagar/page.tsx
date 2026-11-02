@@ -57,6 +57,13 @@ export default async function ContasAPagarPage({
   // Link "Editar" da linha: lançadores OU quem tem só a permissão de editar.
   const canEdit = canManage || canEditOnly;
   await ensureRecurringGeneratedForPage();
+  // "Já paguei" parcial gravado no formato antigo (título inteiro na fila):
+  // separa a parte informada, para a lista mostrar o saldo livre. Depois da
+  // primeira vez a busca volta vazia.
+  {
+    const { separarParciaisPreLancados } = await import("@/lib/payment-queue");
+    await separarParciaisPreLancados().catch(() => 0);
+  }
 
   const [payables, accounts, cashbox] = await timed("tela: contas a pagar", () =>
     Promise.all([

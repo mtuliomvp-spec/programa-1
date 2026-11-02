@@ -1202,6 +1202,11 @@ export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: bool
       await prisma.payable.delete({ where: { id } });
     } else {
       await desenfileirarPagamento(id);
+      // Parte de um "Já paguei" parcial tirada da fila: volta a se juntar ao
+      // saldo do título de origem (senão sobrariam dois títulos da mesma conta).
+      const { reunirParteParcial } = await import("@/lib/finance");
+      await reunirParteParcial(id);
+      revalidatePath("/financeiro/a-pagar");
     }
     revalidatePath("/financeiro/livro-caixa");
   } else {
