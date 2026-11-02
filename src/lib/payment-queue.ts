@@ -355,6 +355,114 @@ export async function desenfileirarPagamento(payableId: string) {
   });
 }
 
+/**
+ * "Já paguei" PARCIAL: separa a parte informada num título PRÓPRIO já no
+ * pré-lançamento — ela fica na fila com o comprovante, e o título original
+ * fica só com o SALDO, livre para ser pago (ou pré-lançado) de novo, em outra
+ * data e por outra conta, sem que o valor da fila seja contado duas vezes.
+ *
+ * Antes a parte só era separada no ok do caixa: enquanto esperava, o título
+ * seguia com o valor cheio e um novo pagamento não descontava o que já estava
+ * na fila (500 com 400 pré-lançados aceitava outro parcial de 400 → 800
+ * pagos). Também converte os pré-lançamentos parciais gravados desse jeito.
+ * Devolve o id da parte (null quando não havia o que separar).
+ */
+export async function separarParcialPreLancado(payableId: string): Promise<string | null> {
+  const p = await prisma.payable.findUnique({
+    where: { id: payableId },
+    select: {
+      status: true,
+      amount: true,
+      paymentComboId: true,
+      pendingPaymentPartial: true,
+      pendingPaymentDate: true,
+      pendingPaymentAmount: true,
+      pendingPaymentAccountId: true,
+      pendingPaymentNote: true,
+    },
+  });
+  if (!p || !p.pendingPaymentPartial || !p.pendingPaymentDate || p.pendingPaymentAmount == null) return null;
+  if (p.status === "PAGO" || p.paymentComboId) return null;
+  // Parcial do tamanho do título (o título mudou depois): o ok baixa o todo.
+  if (p.pendingPaymentAmount >= p.amount - 0.005) return null;
+
+  const { desmembrarPagamentoParcial } = await import("@/lib/finance");
+  const parteId = await desmembrarPagamentoParcial(payableId, p.pendingPaymentAmount);
+  await prisma.$transaction([
+    prisma.payable.update({
+      where: { id: parteId },
+      data: {
+        pendingPaymentDate: p.pendingPaymentDate,
+        pendingPaymentAmount: p.pendingPaymentAmount,
+        pendingPaymentAccountId: p.pendingPaymentAccountId,
+        pendingPaymentNote: p.pendingPaymentNote,
+        pendingPaymentBatch: null,
+        pendingPaymentPartial: false,
+      },
+    }),
+    // O comprovante é da parte paga — é ela que ele comprova.
+    prisma.payableAttachment.updateMany({
+      where: { payableId, kind: "COMPROVANTE" },
+      data: { payableId: parteId },
+    }),
+    prisma.payable.update({
+      where: { id: payableId },
+      data: {
+        pendingPaymentDate: null,
+        pendingPaymentAmount: null,
+        pendingPaymentAccountId: null,
+        pendingPaymentNote: null,
+        pendingPaymentBatch: null,
+        pendingPaymentPartial: false,
+      },
+    }),
+  ]);
+  return parteId;
+}
+
+/** Converte todos os parciais pré-lançados ainda no formato antigo (um título só). */
+export async function separarParciaisPreLancados(ids?: string[]): Promise<number> {
+  const antigos = await prisma.payable.findMany({
+    where: {
+      ...(ids ? { id: { in: ids } } : {}),
+      pendingPaymentPartial: true,
+      pendingPaymentDate: { not: null },
+      status: { not: "PAGO" },
+      paymentComboId: null,
+    },
+    select: { id: true },
+  });
+  let n = 0;
+  for (const a of antigos) {
+    try {
+      if (await separarParcialPreLancado(a.id)) n += 1;
+    } catch {
+      // Ex.: título que não aceita parcial — fica como estava; o ok do caixa
+      // ainda sabe tratar o formato antigo.
+    }
+  }
+  return n;
+}
+
+/**
+ * Bloqueia pagar de novo um título cujo pagamento já foi informado ("Já
+ * paguei") e espera o ok do caixa: a baixa dele é na fila de Contas e caixas.
+ * Pagar por aqui também levaria a pagar duas vezes a mesma conta.
+ */
+export async function assertSemPagamentoNaFila(ids: string[]) {
+  if (!ids.length) return;
+  const naFila = await prisma.payable.findFirst({
+    where: { id: { in: ids }, status: { not: "PAGO" }, pendingPaymentDate: { not: null } },
+    select: { description: true, amount: true, pendingPaymentDate: true, pendingPaymentAmount: true },
+  });
+  if (!naFila?.pendingPaymentDate) return;
+  throw new Error(
+    `"${naFila.description}" já tem pagamento informado no "Já paguei" ` +
+      `(${formatCurrency(naFila.pendingPaymentAmount ?? naFila.amount)} em ${formatDate(naFila.pendingPaymentDate)}), ` +
+      `esperando o ok em Contas e caixas. A baixa dele é por lá; se foi engano, tire-o da fila antes de pagar por aqui.`,
+  );
+}
+
 export type PagamentoNaFila = {
   id: string;
   /**
