@@ -381,6 +381,16 @@ export const GUIA: Record<string, GuiaItem> = {
     oQueFaz: "Escolhe a conta (banco ou caixa) onde o dinheiro entra.",
     depois: ["Nada é gravado só por trocar a conta aqui."],
   },
+  "areceber.partevendedor": {
+    titulo: "Parte do vendedor",
+    oQueFaz:
+      "Quando uma parte do valor recebido é do vendedor (ex.: repasse ou intermediação em que ele fica com uma parte). Escolha o vendedor, o valor dele e quando pagar.",
+    depois: [
+      "O valor inteiro fica no Contas a receber como receita da loja.",
+      "Nasce um título de Comissão no Contas a pagar em nome do vendedor, com o valor da parte dele (aparece em \"Minhas comissões\").",
+      "A comissão entra no resultado quando for paga; a loja fica com a diferença.",
+    ],
+  },
   "areceber.data": {
     titulo: "Data do recebimento",
     oQueFaz: "É a data do caixa aberto (o movimento do dia). Não se escolhe aqui.",

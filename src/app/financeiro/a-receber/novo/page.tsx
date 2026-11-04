@@ -18,13 +18,15 @@ export default async function NovaContaReceberPage() {
     select: { id: true, name: true },
   });
   // Fluxo Veículos: a entrada (sinal) de um carro em estoque e a conta em que cai.
-  const [vehicles, accounts] = await Promise.all([
+  const [vehicles, accounts, sellers] = await Promise.all([
     prisma.vehicle.findMany({
       where: { status: { not: "VENDIDO" }, intermediation: false },
       orderBy: [{ brand: "asc" }, { model: "asc" }],
       select: { id: true, brand: true, model: true, plate: true },
     }),
     getActiveAccounts(),
+    // Parte do vendedor: a mesma lista de vendedores da tela de venda.
+    prisma.user.findMany({ where: { active: true }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
   ]);
   return (
     <div className="mx-auto max-w-2xl">
@@ -38,6 +40,7 @@ export default async function NovaContaReceberPage() {
             beneficiaries={beneficiaries}
             vehicles={vehicles.map((v) => ({ id: v.id, label: `${v.plate} · ${v.brand} ${v.model}` }))}
             accounts={accounts.map((a) => ({ id: a.id, name: a.name }))}
+            sellers={sellers}
           />
         </div>
       </Card>
