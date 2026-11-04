@@ -5,13 +5,14 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import MoneyInput from "@/components/MoneyInput";
 import { STRUCTURAL_FLOWS } from "@/lib/structural-flows";
 import { createManualReceivableAction, type ManualReceivableState } from "../actions";
-import { toDateInputValue } from "@/lib/format";
+import { formatCurrency, toDateInputValue } from "@/lib/format";
 
 type Customer = { id: string; name: string };
 type CostCenter = { id: string; name: string };
 type Beneficiary = { id: string; name: string };
 type VehicleOption = { id: string; label: string };
 type AccountOption = { id: string; name: string };
+type SellerOption = { id: string; name: string };
 
 export default function ManualReceivableForm({
   customers,
@@ -19,6 +20,7 @@ export default function ManualReceivableForm({
   beneficiaries,
   vehicles = [],
   accounts = [],
+  sellers = [],
 }: {
   customers: Customer[];
   costCenters: CostCenter[];
@@ -26,6 +28,8 @@ export default function ManualReceivableForm({
   /** Carros em estoque (fluxo Veículos = entrada/sinal do carro). */
   vehicles?: VehicleOption[];
   accounts?: AccountOption[];
+  /** Usuários ativos: a "parte do vendedor" vira comissão a pagar a um deles. */
+  sellers?: SellerOption[];
 }) {
   const [state, formAction, pending] = useActionState(createManualReceivableAction, {} as ManualReceivableState);
   const [alreadyReceived, setAlreadyReceived] = useState(false);
@@ -35,6 +39,12 @@ export default function ManualReceivableForm({
   const [flow, setFlow] = useState("ADMINISTRATIVO");
   const isCapital = flow === "CAPITAL";
   const isVeiculo = flow === "VEICULOS";
+  // Parte do vendedor: só para receita da loja (não para aporte nem sinal).
+  const [valor, setValor] = useState(0);
+  const [vendedorId, setVendedorId] = useState("");
+  const [parteVendedor, setParteVendedor] = useState(0);
+  const comParte = !isCapital && !isVeiculo;
+  const vendedorNome = sellers.find((v) => v.id === vendedorId)?.name;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -56,7 +66,7 @@ export default function ManualReceivableForm({
           </Select>
         </Field>
         <Field label="Valor" required>
-          <MoneyInput name="amount" required />
+          <MoneyInput name="amount" required onValueChange={setValor} />
         </Field>
         <Field label="Vencimento" required>
           <Input type="date" name="dueDate" defaultValue={toDateInputValue(new Date())} required />
@@ -125,6 +135,50 @@ export default function ManualReceivableForm({
           </Select>
         </Field>
       </div>
+      {comParte ? (
+        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50 p-3" data-guia="areceber.partevendedor">
+          <div>
+            <p className="text-sm font-medium text-slate-700">Parte do vendedor (opcional)</p>
+            <p className="text-xs text-slate-500">
+              Quando uma parte deste valor é do vendedor. O valor inteiro entra como receita da loja e a parte
+              dele vira um título de <strong>Comissão</strong>{" "}no Contas a pagar, em nome dele (aparece em
+              &quot;Minhas comissões&quot;).
+            </p>
+          </div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <Field label="Vendedor">
+              <Select name="sellerId" value={vendedorId} onChange={(e) => setVendedorId(e.target.value)}>
+                <option value="">Sem parte de vendedor</option>
+                {sellers.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.name}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+            {vendedorId ? (
+              <>
+                <Field label="Valor da parte dele" required>
+                  <MoneyInput name="sellerAmount" required onValueChange={setParteVendedor} />
+                </Field>
+                <Field label="Pagar ao vendedor em">
+                  <Input type="date" name="sellerDueDate" defaultValue={toDateInputValue(new Date())} />
+                </Field>
+              </>
+            ) : null}
+          </div>
+          {vendedorId && parteVendedor > 0 && valor > 0 ? (
+            parteVendedor < valor ? (
+              <p className="text-xs text-slate-600">
+                Entra <strong>{formatCurrency(valor)}</strong> · {formatCurrency(parteVendedor)} de comissão a pagar a{" "}
+                {vendedorNome} · a loja fica com <strong>{formatCurrency(valor - parteVendedor)}</strong>.
+              </p>
+            ) : (
+              <p className="text-xs text-rose-600">A parte do vendedor tem de ser menor que o valor recebido.</p>
+            )
+          ) : null}
+        </div>
+      ) : null}
       <label className="flex items-center gap-2 text-sm text-slate-600">
         <input
           type="checkbox"

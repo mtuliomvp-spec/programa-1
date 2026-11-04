@@ -260,6 +260,11 @@ const manualSchema = z.object({
   // Fluxo VEÍCULOS: entrada (sinal) de um carro em estoque e a conta em que cai.
   vehicleId: z.string().optional(),
   accountId: z.string().optional(),
+  // PARTE DO VENDEDOR (opcional): quanto do valor recebido é do vendedor. Vira
+  // um título a pagar de Comissão, ligado ao usuário do vendedor.
+  sellerId: z.string().optional(),
+  sellerAmount: z.coerce.number().optional(),
+  sellerDueDate: z.string().optional(),
 });
 
 export type ManualReceivableState = { error?: string };
@@ -336,6 +341,35 @@ export async function createManualReceivableAction(
     redirect("/financeiro/a-receber");
   }
 
+  // Parte do vendedor: o valor inteiro é receita da loja (caiu no CNPJ dela) e
+  // a parte do vendedor é despesa de Comissão — título a pagar ligado a ele,
+  // que aparece em "Minhas comissões" e entra no resultado quando for pago.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const parteVendedor = round2(d.sellerAmount ?? 0);
+  let vendedor: { id: string; name: string } | null = null;
+  if (d.sellerId || parteVendedor > 0) {
+    if (isCapital) return { error: "Aporte de sócio não tem parte de vendedor." };
+    if (!d.sellerId) return { error: "Escolha o vendedor que fica com a parte informada." };
+    if (!(parteVendedor > 0)) return { error: "Informe o valor da parte do vendedor." };
+    if (parteVendedor >= round2(d.amount)) {
+      return { error: "A parte do vendedor tem de ser menor que o valor recebido." };
+    }
+    vendedor = await prisma.user.findUnique({ where: { id: d.sellerId }, select: { id: true, name: true } });
+    if (!vendedor) return { error: "Vendedor não encontrado." };
+  }
+  const vencimentoVendedor = parseDateInput(d.sellerDueDate || d.dueDate);
+  if (vendedor) {
+    try {
+      await assertMonthOpen(vencimentoVendedor);
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : "Lançamento bloqueado." };
+    }
+  }
+
+  const fmt = (n: number) => n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  const notaVendedor = vendedor
+    ? `Parte do vendedor: ${fmt(parteVendedor)} para ${vendedor.name} (título de comissão no Contas a pagar); a loja fica com ${fmt(round2(d.amount - parteVendedor))}.`
+    : null;
   await createManualReceivable({
     description: d.description,
     amount: d.amount,
@@ -344,9 +378,27 @@ export async function createManualReceivableAction(
     costCenterId: d.costCenterId || null,
     structuralKey: d.structuralKey,
     capitalBeneficiaryId: isCapital ? d.capitalBeneficiaryId || null : null,
-    notes: d.notes || null,
+    notes: [d.notes?.trim() || null, notaVendedor].filter(Boolean).join(" — ") || null,
     alreadyReceived: Boolean(d.alreadyReceived),
   });
+
+  if (vendedor) {
+    const { structuralCenterId } = await import("@/lib/structural");
+    await prisma.payable.create({
+      data: {
+        description: `Comissão — ${vendedor.name} — ${d.description}`,
+        category: "COMISSAO",
+        amount: parteVendedor,
+        dueDate: vencimentoVendedor,
+        status: "PENDENTE",
+        costCenterId: await structuralCenterId("ADMINISTRATIVO"),
+        beneficiaryUserId: vendedor.id,
+        notes: `Parte do vendedor no recebimento "${d.description}" (${fmt(d.amount)}), lançado no Contas a receber.`,
+      },
+    });
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/minhas-comissoes");
+  }
 
   revalidatePath("/financeiro/a-receber");
   revalidatePath("/");
