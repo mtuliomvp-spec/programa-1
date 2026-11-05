@@ -71,7 +71,12 @@ export default function FuturePaymentsCard({
     setRemovidas((prev) => [...prev, p.id]);
     startDismiss(async () => {
       for (const id of ids) {
-        const res = await dismissQueuedPaymentAction(id);
+        // Falha de rede/servidor também volta como erro na tela (antes a
+        // exceção sumia e o toque parecia não fazer nada).
+        const res = await dismissQueuedPaymentAction(id).catch(() => ({
+          ok: false as const,
+          error: "Não foi possível tirar da fila (sem resposta do servidor). Tente de novo.",
+        }));
         if (!res.ok) {
           // Deu errado: a linha volta para a tela, senão o pré-lançamento
           // sumiria daqui continuando de pé no banco de dados.
@@ -238,9 +243,11 @@ export default function FuturePaymentsCard({
                                 type="button"
                                 onClick={() => descartar(p)}
                                 disabled={dismissing}
-                                className="mt-1 text-[11px] font-medium text-slate-400 hover:text-rose-600 hover:underline disabled:opacity-50"
+                                // Área de toque de dedo (o texto de 11px sozinho era difícil de
+                                // acertar no celular, e o toque parecia não fazer nada).
+                                className="-mr-2 mt-0.5 inline-block rounded-md px-2 py-1.5 text-xs font-medium text-slate-500 hover:bg-rose-50 hover:text-rose-600 active:bg-rose-100 disabled:opacity-50"
                               >
-                                tirar da fila
+                                {dismissing ? "tirando…" : "tirar da fila"}
                               </button>
                             ) : null}
                           </div>
