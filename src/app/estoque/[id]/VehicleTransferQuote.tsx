@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field } from "@/components/ui";
 import { formatDate } from "@/lib/format";
@@ -217,8 +219,8 @@ export default function VehicleTransferQuote({
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => {
-                      if (confirm("Excluir o orçamento de transferência?")) {
+                    onClick={async () => {
+                      if (await perguntar("Excluir o orçamento de transferência?")) {
                         startRemove(() => deleteVehicleAttachmentAction(q.id, vehicleId));
                       }
                     }}

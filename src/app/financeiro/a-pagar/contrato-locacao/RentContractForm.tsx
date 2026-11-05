@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, CardHeader, Field, Input, Table, Td, Th, Thead, Tr } from "@/components/ui";
@@ -54,12 +56,12 @@ export default function RentContractForm({
   const totalPagar = schedule.parcelas.length + (schedule.caucao ? 1 : 0);
   const totalReceber = schedule.caucao ? 1 : 0;
 
-  function gerar() {
+  async function gerar() {
     setMsg(null);
     const resumo = `Gerar ${totalPagar} título(s) no Contas a pagar${
       totalReceber ? ` e ${totalReceber} no Contas a receber (devolução da caução)` : ""
     }?`;
-    if (!confirm(resumo)) return;
+    if (!await perguntar(resumo)) return;
     start(async () => {
       const r = await createRentContractAction(locador, params);
       if (!r.ok) {

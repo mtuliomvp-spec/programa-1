@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { Button, Field, Input } from "@/components/ui";
@@ -113,8 +115,8 @@ export default function VehicleAttachments({
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => {
-                      if (confirm(`Excluir o documento "${a.description}"?`)) {
+                    onClick={async () => {
+                      if (await perguntar(`Excluir o documento "${a.description}"?`)) {
                         startRemove(() => deleteVehicleAttachmentAction(a.id, vehicleId));
                       }
                     }}

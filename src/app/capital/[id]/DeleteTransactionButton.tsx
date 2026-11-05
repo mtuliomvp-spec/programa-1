@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { deleteCapitalTransactionAction } from "../actions";
 
@@ -15,8 +17,8 @@ export default function DeleteTransactionButton({
     <button
       type="button"
       disabled={pending}
-      onClick={() => {
-        if (confirm("Excluir esta movimentação? O lançamento vinculado no financeiro também será removido.")) {
+      onClick={async () => {
+        if (await perguntar("Excluir esta movimentação? O lançamento vinculado no financeiro também será removido.")) {
           startTransition(() => deleteCapitalTransactionAction(id, beneficiaryId));
         }
       }}

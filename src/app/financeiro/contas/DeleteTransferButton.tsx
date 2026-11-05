@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { deleteTransferAction } from "./actions";
 
@@ -9,8 +11,8 @@ export default function DeleteTransferButton({ id }: { id: string }) {
     <button
       type="button"
       disabled={pending}
-      onClick={() => {
-        if (confirm("Excluir esta transferência? Os saldos das duas contas serão recalculados.")) {
+      onClick={async () => {
+        if (await perguntar("Excluir esta transferência? Os saldos das duas contas serão recalculados.")) {
           startTransition(() => deleteTransferAction(id));
         }
       }}

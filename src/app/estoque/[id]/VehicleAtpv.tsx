@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field } from "@/components/ui";
@@ -317,8 +319,8 @@ function Arquivo({ a, vehicleId, canManage }: { a: Atpv; vehicleId: string; canM
           <button
             type="button"
             disabled={pending}
-            onClick={() => {
-              if (confirm("Excluir este arquivo da ATPV-e?")) {
+            onClick={async () => {
+              if (await perguntar("Excluir este arquivo da ATPV-e?")) {
                 start(async () => {
                   await deleteVehicleAttachmentAction(a.id, vehicleId);
                   router.refresh();

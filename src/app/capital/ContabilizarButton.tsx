@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/format";
@@ -34,11 +36,11 @@ export default function ContabilizarButton({
       <button
         type="button"
         disabled={pending}
-        onClick={(e) => {
+        onClick={async (e) => {
           e.preventDefault();
           e.stopPropagation();
           setMsg(null);
-          if (!confirm(confirmText)) return;
+          if (!await perguntar(confirmText)) return;
           start(async () => {
             const r = await contabilizarCapitalAction(beneficiaryId);
             if (!r.ok) {

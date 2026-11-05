@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
@@ -57,14 +59,14 @@ export default function RequestsTable({
     setSelected((prev) => (selectable.every((r) => prev.has(r.id)) ? new Set() : new Set(selectable.map((r) => r.id))));
   }
 
-  function run(
+  async function run(
     action: (ids: string[]) => Promise<BatchResult>,
     verb: string,
     confirmMsg?: string,
   ) {
     const ids = [...selected];
     if (!ids.length) return;
-    if (confirmMsg && !confirm(confirmMsg)) return;
+    if (confirmMsg && !await perguntar(confirmMsg)) return;
     setMsg(null);
     startTransition(async () => {
       const res = await action(ids);

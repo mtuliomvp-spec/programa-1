@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import ShareFileButton from "@/components/ShareFileButton";
@@ -92,8 +94,8 @@ export default function PayableAttachments({
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => {
-                      if (confirm(`Excluir o anexo "${a.description}"?`)) {
+                    onClick={async () => {
+                      if (await perguntar(`Excluir o anexo "${a.description}"?`)) {
                         startRemove(() => deletePayableAttachmentAction(a.id, payableId));
                       }
                     }}

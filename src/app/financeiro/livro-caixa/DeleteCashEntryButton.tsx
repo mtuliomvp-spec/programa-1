@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { deleteCashEntryAction } from "./actions";
 
@@ -23,8 +25,8 @@ export default function DeleteCashEntryButton({
     <button
       type="button"
       disabled={pending}
-      onClick={() => {
-        if (confirm(confirmMsg)) {
+      onClick={async () => {
+        if (await perguntar(confirmMsg)) {
           startTransition(async () => {
             try {
               await deleteCashEntryAction(kind, id);

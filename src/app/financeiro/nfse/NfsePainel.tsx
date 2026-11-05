@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { DESCRICOES_NFSE } from "@/lib/nfse";
@@ -815,8 +817,8 @@ function Linha({
         {n.ambiente === "EXTERNA" && canEmitir ? (
           <button
             type="button"
-            onClick={() => {
-              if (!confirm("Remover o registro desta nota? Os retornos voltam a ficar sem NF (a nota em si não muda).")) return;
+            onClick={async () => {
+              if (!await perguntar("Remover o registro desta nota? Os retornos voltam a ficar sem NF (a nota em si não muda).")) return;
               start(async () => {
                 const r = await removerNotaExternaAction(n.id);
                 if (!r.ok) setErro(r.error || "Não foi possível remover.");

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition, useActionState } from "react";
 import {
   toggleUserAction,
@@ -106,8 +108,8 @@ export default function UserRowActions({
         <button
           type="button"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Recusar e excluir este cadastro?")) {
+          onClick={async () => {
+            if (await perguntar("Recusar e excluir este cadastro?")) {
               startTransition(() => rejectUserAction(id));
             }
           }}
@@ -163,11 +165,11 @@ export default function UserRowActions({
           <button
             type="button"
             disabled={pending}
-            onClick={() => {
+            onClick={async () => {
               const message = active
                 ? "Desativar este usuário? Ele perde o acesso imediatamente."
                 : "Reativar este usuário?";
-              if (confirm(message)) startTransition(() => toggleUserAction(id, !active));
+              if (await perguntar(message)) startTransition(() => toggleUserAction(id, !active));
             }}
             className={`hover:underline disabled:opacity-50 ${active ? "text-rose-600" : "text-emerald-700"}`}
           >

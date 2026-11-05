@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { loadDemoDataAction, type LoadDemoState } from "./actions";
@@ -22,9 +24,9 @@ export default function LoadDemoButton({ temDados }: { temDados: boolean }) {
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
+        onClick={async () => {
           setState(null);
-          if (!confirm(confirmText)) return;
+          if (!await perguntar(confirmText)) return;
           start(async () => {
             const r = await loadDemoDataAction();
             setState(r);

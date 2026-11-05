@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -96,7 +98,7 @@ export default function PaymentQueueCard({
     });
   }
 
-  function descartar(r: PagamentoNaFila) {
+  async function descartar(r: PagamentoNaFila) {
     const ids = idsDaLinha(r);
     const pergunta =
       ids.length > 1
@@ -108,7 +110,7 @@ export default function PaymentQueueCard({
           : r.kind === "financiamento" || r.kind === "retorno" || r.kind === "seguro"
             ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
             : "Tirar este pré-lançamento da fila? O anexo continua no título.";
-    if (!confirm(pergunta)) return;
+    if (!await perguntar(pergunta)) return;
     setMsg(null);
     setRemovidas((prev) => [...prev, r.id]);
     startDismiss(async () => {

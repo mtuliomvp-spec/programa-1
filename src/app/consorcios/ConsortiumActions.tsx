@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { setConsortiumStatusAction, deleteConsortiumAction } from "./actions";
 
@@ -18,8 +20,8 @@ export default function ConsortiumActions({
         <button
           type="button"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Marcar como contemplado? As parcelas continuam sendo geradas até o fim.")) {
+          onClick={async () => {
+            if (await perguntar("Marcar como contemplado? As parcelas continuam sendo geradas até o fim.")) {
               startTransition(() => setConsortiumStatusAction(id, "CONTEMPLADO"));
             }
           }}
@@ -32,8 +34,8 @@ export default function ConsortiumActions({
         <button
           type="button"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Encerrar consórcio? As parcelas pendentes serão removidas das contas a pagar.")) {
+          onClick={async () => {
+            if (await perguntar("Encerrar consórcio? As parcelas pendentes serão removidas das contas a pagar.")) {
               startTransition(() => setConsortiumStatusAction(id, "ENCERRADO"));
             }
           }}
@@ -45,8 +47,8 @@ export default function ConsortiumActions({
         <button
           type="button"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Excluir este consórcio do histórico? Parcelas já pagas permanecem no financeiro.")) {
+          onClick={async () => {
+            if (await perguntar("Excluir este consórcio do histórico? Parcelas já pagas permanecem no financeiro.")) {
               startTransition(() => deleteConsortiumAction(id));
             }
           }}

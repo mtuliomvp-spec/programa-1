@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { deleteFuelEntryAction } from "./actions";
 
@@ -9,8 +11,8 @@ export default function DeleteFuelButton({ id }: { id: string }) {
     <button
       type="button"
       disabled={pending}
-      onClick={() => {
-        if (confirm("Excluir este abastecimento? A conta a pagar vinculada também será removida.")) {
+      onClick={async () => {
+        if (await perguntar("Excluir este abastecimento? A conta a pagar vinculada também será removida.")) {
           startTransition(() => deleteFuelEntryAction(id));
         }
       }}

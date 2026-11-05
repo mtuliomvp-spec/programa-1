@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { fixVehiclePurchaseCostsAction, type FixResult } from "./actions";
@@ -13,9 +15,9 @@ export default function FixButton({ count }: { count: number }) {
       <Button
         type="button"
         disabled={pending || (result?.ok ?? false)}
-        onClick={() => {
+        onClick={async () => {
           if (
-            !confirm(
+            !await perguntar(
               `Remover ${count} custo(s) duplicado(s) da compra e devolver a categoria "Compra de veículo" aos títulos? O título a pagar continua no sistema — só deixa de contar como custo extra do carro.`,
             )
           )

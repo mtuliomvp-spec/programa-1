@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -70,8 +72,8 @@ function ChildRow({ child, today }: { child: Child; today: string }) {
           <button
             type="button"
             disabled={removing}
-            onClick={() => {
-              if (confirm(`Remover o vínculo de ${child.name}?`)) {
+            onClick={async () => {
+              if (await perguntar(`Remover o vínculo de ${child.name}?`)) {
                 startRemove(async () => {
                   await setBeneficiaryParentAction(child.id, null);
                   router.refresh();

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -21,9 +23,9 @@ export function CloseMonthButton({
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function run() {
+  async function run() {
     if (
-      !confirm(
+      !await perguntar(
         `Fechar o mês ${label}?\n\nO resultado (${resultLabel}) será transferido para o capital da empresa e o mês ficará travado para novos lançamentos.`,
       )
     )
@@ -55,9 +57,9 @@ export function ReopenMonthButton({ year, month, label }: { year: number; month:
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  function run() {
+  async function run() {
     if (
-      !confirm(
+      !await perguntar(
         `Reabrir o mês ${label}?\n\nOs lançamentos do fechamento (resultado no capital e pró-labore) serão estornados e o mês volta a aceitar lançamentos.`,
       )
     )

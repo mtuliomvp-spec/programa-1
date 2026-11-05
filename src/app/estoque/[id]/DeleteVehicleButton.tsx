@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { deleteVehicleAction } from "../actions";
@@ -8,8 +10,8 @@ export default function DeleteVehicleButton({ id }: { id: string }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function handleDelete() {
-    if (!confirm("Tem certeza que deseja excluir este veículo do estoque? Esta ação não pode ser desfeita.")) return;
+  async function handleDelete() {
+    if (!await perguntar("Tem certeza que deseja excluir este veículo do estoque? Esta ação não pode ser desfeita.")) return;
     setError(null);
     startTransition(async () => {
       try {
