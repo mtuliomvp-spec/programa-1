@@ -12,6 +12,8 @@ import {
   applyNfeAction,
   lerBoletoFornecedorAction,
   anexarBoletosFornecedorAction,
+  boletosSemTituloAction,
+  readBoletoTituloAction,
   type BoletoFornecedorLido,
   type ReadDuplicatasResult,
   type ImportDuplicatasResult,
@@ -62,8 +64,10 @@ function looksLikeOrcamento(name: string): boolean {
 }
 
 /** "NF 123", "Orçamento 9131" ou "Guia: IPVA 2026…" — como o documento é chamado na tela. */
-const nomeDoc = (n: { tipo: string; numero: string; itensResumo?: string }) =>
-  n.tipo === "GUIA"
+const nomeDoc = (n: { tipo: string; numero: string; itensResumo?: string; supplierNome?: string }) =>
+  n.tipo === "BOLETO"
+    ? `Boleto ${n.supplierNome || ""} — ${n.itensResumo || n.numero}`
+    : n.tipo === "GUIA"
     ? `Guia: ${(n.itensResumo || n.numero).split(" — ")[0]}`
     : `${n.tipo === "ORCAMENTO" ? "Orçamento" : "NF"} ${n.numero}`;
 
@@ -148,6 +152,49 @@ export default function ImportDuplicatasButton() {
     }
   }
 
+  /** Boletos sem título: cada um vira uma linha da revisão, como as guias. */
+  async function revisarBoletosNovos(lista: BoletoArquivo[]) {
+    const lidos: ArquivoLido[] = [];
+    const encontradas: NotaRevisao[] = [];
+    const todosAvisos: string[] = [];
+    let cadastro: { id: string; name: string }[] = [];
+    let carros: { id: string; label: string }[] = [];
+    let socios: { id: string; name: string }[] = [];
+    for (const b of lista) {
+      const res = await readBoletoTituloAction(b.base64, b.filename).catch(() => null);
+      if (!res?.ok || !res.notas) {
+        todosAvisos.push(`${b.filename}: ${res?.error || "não foi possível ler."}`);
+        continue;
+      }
+      lidos.push({ nome: b.filename, base64: b.base64, totalNotas: 1 });
+      if (res.suppliers?.length) cadastro = res.suppliers;
+      if (res.vehicles?.length) carros = res.vehicles;
+      if (res.beneficiaries?.length) socios = res.beneficiaries;
+      for (const n of res.notas) {
+        encontradas.push({
+          ...n,
+          arquivo: lidos.length - 1,
+          escolhaFornecedor: n.supplierId ?? NEW_SUPPLIER,
+          // O fluxo do último título do mesmo fornecedor, para conferir.
+          fluxo: n.fluxoSugerido ?? "",
+          veiculoId: "",
+          beneficiarioId: n.beneficiarioSugeridoId ?? "",
+          marcadas: new Set(n.parcelas.map((p) => p.parcela)),
+        });
+      }
+    }
+    if (encontradas.length === 0) {
+      setError(todosAvisos[0] || "Não foi possível ler os boletos.");
+      return;
+    }
+    setArquivos(lidos);
+    setNotas(encontradas);
+    setFornecedores(cadastro);
+    setVeiculos(carros);
+    setBeneficiarios(socios);
+    setAvisos(todosAvisos);
+  }
+
   async function handleFiles(files: File[]) {
     reset();
     for (const f of files) {
@@ -178,7 +225,29 @@ export default function ImportDuplicatasButton() {
         if (r?.guia) guias.add(f);
         if (r?.orcamento || looksLikeOrcamento(f.name)) algumOrcamento = true;
       }
-      setBoletos(lidosBoleto);
+      // Só boletos: os que não têm título lançado para receber o anexo viram
+      // título novo pela revisão (antes, o "Anexar" dizia "concluído" e não
+      // criava nada). Com NF junto, não: o título nasce da nota.
+      let boletosNovos: BoletoArquivo[] = [];
+      if (!resto.length && lidosBoleto.length) {
+        const sem = new Set(
+          await boletosSemTituloAction(
+            lidosBoleto.map((b) => ({
+              valor: b.valor,
+              vencimento: b.vencimento,
+              linhaDigitavel: b.linhaDigitavel,
+              beneficiarioCnpj: b.beneficiarioCnpj,
+            })),
+          ).catch(() => [] as number[]),
+        );
+        boletosNovos = lidosBoleto.filter((_, i) => sem.has(i));
+      }
+      const boletosAnexar = lidosBoleto.filter((b) => !boletosNovos.includes(b));
+      setBoletos(boletosAnexar);
+      if (boletosNovos.length) {
+        await revisarBoletosNovos(boletosNovos);
+        return;
+      }
       if (!resto.length) {
         if (!lidosBoleto.length) setError("Nenhum arquivo utilizável.");
         return;
@@ -304,6 +373,7 @@ export default function ImportDuplicatasButton() {
             itensResumo: n.itensResumo,
             supplierId: n.escolhaFornecedor === NEW_SUPPLIER ? null : n.escolhaFornecedor,
             newSupplierName: n.escolhaFornecedor === NEW_SUPPLIER ? n.emitenteNome : null,
+            newSupplierCnpj: n.escolhaFornecedor === NEW_SUPPLIER ? n.emitenteCnpj : null,
             structuralKey: n.fluxo || null,
             vehicleId: n.fluxo === "VEICULOS" && n.veiculoId ? n.veiculoId : null,
             capitalBeneficiaryId:
@@ -434,6 +504,15 @@ export default function ImportDuplicatasButton() {
                         Guia de órgão — vira um título com a guia anexada
                         {n.linhaDigitavel ? " e a linha digitável pronta para pagar" : ""}. Carro fora do cadastro
                         (vendido antes do sistema)? Use o fluxo Administrativo ou Capital.
+                      </p>
+                    ) : null}
+                    {n.tipo === "BOLETO" ? (
+                      <p className="text-xs text-sky-700">
+                        {n.parcelas.every((p) => p.acao === "ANEXAR")
+                          ? "Boleto já lançado (mesma linha digitável) — só é anexado ao título."
+                          : `Boleto sem título lançado — vira um título novo com o boleto anexado${n.linhaDigitavel ? " e a linha digitável pronta para pagar" : ""}.`}
+                        {n.fluxoSugerido ? " Fluxo e categoria vieram do último título deste fornecedor — confira." : ""}
+                        {n.categoria ? ` Categoria: ${n.categoria}.` : ""}
                       </p>
                     ) : null}
                     {n.tipo === "ORCAMENTO" ? (
@@ -802,7 +881,12 @@ export default function ImportDuplicatasButton() {
 
             {outcomes ? (
               <div className="mt-3 space-y-3 text-sm">
-                <p className="font-medium text-emerald-700">✓ Lançamento concluído:</p>
+                {/* Só "concluído" quando algo entrou: lista de "anexe à mão" não é sucesso. */}
+                {outcomes.some((o) => /criado|anexad/.test(o)) ? (
+                  <p className="font-medium text-emerald-700">✓ Lançamento concluído:</p>
+                ) : (
+                  <p className="font-medium text-amber-700">⚠️ Nada foi lançado:</p>
+                )}
                 <ul className="list-inside list-disc text-slate-700">
                   {outcomes.map((o, i) => (
                     <li key={i}>{o}</li>
