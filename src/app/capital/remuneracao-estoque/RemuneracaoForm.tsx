@@ -26,6 +26,22 @@ type SplitRow = { beneficiaryId: string; value: string };
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
+const MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+
+/**
+ * "Remuneração de out/2026": a remuneração lançada em novembro é a do
+ * exercício de outubro. Conta pelo dia do caixa (dd/mm/aaaa); sem caixa
+ * aberto, pelo dia de hoje.
+ */
+function descricaoPadrao(cashboxDate: string | null): string {
+  const m = cashboxDate?.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const hoje = new Date();
+  const mes = m ? Number(m[2]) : hoje.getMonth() + 1;
+  const ano = m ? Number(m[3]) : hoje.getFullYear();
+  const anterior = mes === 1 ? { mes: 12, ano: ano - 1 } : { mes: mes - 1, ano };
+  return `Remuneração de ${MESES[anterior.mes - 1]}/${anterior.ano}`;
+}
+
 export default function RemuneracaoForm({
   vehicles,
   beneficiaries,
@@ -352,7 +368,13 @@ export default function RemuneracaoForm({
             </p>
           </div>
           <Field label="Descrição (opcional)">
-            <Textarea name="description" rows={2} placeholder="Ex: Remuneração de julho/2026" />
+            {/* Já vem com o exercício do mês anterior ao do caixa — continua editável e pode ficar vazio. */}
+            <Textarea
+              name="description"
+              rows={2}
+              defaultValue={descricaoPadrao(cashboxDate)}
+              placeholder="Ex: Remuneração de out/2026"
+            />
           </Field>
         </Card>
 
