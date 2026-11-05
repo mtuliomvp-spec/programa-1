@@ -3865,7 +3865,7 @@ async function titulosDoBoleto(b: BoletoFornecedorLido & { valor: number }) {
       orderNumber: true,
       description: true,
       barcode: true,
-      supplier: { select: { document: true } },
+      supplier: { select: { document: true, name: true } },
       attachments: { where: { kind: "BOLETO" }, select: { id: true } },
     },
     orderBy: { createdAt: "desc" },
@@ -3893,19 +3893,41 @@ async function titulosDoBoleto(b: BoletoFornecedorLido & { valor: number }) {
   return escolhidos;
 }
 
+export type PreviaBoleto = {
+  /** Quantos títulos em aberto servem (0 = vira título novo pela revisão). */
+  candidatos: number;
+  /** O título que vai receber o boleto, quando é um só. */
+  alvo: { numero: string; descricao: string; fornecedor: string | null } | null;
+};
+
 /**
- * "Importar NFs" só com boleto(s): quais NÃO têm título lançado para receber o
- * anexo (índices da lista). Esses vão para a revisão e viram título novo — o
- * importador dizia "lançamento concluído" e não criava nada.
+ * "Importar NFs" só com boleto(s): para cada boleto, o título que vai receber
+ * o anexo — mostrado ANTES do "Anexar", para o usuário conferir. Sem título
+ * (candidatos 0), o boleto vai para a revisão e vira título novo; com mais de
+ * um, não é anexado (a tela já diz).
  */
-export async function boletosSemTituloAction(boletos: BoletoFornecedorLido[]): Promise<number[]> {
+export async function previaBoletosAction(boletos: BoletoFornecedorLido[]): Promise<PreviaBoleto[]> {
   await assertCan("financeiro", "importarnf");
-  const sem: number[] = [];
-  for (const [i, b] of boletos.entries()) {
-    if (b.valor == null || !(b.valor > 0) || !b.vencimento) continue;
-    if ((await titulosDoBoleto({ ...b, valor: b.valor })).length === 0) sem.push(i);
+  const out: PreviaBoleto[] = [];
+  for (const b of boletos) {
+    if (b.valor == null || !(b.valor > 0)) {
+      out.push({ candidatos: -1, alvo: null });
+      continue;
+    }
+    const lista = await titulosDoBoleto({ ...b, valor: b.valor });
+    const um = lista.length === 1 ? lista[0] : null;
+    out.push({
+      candidatos: lista.length,
+      alvo: um
+        ? {
+            numero: String(um.orderNumber).padStart(4, "0"),
+            descricao: um.description,
+            fornecedor: um.supplier?.name ?? null,
+          }
+        : null,
+    });
   }
-  return sem;
+  return out;
 }
 
 /**
@@ -3944,6 +3966,16 @@ export async function readBoletoTituloAction(base64: string, filename: string): 
     benefNome = m[1].replace(/\s+/g, " ").trim();
     benefCnpj = cnpj;
     break;
+  }
+  // Administradora de condomínio (Facility e afins): "Condominio Edificio X (14.699.942/0001-14)".
+  if (!benefNome) {
+    for (const m of texto.matchAll(/([A-Za-zÀ-ü][A-Za-zÀ-ü0-9 .&'\-]{2,80}?)\s*\((\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})\)/g)) {
+      const cnpj = m[2].replace(/\D/g, "");
+      if (cnpj === cnpjLoja) continue;
+      benefNome = m[1].replace(/\s+/g, " ").trim();
+      benefCnpj = cnpj;
+      break;
+    }
   }
   const suppliers = await prisma.supplier.findMany({
     orderBy: { name: "asc" },

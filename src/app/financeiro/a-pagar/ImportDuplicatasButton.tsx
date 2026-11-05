@@ -12,7 +12,8 @@ import {
   applyNfeAction,
   lerBoletoFornecedorAction,
   anexarBoletosFornecedorAction,
-  boletosSemTituloAction,
+  previaBoletosAction,
+  type PreviaBoleto,
   readBoletoTituloAction,
   type BoletoFornecedorLido,
   type ReadDuplicatasResult,
@@ -48,7 +49,7 @@ type NotaRevisao = NfeNotaPlano & {
 
 type ArquivoLido = { nome: string; base64: string; totalNotas: number };
 /** Boleto escolhido junto: vai para o título de mesmo valor e vencimento. */
-type BoletoArquivo = BoletoFornecedorLido & { base64: string; filename: string };
+type BoletoArquivo = BoletoFornecedorLido & { base64: string; filename: string; previa?: PreviaBoleto };
 
 const brl = (v: number) => formatCurrency(v);
 const dataBr = (iso: string | null) => (iso ? iso.split("-").reverse().join("/") : "sem vencimento");
@@ -228,19 +229,22 @@ export default function ImportDuplicatasButton() {
       // Só boletos: os que não têm título lançado para receber o anexo viram
       // título novo pela revisão (antes, o "Anexar" dizia "concluído" e não
       // criava nada). Com NF junto, não: o título nasce da nota.
+      // Cada boleto leva a prévia do título que vai recebê-lo (conferida
+      // antes do "Anexar").
       let boletosNovos: BoletoArquivo[] = [];
       if (!resto.length && lidosBoleto.length) {
-        const sem = new Set(
-          await boletosSemTituloAction(
-            lidosBoleto.map((b) => ({
-              valor: b.valor,
-              vencimento: b.vencimento,
-              linhaDigitavel: b.linhaDigitavel,
-              beneficiarioCnpj: b.beneficiarioCnpj,
-            })),
-          ).catch(() => [] as number[]),
-        );
-        boletosNovos = lidosBoleto.filter((_, i) => sem.has(i));
+        const previas = await previaBoletosAction(
+          lidosBoleto.map((b) => ({
+            valor: b.valor,
+            vencimento: b.vencimento,
+            linhaDigitavel: b.linhaDigitavel,
+            beneficiarioCnpj: b.beneficiarioCnpj,
+          })),
+        ).catch(() => [] as PreviaBoleto[]);
+        lidosBoleto.forEach((b, i) => {
+          if (previas[i]) b.previa = previas[i];
+        });
+        boletosNovos = lidosBoleto.filter((b) => b.previa?.candidatos === 0 && b.vencimento);
       }
       const boletosAnexar = lidosBoleto.filter((b) => !boletosNovos.includes(b));
       setBoletos(boletosAnexar);
@@ -860,19 +864,44 @@ export default function ImportDuplicatasButton() {
 
             {soBoletos ? (
               <div className="mt-3 space-y-3 text-sm">
-                <p className="text-slate-600">Só boleto(s) — serão anexados aos títulos já lançados de mesmo valor e vencimento:</p>
-                <ul className="list-inside list-disc text-slate-700">
+                <p className="text-slate-600">Só boleto(s) — confira o título que vai receber cada um:</p>
+                <ul className="space-y-2 text-slate-700">
                   {boletos.map((b, i) => (
-                    <li key={i}>
-                      {b.valor != null ? brl(b.valor) : "valor ilegível"} · venc. {dataBr(b.vencimento)} ({b.filename})
+                    <li key={i} className="rounded-lg border border-slate-200 px-3 py-2">
+                      <span className="font-medium">
+                        {b.valor != null ? brl(b.valor) : "valor ilegível"} · venc. {dataBr(b.vencimento)}
+                      </span>{" "}
+                      <span className="text-xs text-slate-500">({b.filename})</span>
+                      {b.previa?.alvo ? (
+                        <span className="mt-1 block text-xs text-emerald-800">
+                          → anexa ao título nº <strong>{b.previa.alvo.numero}</strong> — {b.previa.alvo.descricao}
+                          {b.previa.alvo.fornecedor ? ` (${b.previa.alvo.fornecedor})` : ""}
+                        </span>
+                      ) : b.previa && b.previa.candidatos > 1 ? (
+                        <span className="mt-1 block text-xs text-amber-700">
+                          ⚠️ {b.previa.candidatos} títulos com esse valor e vencimento — não será anexado; anexe no
+                          título certo pelo Editar.
+                        </span>
+                      ) : b.previa ? (
+                        <span className="mt-1 block text-xs text-amber-700">
+                          ⚠️ Não deu para ler valor ou vencimento — não será anexado.
+                        </span>
+                      ) : null}
                     </li>
                   ))}
                 </ul>
+                <p className="text-xs text-slate-500">
+                  Não é esse o título? Cancele e anexe o boleto pelo Editar do título certo.
+                </p>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="secondary" onClick={reset} disabled={creating}>
                     Cancelar
                   </Button>
-                  <Button type="button" onClick={confirmarSoBoletos} disabled={creating}>
+                  <Button
+                    type="button"
+                    onClick={confirmarSoBoletos}
+                    disabled={creating || boletos.every((b) => b.previa != null && !b.previa.alvo)}
+                  >
                     {creating ? "Anexando…" : "Anexar aos títulos"}
                   </Button>
                 </div>
