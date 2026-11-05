@@ -3871,8 +3871,19 @@ async function titulosDoBoleto(b: BoletoFornecedorLido & { valor: number }) {
     orderBy: { createdAt: "desc" },
     take: 20,
   });
+  // Título que já tem OUTRA linha digitável é de outro boleto (a taxa do apto
+  // 104 tem o mesmo valor e vencimento da do 102): nunca recebe este anexo.
+  const { barcodeDigits } = await import("@/lib/barcode-line");
+  const digitos = barcodeDigits(b.linhaDigitavel);
   const raiz = (b.beneficiarioCnpj || "").slice(0, 8);
-  let escolhidos = candidatos;
+  let escolhidos =
+    digitos.length >= 44
+      ? candidatos.filter((c) => {
+          // Só compara linha com linha (código de barras de 44 dígitos é outro formato).
+          const dele = barcodeDigits(c.barcode);
+          return dele.length !== digitos.length || dele === digitos;
+        })
+      : candidatos;
   if (raiz.length === 8) {
     const doFornecedor = escolhidos.filter((c) => (c.supplier?.document || "").replace(/\D/g, "").startsWith(raiz));
     if (doFornecedor.length) escolhidos = doFornecedor;
