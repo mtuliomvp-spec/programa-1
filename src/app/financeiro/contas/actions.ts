@@ -1149,6 +1149,21 @@ export async function confirmQueuedPaymentsAction(
 
 /** Tira o título da fila sem baixar nada (comprovante trocado, engano...). */
 export async function dismissQueuedPaymentAction(id: string): Promise<{ ok: boolean; error?: string }> {
+  // Qualquer falha volta como mensagem: exceção solta numa server action não
+  // aparece para ninguém — no celular o "tirar da fila" simplesmente não fazia
+  // nada e o lançamento continuava na fila.
+  try {
+    return await tirarDaFila(id);
+  } catch (e) {
+    console.error("tirar da fila", id, e);
+    return {
+      ok: false,
+      error: `Não foi possível tirar da fila: ${e instanceof Error ? e.message : "erro inesperado"}.`,
+    };
+  }
+}
+
+async function tirarDaFila(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
     await assertCanAny([
       ["financeiro", "pagar"],
