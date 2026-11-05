@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { Button } from "@/components/ui";
 import { deleteAppraisalAction } from "../actions";
@@ -11,8 +13,8 @@ export default function DeleteAppraisalButton({ id }: { id: string }) {
       type="button"
       variant="danger"
       disabled={pending}
-      onClick={() => {
-        if (!confirm("Excluir esta avaliação? As fotos também serão removidas.")) return;
+      onClick={async () => {
+        if (!await perguntar("Excluir esta avaliação? As fotos também serão removidas.")) return;
         start(() => deleteAppraisalAction(id));
       }}
     >

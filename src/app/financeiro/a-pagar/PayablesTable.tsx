@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState, useTransition } from "react";
@@ -256,10 +258,10 @@ export default function PayablesTable({
     });
   }
 
-  function remove() {
+  async function remove() {
     const ids = [...selected];
     if (!ids.length) return;
-    if (!confirm(`Excluir ${ids.length} ${ids.length === 1 ? "título selecionado" : "títulos selecionados"}? Valem os não pagos (manuais e de recorrência — a ocorrência excluída não é gerada de novo).`)) {
+    if (!await perguntar(`Excluir ${ids.length} ${ids.length === 1 ? "título selecionado" : "títulos selecionados"}? Valem os não pagos (manuais e de recorrência — a ocorrência excluída não é gerada de novo).`)) {
       return;
     }
     setMsg(null);

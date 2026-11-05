@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
@@ -235,9 +237,9 @@ export function DemoteButton({ id, nome }: { id: string; nome: string }) {
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
+        onClick={async () => {
           setErro(null);
-          if (!confirm(`Rebaixar ${nome} para administrador comum? Ele deixa de ver o painel do dono do sistema.`)) return;
+          if (!await perguntar(`Rebaixar ${nome} para administrador comum? Ele deixa de ver o painel do dono do sistema.`)) return;
           start(async () => {
             const r = await demoteSuperAdminAction(id);
             if (!r.ok) {

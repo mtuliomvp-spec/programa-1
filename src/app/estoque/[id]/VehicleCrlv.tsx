@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { formatDate } from "@/lib/format";
@@ -161,8 +163,8 @@ export default function VehicleCrlv({
                     <button
                       type="button"
                       disabled={removing}
-                      onClick={() => {
-                        if (confirm(`Excluir o ${ano ? `CRLV ${ano}` : "CRLV"}?`)) {
+                      onClick={async () => {
+                        if (await perguntar(`Excluir o ${ano ? `CRLV ${ano}` : "CRLV"}?`)) {
                           startRemove(() => deleteVehicleAttachmentAction(c.id, vehicleId));
                         }
                       }}

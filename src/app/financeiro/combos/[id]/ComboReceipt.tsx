@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatDate } from "@/lib/format";
@@ -22,8 +24,8 @@ export default function ComboReceipt({
   const router = useRouter();
   const [pending, start] = useTransition();
 
-  function remover() {
-    if (!confirm("Tirar o comprovante do combo? Ele também sai da fila de espera do caixa.")) return;
+  async function remover() {
+    if (!await perguntar("Tirar o comprovante do combo? Ele também sai da fila de espera do caixa.")) return;
     start(async () => {
       await removeComboReceiptAction(comboId);
       router.refresh();

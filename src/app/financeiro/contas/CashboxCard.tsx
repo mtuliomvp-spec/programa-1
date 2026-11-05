@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { openCashboxAction, closeCashboxAction, revertCashboxAction } from "./actions";
@@ -107,12 +109,12 @@ export default function CashboxCard({
       ]);
     });
   }
-  function doRevert() {
+  async function doRevert() {
     setError(null);
     setRevertMsg(null);
     const dia = session ? formatDate(session.workDate) : "de hoje";
     if (
-      !confirm(
+      !await perguntar(
         `Estornar TODOS os pagamentos e recebimentos do caixa ${dia}?\n\nOs títulos voltam a pendente e os lançamentos avulsos do dia são apagados. Baixas vindas de venda/recorrência não são tocadas (reverta na origem). Esta ação não pode ser desfeita em bloco.`,
       )
     ) {

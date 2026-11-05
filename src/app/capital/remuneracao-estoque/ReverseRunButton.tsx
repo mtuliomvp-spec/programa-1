@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { reverseStockInterestAction } from "./actions";
 
@@ -13,8 +15,8 @@ export default function ReverseRunButton({ runId, runDate }: { runId: string; ru
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
-          if (!confirm("Estornar este lote? Os custos e aportes gerados serão removidos.")) return;
+        onClick={async () => {
+          if (!await perguntar("Estornar este lote? Os custos e aportes gerados serão removidos.")) return;
           setErr(null);
           start(async () => {
             const r = await reverseStockInterestAction(runId, runDate);

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { Button } from "@/components/ui";
 import { cancelSaleAction } from "../actions";
@@ -8,11 +10,11 @@ export default function CancelSaleButton({ id, mode = "cancel" }: { id: string; 
   const [pending, startTransition] = useTransition();
   const isFix = mode === "fix";
 
-  function handleClick() {
+  async function handleClick() {
     const message = isFix
       ? "Reverter os lançamentos que ficaram presos nesta venda cancelada? Os recebíveis vinculados serão removidos e o caixa voltará a bater com a equação patrimonial (o sinal, se houver, é preservado)."
       : "Cancelar esta venda? O veículo voltará para o estoque e todos os lançamentos serão revertidos (o sinal, se houver, é preservado).";
-    if (!confirm(message)) return;
+    if (!await perguntar(message)) return;
     startTransition(() => cancelSaleAction(id));
   }
 

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
@@ -243,8 +245,8 @@ export function RateRowActions({ rate }: { rate: RateRow }) {
         <button
           type="button"
           disabled={pending}
-          onClick={() => {
-            if (!confirm(`Excluir a financeira ${rate.name} do simulador?`)) return;
+          onClick={async () => {
+            if (!await perguntar(`Excluir a financeira ${rate.name} do simulador?`)) return;
             start(async () => {
               await deleteFinancingRateAction(rate.id);
               router.refresh();

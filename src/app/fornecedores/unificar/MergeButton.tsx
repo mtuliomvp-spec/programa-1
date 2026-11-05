@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { mergeDuplicateSuppliersAction, type MergeResult } from "./actions";
@@ -13,8 +15,8 @@ export default function MergeButton({ groups, moved }: { groups: number; moved: 
       <Button
         type="button"
         disabled={pending || (result?.ok ?? false)}
-        onClick={() => {
-          const ok = confirm(
+        onClick={async () => {
+          const ok = await perguntar(
             `Unificar ${groups} grupo(s) de fornecedores duplicados?\n\n` +
               `${moved} lançamento(s) passam para o cadastro que fica. ` +
               `Nenhum lançamento é apagado — só muda de fornecedor. ` +

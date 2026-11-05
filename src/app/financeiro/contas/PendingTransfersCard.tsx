@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, CardHeader } from "@/components/ui";
@@ -70,8 +72,8 @@ export default function PendingTransfersCard({
     });
   }
 
-  function descartar(r: TransferenciaPendente) {
-    if (!confirm(`Tirar da fila a transferência de ${formatCurrency(r.amount)} (${r.fromName} → ${r.toName})?`)) {
+  async function descartar(r: TransferenciaPendente) {
+    if (!await perguntar(`Tirar da fila a transferência de ${formatCurrency(r.amount)} (${r.fromName} → ${r.toName})?`)) {
       return;
     }
     setMsg(null);

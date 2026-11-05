@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -212,8 +214,8 @@ export default function VehiclePhotos({
                   <button
                     type="button"
                     disabled={deleting}
-                    onClick={() => {
-                      if (!confirm("Excluir esta foto?")) return;
+                    onClick={async () => {
+                      if (!await perguntar("Excluir esta foto?")) return;
                       startDelete(() => deleteVehicleAttachmentAction(p.id, vehicleId));
                     }}
                     className="absolute right-1 top-1 rounded-full bg-black/60 px-1.5 py-0.5 text-xs text-white hover:bg-rose-600"

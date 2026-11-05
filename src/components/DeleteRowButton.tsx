@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 
 export default function DeleteRowButton({
@@ -14,8 +16,8 @@ export default function DeleteRowButton({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  function handleClick() {
-    if (!confirm(confirmMessage)) return;
+  async function handleClick() {
+    if (!await perguntar(confirmMessage)) return;
     setError(null);
     startTransition(async () => {
       try {

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { decideRequestAction, cancelRequestAction } from "../actions";
@@ -56,8 +58,8 @@ export default function RequestDetailActions({
           type="button"
           variant="secondary"
           disabled={pending}
-          onClick={() => {
-            if (confirm("Cancelar esta solicitação?")) {
+          onClick={async () => {
+            if (await perguntar("Cancelar esta solicitação?")) {
               startTransition(() => cancelRequestAction(id).then(() => router.refresh()));
             }
           }}

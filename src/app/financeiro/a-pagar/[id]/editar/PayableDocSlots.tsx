@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -95,8 +97,8 @@ function Slot({
             <button
               type="button"
               disabled={removing}
-              onClick={() => {
-                if (confirm(`Excluir o ${title.toLowerCase()}?`)) {
+              onClick={async () => {
+                if (await perguntar(`Excluir o ${title.toLowerCase()}?`)) {
                   startRemove(async () => {
                     await deletePayableAttachmentAction(current.id, payableId);
                     router.refresh();
@@ -202,8 +204,8 @@ function OtherAttachments({ payableId, docs }: { payableId: string; docs: DocWit
               <button
                 type="button"
                 disabled={removing}
-                onClick={() => {
-                  if (confirm(`Excluir o anexo "${d.description}"?`)) {
+                onClick={async () => {
+                  if (await perguntar(`Excluir o anexo "${d.description}"?`)) {
                     startRemove(async () => {
                       await deletePayableAttachmentAction(d.id, payableId);
                       router.refresh();

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button, Field, Input, Select } from "@/components/ui";
@@ -235,13 +237,13 @@ export function DeleteRowButton({ id, kind }: { id: string; kind: "pagamento" | 
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
+        onClick={async () => {
           setErro(null);
           const texto =
             kind === "pagamento"
               ? "Excluir este pagamento do histórico? O comprovante anexado também será apagado."
               : "Excluir esta via assinada do contrato?";
-          if (!confirm(texto)) return;
+          if (!await perguntar(texto)) return;
           start(async () => {
             const r =
               kind === "pagamento"

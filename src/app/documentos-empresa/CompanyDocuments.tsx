@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import { formatDate } from "@/lib/format";
@@ -96,8 +98,8 @@ export default function CompanyDocuments({
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => {
-                      if (confirm(`Excluir o documento "${d.description}"?`)) {
+                    onClick={async () => {
+                      if (await perguntar(`Excluir o documento "${d.description}"?`)) {
                         startRemove(() => deleteCompanyDocumentAction(d.id));
                       }
                     }}

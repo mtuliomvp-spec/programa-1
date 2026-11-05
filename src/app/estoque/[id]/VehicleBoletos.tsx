@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { Button, Field } from "@/components/ui";
 import { formatCurrency, formatDate } from "@/lib/format";
@@ -134,9 +136,9 @@ export default function VehicleBoletos({
             <button
               type="button"
               disabled={closing}
-              onClick={() => {
+              onClick={async () => {
                 if (
-                  confirm(
+                  await perguntar(
                     `Encerrar os débitos? O título restante de ${formatCurrency(saldoDebitos)} é excluído e a sobra reduz o custo do veículo.`,
                   )
                 ) {
@@ -202,8 +204,8 @@ export default function VehicleBoletos({
                   <button
                     type="button"
                     disabled={removing}
-                    onClick={() => {
-                      if (confirm("Excluir este boleto? (os ajustes já aplicados não são desfeitos)")) {
+                    onClick={async () => {
+                      if (await perguntar("Excluir este boleto? (os ajustes já aplicados não são desfeitos)")) {
                         startRemove(() => deleteVehicleAttachmentAction(b.id, vehicleId));
                       }
                     }}
@@ -224,9 +226,9 @@ export default function VehicleBoletos({
           <button
             type="button"
             disabled={redoing}
-            onClick={() => {
+            onClick={async () => {
               if (
-                confirm(
+                await perguntar(
                   "Refazer os débitos? Os títulos de débitos PENDENTES (o principal e as guias já lançadas) e os ajustes de custo são removidos, e volta o título único com o valor descontado na compra. Nada pago é alterado. Depois, anexe os boletos de novo para recasar.",
                 )
               ) {

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import Link from "next/link";
 import { useTransition } from "react";
 import { toggleRecurringAction, deleteRecurringAction } from "./actions";
@@ -23,8 +25,8 @@ export default function RecurringRowActions({ id, active }: { id: string; active
       <button
         type="button"
         disabled={pending}
-        onClick={() => {
-          if (confirm("Excluir esta recorrência? As contas já geradas permanecem no financeiro.")) {
+        onClick={async () => {
+          if (await perguntar("Excluir esta recorrência? As contas já geradas permanecem no financeiro.")) {
             startTransition(() => deleteRecurringAction(id));
           }
         }}

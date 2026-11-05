@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Field, Input } from "@/components/ui";
@@ -28,8 +30,8 @@ export default function RecurringDocs({ documentos }: { documentos: DocumentoRec
   const [pending, start] = useTransition();
   const [erro, setErro] = useState<string | null>(null);
 
-  function excluir(id: string) {
-    if (!confirm("Excluir este documento da recorrência?")) return;
+  async function excluir(id: string) {
+    if (!await perguntar("Excluir este documento da recorrência?")) return;
     setErro(null);
     start(async () => {
       const r = await deleteRecurringAttachmentAction(id);

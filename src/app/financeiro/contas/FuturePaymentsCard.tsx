@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -54,7 +56,7 @@ export default function FuturePaymentsCard({
   const [removidas, setRemovidas] = useState<string[]>([]);
   const [dismissing, startDismiss] = useTransition();
 
-  function descartar(p: PagamentoNaFila) {
+  async function descartar(p: PagamentoNaFila) {
     const ids = idsDaLinha(p);
     const pergunta =
       ids.length > 1
@@ -66,7 +68,7 @@ export default function FuturePaymentsCard({
           : p.kind === "financiamento" || p.kind === "retorno" || p.kind === "seguro"
             ? "Tirar da fila? Nada é creditado e a venda volta a mostrar o \"Receber\" em Financiamentos."
             : "Tirar este pré-lançamento da fila? O anexo continua no título.";
-    if (!confirm(pergunta)) return;
+    if (!await perguntar(pergunta)) return;
     setErro(null);
     setRemovidas((prev) => [...prev, p.id]);
     startDismiss(async () => {

@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
 import { mergeDuplicateCustomersAction, type MergeResult } from "./actions";
@@ -13,8 +15,8 @@ export default function MergeButton({ groups, moved }: { groups: number; moved: 
       <Button
         type="button"
         disabled={pending || (result?.ok ?? false)}
-        onClick={() => {
-          const ok = confirm(
+        onClick={async () => {
+          const ok = await perguntar(
             `Unificar ${groups} grupo(s) de clientes repetidos?\n\n` +
               `${moved} lançamento(s) passam para o cadastro que fica. ` +
               `Nenhuma venda, proposta ou conta a receber é apagada — só muda de cliente. ` +

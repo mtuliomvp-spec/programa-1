@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useTransition } from "react";
 import { toggleEmployeeAction } from "./actions";
 
@@ -9,11 +11,11 @@ export default function EmployeeRowActions({ id, active }: { id: string; active:
     <button
       type="button"
       disabled={pending}
-      onClick={() => {
+      onClick={async () => {
         const message = active
           ? "Desligar este funcionário? Ele deixa de entrar nas próximas folhas."
           : "Reativar este funcionário?";
-        if (confirm(message)) startTransition(() => toggleEmployeeAction(id, !active));
+        if (await perguntar(message)) startTransition(() => toggleEmployeeAction(id, !active));
       }}
       className={`text-sm font-medium hover:underline disabled:opacity-50 ${
         active ? "text-rose-600" : "text-blue-700"

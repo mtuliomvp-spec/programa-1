@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui";
@@ -17,8 +19,8 @@ export default function DeleteRequestButton({ id }: { id: string }) {
         type="button"
         variant="secondary"
         disabled={pending}
-        onClick={() => {
-          if (!confirm("Excluir esta solicitação? Esta ação não pode ser desfeita.")) return;
+        onClick={async () => {
+          if (!await perguntar("Excluir esta solicitação? Esta ação não pode ser desfeita.")) return;
           setError(null);
           startTransition(async () => {
             const res = await deleteRequestAction(id);

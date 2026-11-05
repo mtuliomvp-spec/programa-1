@@ -1,5 +1,7 @@
 "use client";
 
+import { perguntar } from "@/lib/confirmar";
+
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Badge, Button, Card, CardHeader, Input } from "@/components/ui";
@@ -27,9 +29,9 @@ function CategoryRowItem({ row, onChanged }: { row: Row; onChanged: () => void }
     });
   }
 
-  function remove() {
+  async function remove() {
     setMsg(null);
-    if (!confirm(`Excluir a categoria "${row.name}"? Os lançamentos antigos mantêm o texto.`)) return;
+    if (!await perguntar(`Excluir a categoria "${row.name}"? Os lançamentos antigos mantêm o texto.`)) return;
     start(async () => {
       const r = await deleteCategoryAction(row.id);
       if (!r.ok) {
