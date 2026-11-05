@@ -1768,9 +1768,15 @@ export type NfeNotaPlano = {
    * NF-e, orçamento/ordem de serviço (oficina) ou GUIA de órgão (IPVA,
    * licenciamento, multa, taxa — DETRAN/SEFAZ): todos viram título.
    */
-  tipo: "NFE" | "ORCAMENTO" | "GUIA";
-  /** Guia: a linha digitável (vai para o título, pronta para pagar). */
+  tipo: "NFE" | "ORCAMENTO" | "GUIA" | "BOLETO";
+  /** Guia/boleto: a linha digitável (vai para o título, pronta para pagar). */
   linhaDigitavel?: string | null;
+  /**
+   * Boleto sem título: o fluxo (e o sócio, no Capital) do último título do
+   * mesmo fornecedor — o condomínio pago pelo sócio volta como Capital dele.
+   */
+  fluxoSugerido?: string | null;
+  beneficiarioSugeridoId?: string | null;
   /** Placa citada no documento e o veículo do cadastro que casou com ela. */
   placa: string | null;
   veiculoSugeridoId: string | null;
@@ -1810,7 +1816,7 @@ export type ApplyNfePayload = {
   /** Quantas notas o PDF tinha (define se o anexo é a página da nota ou o PDF inteiro). */
   totalNotas: number;
   notas: {
-    tipo?: "NFE" | "ORCAMENTO" | "GUIA";
+    tipo?: "NFE" | "ORCAMENTO" | "GUIA" | "BOLETO";
     linhaDigitavel?: string | null;
     categoria?: string | null;
     numero: string;
@@ -1822,6 +1828,8 @@ export type ApplyNfePayload = {
     /** Fornecedor escolhido na revisão; sem ele, `newSupplierName` é cadastrado. */
     supplierId: string | null;
     newSupplierName: string | null;
+    /** CNPJ impresso do fornecedor a cadastrar (boleto): fica no cadastro novo. */
+    newSupplierCnpj?: string | null;
     /** Fluxo estrutural escolhido na revisão (Veículos, Peças, Administrativo). */
     structuralKey: string | null;
     /** Veículo que recebe o custo — obrigatório para o fluxo Veículos valer. */
@@ -1833,6 +1841,8 @@ export type ApplyNfePayload = {
 };
 
 const soDigitos = (s: string | null) => (s || "").replace(/\D/g, "");
+/** aaaa-mm-dd → dd/mm/aaaa, para as mensagens. */
+const dataBrIso = (iso: string) => iso.split("-").reverse().join("/");
 const mesmoDiaUTC = (a: Date, b: Date) =>
   a.toISOString().slice(0, 10) === b.toISOString().slice(0, 10);
 
@@ -2245,9 +2255,18 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     const orcamento = nota.tipo === "ORCAMENTO";
     // Guia de órgão (IPVA, licenciamento, multa): o anexo vai no espaço do
     // BOLETO e a linha digitável fica no título, pronta na Ordem de Pagamento.
-    const guia = nota.tipo === "GUIA";
-    const doc = guia ? "Guia" : orcamento ? "Orç." : "NF";
-    const docAnexo = guia ? `Guia ${numero}` : orcamento ? `Orçamento ${numero}` : `NF-e ${numero}`;
+    // Boleto avulso (sem NF e sem título lançado): o mesmo caminho da guia —
+    // título novo com o boleto anexado e a linha digitável guardada.
+    const boleto = nota.tipo === "BOLETO";
+    const guia = nota.tipo === "GUIA" || boleto;
+    const doc = boleto ? "Boleto" : guia ? "Guia" : orcamento ? "Orç." : "NF";
+    const docAnexo = boleto
+      ? `Boleto ${numero}`
+      : guia
+        ? `Guia ${numero}`
+        : orcamento
+          ? `Orçamento ${numero}`
+          : `NF-e ${numero}`;
 
     // Fornecedor: o escolhido na revisão; se o usuário optou por cadastrar, é
     // agora que o cadastro nasce (nunca na leitura).
@@ -2271,6 +2290,15 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
       }
       supplierId = await resolveSupplierByName(nome);
       supplierNome = nome;
+      // Boleto: o CNPJ do beneficiário vai para o cadastro (o próximo boleto
+      // casa por ele), sem sobrescrever um documento já preenchido.
+      const cnpj = soDigitos(nota.newSupplierCnpj ?? null);
+      if (boleto && cnpj.length === 14) {
+        await prisma.supplier.updateMany({
+          where: { id: supplierId, OR: [{ document: null }, { document: "" }] },
+          data: { document: nota.newSupplierCnpj },
+        });
+      }
     }
 
     // Recorta as páginas DESTA nota (PDF com várias DANFEs); com uma nota só, ou
@@ -2371,7 +2399,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
           nota.parcelas.map(async (parc) => ({
             parc,
             due: new Date(`${parc.vencimento}T12:00:00Z`),
-            docNum: `Guia ${numero}`,
+            docNum: `${doc} ${numero}`,
             match: await tituloDaGuia(nota.linhaDigitavel ?? null, parc.valor),
           })),
         )
@@ -2379,7 +2407,9 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
     // Orçamento de oficina (peças + mão de obra): o tipo de despesa lido dos
     // itens; a NF continua como compra de peças, como sempre foi. Guia: a
     // categoria do tipo lido (documentação do veículo, multas).
-    const catOrcamento = guia
+    const catOrcamento = boleto
+      ? await resolveDespesaCategory(nota.categoria || "Outros")
+      : guia
       ? await resolveDespesaCategory(nota.categoria || "Documentação de veículo")
       : orcamento
         ? await resolveDespesaCategory(nota.categoria || "Serviço")
@@ -2391,7 +2421,9 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
       if (match) {
         await anexarNfe(match.id);
         if (guia) {
-          outcomes.push(`${label} → guia já lançada no título nº ${String(match.orderNumber).padStart(4, "0")} (anexada)`);
+          outcomes.push(
+            `${label} → ${boleto ? "boleto" : "guia"} já lançad${boleto ? "o" : "a"} no título nº ${String(match.orderNumber).padStart(4, "0")} (anexad${boleto ? "o" : "a"})`,
+          );
           continue;
         }
         // NF do serviço que entrou como orçamento: o título passa a ter o nº da NF.
@@ -2417,7 +2449,10 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
 
       if (guia) {
         const payable = await createManualPayable({
-          description: `${itensResumo || "Guia"} (${supplierNome})`.slice(0, 300),
+          description: (boleto
+            ? `${supplierNome}${itensResumo ? ` — ${itensResumo}` : ""}`
+            : `${itensResumo || "Guia"} (${supplierNome})`
+          ).slice(0, 300),
           category: catOrcamento?.category ?? "OUTROS",
           categoryLabel: catOrcamento?.label ?? "Outros",
           documentNumber: docNum,
@@ -2427,7 +2462,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
           structuralKey: fluxo,
           vehicleId,
           capitalBeneficiaryId,
-          notes: `importado da guia${vehicleId || fluxo !== "VEICULOS" ? "" : " — vincule o veículo"}`,
+          notes: `importado ${boleto ? "do boleto" : "da guia"}${vehicleId || fluxo !== "VEICULOS" ? "" : " — vincule o veículo"}`,
           alreadyPaid: false,
         });
         const { normalizeBarcodeLine } = await import("@/lib/barcode-line");
@@ -2435,7 +2470,7 @@ export async function applyNfeAction(payload: ApplyNfePayload): Promise<ImportNf
         if (linha) await prisma.payable.update({ where: { id: payable.id }, data: { barcode: linha } });
         await anexarNfe(payable.id);
         outcomes.push(
-          `${itensResumo || "Guia"} — ${brl(parc.valor)} (venc. ${parc.vencimento}) → título nº ${String(payable.orderNumber).padStart(4, "0")} criado${linha ? ", com a linha digitável" : ""}`,
+          `${boleto ? `Boleto ${supplierNome}` : itensResumo || "Guia"} — ${brl(parc.valor)} (venc. ${dataBrIso(parc.vencimento)}) → título nº ${String(payable.orderNumber).padStart(4, "0")} criado${linha ? ", com a linha digitável" : ""}`,
         );
         continue;
       }
@@ -3807,6 +3842,200 @@ export async function lerBoletoFornecedorAction(
 }
 
 /**
+ * Títulos EM ABERTO onde um boleto lido pode ser anexado: mesmo valor e
+ * vencimento; com mais de um, o do mesmo fornecedor (raiz do CNPJ do
+ * beneficiário) e sem boleto ganha. Vazio = nenhum título para esse boleto.
+ */
+async function titulosDoBoleto(b: BoletoFornecedorLido & { valor: number }) {
+  const candidatos = await prisma.payable.findMany({
+    where: {
+      status: { not: "PAGO" },
+      amount: { gte: b.valor - 0.01, lte: b.valor + 0.01 },
+      ...(b.vencimento
+        ? {
+            dueDate: {
+              gte: new Date(`${b.vencimento}T00:00:00.000Z`),
+              lte: new Date(`${b.vencimento}T23:59:59.999Z`),
+            },
+          }
+        : {}),
+    },
+    select: {
+      id: true,
+      orderNumber: true,
+      description: true,
+      barcode: true,
+      supplier: { select: { document: true } },
+      attachments: { where: { kind: "BOLETO" }, select: { id: true } },
+    },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+  const raiz = (b.beneficiarioCnpj || "").slice(0, 8);
+  let escolhidos = candidatos;
+  if (raiz.length === 8) {
+    const doFornecedor = escolhidos.filter((c) => (c.supplier?.document || "").replace(/\D/g, "").startsWith(raiz));
+    if (doFornecedor.length) escolhidos = doFornecedor;
+  }
+  const semBoleto = escolhidos.filter((c) => c.attachments.length === 0);
+  if (semBoleto.length) escolhidos = semBoleto;
+  return escolhidos;
+}
+
+/**
+ * "Importar NFs" só com boleto(s): quais NÃO têm título lançado para receber o
+ * anexo (índices da lista). Esses vão para a revisão e viram título novo — o
+ * importador dizia "lançamento concluído" e não criava nada.
+ */
+export async function boletosSemTituloAction(boletos: BoletoFornecedorLido[]): Promise<number[]> {
+  await assertCan("financeiro", "importarnf");
+  const sem: number[] = [];
+  for (const [i, b] of boletos.entries()) {
+    if (b.valor == null || !(b.valor > 0) || !b.vencimento) continue;
+    if ((await titulosDoBoleto({ ...b, valor: b.valor })).length === 0) sem.push(i);
+  }
+  return sem;
+}
+
+/**
+ * Boleto sem título: monta a linha da revisão (como a guia) — fornecedor pelo
+ * CNPJ do beneficiário (ou pelo nome impresso), valor, vencimento e linha
+ * digitável. Categoria e fluxo vêm do último título do mesmo fornecedor;
+ * sem histórico, o fluxo fica para o usuário escolher. Nada é gravado aqui.
+ */
+export async function readBoletoTituloAction(base64: string, filename: string): Promise<ReadNfeResult> {
+  try {
+    await assertCan("financeiro", "importarnf");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  const buffer = Buffer.from(base64 || "", "base64");
+  const { textoDoPdf } = await import("@/lib/pdf-text");
+  const { lerBoletoSicove } = await import("@/lib/sicove");
+  let texto = "";
+  try {
+    texto = textoDoPdf(buffer);
+  } catch {
+    texto = "";
+  }
+  const lido = lerBoletoSicove(buffer);
+  if (!lido || !lido.valor || !lido.vencimento) {
+    return { ok: false, error: "não deu para ler valor e vencimento do boleto." };
+  }
+  const { getCompany } = await import("@/lib/company");
+  const cnpjLoja = ((await getCompany()).cnpj || "").replace(/\D/g, "");
+  // Beneficiário: o nome impresso logo antes do CNPJ (o da loja, pagadora, fica de fora).
+  let benefNome: string | null = null;
+  let benefCnpj: string | null = null;
+  for (const m of texto.matchAll(/([A-ZÀ-Ü][A-ZÀ-Ü0-9 .&'\-]{2,80}?)\s*CNPJ(?:\/CPF)?:?\s*(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/g)) {
+    const cnpj = m[2].replace(/\D/g, "");
+    if (cnpj === cnpjLoja) continue;
+    benefNome = m[1].replace(/\s+/g, " ").trim();
+    benefCnpj = cnpj;
+    break;
+  }
+  const suppliers = await prisma.supplier.findMany({
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, document: true },
+  });
+  const fornecedor =
+    (benefCnpj ? suppliers.find((s) => (s.document || "").replace(/\D/g, "") === benefCnpj) : null) ??
+    (benefNome ? suppliers.find((s) => s.name.trim().toLowerCase() === benefNome!.toLowerCase()) : null) ??
+    null;
+  // Histórico: o último título desse fornecedor diz categoria, fluxo e sócio.
+  const ultimo = fornecedor
+    ? await prisma.payable.findFirst({
+        where: { supplierId: fornecedor.id },
+        orderBy: { createdAt: "desc" },
+        select: {
+          categoryLabel: true,
+          vehicleId: true,
+          capitalBeneficiaryId: true,
+          costCenter: { select: { key: true } },
+        },
+      })
+    : null;
+  const categoria =
+    ultimo?.categoryLabel || (/CONDOM[IÍ]NIO/i.test(benefNome || "") ? "Condomínio" : null);
+  // O fluxo do título anterior (como na tela de editar). Veículos não se
+  // repete: cada boleto seria de um carro diferente.
+  const fluxoSugerido = !ultimo || ultimo.vehicleId
+    ? null
+    : ultimo.capitalBeneficiaryId
+      ? "CAPITAL"
+      : isStructuralKey(ultimo.costCenter?.key) && ultimo.costCenter?.key !== "VEICULOS"
+        ? ultimo.costCenter!.key
+        : "ADMINISTRATIVO";
+
+  const { normalizeBarcodeLine, barcodeDigits } = await import("@/lib/barcode-line");
+  const linha = normalizeBarcodeLine(lido.linhaDigitavel);
+  const valor = Math.round(lido.valor * 100) / 100;
+  const vencimento = lido.vencimento.toISOString().slice(0, 10);
+  const existente = await tituloDaGuia(linha, valor);
+  // O nome do arquivo costuma dizer do que é ("1ª Parcela 13º …").
+  const doArquivo = (filename || "")
+    .replace(/\.pdf$/i, "")
+    .replace(/[_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const nomeFornecedor = fornecedor?.name ?? benefNome ?? "Fornecedor do boleto";
+
+  const [veiculos, beneficiarios] = await Promise.all([
+    prisma.vehicle.findMany({
+      orderBy: [{ status: "asc" }, { createdAt: "desc" }],
+      select: { id: true, brand: true, model: true, plate: true, status: true },
+    }),
+    prisma.capitalBeneficiary.findMany({
+      where: { active: true },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true },
+    }),
+  ]);
+  return {
+    ok: true,
+    notas: [
+      {
+        tipo: "BOLETO",
+        linhaDigitavel: linha,
+        placa: null,
+        veiculoSugeridoId: null,
+        categoria,
+        numero: barcodeDigits(linha).slice(-12) || vencimento.replace(/\D/g, ""),
+        emitenteNome: benefNome ?? fornecedor?.name ?? null,
+        emitenteCnpj: benefCnpj
+          ? benefCnpj.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5")
+          : null,
+        emitidaEm: null,
+        paginaInicial: null,
+        paginaFinal: null,
+        itensResumo: doArquivo || `Boleto ${nomeFornecedor}`,
+        supplierId: fornecedor?.id ?? null,
+        supplierNome: nomeFornecedor,
+        fluxoSugerido,
+        beneficiarioSugeridoId: fluxoSugerido === "CAPITAL" ? ultimo?.capitalBeneficiaryId ?? null : null,
+        parcelas: [
+          {
+            parcela: 1,
+            total: 1,
+            valor,
+            vencimento,
+            acao: existente ? "ANEXAR" : "CRIAR",
+            tituloExistente: existente ? String(existente.orderNumber).padStart(4, "0") : null,
+          },
+        ],
+      },
+    ],
+    avisos: [],
+    suppliers: suppliers.map((s) => ({ id: s.id, name: s.name })),
+    vehicles: veiculos.map((v) => ({
+      id: v.id,
+      label: `${v.brand} ${v.model} · ${v.plate}${v.status === "VENDIDO" ? " (vendido)" : ""}`,
+    })),
+    beneficiaries: beneficiarios,
+  };
+}
+
+/**
  * Anexa cada boleto ao título EM ABERTO de mesmo valor e vencimento (o título
  * que a NF acabou de criar, ou um já lançado), no espaço Boleto, e guarda a
  * linha digitável para a Ordem de Pagamento. Com mais de um candidato, o do
@@ -3832,38 +4061,7 @@ export async function anexarBoletosFornecedorAction(
       outcomes.push(`${rotulo} (${b.filename}): não deu para ler o valor — anexe no título à mão.`);
       continue;
     }
-    const candidatos = await prisma.payable.findMany({
-      where: {
-        status: { not: "PAGO" },
-        amount: { gte: b.valor - 0.01, lte: b.valor + 0.01 },
-        ...(b.vencimento
-          ? {
-              dueDate: {
-                gte: new Date(`${b.vencimento}T00:00:00.000Z`),
-                lte: new Date(`${b.vencimento}T23:59:59.999Z`),
-              },
-            }
-          : {}),
-      },
-      select: {
-        id: true,
-        orderNumber: true,
-        description: true,
-        barcode: true,
-        supplier: { select: { document: true } },
-        attachments: { where: { kind: "BOLETO" }, select: { id: true } },
-      },
-      orderBy: { createdAt: "desc" },
-      take: 20,
-    });
-    const raiz = (b.beneficiarioCnpj || "").slice(0, 8);
-    let escolhidos = candidatos;
-    if (raiz.length === 8) {
-      const doFornecedor = escolhidos.filter((c) => (c.supplier?.document || "").replace(/\D/g, "").startsWith(raiz));
-      if (doFornecedor.length) escolhidos = doFornecedor;
-    }
-    const semBoleto = escolhidos.filter((c) => c.attachments.length === 0);
-    if (semBoleto.length) escolhidos = semBoleto;
+    const escolhidos = await titulosDoBoleto({ ...b, valor: b.valor });
     if (escolhidos.length !== 1) {
       outcomes.push(
         escolhidos.length === 0
