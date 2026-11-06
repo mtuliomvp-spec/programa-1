@@ -4,7 +4,38 @@ import { useState, type KeyboardEvent } from "react";
 import { Input } from "@/components/ui";
 import { nameKey } from "@/lib/person-keys";
 
-type Option = { id: string; label: string };
+type Option = {
+  id: string;
+  label: string;
+  /** Texto extra que também é buscado e aparece miúdo embaixo do nome (ex.: CPF/CNPJ). */
+  detail?: string | null;
+};
+
+/**
+ * Busca "inteligente": cada palavra digitada precisa aparecer no nome (em
+ * qualquer ordem, ignorando acento/maiúscula/pontuação) ou nos dígitos do
+ * detalhe — "maria viana" acha "Adriana Maria Rodrigues Marao Viana", e
+ * "123456" acha o CPF 123.456.789-00. Quem começa com o que foi digitado vem
+ * primeiro.
+ */
+function filtrar(options: Option[], busca: string): Option[] {
+  const palavras = busca.split(/\s+/).map(nameKey).filter(Boolean);
+  if (!palavras.length) return options;
+  const inicio = nameKey(busca);
+  const achados: { o: Option; nota: number }[] = [];
+  for (const o of options) {
+    const nome = nameKey(o.label);
+    const doc = (o.detail || "").replace(/\D/g, "");
+    if (!palavras.every((w) => nome.includes(w) || (/^\d+$/.test(w) && doc.includes(w)))) continue;
+    const nota = nome.startsWith(inicio)
+      ? 0
+      : o.label.split(/\s+/).some((p) => nameKey(p).startsWith(palavras[0]))
+        ? 1
+        : 2;
+    achados.push({ o, nota });
+  }
+  return achados.sort((a, b) => a.nota - b.nota).map((x) => x.o);
+}
 
 /**
  * Seletor com BUSCA que envia o ID: digite para filtrar, clique para escolher.
@@ -15,7 +46,8 @@ type Option = { id: string; label: string };
  * então a escolha é obrigatoriamente um item da lista: texto digitado sem
  * escolha não seleciona ninguém.
  *
- * A busca ignora acento/maiúscula/pontuação (nameKey): "jose" acha "José".
+ * A busca ignora acento/maiúscula/pontuação (nameKey): "jose" acha "José";
+ * aceita as palavras em qualquer ordem e, com `detail`, o CPF/CNPJ.
  *
  * Serve nos dois modos: CONTROLADO pelo pai (`value` + `onChange`, quando o
  * formulário reage à escolha) ou SOZINHO (`defaultValue`), que é o caso das
@@ -57,8 +89,7 @@ export default function SearchSelect({
   const [open, setOpen] = useState(false);
 
   const texto = busca !== null ? busca : (selected?.label ?? "");
-  const q = nameKey(busca ?? "");
-  const matches = (q ? options.filter((o) => nameKey(o.label).includes(q)) : options).slice(0, 40);
+  const matches = filtrar(options, busca ?? "").slice(0, 40);
 
   const escolher = (id: string) => {
     setValue(id);
@@ -170,6 +201,7 @@ export default function SearchSelect({
                 } ${marcado === (temVazio ? i + 1 : i) ? "bg-blue-50" : ""}`}
               >
                 {o.label}
+                {o.detail ? <span className="block text-xs text-slate-400">{o.detail}</span> : null}
               </button>
             </li>
           ))}

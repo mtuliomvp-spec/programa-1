@@ -118,7 +118,7 @@ export default async function NovaVendaPage({
         exitNfeKey: true,
       },
     }),
-    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }),
+    prisma.customer.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, document: true } }),
     prisma.financialAccount.findMany({
       where: { active: true, type: "FINANCEIRA" },
       orderBy: { name: "asc" },

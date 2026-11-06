@@ -6,6 +6,7 @@ import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { CHASSI_LENGTH, RENAVAM_LENGTH } from "@/lib/vehicle-doc";
 import BankInput from "@/components/BankInput";
 import MoneyInput from "@/components/MoneyInput";
+import SearchSelect from "@/components/SearchSelect";
 import NewCustomerInline from "@/components/NewCustomerInline";
 import NewSupplierInline from "@/components/NewSupplierInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
@@ -544,14 +545,14 @@ export default function IntermediationForm({
         </div>
         {customerList.length > 0 ? (
           <Field label="Usar um cliente já cadastrado (opcional)">
-            <Select value={ownerPickId} onChange={(e) => handlePickOwnerCustomer(e.target.value)}>
-              <option value="">— Selecionar cliente cadastrado —</option>
-              {customerList.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </Select>
+            <SearchSelect
+              name="ownerPickCustomerId"
+              value={ownerPickId}
+              onChange={handlePickOwnerCustomer}
+              options={customerList.map((c) => ({ id: c.id, label: c.name, detail: c.document }))}
+              placeholder="Digite o nome ou CPF/CNPJ do cliente"
+              emptyLabel="— Nenhum —"
+            />
             <p className="mt-1 text-xs text-slate-400">
               Selecione para preencher automaticamente nome, CPF/CNPJ, telefone e endereço abaixo.
             </p>
@@ -788,21 +789,14 @@ export default function IntermediationForm({
               </>
             ) : (
               <>
-                <Select
+                <SearchSelect
                   name="customerId"
                   required
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                >
-                  <option value="" disabled>
-                    Selecione o cliente
-                  </option>
-                  {customerList.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </Select>
+                  onChange={setCustomerId}
+                  options={customerList.map((c) => ({ id: c.id, label: c.name, detail: c.document }))}
+                  placeholder="Digite o nome ou CPF/CNPJ do cliente"
+                />
                 <button
                   type="button"
                   onClick={() => {
