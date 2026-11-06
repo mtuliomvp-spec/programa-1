@@ -23,6 +23,7 @@ import {
 import { computeReturn, retornoLabel, RETORNO_RATE_PER_LEVEL } from "@/lib/retorno";
 import BankInput from "@/components/BankInput";
 import ProcessingOverlay from "@/components/ProcessingOverlay";
+import SearchSelect from "@/components/SearchSelect";
 import NewCustomerInline from "@/components/NewCustomerInline";
 import { cancelarGuiaPendente, guiaFeitoAoChegar } from "@/lib/guia/eventos";
 
@@ -57,7 +58,7 @@ type Vehicle = {
   /** Renave: a ENTRADA já foi registrada (tem protocolo)? Pesa no gravame. */
   renaveEntradaRegistrada?: boolean;
 };
-type Customer = { id: string; name: string };
+type Customer = { id: string; name: string; document?: string | null };
 type Financer = { id: string; name: string; returnTaxPercent: number; sellerReturnPercent: number };
 type UserOption = { id: string; name: string };
 type Beneficiary = { id: string; name: string };
@@ -660,19 +661,14 @@ export default function SaleForm({
           </div>
         ) : null}
         <Field label="Cliente" required>
-          <Select
+          <SearchSelect
             name="customerId"
             required
             value={customerId}
-            onChange={(e) => setCustomerId(e.target.value)}
-          >
-            <option value="">Selecione um cliente</option>
-            {customerList.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
+            onChange={setCustomerId}
+            options={customerList.map((c) => ({ id: c.id, label: c.name, detail: c.document }))}
+            placeholder="Digite o nome ou CPF/CNPJ do cliente"
+          />
           <button
             type="button"
             onClick={() => setNewCustomer((v) => !v)}
