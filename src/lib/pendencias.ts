@@ -313,6 +313,7 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
   const emTransferencia: PendenciaItem[] = [];
   const semFoto: PendenciaItem[] = [];
   const crlvPendente: PendenciaItem[] = [];
+  const foraDaVitrine: PendenciaItem[] = [];
   for (const v of vehicles) {
     const s = situacaoDocumental({ ...v, preVendido: preVendidos.has(v.id) }, houseKeys);
     const selo = seloCrlv(s);
@@ -354,6 +355,11 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
           vendido ? desdeVenda : diasDesde(v.entryDate, hoje),
         ),
       );
+    }
+    // O mesmo selo "⚠ Fora da vitrine" do Estoque: à venda, sem pré-venda e
+    // sem anúncio publicado (reservado/pré-vendido fica oculto de propósito).
+    if (v.status === "ESTOQUE" && !v.published && !preVendidos.has(v.id)) {
+      foraDaVitrine.push(item("vit", `Em estoque desde ${formatDate(v.entryDate)}`, diasDesde(v.entryDate, hoje)));
     }
     if (!vendido && selo.label.startsWith("⚠")) {
       crlvPendente.push(item("crlv", `Em estoque desde ${formatDate(v.entryDate)}`, diasDesde(v.entryDate, hoje)));
@@ -417,6 +423,15 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
       tom: "warning",
       href: "/estoque?doc=CRLV_PENDENTE",
       itens: crlvPendente.sort(maisAntigoPrimeiro),
+    },
+    {
+      key: "fora-vitrine",
+      icone: "🪟",
+      titulo: "Em estoque fora da vitrine",
+      comoResolver: "Carro à venda sem anúncio publicado: ninguém o encontra no site. Publique na ficha do veículo (Anúncio).",
+      tom: "warning",
+      href: "/estoque?status=ESTOQUE",
+      itens: foraDaVitrine.sort(maisAntigoPrimeiro),
     },
     {
       key: "pre-vendas",
