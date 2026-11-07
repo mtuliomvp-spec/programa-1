@@ -22,6 +22,8 @@ export type PendenciaItem = {
   valor?: number;
   /** Há quantos dias está pendente (desde a venda, o recebimento, o vencimento...). */
   dias?: number;
+  /** Selo ao lado do título (ex.: situação da transferência). */
+  selo?: { texto: string; tom: "danger" | "warning" | "info" | "success" };
 };
 
 export type PendenciaGrupo = {
@@ -341,7 +343,15 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
       // é o que protege a loja (multa, IPVA, ponto). Depois de transferido, não
       // faz mais falta.
       if (s.transferDoneAt == null && !s.hasComunicacao) {
-        semComunicacao.push(item("cv", `${vendidoEm}${emNomeDe}`, desdeVenda));
+        // Situação da transferência ao lado: em processo, a comunicação cobre
+        // só até o CRLV novo sair; sem processo, o risco é maior.
+        semComunicacao.push({
+          ...item("cv", `${vendidoEm}${emNomeDe}`, desdeVenda),
+          selo:
+            emProcesso || s.saleTransferPending
+              ? { texto: "🔄 Em processo de transferência", tom: "info" }
+              : { texto: "⚠ Sem processo de transferência", tom: "danger" },
+        });
       }
       if (!s.hasFotoCliente) semFoto.push(item("fc", vendidoEm, desdeVenda));
     }

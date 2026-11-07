@@ -90,7 +90,14 @@ export default async function PendenciasPage() {
                           className="flex items-start justify-between gap-3 px-5 py-3 hover:bg-slate-50"
                         >
                           <span className="min-w-0">
-                            <span className="block break-words text-sm font-medium text-slate-800">{i.titulo}</span>
+                            <span className="block break-words text-sm font-medium text-slate-800">
+                              {i.titulo}
+                              {i.selo ? (
+                                <span className="ml-2 inline-block align-middle">
+                                  <Badge tone={i.selo.tom}>{i.selo.texto}</Badge>
+                                </span>
+                              ) : null}
+                            </span>
                             {i.detalhe ? <span className="block text-xs text-slate-500">{i.detalhe}</span> : null}
                           </span>
                           <span className="flex shrink-0 flex-col items-end gap-0.5">
