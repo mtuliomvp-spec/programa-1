@@ -21,12 +21,28 @@ export type NavItem = {
    * maior (ex.: "Meu capital" para quem não vê o Capital dos sócios inteiro).
    */
   hideIfModule?: ModuleKey;
+  /** Aparece para quem tem QUALQUER um destes módulos (tela que junta vários). */
+  anyModule?: ModuleKey[];
+  /**
+   * Não serve de tela de entrada pós-login: é um resumo de outras telas, e
+   * quem não tem o Dashboard continua caindo na sua tela de trabalho.
+   */
+  notLanding?: boolean;
 };
 
 export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
   {
     title: "Visão geral",
-    items: [{ href: "/", label: "Dashboard", icon: "📊", module: "dashboard" }],
+    items: [
+      { href: "/", label: "Dashboard", icon: "📊", module: "dashboard" },
+      {
+        href: "/pendencias",
+        label: "Pendências",
+        icon: "📌",
+        anyModule: ["estoque", "financeiro"],
+        notLanding: true,
+      },
+    ],
   },
   {
     title: "Operação",
@@ -138,6 +154,7 @@ function canSeeItem(user: NavUser, item: NavItem) {
   if (item.adminOnly) return user.role === "ADMIN" || superAdmin;
   if (item.hideIfModule && hasModuleAccess(user, item.hideIfModule)) return false;
   if (item.module) return hasModuleAccess(user, item.module);
+  if (item.anyModule) return item.anyModule.some((m) => hasModuleAccess(user, m));
   return true;
 }
 
@@ -156,7 +173,7 @@ export function navGroupsFor(user: NavUser) {
 export function firstAccessibleHref(user: NavUser): string | null {
   for (const group of NAV_GROUPS) {
     for (const item of group.items) {
-      if (item.href !== "/" && !item.personal && canSeeItem(user, item)) return item.href;
+      if (item.href !== "/" && !item.personal && !item.notLanding && canSeeItem(user, item)) return item.href;
     }
   }
   return null;

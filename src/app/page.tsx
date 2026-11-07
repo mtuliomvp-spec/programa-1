@@ -21,6 +21,7 @@ import { getCompany } from "@/lib/company";
 import { nomeDaLoja } from "@/lib/nome-loja";
 import { hasModuleAccess } from "@/lib/permissions";
 import { firstAccessibleHref } from "@/lib/nav";
+import { getPendencias } from "@/lib/pendencias";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const [stats, upcoming, monthly, structural, pat, traffic, investmentsDue] = await timed(
+  const [stats, upcoming, monthly, structural, pat, traffic, investmentsDue, pendencias] = await timed(
     "tela: painel inicial",
     () =>
     Promise.all([
@@ -69,6 +70,12 @@ export default async function DashboardPage() {
       getPatrimonialStats(),
       getPaidTrafficStats(),
       getInvestmentsDueSoon(),
+      user
+        ? getPendencias({
+            estoque: hasModuleAccess(user, "estoque"),
+            financeiro: hasModuleAccess(user, "financeiro"),
+          })
+        : Promise.resolve([]),
     ]),
   );
 
@@ -113,6 +120,27 @@ export default async function DashboardPage() {
       />
 
       <DemoBanner />
+
+      {/* Pendências: um atalho por assunto (detalhe na tela Pendências). */}
+      {pendencias.length > 0 ? (
+        <Card className="mb-4 border-l-4 border-l-amber-400 px-4 py-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href="/pendencias" className="mr-1 text-sm font-semibold text-slate-900 hover:underline">
+              📌 Pendências ({pendencias.reduce((s, g) => s + g.itens.length, 0)})
+            </Link>
+            {pendencias.map((g) => (
+              <Link
+                key={g.key}
+                href={`/pendencias#${g.key}`}
+                className="inline-flex items-center gap-1 rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs text-slate-700 hover:bg-slate-50"
+              >
+                {g.icone} {g.titulo}
+                <Badge tone={g.tom}>{g.itens.length}</Badge>
+              </Link>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {/* Posição patrimonial — estilo Agrasty, com a equação patrimonial */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
