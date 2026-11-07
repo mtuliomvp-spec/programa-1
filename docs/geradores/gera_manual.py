@@ -44,9 +44,9 @@ story.append(p(
 story.append(Spacer(1, 9 * mm))
 story.append(linha_stats([
     ("7", "grupos de menu"),
-    ("40", "telas no menu"),
-    ("12", "módulos"),
-    ("47", "permissões"),
+    ("42", "telas no menu"),
+    ("14", "módulos"),
+    ("98", "permissões"),
 ]))
 story.append(NextPageTemplate("padrao"))
 story.append(PageBreak())
@@ -54,8 +54,8 @@ story.append(PageBreak())
 # ============================================================ CONCEITOS
 story += secao(
     "Antes de começar",
-    "Seis ideias que valem para o sistema inteiro",
-    "Entendendo estes seis pontos, qualquer tela do menu fica previsível — eles se repetem em "
+    "Oito ideias que valem para o sistema inteiro",
+    "Entendendo estes oito pontos, qualquer tela do menu fica previsível — eles se repetem em "
     "todas elas.",
 )
 story.append(grade([
@@ -82,6 +82,14 @@ story.append(grade([
     ("6. Funciona no celular",
      "As telas se adaptam ao celular. O vendedor consulta estoque, tira foto e registra pré-venda no "
      "atendimento; o escritório usa o computador para o financeiro e os relatórios."),
+    ("7. Dúvida? Pergunte ao chat",
+     "O botão “Ajuda”, no canto de toda tela, abre um assistente que explica como fazer cada rotina e "
+     "consulta os dados que você já pode ver (contas vencidas, vendas, estoque, pendências). Ele não "
+     "altera nada e respeita as permissões do seu perfil."),
+    ("8. Pendências num lugar só",
+     "A tela Pendências junta o que espera uma ação: notas a emitir, valores a receber das "
+     "financeiras, documentação dos vendidos, contas vencidas. Cada item some sozinho quando é "
+     "resolvido na tela de origem."),
 ]))
 story.append(PageBreak())
 
@@ -101,6 +109,41 @@ story += tela(
         "movimentou; use-os para achar rapidamente onde o mês saiu do previsto.",
         "Se você entrou e o painel avisa que não há tela liberada, o seu usuário foi aprovado mas "
         "ainda está sem perfil de acesso — fale com o administrador.",
+        "Quando há pendências, um quadro no topo mostra um atalho por assunto, com a quantidade.",
+    ],
+)
+story += tela(
+    "Pendências", "/pendencias",
+    "Junta numa tela só tudo o que está esperando uma ação, com as mesmas regras das telas de origem: "
+    "cada item some sozinho quando o assunto é resolvido lá.",
+    [
+        "<b>Financeiro:</b> NF de retorno e de seguro a emitir (o dinheiro já caiu e não há nota), "
+        "financiamento, retorno e comissão de seguro a receber, contas a pagar e a receber vencidas.",
+        "<b>Documentação:</b> vendido sem processo de transferência, vendido sem comunicação de venda "
+        "(com o selo dizendo se a transferência já está em processo), em processo de transferência, "
+        "CRLV pendente, carro em estoque fora da vitrine, pré-vendas em aberto e vendido sem foto do "
+        "cliente.",
+        "Cada item mostra há quantos dias está pendente (em vermelho acima de 30) e leva direto à tela "
+        "onde se resolve.",
+        "<b>Foto do cliente:</b> quem tem a permissão “Abonar foto do cliente pendente” pode abonar um "
+        "carro ou todos de uma vez — o selo vira “Foto do cliente abonada” e fica registrado quem "
+        "abonou.",
+        "Quem só tem o estoque vê a parte de documentação; quem só tem o financeiro, a parte financeira.",
+    ],
+)
+story += tela(
+    "Chat de ajuda", "botão “Ajuda” em todas as telas",
+    "Um assistente que tira dúvidas de uso do sistema e consulta os dados da loja, sempre dentro das "
+    "permissões de quem pergunta.",
+    [
+        "Clique em <b>Ajuda</b> no canto inferior direito e escreva a dúvida (ex.: “como faço a venda de "
+        "um consignado?”, “quais contas vencem esta semana?”, “quanto vendemos este mês?”).",
+        "A resposta vem em passos, com links que levam direto à tela; enquanto busca dados, aparece "
+        "“Consultando…”.",
+        "Ele consulta só o que o seu menu já mostra (pendências, estoque, vendas, contas e saldos) e "
+        "nunca altera nada: para lançar ou pagar, ele explica o caminho.",
+        "As perguntas ficam registradas para o administrador (Sistema › Perguntas do chat). O consumo "
+        "aparece em Uso de IA, como “Chat de ajuda”.",
     ],
 )
 story.append(PageBreak())
@@ -392,6 +435,33 @@ story += tela(
     ],
 )
 story += tela(
+    "Comunicação de venda", "/financeiro/comunicacao-venda",
+    "A rotina mensal da comunicação de venda (SICOVE): lançar cada comprovante e conferir a fatura "
+    "da prestadora contra o que o sistema registrou.",
+    [
+        "<b>Lançar:</b> anexe o comprovante (PDF) de cada comunicação ou cancelamento. O sistema lê a "
+        "placa: achando o carro, a cobrança vira custo dele (pós-venda, se já vendido); sem placa "
+        "cadastrada, vira despesa administrativa. O mesmo comprovante nunca é cobrado duas vezes.",
+        "<b>Conferir:</b> quando a fatura chega, a tela mostra o que foi cobrado sem título lançado (um "
+        "clique lança todos), o que veio com valor diferente e o que foi lançado sem cobrança.",
+        "Anexando também o boleto, um clique une os títulos do mês num pagamento só, e cada carro "
+        "continua com o seu custo.",
+        "Os valores de cada serviço vêm de Parâmetros › Comunicação de venda, nunca do arquivo.",
+    ],
+)
+story += tela(
+    "Notas de serviço (NFS-e)", "/financeiro/nfse",
+    "Emite a nota de serviço da comissão sobre o retorno do financiamento e sobre o seguro, contra o "
+    "banco ou a corretora, e guarda o DANFSe e o XML.",
+    [
+        "Escolha a financeira (as de Contas e caixas) e o tipo — retorno ou seguro; a tela lista os "
+        "retornos e seguros ainda sem nota, os já recebidos primeiro, e a soma vira o valor da nota.",
+        "Na primeira nota de cada financeira o sistema pede o CNPJ do tomador; depois ele fica gravado.",
+        "Nota emitida fora do sistema pode ser registrada aqui, para os retornos não ficarem pendentes.",
+        "Retorno ou seguro recebido sem nota aparece em Pendências até a nota sair.",
+    ],
+)
+story += tela(
     "Categorias", "/financeiro/categorias",
     "As categorias usadas nos lançamentos de despesa e receita.",
     ["Cadastre, renomeie ou exclua. <b>Renomear atualiza também os lançamentos passados</b>, então o "
@@ -425,6 +495,9 @@ story += tela(
         "próprio.",
         "A tela mostra saldo investido, valor aplicado e saldo livre.",
         "<b>Contabilizar</b> acerta o saldo do sócio contra o administrativo sem mover dinheiro.",
+        "<b>Meu capital</b> (/capital/meu): quem não vê o Capital inteiro, mas é beneficiário, abre só o "
+        "próprio extrato. O administrador liga o usuário ao beneficiário em <b>Usuário vinculado</b>, na "
+        "ficha do beneficiário.",
     ],
 )
 story += tela(
@@ -461,6 +534,14 @@ story += tela(
     ["Crie centros para obras, imóveis ou frentes específicas e escolha-os ao lançar.",
      "Encerrar um centro tira ele das listas novas sem apagar o que já passou.",
      "O resultado por centro aparece na própria tela."],
+)
+story += tela(
+    "Imóveis", "/imoveis",
+    "Os documentos de cada imóvel (registro, planta, ITR) e as contas ligadas a ele (ITR anual, "
+    "honorários, IPTU).",
+    ["Cadastre o imóvel e diga em nome de quem ele está (a empresa ou um sócio).",
+     "Anexe os documentos; onde houver leitura automática, a IA preenche os dados para conferir.",
+     "As contas do imóvel ficam ligadas a ele, para ver num lugar só o que ele custa."],
 )
 story.append(PageBreak())
 
@@ -550,6 +631,15 @@ story += tela("Assinatura", "/sistema/assinatura",
                   "assinar; a via assinada é anexada aqui.",
                   "<b>Documentos do sistema:</b> nesta mesma tela ficam a apresentação comercial e "
                   "este manual, sempre na versão atual, para baixar ou enviar.",
+              ])
+story += tela("Perguntas do chat", "/sistema/chat-ajuda",
+              "O que a equipe pergunta ao chat de ajuda e o que ele respondeu. Só administradores.",
+              [
+                  "Mostra as perguntas do período, quem mais pergunta e as respostas com erro.",
+                  "Busque por palavra (ex.: “consignado”), filtre por período ou clique no nome de uma "
+                  "pessoa para ver só as perguntas dela.",
+                  "Cada pergunta mostra a resposta dada e as consultas que o assistente fez — use para "
+                  "achar dúvidas repetidas e treinar a equipe.",
               ])
 story += tela("Sistema, Uso de IA e Desempenho", "/sistema",
               "Telas técnicas da instalação: backup e limpeza, consumo das leituras com IA e medição "
