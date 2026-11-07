@@ -245,10 +245,10 @@ export type SituacaoDocumental = {
   soldTransferred: boolean;
   saleTransferPending: boolean;
   /**
-   * Em estoque, com transferência aberta para um DESTINO nomeado (o "Cliente"
-   * do orçamento — ex.: da loja para o nome de um sócio) e o documento ainda
-   * não no nome dele: o processo está correndo, mesmo o CRLV atual sendo da
-   * casa.
+   * Transferência aberta para um DESTINO nomeado (o "Cliente" do orçamento —
+   * ex.: da loja para um sócio, ou para o comprador na venda) e o documento
+   * ainda não no nome dele: o processo está correndo, mesmo o CRLV atual
+   * sendo da casa.
    */
   aguardandoDestino: boolean;
   /**
@@ -314,9 +314,15 @@ export function situacaoDocumental(
     temOrcamento || Boolean(v.sale?.transferCharged && (v.sale.transferAmount ?? 0) > 0);
 
   const hasCrlv = v.attachments.some((a) => a.kind === "CRLV");
+  // Vale também para carro SAINDO (vendido/pré-vendido): o orçamento da venda
+  // nomeia o comprador como destino, e o CRLV no nome da loja não prova nada
+  // sobre a transferência para ele. Sem isto, um vendido com o CRLV da loja
+  // anexado depois da transferência de ENTRADA (ex.: TEY4E56, orçamento para
+  // a compradora já anexado) caía em "Vendido — sem processo de transferência".
+  // Com a baixa no DETRAN marcada (transferDoneAt), o processo acabou.
   const aguardandoDestino =
-    !saindo &&
     !!v.transferToName &&
+    transferDoneAt == null &&
     !destinoConfere(v.docOwnerName, null, v.transferToName);
 
   return {
@@ -380,6 +386,7 @@ export function situacaoDocumental(
       saindo &&
       transferDoneAt == null &&
       (v.transferInProgress ||
+        aguardandoDestino ||
         // Detecção automática só enquanto o processo NÃO concluiu (CRLV no
         // nosso nome anexado depois do lançamento encerra o aviso); a marca
         // MANUAL continua valendo até ser desfeita na ficha.
