@@ -74,6 +74,7 @@ export const MODULES: ModuleConfig[] = [
     acoes: [
       VER,
       { acao: "prevenda", label: "Criar/editar pré-venda" },
+      { acao: "excluirprevenda", label: "Excluir pré-venda (ficha de negócio já feita)" },
       { acao: "registrar", label: "Registrar venda (efetivar)" },
       { acao: "cancelar", label: "Cancelar venda" },
       { acao: "foto", label: "Foto do cliente (antifraude)" },

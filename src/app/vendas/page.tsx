@@ -124,6 +124,7 @@ export default async function VendasPage({
                 <Th>Cliente</Th>
                 <Th>Data</Th>
                 <Th>Valor</Th>
+                <Th>Criada por</Th>
                 <Th />
               </Tr>
             </Thead>
@@ -139,6 +140,7 @@ export default async function VendasPage({
                     <Td>{customerById.get(p.customerId)?.name ?? "—"}</Td>
                     <Td>{formatDate(p.saleDate)}</Td>
                     <Td>{formatCurrency(p.totalAmount)}</Td>
+                    <Td className="text-slate-600">{p.createdByName ?? "—"}</Td>
                     <Td>
                       <Link href={`/vendas/pre-vendas/${p.id}`} className="text-sm font-medium text-amber-700 hover:underline">
                         Abrir ficha
