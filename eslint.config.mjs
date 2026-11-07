@@ -15,6 +15,11 @@ const eslintConfig = defineConfig([
         "error",
         { name: "confirm", message: "Use perguntar() de @/lib/confirmar — o confirm nativo não abre no celular." },
       ],
+      // window.confirm(...) escapava da regra acima (não é o global "solto").
+      "no-restricted-properties": [
+        "error",
+        { object: "window", property: "confirm", message: "Use perguntar() de @/lib/confirmar — o confirm nativo não abre no celular." },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

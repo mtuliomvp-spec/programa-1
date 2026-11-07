@@ -1,10 +1,12 @@
 import Link from "next/link";
 import { requireModuleAny } from "@/lib/guards";
-import { hasModuleAccess } from "@/lib/permissions";
+import { can, hasModuleAccess } from "@/lib/permissions";
 import { getPendencias, type PendenciaGrupo } from "@/lib/pendencias";
 import { formatCurrency } from "@/lib/format";
 import { timed } from "@/lib/perf";
 import { Badge, Card, EmptyState, PageHeader } from "@/components/ui";
+import AbonarFoto from "./AbonarFoto";
+import { AbonoGrupo, AbonoLinha } from "./AbonoContexto";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +30,8 @@ export default async function PendenciasPage() {
     }),
   );
   const total = grupos.reduce((s, g) => s + g.itens.length, 0);
+  // Abonar a foto do cliente (antifraude) é permissão própria.
+  const podeAbonar = can(user, "vendas", "abonarfoto");
 
   return (
     <div>
@@ -64,8 +68,10 @@ export default async function PendenciasPage() {
           <div className="space-y-4">
             {grupos.map((g) => {
               const soma = g.itens.reduce((s, i) => s + (i.valor ?? 0), 0);
+              const abonaveis = g.itens.map((i) => i.abonarVehicleId).filter((id): id is string => !!id);
               return (
-                <Card key={g.key} id={g.key} className={`scroll-mt-4 border-l-4 ${corDoTom[g.tom]}`}>
+                <AbonoGrupo key={g.key} ids={g.abonavel ? abonaveis : []}>
+                <Card id={g.key} className={`scroll-mt-4 border-l-4 ${corDoTom[g.tom]}`}>
                   <div className="flex flex-wrap items-start justify-between gap-2 border-b border-slate-100 px-5 py-4">
                     <div className="min-w-0">
                       <h2 className="font-semibold text-slate-900">
@@ -74,6 +80,9 @@ export default async function PendenciasPage() {
                       <p className="mt-0.5 text-sm text-slate-500">{g.comoResolver}</p>
                     </div>
                     <div className="flex items-center gap-3">
+                      {g.abonavel && podeAbonar && g.itens.length > 1 ? (
+                        <AbonarFoto todos vehicleIds={abonaveis} />
+                      ) : null}
                       {soma > 0 ? (
                         <span className="text-sm font-semibold tabular-nums text-slate-700">{formatCurrency(soma)}</span>
                       ) : null}
@@ -84,10 +93,11 @@ export default async function PendenciasPage() {
                   </div>
                   <ul className="divide-y divide-slate-100">
                     {g.itens.map((i) => (
-                      <li key={i.id}>
+                      <AbonoLinha key={i.id} vehicleId={i.abonarVehicleId}>
+                      <li className="flex items-center hover:bg-slate-50">
                         <Link
                           href={i.href}
-                          className="flex items-start justify-between gap-3 px-5 py-3 hover:bg-slate-50"
+                          className="flex min-w-0 flex-1 items-start justify-between gap-3 px-5 py-3"
                         >
                           <span className="min-w-0">
                             <span className="block break-words text-sm font-medium text-slate-800">
@@ -115,10 +125,17 @@ export default async function PendenciasPage() {
                             ) : null}
                           </span>
                         </Link>
+                        {i.abonarVehicleId && podeAbonar ? (
+                          <span className="shrink-0 pr-3">
+                            <AbonarFoto vehicleIds={[i.abonarVehicleId]} />
+                          </span>
+                        ) : null}
                       </li>
+                      </AbonoLinha>
                     ))}
                   </ul>
                 </Card>
+                </AbonoGrupo>
               );
             })}
           </div>

@@ -24,6 +24,8 @@ export type PendenciaItem = {
   dias?: number;
   /** Selo ao lado do título (ex.: situação da transferência). */
   selo?: { texto: string; tom: "danger" | "warning" | "info" | "success" };
+  /** Veículo que pode ter a pendência ABONADA ali mesmo (foto do cliente). */
+  abonarVehicleId?: string;
 };
 
 export type PendenciaGrupo = {
@@ -35,6 +37,8 @@ export type PendenciaGrupo = {
   tom: "danger" | "warning" | "info";
   href: string;
   itens: PendenciaItem[];
+  /** O grupo aceita abonar (dispensar) os itens: botão em cada um e "abonar todas". */
+  abonavel?: boolean;
 };
 
 const DIA = 86_400_000;
@@ -353,7 +357,9 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
               : { texto: "⚠ Sem processo de transferência", tom: "danger" },
         });
       }
-      if (!s.hasFotoCliente) semFoto.push(item("fc", vendidoEm, desdeVenda));
+      if (!s.hasFotoCliente && !s.fotoClienteAbonada) {
+        semFoto.push({ ...item("fc", vendidoEm, desdeVenda), abonarVehicleId: v.id });
+      }
     }
     if (emProcesso) {
       emTransferencia.push(
@@ -456,10 +462,12 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
       key: "sem-foto",
       icone: "📷",
       titulo: "Vendido sem foto do cliente",
-      comoResolver: "Anexe a foto do cliente com o carro na ficha do veículo.",
+      comoResolver:
+        "Anexe a foto do cliente com o carro na ficha do veículo — ou abone a pendência (ex.: venda de antes da rotina da foto).",
       tom: "info",
       href: "/estoque?status=VENDIDO",
       itens: semFoto.sort(maisAntigoPrimeiro),
+      abonavel: true,
     },
   ];
 }

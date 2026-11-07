@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { logoutAction } from "@/app/login/actions";
 import { toggleSystemLockAction } from "@/app/sistema/actions";
 import clsx from "@/lib/clsx";
+import { perguntar } from "@/lib/confirmar";
 
 export default function UserFooter({
   user,
@@ -24,11 +25,11 @@ export default function UserFooter({
     roleLabel ??
     (user.role === "SUPER_ADMIN" ? "Super Admin" : user.role === "ADMIN" ? "Administrador" : "Operador");
 
-  function toggleLock() {
+  async function toggleLock() {
     const question = systemLocked
       ? "Desbloquear o sistema? Todos os usuários voltam a ter acesso."
       : "Bloquear o sistema para manutenção? Apenas administradores continuarão navegando; os demais verão o aviso de manutenção.";
-    if (!window.confirm(question)) return;
+    if (!(await perguntar(question))) return;
     setError(null);
     startTransition(async () => {
       const r = await toggleSystemLockAction(!systemLocked);

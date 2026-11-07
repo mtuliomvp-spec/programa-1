@@ -32,6 +32,7 @@ import {
   type RenaveWsResult,
 } from "../renave-ws-actions";
 import { guiaFeito } from "@/lib/guia/eventos";
+import { perguntar } from "@/lib/confirmar";
 
 export type RenaveWsRegistro = {
   idEstoque: number | null;
@@ -118,8 +119,8 @@ export default function RenaveWsPanel(p: {
       avisoRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [msg]);
 
-  function rodar(fn: () => Promise<RenaveWsResult>, confirmar?: string, guia?: string) {
-    if (confirmar && !hom && !window.confirm(confirmar)) return;
+  async function rodar(fn: () => Promise<RenaveWsResult>, confirmar?: string, guia?: string) {
+    if (confirmar && !hom && !(await perguntar(confirmar))) return;
     setMsg(null);
     setPendente(true);
     fn()

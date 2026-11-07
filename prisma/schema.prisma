@@ -625,6 +625,10 @@ model Vehicle {
   // "transferência" para acender o selo sozinho. Anexar o CRLV novo encerra o
   // processo (o selo vira "Transferido"), independentemente desta marca.
   transferInProgress           Boolean       @default(false)
+  // Foto do cliente ABONADA: a pendência foi dispensada (ex.: vendas antigas,
+  // de antes da rotina da foto). Guarda quando e quem abonou.
+  fotoClienteAbonadaEm         DateTime?
+  fotoClienteAbonadaPor        String?
   // Para quem o veículo será transferido, lido do campo "Cliente" do
   // orçamento/recibo do despachante (nulo = para o nome da própria loja).
   transferToName               String?

@@ -8,6 +8,7 @@ import {
   houseNameKeys,
   situacaoDocumental,
   seloCrlv,
+  seloFotoCliente,
   type SituacaoDocumental,
 } from "@/lib/doc-owner";
 import {
@@ -62,9 +63,7 @@ function SelosDaOperacao({
       <Badge tone={doc.hasComunicacao ? "success" : "warning"}>
         {doc.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
       </Badge>
-      <Badge tone={doc.hasFotoCliente ? "success" : "warning"}>
-        {doc.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-      </Badge>
+      <Badge tone={seloFotoCliente(doc).tone}>{seloFotoCliente(doc).label}</Badge>
       {/* Refinanciamento não transfere nada: o veículo continua com o
           proprietário, que é o próprio financiado. */}
       {refinancing ? null : (
