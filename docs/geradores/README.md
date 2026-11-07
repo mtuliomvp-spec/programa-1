@@ -7,6 +7,7 @@ oferecidos na tela **Sistema › Assinatura**:
 | --- | --- |
 | `gera_apresentacao.py` | `public/documentos/fincore360-apresentacao.pdf` — apresentação comercial |
 | `gera_manual.py` | `public/documentos/fincore360-manual-do-sistema.pdf` — manual de uso, tela por tela |
+| `gera_manual_texto.py` | `src/lib/ajuda-manual.ts` — o mesmo manual em texto, consultado pelo **chat de ajuda** (não precisa do reportlab) |
 
 `estilo_fincore.py` guarda a identidade visual comum (paleta, capa escura,
 cartões, tabelas e rodapé) — é dela que sai o mesmo visual nos dois arquivos.
@@ -19,6 +20,7 @@ apresentação.
 pip install reportlab                 # única dependência
 python3 docs/geradores/gera_apresentacao.py
 python3 docs/geradores/gera_manual.py
+python3 docs/geradores/gera_manual_texto.py   # mantém o chat de ajuda em dia com o manual
 ```
 
 Os caminhos de saída estão no topo de cada script. Depois de regerar, confira o

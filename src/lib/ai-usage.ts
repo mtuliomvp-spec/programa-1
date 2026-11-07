@@ -27,6 +27,7 @@ export const AI_FEATURES = {
   documentosCompra: "Documentos da compra (identificação)",
   imovel: "Documentos de imóvel",
   parecer: "Parecer IA",
+  ajuda: "Chat de ajuda",
 } as const;
 
 export type AiFeature = keyof typeof AI_FEATURES;
