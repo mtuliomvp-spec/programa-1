@@ -91,6 +91,7 @@ export const REGRAS: Record<string, Record<string, Regra>> = {
     chassi: "chassi",
     renavam: "digitos",
     docOwnerName: "pessoa",
+    fotoClienteAbonadaPor: "pessoa",
     transferToName: "pessoa",
     crvNumber: "digitos",
     crvSecurityCode: "digitos",

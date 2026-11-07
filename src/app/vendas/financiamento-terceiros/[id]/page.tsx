@@ -8,6 +8,7 @@ import {
   situacaoDocumental,
   seloCrlv,
   ORCAMENTO_TRANSFERENCIA_RE,
+  seloFotoCliente,
 } from "@/lib/doc-owner";
 import { Badge, Card, CardHeader, LinkButton, PageHeader } from "@/components/ui";
 import { cancelIntermediationAction } from "../actions";
@@ -422,9 +423,7 @@ export default async function FinanciamentoTerceirosDetailPage({
             <Badge tone={doc.hasComunicacao ? "success" : "warning"}>
               {doc.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
             </Badge>
-            <Badge tone={doc.hasFotoCliente ? "success" : "warning"}>
-              {doc.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-            </Badge>
+            <Badge tone={seloFotoCliente(doc).tone}>{seloFotoCliente(doc).label}</Badge>
             {/* Refinanciamento não transfere nada: o veículo continua com o
                 proprietário, que é o próprio financiado. */}
             {sale.refinancing ? null : (

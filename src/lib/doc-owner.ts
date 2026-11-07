@@ -232,6 +232,8 @@ export type VeiculoDocumental = {
   consigned?: boolean;
   /** Para quem a transferência está sendo feita ("Cliente" do orçamento). */
   transferToName?: string | null;
+  /** Pendência da foto do cliente dispensada (abonada). */
+  fotoClienteAbonadaEm?: Date | null;
 };
 
 export type SituacaoDocumental = {
@@ -239,6 +241,8 @@ export type SituacaoDocumental = {
   crlvYear: string | null;
   hasComunicacao: boolean;
   hasFotoCliente: boolean;
+  /** Sem foto, mas a pendência foi abonada: não cobra mais. */
+  fotoClienteAbonada: boolean;
   hasAtpv: boolean;
   hasTransferQuote: boolean;
   docOwnerIsOurs: boolean;
@@ -354,6 +358,8 @@ export function situacaoDocumental(
         .at(-1) ?? null,
     hasComunicacao: v.attachments.some((a) => /comunica/i.test(a.description)),
     hasFotoCliente: v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
+    fotoClienteAbonada:
+      !!v.fotoClienteAbonadaEm && !v.attachments.some((a) => a.kind === "FOTO_CLIENTE"),
     // ATPV-e anexada (card próprio na ficha). Só gera selo POSITIVO — sem
     // ATPV-e não aparece nada (nem "pendente").
     hasAtpv: v.attachments.some((a) => a.kind === "DOCUMENTO" && /atpv/i.test(a.description)),
@@ -470,4 +476,14 @@ export function seloCrlv({
   // Tem CRLV, sem processo e sem confirmação de que está no nosso nome.
   if (hasCrlv) return { label: `✓ ${crlv}`, tone: "success" };
   return { label: "⚠ CRLV pendente", tone: "warning" };
+}
+
+/** Selo da foto do cliente: anexada, abonada (dispensada) ou pendente. */
+export function seloFotoCliente(d: Pick<SituacaoDocumental, "hasFotoCliente" | "fotoClienteAbonada">): {
+  label: string;
+  tone: "success" | "warning" | "default";
+} {
+  if (d.hasFotoCliente) return { label: "✓ Foto do cliente", tone: "success" };
+  if (d.fotoClienteAbonada) return { label: "✓ Foto do cliente abonada", tone: "default" };
+  return { label: "⚠ Foto do cliente pendente", tone: "warning" };
 }

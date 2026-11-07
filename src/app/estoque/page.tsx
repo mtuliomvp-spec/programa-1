@@ -13,7 +13,7 @@ import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
-import { situacaoDocumental, seloCrlv } from "@/lib/doc-owner";
+import { situacaoDocumental, seloCrlv, seloFotoCliente } from "@/lib/doc-owner";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -376,9 +376,7 @@ export default async function EstoquePage({
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
             </Badge>
-            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-            </Badge>
+            <Badge tone={seloFotoCliente(v).tone}>{seloFotoCliente(v).label}</Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
                 ? v.transferDoneByCrlv
@@ -509,9 +507,7 @@ export default async function EstoquePage({
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
               {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
             </Badge>
-            <Badge tone={v.hasFotoCliente ? "success" : "warning"}>
-              {v.hasFotoCliente ? "✓ Foto do cliente" : "⚠ Foto do cliente pendente"}
-            </Badge>
+            <Badge tone={seloFotoCliente(v).tone}>{seloFotoCliente(v).label}</Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
                 ? v.transferDoneByCrlv
