@@ -148,6 +148,8 @@ export function crlvNoNomeDoComprador(v: {
   lastCrlvAt: Date | null;
   /** Veículo de terceiro (financiamento de terceiros): nunca foi da loja. */
   intermediation?: boolean;
+  /** Consignado: o documento fica no nome do consignante até a venda. */
+  consigned?: boolean;
   /** Para quem a transferência está sendo feita ("Cliente" do orçamento). */
   transferToName?: string | null;
   sale: {
@@ -170,6 +172,12 @@ export function crlvNoNomeDoComprador(v: {
   // estar no nome de um parente dele) — e a data do anexo não prova nada: o
   // CRLV digital é reemitido a qualquer hora.
   if (v.intermediation) return false;
+  // CONSIGNADO: o carro nunca passou para o nome da loja — o CRLV é do
+  // consignante (o dono anterior) e costuma ser anexado no fechamento da
+  // venda. Como no financiamento de terceiros, só o nome do comprador (ou do
+  // destino) prova a transferência. Ex.: SMS6F13, CRLV da Mega Rent (a
+  // consignante) saía como "Transferido · CRLV no nome do comprador".
+  if (v.consigned) return false;
   // Documento ainda no nome do VENDEDOR da operação (financiamento de
   // terceiros: o carro nunca foi da loja). Nada foi transferido — e o CRLV
   // dele costuma ser anexado no dia da operação, o que fazia a regra de baixo
@@ -180,7 +188,13 @@ export function crlvNoNomeDoComprador(v: {
   ) {
     return false;
   }
-  return v.lastCrlvAt != null && v.lastCrlvAt.getTime() > v.sale.saleDate.getTime();
+  // Por DIA, no fuso da loja: a data da venda é gravada à meia-noite, então um
+  // CRLV anexado no próprio dia da venda (o do dono anterior, no fechamento)
+  // parecia "posterior" a ela. O CRLV novo do comprador nunca sai no mesmo dia.
+  if (v.lastCrlvAt == null) return false;
+  const diaDoAnexo = v.lastCrlvAt.toLocaleDateString("sv-SE", { timeZone: "America/Sao_Paulo" });
+  const diaDaVenda = v.sale.saleDate.toISOString().slice(0, 10);
+  return diaDoAnexo > diaDaVenda;
 }
 
 /**
@@ -214,6 +228,8 @@ export type VeiculoDocumental = {
   preVendido?: boolean;
   /** Veículo de terceiro (financiamento de terceiros). */
   intermediation?: boolean;
+  /** Consignado (documento no nome do consignante). */
+  consigned?: boolean;
   /** Para quem a transferência está sendo feita ("Cliente" do orçamento). */
   transferToName?: string | null;
 };
@@ -295,6 +311,7 @@ export function situacaoDocumental(
     lastCrlvAt: lastCrlvAt != null ? new Date(lastCrlvAt) : null,
     sale: v.sale,
     intermediation: v.intermediation,
+    consigned: v.consigned,
     transferToName: v.transferToName,
   });
   // Quando a transferência ao comprador concluiu: a data marcada na venda ou,

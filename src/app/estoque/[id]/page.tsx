@@ -176,6 +176,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           lastCrlvAt: ultimoCrlv?.createdAt ?? null,
           sale: vehicle.sale,
           intermediation: vehicle.intermediation,
+          consigned: vehicle.consigned,
           transferToName: vehicle.transferToName,
         })
       : false;
