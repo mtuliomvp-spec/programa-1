@@ -4,14 +4,17 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = { role: "user" | "assistant"; content: string; status?: string };
+
+/** Linha de status enviada pelo servidor durante as consultas ("Consultando…"). */
+const STATUS_RE = /\u001e([^\n]*)\n?/g;
 
 const CHAVE = "fincore.chatAjuda";
 const SUGESTOES = [
   "Como faço a venda de um veículo consignado?",
-  "Como pago um boleto que já está no Contas a pagar?",
-  "O que significa “Processo de transferência em aberto”?",
-  "Como abro e fecho o caixa do dia?",
+  "Quais contas vencem nos próximos 7 dias?",
+  "Quanto vendemos este mês?",
+  "O que está pendente na loja?",
 ];
 
 /** Negrito, `código` e [links](/tela) — o resto é texto puro (nada de HTML). */
@@ -96,7 +99,7 @@ export default function ChatAjuda() {
   }, []);
   useEffect(() => {
     try {
-      sessionStorage.setItem(CHAVE, JSON.stringify(msgs.slice(-30)));
+      sessionStorage.setItem(CHAVE, JSON.stringify(msgs.slice(-30).map(({ role, content }) => ({ role, content }))));
     } catch {
       // sem armazenamento: a conversa vale só enquanto a tela estiver aberta
     }
@@ -122,8 +125,8 @@ export default function ChatAjuda() {
     setEnviando(true);
     const ctrl = new AbortController();
     cancelarRef.current = ctrl;
-    const escrever = (parcial: string) =>
-      setMsgs((prev) => [...prev.slice(0, -1), { role: "assistant", content: parcial }]);
+    const escrever = (parcial: string, status?: string) =>
+      setMsgs((prev) => [...prev.slice(0, -1), { role: "assistant", content: parcial, status }]);
     try {
       const res = await fetch("/api/ajuda", {
         method: "POST",
@@ -143,9 +146,16 @@ export default function ChatAjuda() {
         const { done, value } = await leitor.read();
         if (done) break;
         acumulado += dec.decode(value, { stream: true });
-        escrever(acumulado);
+        // O status ("Consultando contas a pagar…") aparece só enquanto nenhum
+        // texto novo chegou depois dele; nunca fica no histórico.
+        const marcas = [...acumulado.matchAll(STATUS_RE)];
+        const ultima = marcas.at(-1);
+        const statusAtivo =
+          ultima && ultima.index + ultima[0].length >= acumulado.length ? ultima[1] : undefined;
+        escrever(acumulado.replace(STATUS_RE, ""), statusAtivo);
       }
-      if (!acumulado.trim()) escrever("⚠️ A resposta veio vazia. Tente perguntar de outro jeito.");
+      if (!acumulado.replace(STATUS_RE, "").trim())
+        escrever("⚠️ A resposta veio vazia. Tente perguntar de outro jeito.");
     } catch (e) {
       if ((e as Error)?.name === "AbortError") {
         setMsgs((prev) => {
@@ -181,7 +191,7 @@ export default function ChatAjuda() {
           <div className="flex items-center justify-between gap-2 border-b border-slate-100 px-4 py-3">
             <div className="min-w-0">
               <p className="text-sm font-semibold text-slate-900">💬 Assistente de ajuda</p>
-              <p className="text-xs text-slate-500">Tira dúvidas de como usar o sistema</p>
+              <p className="text-xs text-slate-500">Dúvidas de uso e consultas aos dados</p>
             </div>
             <div className="flex items-center gap-1">
               {msgs.length ? (
@@ -224,7 +234,8 @@ export default function ChatAjuda() {
                   </button>
                 ))}
                 <p className="pt-1 text-xs text-slate-400">
-                  O assistente explica o uso do sistema; ele não vê os dados da loja.
+                  O assistente explica o sistema e consulta os dados que você já pode ver no seu menu. Ele
+                  não altera nada. As perguntas ficam registradas para o administrador.
                 </p>
               </div>
             ) : (
@@ -237,11 +248,12 @@ export default function ChatAjuda() {
                   </div>
                 ) : (
                   <div key={i} className="max-w-[92%] rounded-2xl rounded-bl-sm bg-slate-100 px-3 py-2 text-slate-800">
-                    {m.content ? (
-                      <Resposta texto={m.content} aoNavegar={aoNavegar} />
-                    ) : (
+                    {m.content ? <Resposta texto={m.content} aoNavegar={aoNavegar} /> : null}
+                    {m.status && enviando && i === msgs.length - 1 ? (
+                      <p className="mt-1 text-xs text-slate-500">🔎 {m.status}</p>
+                    ) : !m.content ? (
                       <span className="text-slate-400">digitando…</span>
-                    )}
+                    ) : null}
                   </div>
                 ),
               )
