@@ -29,7 +29,11 @@ export async function checkPreSaleConflictAction(
   ]);
   if (!allowed) return { conflict: false };
   try {
-    await assertNoConflictingPreSale(vehicleId, customerId, excludePreSaleId || undefined);
+    // O formulário gera/edita PRÉ-VENDA: qualquer outra ficha em aberto do carro
+    // impede (a mesma regra do envio).
+    await assertNoConflictingPreSale(vehicleId, customerId, excludePreSaleId || undefined, {
+      qualquerCliente: true,
+    });
     return { conflict: false };
   } catch (e) {
     return { conflict: true, message: e instanceof Error ? e.message : "Veículo já pré-vendido para outro cliente." };

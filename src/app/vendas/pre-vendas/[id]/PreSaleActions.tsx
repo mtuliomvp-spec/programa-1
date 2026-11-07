@@ -19,11 +19,14 @@ export default function PreSaleActions({
   editHref,
   canRegister = true,
   canPreSale = true,
+  canDelete = false,
 }: {
   id: string;
   editHref: string;
   canRegister?: boolean;
   canPreSale?: boolean;
+  /** Excluir a ficha: permissão própria (vendas.excluirprevenda). */
+  canDelete?: boolean;
 }) {
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +84,7 @@ export default function PreSaleActions({
           📄 Contrato de venda
         </LinkButton>
         <PrintButton />
-        {canPreSale ? (
+        {canDelete ? (
           <ConfirmButton
             question="Excluir esta pré-venda? Ela não gerou nada no financeiro; será apenas removida."
             confirmLabel="Excluir a pré-venda"

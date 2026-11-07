@@ -121,7 +121,7 @@ export const REGRAS: Record<string, Record<string, Regra>> = {
     deliveryNotes: "limpar",
   },
   ShowroomVisit: { visitor: "pessoa" },
-  PreSale: VENDA,
+  PreSale: { ...VENDA, createdByName: "pessoa" },
   Sale: VENDA,
   Payable: { publicToken: "token", barcode: "digitos", bankRef: "limpar" },
   PaymentCombo: { barcode: "digitos" },

@@ -1144,6 +1144,11 @@ model PreSale {
   updatedAt                  DateTime       @updatedAt
 
   @@index([customerId])
+  // Quem GEROU a ficha (usuário logado no momento da criação). Editar não
+  // muda: é o registro de quem abriu a negociação. Fichas de antes deste
+  // controle ficam sem (nulo).
+  createdById                String?
+  createdByName              String?
   @@map("pre_sales")
 }
 

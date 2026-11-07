@@ -117,7 +117,22 @@ export default async function PreVendaFichaPage({
           editHref={editHref}
           canRegister={await userCan("vendas", "registrar")}
           canPreSale={await userCan("vendas", "prevenda")}
+          canDelete={await userCan("vendas", "excluirprevenda")}
         />
+        <p className="mt-2 text-right text-xs text-slate-500 print:hidden">
+          {pre.createdByName ? (
+            <>
+              Criada por <strong className="text-slate-700">{pre.createdByName}</strong> em{" "}
+              {pre.createdAt.toLocaleString("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+                dateStyle: "short",
+                timeStyle: "short",
+              })}
+            </>
+          ) : (
+            <>Criada em {formatDate(pre.createdAt)} · autor não registrado (ficha anterior a este controle)</>
+          )}
+        </p>
       </div>
 
       {reaberta ? (

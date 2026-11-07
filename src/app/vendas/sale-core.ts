@@ -124,21 +124,29 @@ export type SaleFormState = { error?: string };
 export type SaleData = z.infer<typeof saleSchema>;
 
 /**
- * Impede vender / pré-vender um veículo que já tem uma pré-venda EM ABERTO para
- * OUTRO cliente. O usuário deve cancelar a pré-venda existente antes de negociar
- * o mesmo carro com um cliente diferente. `excludePreSaleId` ignora a própria
- * pré-venda ao editá-la.
+ * Impede vender / pré-vender um veículo que já tem uma pré-venda EM ABERTO.
+ *
+ * - Ao REGISTRAR a venda (padrão), só a pré-venda de OUTRO cliente impede: a do
+ *   mesmo cliente é a própria negociação sendo efetivada.
+ * - Ao GERAR/EDITAR uma pré-venda (`qualquerCliente`), qualquer outra ficha em
+ *   aberto do carro impede — inclusive do mesmo cliente. Senão nasciam duas
+ *   fichas do mesmo carro (0039 e 0040, ambas da Jeiele) e o vendedor "trocava"
+ *   a negociação sem ninguém excluir a anterior; excluir ficha é permissão
+ *   própria (`vendas.excluirprevenda`).
+ *
+ * `excludePreSaleId` ignora a própria pré-venda ao editá-la.
  */
 export async function assertNoConflictingPreSale(
   vehicleId: string,
   customerId: string,
   excludePreSaleId?: string,
+  opts: { qualquerCliente?: boolean } = {},
 ): Promise<void> {
   const conflict = await prisma.preSale.findFirst({
     where: {
       vehicleId,
       status: "ABERTA",
-      customerId: { not: customerId },
+      ...(opts.qualquerCliente ? {} : { customerId: { not: customerId } }),
       ...(excludePreSaleId ? { id: { not: excludePreSaleId } } : {}),
     },
     select: { number: true, customerId: true },
@@ -150,9 +158,17 @@ export async function assertNoConflictingPreSale(
     select: { name: true },
   });
   const num = String(conflict.number).padStart(4, "0");
+  if (conflict.customerId === customerId) {
+    throw new Error(
+      `Este veículo já tem a pré-venda nº ${num} em aberto para ${cust?.name ?? "este cliente"}. ` +
+        `Para mudar a negociação, abra a ficha nº ${num} e use “Editar”. Para fazer uma ficha nova, ` +
+        `a nº ${num} precisa ser excluída antes (administrador ou quem tem a permissão “Excluir pré-venda”).`,
+    );
+  }
   throw new Error(
     `Este veículo já tem uma pré-venda em aberto (nº ${num} — ${cust?.name ?? "outro cliente"}). ` +
-      `Cancele a pré-venda antes de negociar este veículo com um cliente diferente.`,
+      `Ela precisa ser excluída antes de negociar este veículo com um cliente diferente ` +
+      `(administrador ou quem tem a permissão “Excluir pré-venda”).`,
   );
 }
 

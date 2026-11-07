@@ -6,6 +6,7 @@ import { prisma } from "@/lib/prisma";
 import { assertBooksBalanced } from "@/lib/books-health";
 import { assertCashboxOpen } from "@/lib/cashbox";
 import { assertCan } from "@/lib/guards";
+import { getSessionUser } from "@/lib/auth";
 import { parseDateInput } from "@/lib/format";
 import { parseReferrals } from "@/lib/referrals";
 import { chassiOrNull, renavamOrNull, isChassiComplete } from "@/lib/vehicle-doc";
@@ -53,10 +54,13 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     sellerName = u?.name ?? sellerName;
   }
 
-  // Não permitir pré-vender o mesmo veículo para outro cliente enquanto houver
-  // pré-venda em aberto (ignora a própria pré-venda ao editá-la).
+  // Uma ficha em aberto por veículo — de qualquer cliente, inclusive o mesmo
+  // (ignora a própria pré-venda ao editá-la). Trocar a negociação é Editar;
+  // fazer outra exige excluir a anterior, que é permissão própria.
   try {
-    await assertNoConflictingPreSale(d.vehicleId, d.customerId, preSaleId || undefined);
+    await assertNoConflictingPreSale(d.vehicleId, d.customerId, preSaleId || undefined, {
+      qualquerCliente: true,
+    });
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Veículo já pré-vendido para outro cliente." };
   }
@@ -158,7 +162,11 @@ export async function createPreSaleAction(_prev: SaleFormState, formData: FormDa
     const updated = await prisma.preSale.update({ where: { id: preSaleId }, data });
     id = updated.id;
   } else {
-    const created = await prisma.preSale.create({ data });
+    // Quem gerou a ficha fica registrado (só na criação; editar não troca).
+    const autor = await getSessionUser();
+    const created = await prisma.preSale.create({
+      data: { ...data, createdById: autor?.id ?? null, createdByName: autor?.name ?? null },
+    });
     id = created.id;
   }
 
@@ -263,6 +271,12 @@ export async function convertPreSaleAction(id: string): Promise<void> {
     where: { id },
     data: { status: "CONVERTIDA", convertedSaleId: saleId },
   });
+  // Ficha repetida do mesmo carro (de antes da trava de uma ficha por veículo):
+  // com a venda registrada ela não tem mais o que negociar.
+  await prisma.preSale.updateMany({
+    where: { vehicleId: pre.vehicleId, status: "ABERTA", id: { not: id } },
+    data: { status: "CANCELADA" },
+  });
 
   revalidatePath("/vendas");
   revalidatePath("/estoque");
@@ -281,7 +295,9 @@ export async function convertPreSaleAction(id: string): Promise<void> {
  */
 export async function deletePreSaleAction(id: string): Promise<{ ok: boolean; error?: string }> {
   try {
-    await assertCan("vendas", "prevenda");
+    // Excluir uma ficha já feita é permissão própria (não basta criar/editar):
+    // é o que libera o carro para outra negociação.
+    await assertCan("vendas", "excluirprevenda");
     await prisma.preSale.deleteMany({ where: { id } });
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : "Não foi possível excluir a pré-venda." };

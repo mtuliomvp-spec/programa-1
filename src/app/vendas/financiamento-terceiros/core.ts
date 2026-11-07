@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { devolucaoParaSalvar } from "@/lib/devolucao";
 import { prisma } from "@/lib/prisma";
+import { getSessionUser } from "@/lib/auth";
 import { registerVehicleSale, createIntermediationVehicle } from "@/lib/finance";
 import { assertMonthOpen } from "@/lib/monthly-closing";
 import { assertCashDateIsWorkDate } from "@/lib/cashbox";
@@ -458,11 +459,15 @@ export async function createIntermediationPreSale(d: IntermediationData): Promis
         : ""),
   });
 
+  // Quem gerou a ficha fica registrado (como na pré-venda de estoque).
+  const autor = await getSessionUser();
   const pre = await prisma.preSale.create({
     data: {
       ...buildPreSaleData(d, customerId, F, D, sellerName),
       vehicleId: vehicle.id,
       status: "ABERTA",
+      createdById: autor?.id ?? null,
+      createdByName: autor?.name ?? null,
     },
   });
   return pre.id;
