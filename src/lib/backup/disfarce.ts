@@ -122,6 +122,7 @@ export const REGRAS: Record<string, Record<string, Regra>> = {
     deliveryNotes: "limpar",
   },
   ShowroomVisit: { visitor: "pessoa" },
+  ChatAjudaPergunta: { userName: "pessoa" },
   PreSale: { ...VENDA, createdByName: "pessoa" },
   Sale: VENDA,
   Payable: { publicToken: "token", barcode: "digitos", bankRef: "limpar" },

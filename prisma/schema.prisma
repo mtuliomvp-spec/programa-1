@@ -2554,3 +2554,24 @@ model PedidoAssinatura {
   @@index([createdAt])
   @@map("pedidos_assinatura")
 }
+
+// Chat de ajuda: cada pergunta feita ao assistente e a resposta dada. Serve
+// para o administrador ver as dúvidas da equipe (e melhorar o manual/treino).
+// userId sem relação de propósito: apagar um usuário não apaga o histórico.
+model ChatAjudaPergunta {
+  id          String   @id @default(cuid())
+  userId      String?
+  userName    String?
+  pergunta    String
+  resposta    String
+  // Tela em que a pessoa estava ao perguntar.
+  pagina      String?
+  // Consultas aos dados que o assistente fez para responder (nomes).
+  ferramentas String[] @default([])
+  ok          Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([userId])
+  @@map("chat_ajuda_perguntas")
+}

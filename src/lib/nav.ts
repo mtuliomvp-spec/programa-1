@@ -117,6 +117,7 @@ export const NAV_GROUPS: { title: string; items: NavItem[] }[] = [
       { href: "/sistema", label: "Sistema (backup / zerar)", icon: "🖥️", superOnly: true },
       { href: "/sistema/uso", label: "Uso da plataforma", icon: "📶", adminOnly: true },
       { href: "/sistema/assinatura", label: "Assinatura", icon: "💳", adminOnly: true },
+      { href: "/sistema/chat-ajuda", label: "Perguntas do chat", icon: "💬", adminOnly: true },
       { href: "/sistema/uso-ia", label: "Uso de IA", icon: "🤖", superOnly: true },
       { href: "/sistema/desempenho", label: "Desempenho", icon: "⚡", superOnly: true },
       { href: "/super", label: "Painel Super Admin", icon: "🛡️", superOnly: true },
