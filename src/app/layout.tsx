@@ -8,6 +8,7 @@ import { getSessionUser } from "@/lib/auth";
 import { nomeDaLoja } from "@/lib/nome-loja";
 import { isDemoMode } from "@/lib/demo-mode";
 import ModoGuia from "@/components/guia/ModoGuia";
+import ChatAjuda from "@/components/ChatAjuda";
 
 /** Título da aba com o nome da loja dos Parâmetros (cada instalação é de um cliente). */
 export async function generateMetadata(): Promise<Metadata> {
@@ -118,6 +119,7 @@ export default async function RootLayout({
             {children}
           </main>
         </div>
+        <ChatAjuda />
       </body>
     </html>
   );
