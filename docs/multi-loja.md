@@ -63,23 +63,50 @@ variáveis do projeto, iguais para todas.
 **todo banco de loja do catálogo**. Se uma loja falhar, o build para — publicar
 com um banco atrasado quebraria aquela loja.
 
-## Cadastrar loja (linha de comando, por enquanto)
+## Painel da plataforma (criar e administrar lojas)
+
+Endereço: `https://admin.<DOMINIO_PLATAFORMA>/plataforma` (em qualquer outro
+endereço a rota não existe). Entrada pela senha da plataforma.
+
+| Variável | Para quê |
+|---|---|
+| `PLATAFORMA_SENHA` | Senha do painel (na falta, vale a `SUPER_ADMIN_PASSWORD`). |
+| `PLATAFORMA_BANCO_URL` | Servidor onde nascem os bancos das lojas novas (URL com pooler). No Neon: a URL do projeto. |
+| `PLATAFORMA_BANCO_URL_DIRETA` | A mesma, sem pooler (cria o banco e roda as migrações). |
+| `VERCEL_DEPLOY_HOOK_URL` | Deploy Hook da Vercel: a criação da loja pede a publicação sozinha. |
+
+**Criar loja:** nome, subdomínio, razão social/CNPJ, domínios próprios
+(opcional) e o administrador (nome, e-mail, senha inicial).
+
+1. O painel cria o banco `loja_<subdominio>` no servidor da plataforma (ou
+   usa a URL de um banco já criado, se o servidor não estiver configurado).
+2. Grava a loja no catálogo como **Em preparo** (o administrador vai cifrado,
+   só com o hash da senha).
+3. Pede uma publicação (Deploy Hook). O build aplica as migrações no banco
+   novo, cria o administrador e os dados da empresa e libera a loja.
+   Enquanto isso, o endereço da loja mostra "Sua loja está sendo preparada".
+
+**Ficha da loja:** nome, domínios próprios, situação (Ativa/Suspensa) e os
+segredos da loja — certificado do Renave (.pfx), senhas, tokens da Focus e da
+consulta por placa, APP_URL. Os segredos ficam cifrados no catálogo e nunca
+são mostrados de volta (só "✓ configurado"). Mudanças valem em até 1 minuto
+(memória do endereço).
+
+Domínio próprio de uma loja: cadastrar na ficha **e** adicionar no projeto da
+Vercel (Settings › Domains), com o DNS da loja apontando para a Vercel.
+
+## Linha de comando
 
 ```bash
-LOJA_DATABASE_URL="postgresql://..." \
-  node scripts/loja.mjs salvar loja2 "Loja Dois Veículos"            # loja2.<domínio>
 LOJA_DATABASE_URL="..." \
   node scripts/loja.mjs salvar mvp "MVP Veículos" mvpveiculos.com.br,www.mvpveiculos.com.br --usa-ambiente
 node scripts/loja.mjs listar
 ```
 
-(A URL do banco vai por variável, nunca como argumento.) O banco novo recebe
-as migrações no próximo build ou com `npx prisma migrate deploy`.
+(A URL do banco vai por variável, nunca como argumento.)
 
-## Próximas fases
+## Próxima fase
 
-- **Fase 2:** painel da plataforma — criar loja (banco no Neon, migrações,
-  administrador inicial), suspender, cadastrar os segredos da loja pela tela;
-  pedido aprovado em /assinar vira loja.
-- **Fase 3:** domínio do Fincore360 com subdomínio curinga na Vercel e a virada
-  da MVP (catálogo em produção com `mvpveiculos.com.br` → banco atual).
+**Fase 3:** domínio do Fincore360 com subdomínio curinga na Vercel e a virada
+da MVP (catálogo em produção com `mvpveiculos.com.br` → banco atual, marcada
+`--usa-ambiente`).
