@@ -220,6 +220,11 @@ export type VeiculoDocumental = {
     /** Transferência cobrada na venda: existe título do despachante a pagar. */
     transferCharged?: boolean;
     transferAmount?: number;
+    /**
+     * Títulos da venda (basta o recorte de TITULO_TRANSFERENCIA_DA_VENDA): o
+     * "Transferência DETRAN" PAGO ao despachante é o que abre o processo.
+     */
+    payables?: { description: string; status: string }[];
     /** Vendedor/proprietário do documento (financiamento de terceiros). */
     ownerName?: string | null;
     ownerDocument?: string | null;
@@ -281,6 +286,19 @@ export type SituacaoDocumental = {
 /** Descrição do anexo que identifica o orçamento/recibo do despachante. */
 export const ORCAMENTO_TRANSFERENCIA_RE = /^or[çc]amento de transfer/i;
 
+/**
+ * Recorte (Prisma `where`) dos títulos da venda que interessam à documentação:
+ * o "Transferência DETRAN" que a venda reserva para pagar o despachante.
+ */
+export const TITULO_TRANSFERENCIA_DA_VENDA = {
+  description: { startsWith: "Transferência DETRAN" },
+} as const;
+
+/** O título "Transferência DETRAN" da venda já foi pago ao despachante? */
+export function transferenciaDaVendaPaga(payables: { description: string; status: string }[] | undefined): boolean {
+  return (payables ?? []).some((p) => /^transfer[eê]ncia detran/i.test(p.description) && p.status === "PAGO");
+}
+
 export function situacaoDocumental(
   v: VeiculoDocumental,
   houseKeys: string[],
@@ -329,10 +347,11 @@ export function situacaoDocumental(
   );
   // Sinais de que o processo está correndo POR CONTA DA VENDA: o título
   // "Transferência DETRAN" nasce preso à venda (não ao veículo), então ele não
-  // aparece em costs/payables do carro — sem isto, o veículo com transferência
-  // cobrada e orçamento anexado não acendia nenhum selo de processo.
-  const processoDaVenda =
-    temOrcamento || Boolean(v.sale?.transferCharged && (v.sale.transferAmount ?? 0) > 0);
+  // aparece em costs/payables do carro. Cobrar a transferência do cliente NÃO
+  // abre o processo — só reserva o dinheiro (ex.: SMS6F13, cobrada na venda e
+  // ainda não paga ao despachante, aparecia "em aberto"). O processo começa
+  // com o orçamento do despachante anexado ou com o título PAGO a ele.
+  const processoDaVenda = temOrcamento || transferenciaDaVendaPaga(v.sale?.payables);
 
   const hasCrlv = v.attachments.some((a) => a.kind === "CRLV");
   // Vale também para carro SAINDO (vendido/pré-vendido): o orçamento da venda
@@ -379,8 +398,8 @@ export function situacaoDocumental(
     // "transferência" (pagamento ao despachante), mesmo fora da ficha de venda;
     // o ORÇAMENTO do despachante anexado (é o começo do processo, e na venda
     // que já reservou a transferência ele é o único sinal no carro, porque o
-    // título fica preso à venda, não ao veículo); ou a transferência cobrada na
-    // própria venda.
+    // título fica preso à venda, não ao veículo); ou o título "Transferência
+    // DETRAN" da venda já pago ao despachante (só cobrar do cliente não basta).
     transferStarted: v.transferInProgress || lastTransferAt != null || processoDaVenda,
     transferInProgress: v.transferInProgress,
     // Estoque com o CRLV já no NOSSO nome: a transferência para a loja

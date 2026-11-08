@@ -4,7 +4,7 @@ import { can, hasModuleAccess } from "@/lib/permissions";
 import { getPendencias } from "@/lib/pendencias";
 import { getAccountsWithBalances } from "@/lib/accounts";
 import { effectivePayableStatus, effectiveReceivableStatus } from "@/lib/status";
-import { houseNameKeys, situacaoDocumental, seloCrlv, seloFotoCliente } from "@/lib/doc-owner";
+import { houseNameKeys, situacaoDocumental, seloCrlv, seloFotoCliente, TITULO_TRANSFERENCIA_DA_VENDA } from "@/lib/doc-owner";
 import { formatDate } from "@/lib/format";
 
 /**
@@ -118,6 +118,7 @@ const FERRAMENTAS: Ferramenta[] = [
               transferDoneAt: true,
               transferCharged: true,
               transferAmount: true,
+              payables: { where: TITULO_TRANSFERENCIA_DA_VENDA, select: { description: true, status: true } },
               ownerName: true,
               ownerDocument: true,
               customer: { select: { name: true, document: true } },

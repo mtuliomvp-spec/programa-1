@@ -13,7 +13,7 @@ import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
-import { situacaoDocumental, seloCrlv, seloFotoCliente } from "@/lib/doc-owner";
+import { situacaoDocumental, seloCrlv, seloFotoCliente, TITULO_TRANSFERENCIA_DA_VENDA } from "@/lib/doc-owner";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -118,10 +118,11 @@ export default async function EstoquePage({
               saleDate: true,
               transferDoneAt: true,
               // Transferência cobrada na venda: o título do despachante fica
-              // preso à VENDA (não ao veículo), e é ele que diz que o processo
-              // está correndo.
+              // preso à VENDA (não ao veículo); PAGO, diz que o processo está
+              // correndo (só cobrado, não).
               transferCharged: true,
               transferAmount: true,
+              payables: { where: TITULO_TRANSFERENCIA_DA_VENDA, select: { description: true, status: true } },
               // Vendedor da operação (financiamento de terceiros): o documento
               // no nome dele significa que NADA foi transferido ainda.
               ownerName: true,
