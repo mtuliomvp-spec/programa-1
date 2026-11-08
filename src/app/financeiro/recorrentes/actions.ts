@@ -24,7 +24,9 @@ const recurringSchema = z.object({
   // ANUAL: todo ano no dia e mês de "Começa em" (ITR, IPVA, licenciamento).
   periodicidade: z.enum(["MENSAL", "DIAS", "ANUAL"]).default("MENSAL"),
   dayOfMonth: z.coerce.number().int().min(1).max(31).default(5),
-  intervalDays: z.coerce.number().int().min(1).max(365).optional(),
+  intervalDays: z.coerce.number().int().min(1).max(3650).optional(),
+  // ANUAL a cada N anos (ex.: domínio renovado de 2 em 2 anos). Padrão 1.
+  intervalYears: z.coerce.number().int().min(1, "Anos: de 1 a 10.").max(10, "Anos: de 1 a 10.").optional(),
   // Antecipa o vencimento para o último dia útil (fim de semana/feriado).
   anticipateToBusinessDay: z.coerce.boolean().optional(),
   // Competência da PRIMEIRA ocorrência ("08/2026"): as seguintes andam sozinhas.
@@ -85,7 +87,7 @@ export async function createRecurringAction(
   const porDias = data.periodicidade === "DIAS";
   const anual = data.periodicidade === "ANUAL";
   if (porDias && !data.intervalDays) {
-    return { error: "Informe de quantos em quantos dias (1 a 365)." };
+    return { error: "Informe de quantos em quantos dias (1 a 3650)." };
   }
   const isCapital = data.structuralKey === "CAPITAL";
   if (isCapital && !data.capitalBeneficiaryId) {
@@ -140,7 +142,8 @@ export async function createRecurringAction(
         // Anual: o dia vem do "Começa em" (o primeiro vencimento).
         dayOfMonth: anual ? parseDateInput(data.startDate).getUTCDate() : data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
-        intervalMonths: anual ? 12 : null,
+        // Anual: 12 meses por ano do intervalo (2 anos = 24).
+        intervalMonths: anual ? 12 * (data.intervalYears ?? 1) : null,
         imovelId: data.imovelId || null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
         firstReference: competencia.valor,
@@ -199,7 +202,7 @@ export async function updateRecurringAction(
   const porDias = data.periodicidade === "DIAS";
   const anual = data.periodicidade === "ANUAL";
   if (porDias && !data.intervalDays) {
-    return { error: "Informe de quantos em quantos dias (1 a 365)." };
+    return { error: "Informe de quantos em quantos dias (1 a 3650)." };
   }
   const isCapital = data.structuralKey === "CAPITAL";
   if (isCapital && !data.capitalBeneficiaryId) {
@@ -255,7 +258,8 @@ export async function updateRecurringAction(
         // Anual: o dia vem do "Começa em" (o primeiro vencimento).
         dayOfMonth: anual ? parseDateInput(data.startDate).getUTCDate() : data.dayOfMonth,
         intervalDays: porDias ? data.intervalDays : null,
-        intervalMonths: anual ? 12 : null,
+        // Anual: 12 meses por ano do intervalo (2 anos = 24).
+        intervalMonths: anual ? 12 * (data.intervalYears ?? 1) : null,
         imovelId: data.imovelId || null,
         anticipateToBusinessDay: Boolean(data.anticipateToBusinessDay),
         firstReference: competencia.valor,
