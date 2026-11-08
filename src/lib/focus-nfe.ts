@@ -1,11 +1,13 @@
 import "server-only";
+import { variavelDaLoja } from "@/lib/tenant";
 
 /**
  * Cliente da API v2 da Focus NFe (https://doc.focusnfe.com.br).
  *
  * Autenticação HTTP Basic: usuário = token da empresa, senha em branco. Os
  * tokens ficam em variáveis de ambiente — FOCUS_NFE_TOKEN_HOMOLOGACAO e
- * FOCUS_NFE_TOKEN_PRODUCAO —, nunca no banco. Sem a variável, a chamada sai sem
+ * FOCUS_NFE_TOKEN_PRODUCAO —, nunca no banco da loja (no multi-loja, nos
+ * segredos da loja no catálogo; ver variavelDaLoja). Sem a variável, a chamada sai sem
  * cabeçalho (num ambiente cujo proxy injeta a credencial, isso basta; fora
  * dele a Focus responde 401 e o erro aparece na tela).
  */
@@ -17,14 +19,14 @@ const BASE: Record<Ambiente, string> = {
   PRODUCAO: "https://api.focusnfe.com.br",
 };
 
-function token(ambiente: Ambiente): string | undefined {
-  const v = ambiente === "PRODUCAO" ? process.env.FOCUS_NFE_TOKEN_PRODUCAO : process.env.FOCUS_NFE_TOKEN_HOMOLOGACAO;
+async function token(ambiente: Ambiente): Promise<string | undefined> {
+  const v = await variavelDaLoja(ambiente === "PRODUCAO" ? "FOCUS_NFE_TOKEN_PRODUCAO" : "FOCUS_NFE_TOKEN_HOMOLOGACAO");
   return v?.trim() || undefined;
 }
 
-function headers(ambiente: Ambiente, json = false): Record<string, string> {
+async function headers(ambiente: Ambiente, json = false): Promise<Record<string, string>> {
   const h: Record<string, string> = {};
-  const t = token(ambiente);
+  const t = await token(ambiente);
   if (t) h.Authorization = `Basic ${Buffer.from(`${t}:`).toString("base64")}`;
   if (json) h["Content-Type"] = "application/json";
   return h;
@@ -74,25 +76,25 @@ async function chamar(ambiente: Ambiente, path: string, init: RequestInit): Prom
   return { http: res.status, body };
 }
 
-export function emitirNfe(ambiente: Ambiente, ref: string, payload: unknown) {
+export async function emitirNfe(ambiente: Ambiente, ref: string, payload: unknown) {
   return chamar(ambiente, `/v2/nfe?ref=${encodeURIComponent(ref)}`, {
     method: "POST",
-    headers: headers(ambiente, true),
+    headers: await headers(ambiente, true),
     body: JSON.stringify(payload),
   });
 }
 
-export function consultarNfe(ambiente: Ambiente, ref: string) {
+export async function consultarNfe(ambiente: Ambiente, ref: string) {
   return chamar(ambiente, `/v2/nfe/${encodeURIComponent(ref)}?completa=0`, {
     method: "GET",
-    headers: headers(ambiente),
+    headers: await headers(ambiente),
   });
 }
 
-export function cancelarNfe(ambiente: Ambiente, ref: string, justificativa: string) {
+export async function cancelarNfe(ambiente: Ambiente, ref: string, justificativa: string) {
   return chamar(ambiente, `/v2/nfe/${encodeURIComponent(ref)}`, {
     method: "DELETE",
-    headers: headers(ambiente, true),
+    headers: await headers(ambiente, true),
     body: JSON.stringify({ justificativa }),
   });
 }
@@ -113,7 +115,7 @@ export type FocusNfse = {
 export async function emitirNfsen(ambiente: Ambiente, ref: string, payload: unknown) {
   return (await chamar(ambiente, `/v2/nfsen?ref=${encodeURIComponent(ref)}`, {
     method: "POST",
-    headers: headers(ambiente, true),
+    headers: await headers(ambiente, true),
     body: JSON.stringify(payload),
   })) as { http: number; body: FocusNfse };
 }
@@ -121,14 +123,14 @@ export async function emitirNfsen(ambiente: Ambiente, ref: string, payload: unkn
 export async function consultarNfsen(ambiente: Ambiente, ref: string) {
   return (await chamar(ambiente, `/v2/nfsen/${encodeURIComponent(ref)}`, {
     method: "GET",
-    headers: headers(ambiente),
+    headers: await headers(ambiente),
   })) as { http: number; body: FocusNfse };
 }
 
 export async function cancelarNfsen(ambiente: Ambiente, ref: string, justificativa: string) {
   return (await chamar(ambiente, `/v2/nfsen/${encodeURIComponent(ref)}`, {
     method: "DELETE",
-    headers: headers(ambiente, true),
+    headers: await headers(ambiente, true),
     body: JSON.stringify({ justificativa }),
   })) as { http: number; body: FocusNfse };
 }
@@ -154,7 +156,7 @@ export async function baixarUrl(ambiente: Ambiente, urlOuCaminho: string): Promi
     // O token só vai para a própria Focus — nunca para o portal do governo.
     const daFocus = /(^|\.)focusnfe\.com\.br$/.test(u.hostname);
     const res = await fetch(u, {
-      headers: daFocus ? headers(ambiente) : {},
+      headers: daFocus ? await headers(ambiente) : {},
       cache: "no-store",
       signal: AbortSignal.timeout(30000),
     });
@@ -169,7 +171,7 @@ export async function baixarArquivo(ambiente: Ambiente, caminho: string): Promis
   if (!caminho.startsWith("/")) return null;
   try {
     const res = await fetch(`${BASE[ambiente]}${caminho}`, {
-      headers: headers(ambiente),
+      headers: await headers(ambiente),
       cache: "no-store",
       signal: AbortSignal.timeout(30000),
     });

@@ -34,7 +34,7 @@ export default async function ParametrosRenavePage() {
   const diasParaPrazo = Math.ceil((prazo.getTime() - agora.getTime()) / (24 * 60 * 60 * 1000));
   // Dias desde o protocolo da adesão no Credencia: o órgão tem até 30 (art. 10),
   // e pendência aberta congela a contagem — por isso o aviso, e não um prazo fatal.
-  const acesso = acessoDiretoRenave(company);
+  const acesso = await acessoDiretoRenave(company);
   const diasEmAnalise = company.renaveAdesaoSolicitadaEm
     ? Math.floor((agora.getTime() - company.renaveAdesaoSolicitadaEm.getTime()) / (24 * 60 * 60 * 1000))
     : 0;
@@ -264,8 +264,8 @@ export default async function ParametrosRenavePage() {
               ambiente: company.renaveWsAmbiente,
               email: company.renaveWsEmail,
               cpfOperador: company.renaveWsCpfOperador,
-              certProducao: certificadoConfigurado("PRODUCAO"),
-              certHomologacao: certificadoConfigurado("HOMOLOGACAO"),
+              certProducao: await certificadoConfigurado("PRODUCAO"),
+              certHomologacao: await certificadoConfigurado("HOMOLOGACAO"),
             }}
           />
         </div>

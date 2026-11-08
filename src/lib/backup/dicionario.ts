@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "@/lib/prisma";
 import { Disfarce, REGRAS, ehInstituicao, type Dicionario } from "./disfarce";
 import { modeloBackup } from "./esquema";
+import { lojaAtual } from "@/lib/tenant";
 
 /**
  * Os nomes e documentos REAIS que o disfarce procura dentro dos textos livres
@@ -59,9 +60,11 @@ const cache = new Map<string, { disfarce: Disfarce; em: number }>();
 export async function disfarceDoBackup(sal: string): Promise<Disfarce> {
   const agora = Date.now();
   for (const [k, v] of cache) if (agora - v.em > 30 * 60 * 1000) cache.delete(k);
-  const pronto = cache.get(sal);
+  // Chave com a loja: o dicionário tem nomes de UMA loja (multi-loja).
+  const chave = `${(await lojaAtual()).id}:${sal}`;
+  const pronto = cache.get(chave);
   if (pronto) return pronto.disfarce;
   const disfarce = new Disfarce(sal, await montarDicionario());
-  cache.set(sal, { disfarce, em: agora });
+  cache.set(chave, { disfarce, em: agora });
   return disfarce;
 }

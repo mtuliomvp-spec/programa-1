@@ -3,6 +3,7 @@ import { createHmac, createHash, randomBytes, scryptSync, timingSafeEqual } from
 import { cache } from "react";
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { hostDaRequisicao, lojaAtual, modoMultiLoja } from "@/lib/tenant";
 import type { UserRole } from "@prisma/client";
 
 /**
@@ -50,18 +51,33 @@ export type SessionPayload = {
   name: string;
   role: UserRole;
   exp: number;
+  /**
+   * Loja em que a sessão nasceu (multi-loja). A sessão só vale nela: o mesmo
+   * cookie apresentado no endereço de outra loja é recusado.
+   */
+  loja?: string;
+  /**
+   * Endereço (host) em que o login foi feito (multi-loja). O porteiro
+   * (src/proxy.ts) não consulta o catálogo, então confere por aqui que o
+   * cookie está sendo usado no mesmo endereço em que nasceu.
+   */
+  h?: string;
 };
 
 function sign(data: string): string {
   return createHmac("sha256", getAuthSecret()).update(data).digest("base64url");
 }
 
-export function createSessionToken(user: { id: string; name: string; role: UserRole }): string {
+export function createSessionToken(
+  user: { id: string; name: string; role: UserRole },
+  loja?: { id: string; host: string },
+): string {
   const payload: SessionPayload = {
     sub: user.id,
     name: user.name,
     role: user.role,
     exp: Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000,
+    ...(loja ? { loja: loja.id, h: loja.host } : {}),
   };
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   return `${body}.${sign(body)}`;
@@ -84,13 +100,25 @@ export function verifySessionToken(token: string | undefined): SessionPayload | 
   }
 }
 
+/**
+ * A sessão é desta loja? Com uma loja só, sempre. No multi-loja, só a sessão
+ * que nasceu nesta loja — a de antes da virada (sem loja) não vale mais, e
+ * cada um entra de novo uma vez.
+ */
+export async function sessaoDestaLoja(payload: SessionPayload): Promise<boolean> {
+  if (!modoMultiLoja()) return true;
+  return payload.loja === (await lojaAtual()).id;
+}
+
 // ---------------------------------------------------------------------------
 // Helpers de sessão no servidor
 // ---------------------------------------------------------------------------
 
 export async function setSessionCookie(user: { id: string; name: string; role: UserRole }) {
   const store = await cookies();
-  store.set(SESSION_COOKIE, createSessionToken(user), {
+  // Multi-loja: a sessão leva a loja e o endereço em que nasceu.
+  const loja = modoMultiLoja() ? { id: (await lojaAtual()).id, host: await hostDaRequisicao() } : undefined;
+  store.set(SESSION_COOKIE, createSessionToken(user, loja), {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
@@ -152,7 +180,7 @@ export async function clearSessionCookie() {
 export const getSessionUser = cache(async () => {
   const store = await cookies();
   const payload = verifySessionToken(store.get(SESSION_COOKIE)?.value);
-  if (!payload) return null;
+  if (!payload || !(await sessaoDestaLoja(payload))) return null;
   const user = await prisma.user.findUnique({
     where: { id: payload.sub },
     select: {

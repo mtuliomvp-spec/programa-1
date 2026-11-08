@@ -213,7 +213,7 @@ export async function salvarRenaveWsAction(_prev: RenaveWsState, formData: FormD
   if (cpf && !cpfValido(cpf)) return { error: "CPF do operador inválido." };
   if (ambiente === "PRODUCAO") {
     const { certificadoConfigurado } = await import("@/lib/renave-ws");
-    if (!certificadoConfigurado("PRODUCAO"))
+    if (!(await certificadoConfigurado("PRODUCAO")))
       return { error: "Produção exige o certificado e-CNPJ configurado na instalação (RENAVE_CERT_PFX_BASE64 e RENAVE_CERT_SENHA)." };
   }
   await prisma.companySettings.upsert({

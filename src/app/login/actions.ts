@@ -10,6 +10,7 @@ import { isEmailConfigured, sendEmail, emailLayout } from "@/lib/email";
 import { getCompany } from "@/lib/company";
 import { nomeDaLoja } from "@/lib/nome-loja";
 import { syncUserSupplier } from "@/lib/user-supplier-link";
+import { variavelDaLoja } from "@/lib/tenant";
 import {
   clientIp,
   lockedUntil,
@@ -23,7 +24,8 @@ import {
 } from "@/lib/rate-limit";
 
 async function baseUrl(): Promise<string> {
-  if (process.env.APP_URL) return process.env.APP_URL.replace(/\/$/, "");
+  const appUrl = await variavelDaLoja("APP_URL");
+  if (appUrl) return appUrl.replace(/\/$/, "");
   const h = await headers();
   const proto = h.get("x-forwarded-proto") || "https";
   const host = h.get("x-forwarded-host") || h.get("host") || "localhost:3000";

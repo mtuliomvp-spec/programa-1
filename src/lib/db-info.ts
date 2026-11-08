@@ -1,5 +1,6 @@
 import "server-only";
 import { resolveDatabaseUrl } from "./db-url";
+import { lojaAtual } from "@/lib/tenant";
 
 /**
  * Onde o banco está, sem expor credencial nenhuma.
@@ -63,12 +64,13 @@ function maskHost(host: string): string {
   return `${host.slice(0, 10)}…${host.slice(-14)}`;
 }
 
-export function getDbInfo(): DbInfo {
+export async function getDbInfo(): Promise<DbInfo> {
   const serverRegion = process.env.VERCEL_REGION ?? null;
   const server = serverRegion ? VERCEL_REGIONS[serverRegion.toLowerCase()] : undefined;
   const serverRegionLabel = server?.label ?? null;
   const base = { serverRegion, serverRegionLabel };
-  const raw = resolveDatabaseUrl();
+  // O banco da loja atual (no multi-loja, cada loja tem o seu).
+  const raw = (await lojaAtual()).databaseUrl || resolveDatabaseUrl();
   if (!raw) {
     return { ...base, host: null, provider: null, region: null, pooled: null, sameRegion: null };
   }

@@ -46,9 +46,37 @@ if (!url) {
   process.exit(1);
 }
 
-const result = spawnSync("npx", ["prisma", "migrate", "deploy"], {
-  stdio: "inherit",
-  env: { ...process.env, DATABASE_URL: url, DATABASE_URL_UNPOOLED: directUrl },
-});
+function migrar(rotulo, banco, direto) {
+  console.log(`\n▶ Migrações: ${rotulo}`);
+  const r = spawnSync("npx", ["prisma", "migrate", "deploy"], {
+    stdio: "inherit",
+    env: { ...process.env, DATABASE_URL: banco, DATABASE_URL_UNPOOLED: direto || banco },
+  });
+  return r.status ?? 1;
+}
 
-process.exit(result.status ?? 1);
+const status = migrar("banco do projeto", url, directUrl);
+if (status !== 0) process.exit(status);
+
+// Multi-loja: o mesmo código atende todas as lojas do catálogo, então TODO
+// banco de loja recebe as migrações desta versão antes de ela entrar no ar.
+// Uma loja que falhar derruba o build — publicar com um banco atrasado
+// quebraria aquela loja.
+if (process.env.CATALOGO_DATABASE_URL) {
+  const { abrirCatalogo, listarLojas } = await import("./catalogo.mjs");
+  const db = abrirCatalogo();
+  const lojas = await listarLojas(db);
+  await db.$disconnect();
+  const feitos = new Set([url]);
+  for (const loja of lojas) {
+    if (feitos.has(loja.databaseUrl)) continue;
+    feitos.add(loja.databaseUrl);
+    const s = migrar(`loja ${loja.slug}`, loja.databaseUrl, loja.databaseUrlDireta);
+    if (s !== 0) {
+      console.error(`\nERRO: migrações da loja ${loja.slug} falharam — build interrompido.`);
+      process.exit(s);
+    }
+  }
+}
+
+process.exit(0);

@@ -1,5 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
+import { variavelDaLoja } from "@/lib/tenant";
 
 /**
  * Chaves de serviços externos.
@@ -38,5 +39,5 @@ export async function getPlateToken(): Promise<ResolvedKey> {
   } catch {
     // Banco indisponível ou coluna ainda não migrada: cai para o ambiente.
   }
-  return resolve(dbToken, process.env.PLACA_API_TOKEN);
+  return resolve(dbToken, await variavelDaLoja("PLACA_API_TOKEN"));
 }

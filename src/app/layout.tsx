@@ -9,9 +9,31 @@ import { nomeDaLoja } from "@/lib/nome-loja";
 import { isDemoMode } from "@/lib/demo-mode";
 import ModoGuia from "@/components/guia/ModoGuia";
 import ChatAjuda from "@/components/ChatAjuda";
+import { situacaoDaLoja } from "@/lib/tenant";
+
+/** Endereço sem loja (multi-loja) ou loja desativada: aviso, não erro. */
+function AvisoDaLoja({ situacao }: { situacao: "sem-loja" | "suspensa" }) {
+  return (
+    <html lang="pt-BR" className="h-full antialiased">
+      <body className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-800">
+        <div className="max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
+          <p className="text-lg font-semibold">
+            {situacao === "sem-loja" ? "Nenhuma loja neste endereço" : "Loja desativada"}
+          </p>
+          <p className="mt-2 text-sm text-slate-600">
+            {situacao === "sem-loja"
+              ? "Confira o endereço digitado. Cada loja do Fincore360 tem o seu próprio endereço."
+              : "O acesso a esta loja está desativado. Fale com o suporte do Fincore360."}
+          </p>
+        </div>
+      </body>
+    </html>
+  );
+}
 
 /** Título da aba com o nome da loja dos Parâmetros (cada instalação é de um cliente). */
 export async function generateMetadata(): Promise<Metadata> {
+  if ((await situacaoDaLoja()) !== "ok") return { title: "Fincore360" };
   const { getCompany } = await import("@/lib/company");
   const nome = nomeDaLoja(await getCompany().catch(() => null));
   return {
@@ -30,6 +52,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const situacao = await situacaoDaLoja();
+  if (situacao !== "ok") return <AvisoDaLoja situacao={situacao} />;
   const user = await getSessionUser();
 
   if (!user) {

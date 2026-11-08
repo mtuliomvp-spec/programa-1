@@ -64,7 +64,7 @@ export default async function RenaveAssistentePage() {
     renaveAdesaoSei: company.renaveAdesaoSei,
     renaveIntegradora: company.renaveIntegradora,
     renaveIntegradoraStatus: company.renaveIntegradoraStatus,
-    acessoDireto: (({ pronto, falta }) => ({ pronto, falta }))(acessoDiretoRenave(company)),
+    acessoDireto: (({ pronto, falta }) => ({ pronto, falta }))(await acessoDiretoRenave(company)),
     renaveCnae: company.renaveCnae,
     eCnpjValidUntil: company.eCnpjValidUntil?.toISOString() ?? null,
     detranRenaveStatus: company.detranRenaveStatus,
