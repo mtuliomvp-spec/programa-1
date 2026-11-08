@@ -105,8 +105,32 @@ node scripts/loja.mjs listar
 
 (A URL do banco vai por variável, nunca como argumento.)
 
-## Próxima fase
+## Virada da MVP (fase 3) — roteiro
 
-**Fase 3:** domínio do Fincore360 com subdomínio curinga na Vercel e a virada
-da MVP (catálogo em produção com `mvpveiculos.com.br` → banco atual, marcada
-`--usa-ambiente`).
+A MVP vira a primeira loja do multi-loja **sem mudar de banco**: a publicação
+cadastra sozinha a loja `LOJA_PADRAO` no catálogo, apontando para o banco do
+projeto (`DATABASE_URL`) e usando as variáveis do projeto (certificado,
+tokens). Endereços fora da plataforma que não são de nenhuma loja
+(mvpveiculos.com.br, o *.vercel.app) caem nela.
+
+1. Registrar o domínio do Fincore360 (ex.: `fincore360.com.br`) e apontar os
+   nameservers para a Vercel (necessário para o subdomínio curinga).
+2. Vercel Pro no projeto de produção (uso comercial).
+3. Neon: criar um banco pequeno para o catálogo (ex.: projeto "fincore-catalogo").
+4. Vercel › projeto de produção › Settings › Environment Variables:
+   - `CATALOGO_DATABASE_URL` — URL do banco do catálogo;
+   - `CATALOGO_CHAVE` — 48+ caracteres aleatórios (gerador de senhas).
+     **Guardar em lugar seguro: sem ela o catálogo não abre**;
+   - `DOMINIO_PLATAFORMA` — `fincore360.com.br`;
+   - `LOJA_PADRAO` — `mvp`; `LOJA_PADRAO_NOME` — `MVP Veículos`;
+   - `PLATAFORMA_SENHA` — senha do painel;
+   - `PLATAFORMA_BANCO_URL` e `PLATAFORMA_BANCO_URL_DIRETA` — o projeto Neon
+     onde nascem os bancos das lojas novas;
+   - `VERCEL_DEPLOY_HOOK_URL` — Settings › Git › Deploy Hooks (branch de produção).
+5. Settings › Domains: adicionar `admin.fincore360.com.br` e
+   `*.fincore360.com.br` (mvpveiculos.com.br continua como está).
+6. Redeploy. Conferir: mvpveiculos.com.br abre a MVP (cada usuário entra de
+   novo uma vez) e admin.fincore360.com.br/plataforma abre o painel.
+
+Para desfazer: apagar `CATALOGO_DATABASE_URL` e publicar de novo — o sistema
+volta a ser de uma loja só, com o mesmo banco.
