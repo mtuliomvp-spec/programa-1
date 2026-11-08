@@ -441,7 +441,11 @@ export async function buscarContasParaVincularAction(
       descricao: r.description,
       valor: r.amount,
       detalhe: [
-        r.intervalMonths === 12 ? "anual" : r.intervalDays ? `a cada ${r.intervalDays} dias` : `mensal · dia ${r.dayOfMonth}`,
+        r.intervalMonths === 12
+          ? "anual"
+          : r.intervalMonths && r.intervalMonths % 12 === 0
+            ? `a cada ${r.intervalMonths / 12} anos`
+            : r.intervalDays ? `a cada ${r.intervalDays} dias` : `mensal · dia ${r.dayOfMonth}`,
         r.supplier?.name,
         `${r._count.payables} título(s) já gerado(s) — vão junto`,
         r.active ? null : "inativa",

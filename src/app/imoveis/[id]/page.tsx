@@ -248,7 +248,9 @@ export default async function ImovelPage({ params }: { params: Promise<{ id: str
                       <span className="block text-xs text-slate-500">
                         {r.intervalMonths === 12
                           ? `anual · todo ${formatDate(r.startDate).slice(0, 5)}`
-                          : r.intervalDays
+                          : r.intervalMonths && r.intervalMonths % 12 === 0
+                            ? `a cada ${r.intervalMonths / 12} anos · ${formatDate(r.startDate).slice(0, 5)}`
+                            : r.intervalDays
                             ? `a cada ${r.intervalDays} dias`
                             : `mensal · dia ${r.dayOfMonth}`}
                         {r.supplier ? ` · ${r.supplier.name}` : ""}

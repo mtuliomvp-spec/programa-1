@@ -21,6 +21,8 @@ export type RecurringInitial = {
   periodicidade: "MENSAL" | "DIAS" | "ANUAL";
   dayOfMonth: number;
   intervalDays: number | null;
+  /** Anual: de quantos em quantos anos (1 = todo ano). */
+  intervalYears?: number | null;
   anticipateToBusinessDay: boolean;
   firstReference: string | null;
   cardInvoice: boolean;
@@ -213,16 +215,24 @@ export default function RecurringForm({
             onChange={(e) => setPeriodicidade(e.target.value as "MENSAL" | "DIAS" | "ANUAL")}
           >
             <option value="MENSAL">Mensal (dia do mês)</option>
-            <option value="ANUAL">Anual (todo ano, no dia de &quot;Começa em&quot;)</option>
+            <option value="ANUAL">Anual ou a cada N anos (no dia de &quot;Começa em&quot;)</option>
             <option value="DIAS">A cada N dias</option>
           </Select>
         </Field>
         {periodicidade === "ANUAL" ? (
-          <Field label="Vencimento anual">
-            <p className="text-xs text-slate-500">
-              O primeiro vencimento é a data em <strong>&quot;Começa em&quot;</strong>; os seguintes caem
-              no mesmo dia e mês dos anos seguintes (ex.: ITR em 30/09). O título de cada ano aparece
-              no Contas a pagar uns dias antes de vencer.
+          <Field label="A cada quantos anos" required>
+            <Input
+              type="number"
+              name="intervalYears"
+              min={1}
+              max={10}
+              defaultValue={initial?.intervalYears ?? 1}
+              required
+            />
+            <p className="mt-1 text-xs text-slate-500">
+              1 = todo ano (ITR, IPVA, licenciamento); 2 = de 2 em 2 anos (ex.: domínio). O primeiro
+              vencimento é a data em <strong>&quot;Começa em&quot;</strong>; os seguintes caem no mesmo
+              dia e mês. O título aparece no Contas a pagar uns dias antes de vencer.
             </p>
             <label className="mt-2 flex items-start gap-2 text-xs text-slate-600">
               <input
@@ -257,7 +267,7 @@ export default function RecurringForm({
           </Field>
         ) : (
           <Field label="A cada quantos dias" required>
-            <Input type="number" name="intervalDays" min={1} max={365} defaultValue={initial?.intervalDays ?? 15} required />
+            <Input type="number" name="intervalDays" min={1} max={3650} defaultValue={initial?.intervalDays ?? 15} required />
             <p className="mt-1 text-xs text-slate-400">Conta a partir da data em &quot;Começa em&quot;.</p>
           </Field>
         )}

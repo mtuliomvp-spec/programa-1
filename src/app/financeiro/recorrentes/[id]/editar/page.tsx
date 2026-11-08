@@ -76,9 +76,14 @@ export default async function EditarRecorrenciaPage({ params }: { params: Promis
               description: entry.description,
               amount: entry.amount,
               structuralKey: entry.structuralKey ?? "ADMINISTRATIVO",
-              periodicidade: entry.intervalDays ? "DIAS" : entry.intervalMonths === 12 ? "ANUAL" : "MENSAL",
+              periodicidade: entry.intervalDays
+                ? "DIAS"
+                : entry.intervalMonths && entry.intervalMonths % 12 === 0
+                  ? "ANUAL"
+                  : "MENSAL",
               dayOfMonth: entry.dayOfMonth,
               intervalDays: entry.intervalDays,
+              intervalYears: entry.intervalMonths && entry.intervalMonths % 12 === 0 ? entry.intervalMonths / 12 : 1,
               anticipateToBusinessDay: entry.anticipateToBusinessDay,
               firstReference: entry.firstReference,
               cardInvoice: entry.cardInvoice,
