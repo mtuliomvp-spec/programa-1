@@ -9,6 +9,7 @@ import {
   situacaoDocumental,
   seloCrlv,
   seloFotoCliente,
+  TITULO_TRANSFERENCIA_DA_VENDA,
   type SituacaoDocumental,
 } from "@/lib/doc-owner";
 import {
@@ -140,6 +141,7 @@ export default async function FinanciamentoTerceirosListPage({
           },
         },
         customer: true,
+        payables: { where: TITULO_TRANSFERENCIA_DA_VENDA, select: { description: true, status: true } },
       },
     }),
     // Nomes "da casa" (loja + sócios): dizem se o documento está no nome da
@@ -209,6 +211,7 @@ export default async function FinanciamentoTerceirosListPage({
             transferDoneAt: o.transferDoneAt,
             transferCharged: o.transferCharged,
             transferAmount: o.transferAmount,
+            payables: o.payables,
             ownerName: o.ownerName,
             ownerDocument: o.ownerDocument,
             customer: o.customer,

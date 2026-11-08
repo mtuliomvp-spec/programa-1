@@ -119,6 +119,7 @@ export default async function FinanciamentoTerceirosDetailPage({
         transferDoneAt: sale.transferDoneAt,
         transferCharged: sale.transferCharged,
         transferAmount: sale.transferAmount,
+        payables: sale.payables,
         ownerName: sale.ownerName,
         ownerDocument: sale.ownerDocument,
         customer: sale.customer,

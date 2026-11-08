@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { situacaoDocumental, seloCrlv } from "@/lib/doc-owner";
+import { situacaoDocumental, seloCrlv, TITULO_TRANSFERENCIA_DA_VENDA } from "@/lib/doc-owner";
 import { effectivePayableStatus, effectiveReceivableStatus } from "@/lib/status";
 import { lerNfeConfig } from "@/lib/nfe-config";
 import { nameKey } from "@/lib/person-keys";
@@ -291,6 +291,7 @@ async function pendenciasDocumentais(hoje: Date): Promise<PendenciaGrupo[]> {
             transferDoneAt: true,
             transferCharged: true,
             transferAmount: true,
+            payables: { where: TITULO_TRANSFERENCIA_DA_VENDA, select: { description: true, status: true } },
             ownerName: true,
             ownerDocument: true,
             customer: { select: { name: true, document: true } },
