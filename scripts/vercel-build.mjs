@@ -63,9 +63,26 @@ if (status !== 0) process.exit(status);
 // Uma loja que falhar derruba o build — publicar com um banco atrasado
 // quebraria aquela loja.
 if (process.env.CATALOGO_DATABASE_URL) {
-  const { abrirCatalogo, listarLojas, concluirPreparo } = await import("./catalogo.mjs");
+  const { abrirCatalogo, listarLojas, concluirPreparo, salvarLoja } = await import("./catalogo.mjs");
   const db = abrirCatalogo();
-  const lojas = await listarLojas(db);
+  let lojas = await listarLojas(db);
+
+  // Virada de uma loja só para o multi-loja: a loja que JÁ mora neste projeto
+  // (LOJA_PADRAO, ex.: "mvp") entra no catálogo sozinha, com o banco do
+  // projeto e as variáveis dele (certificado, tokens) — sem passo manual.
+  const padrao = process.env.LOJA_PADRAO?.trim();
+  if (padrao && !lojas.some((l) => l.slug === padrao)) {
+    await salvarLoja(db, {
+      slug: padrao,
+      nome: process.env.LOJA_PADRAO_NOME?.trim() || padrao.toUpperCase(),
+      hosts: [],
+      databaseUrl: url,
+      databaseUrlDireta: directUrl,
+      usaAmbiente: true,
+    });
+    console.log(`✓ Loja ${padrao} (banco do projeto) cadastrada no catálogo.`);
+    lojas = await listarLojas(db);
+  }
   const feitos = new Set([url]);
   for (const loja of lojas) {
     if (!feitos.has(loja.databaseUrl)) {
