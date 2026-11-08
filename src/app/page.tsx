@@ -36,7 +36,11 @@ export default async function DashboardPage() {
   // Painel inicial é uma permissão: quem não tem acesso (ex.: vendedor) é levado
   // à primeira tela que pode abrir, em vez de ver o resumo financeiro da loja.
   const user = await getSessionUser();
-  if (user && !hasModuleAccess(user, "dashboard")) {
+  // Sem sessão válida nesta loja, nada do painel: o porteiro já manda o
+  // visitante sem cookie para a vitrine, mas um cookie que não vale aqui
+  // (ex.: de outra loja) chegaria até a página.
+  if (!user) redirect("/vitrine");
+  if (!hasModuleAccess(user, "dashboard")) {
     const destino = firstAccessibleHref(user);
     if (destino) redirect(destino);
     // NENHUM módulo liberado: mostrar um aviso em vez de redirecionar. Um

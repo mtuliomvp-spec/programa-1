@@ -1,6 +1,7 @@
 import "server-only";
 import { headers } from "next/headers";
 import { prisma } from "@/lib/prisma";
+import { variavelDaLoja } from "@/lib/tenant";
 
 /**
  * Normaliza o domínio digitado: aceita "mvpveiculos.com.br" ou a URL completa,
@@ -30,7 +31,7 @@ export function normalizePublicUrl(value: string | null | undefined): string | n
  *  3. Sem nada disso: usa o endereço pelo qual a página está sendo acessada.
  */
 export async function getBaseUrl(): Promise<string> {
-  const configured = process.env.NEXT_PUBLIC_APP_URL || process.env.APP_URL;
+  const configured = (await variavelDaLoja("NEXT_PUBLIC_APP_URL")) || (await variavelDaLoja("APP_URL"));
   if (configured) return configured.trim().replace(/\/+$/, "");
 
   // Domínio dos Parâmetros (falha silenciosa: se o banco não responder, cai

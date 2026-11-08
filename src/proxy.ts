@@ -14,7 +14,13 @@ function getSecret(): string {
   return createHash("sha256").update(base).digest("hex");
 }
 
-function isValidToken(token: string | undefined): boolean {
+/** Endereço da requisição, normalizado como em src/lib/catalogo.ts. */
+function hostDe(request: NextRequest): string {
+  const h = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
+  return h.trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
+}
+
+function isValidToken(token: string | undefined, host: string): boolean {
   if (!token) return false;
   const [body, signature] = token.split(".");
   if (!body || !signature) return false;
@@ -24,7 +30,11 @@ function isValidToken(token: string | undefined): boolean {
   if (a.length !== b.length || !timingSafeEqual(a, b)) return false;
   try {
     const payload = JSON.parse(Buffer.from(body, "base64url").toString());
-    return typeof payload.exp === "number" && payload.exp > Date.now();
+    if (typeof payload.exp !== "number" || payload.exp <= Date.now()) return false;
+    // Multi-loja: o cookie só vale no endereço em que o login foi feito —
+    // a sessão de uma loja nunca abre outra (nem copiada de propósito).
+    if (process.env.CATALOGO_DATABASE_URL) return payload.h === host;
+    return true;
   } catch {
     return false;
   }
@@ -33,7 +43,7 @@ function isValidToken(token: string | undefined): boolean {
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (isValidToken(request.cookies.get(SESSION_COOKIE)?.value)) {
+  if (isValidToken(request.cookies.get(SESSION_COOKIE)?.value, hostDe(request))) {
     // já logado tentando abrir /login: manda para o dashboard
     if (pathname === "/login") {
       return NextResponse.redirect(new URL("/", request.url));

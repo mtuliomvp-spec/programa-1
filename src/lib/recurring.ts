@@ -3,6 +3,7 @@ import { timed } from "@/lib/perf";
 import { structuralCenterId } from "@/lib/structural";
 import { previousBusinessDay } from "@/lib/business-days";
 import { competenciaMaisMeses } from "@/lib/competencia";
+import { lojaAtual } from "@/lib/tenant";
 
 /**
  * Geração idempotente dos lançamentos recorrentes do mês corrente.
@@ -165,13 +166,16 @@ const isStructuralKey = (v: string | null): v is "VEICULOS" | "ADMINISTRATIVO" |
  * varredura a cada troca de tela só deixava a navegação lenta. Ações continuam
  * usando `ensureRecurringGenerated` direto (sem represa).
  */
-let lastGenerationAt = 0;
+// Por loja: no multi-loja a mesma instância atende várias, e a represa de uma
+// não pode pular a geração da outra.
+const lastGenerationAt = new Map<string, number>();
 const GENERATION_THROTTLE_MS = 60_000;
 
 export async function ensureRecurringGeneratedForPage(): Promise<number> {
   const now = Date.now();
-  if (now - lastGenerationAt < GENERATION_THROTTLE_MS) return 0;
-  lastGenerationAt = now;
+  const loja = (await lojaAtual()).id;
+  if (now - (lastGenerationAt.get(loja) ?? 0) < GENERATION_THROTTLE_MS) return 0;
+  lastGenerationAt.set(loja, now);
   const created = await ensureRecurringGenerated();
   await ensureConsortiumInstallments();
   return created;

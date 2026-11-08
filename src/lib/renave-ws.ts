@@ -1,6 +1,7 @@
 import "server-only";
 import https from "node:https";
 import type { RenaveAmbiente } from "@/lib/renave-ws-dados";
+import { variavelDaLoja } from "@/lib/tenant";
 
 /**
  * Cliente do Renave-WS (API do SERPRO para concessionárias e revendas).
@@ -23,17 +24,19 @@ const BASE: Record<RenaveAmbiente, string> = {
   PRODUCAO: "https://renave.estaleiro.serpro.gov.br/renave-ws",
 };
 
-function certificado(ambiente: RenaveAmbiente): { pfx: Buffer; passphrase: string } | null {
-  const pfx =
-    ambiente === "PRODUCAO" ? process.env.RENAVE_CERT_PFX_BASE64 : process.env.RENAVE_CERT_HOMOLOGACAO_PFX_BASE64;
-  const senha = ambiente === "PRODUCAO" ? process.env.RENAVE_CERT_SENHA : process.env.RENAVE_CERT_HOMOLOGACAO_SENHA;
+async function certificado(ambiente: RenaveAmbiente): Promise<{ pfx: Buffer; passphrase: string } | null> {
+  // Certificado da LOJA: no multi-loja vem dos segredos dela no catálogo.
+  const pfx = await variavelDaLoja(
+    ambiente === "PRODUCAO" ? "RENAVE_CERT_PFX_BASE64" : "RENAVE_CERT_HOMOLOGACAO_PFX_BASE64",
+  );
+  const senha = await variavelDaLoja(ambiente === "PRODUCAO" ? "RENAVE_CERT_SENHA" : "RENAVE_CERT_HOMOLOGACAO_SENHA");
   if (!pfx?.trim()) return null;
   return { pfx: Buffer.from(pfx.replace(/\s+/g, ""), "base64"), passphrase: senha ?? "" };
 }
 
 /** Produção só funciona com o certificado configurado na instalação. */
-export function certificadoConfigurado(ambiente: RenaveAmbiente): boolean {
-  return !!certificado(ambiente);
+export async function certificadoConfigurado(ambiente: RenaveAmbiente): Promise<boolean> {
+  return !!(await certificado(ambiente));
 }
 
 /**
@@ -42,15 +45,15 @@ export function certificadoConfigurado(ambiente: RenaveAmbiente): boolean {
  * integradora: o SERPRO confirmou que o contrato da loja permite o acesso
  * direto, e o sistema transmite com o certificado da própria loja.
  */
-export function acessoDiretoRenave(c: {
+export async function acessoDiretoRenave(c: {
   renaveWsAmbiente: string | null;
   renaveWsEmail: string | null;
   renaveWsCpfOperador: string | null;
-}): { ambiente: RenaveAmbiente | null; pronto: boolean; falta: string[] } {
+}): Promise<{ ambiente: RenaveAmbiente | null; pronto: boolean; falta: string[] }> {
   const ambiente = c.renaveWsAmbiente === "PRODUCAO" || c.renaveWsAmbiente === "HOMOLOGACAO" ? c.renaveWsAmbiente : null;
   const falta: string[] = [];
   if (ambiente !== "PRODUCAO") falta.push("ambiente em Produção");
-  if (!certificadoConfigurado("PRODUCAO")) falta.push("certificado e-CNPJ instalado");
+  if (!(await certificadoConfigurado("PRODUCAO"))) falta.push("certificado e-CNPJ instalado");
   if (!c.renaveWsEmail?.trim()) falta.push("e-mail do vendedor");
   if (!c.renaveWsCpfOperador?.trim()) falta.push("CPF do operador");
   return { ambiente, pronto: falta.length === 0, falta };
@@ -81,9 +84,9 @@ function mensagemErro(http: number, body: unknown, texto: string): string {
   return texto.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim().slice(0, 300) || `Erro HTTP ${http} no Renave.`;
 }
 
-function chamar<T>(ambiente: RenaveAmbiente, metodo: "GET" | "POST", caminho: string, corpo?: unknown): Promise<RenaveResposta<T>> {
+async function chamar<T>(ambiente: RenaveAmbiente, metodo: "GET" | "POST", caminho: string, corpo?: unknown): Promise<RenaveResposta<T>> {
   const url = new URL(`${BASE[ambiente]}${caminho}`);
-  const cert = certificado(ambiente);
+  const cert = await certificado(ambiente);
   if (ambiente === "PRODUCAO" && !cert) {
     return Promise.resolve({
       http: 0,

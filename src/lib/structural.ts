@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { timed } from "@/lib/perf";
 import { STRUCTURAL_FLOWS, type StructuralKey } from "@/lib/structural-flows";
+import { lojaAtual } from "@/lib/tenant";
 
 /**
  * Centros de custo estruturais — o equivalente às "obras estruturais" do
@@ -130,14 +131,15 @@ async function structuralCostCenters(): Promise<Record<StructuralKey, string>> {
  * Esta rotina é o conserto de lançamentos antigos — não precisa ser
  * re-verificada a cada clique, e o painel segue chamando a versão sem represa.
  */
-let lastFuelSyncAt = 0;
+const lastFuelSyncAt = new Map<string, number>();
 const FUEL_SYNC_THROTTLE_MS = 60_000;
 
-/** Roda o conserto no máximo uma vez por minuto (por instância). */
+/** Roda o conserto no máximo uma vez por minuto (por instância e por loja). */
 export async function ensureVehicleFuelCostsThrottled(): Promise<void> {
   const now = Date.now();
-  if (now - lastFuelSyncAt < FUEL_SYNC_THROTTLE_MS) return;
-  lastFuelSyncAt = now;
+  const loja = (await lojaAtual()).id;
+  if (now - (lastFuelSyncAt.get(loja) ?? 0) < FUEL_SYNC_THROTTLE_MS) return;
+  lastFuelSyncAt.set(loja, now);
   await ensureVehicleFuelCosts();
 }
 

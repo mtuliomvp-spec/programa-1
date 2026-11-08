@@ -116,7 +116,7 @@ export default async function RenavePassoAPassoPage() {
   // Acesso ao Renave: o caminho da loja é o DIRETO (contrato SERPRO +
   // certificado), que dá para deixar pronto antes de o estado aderir. Quem usa
   // integradora no lugar também conclui a etapa.
-  const acesso = acessoDiretoRenave(company);
+  const acesso = await acessoDiretoRenave(company);
   const integradoraContratada =
     Boolean(company.renaveIntegradora) && company.renaveIntegradoraStatus === "CONTRATADA";
   const etapa2: Situacao = acesso.pronto || integradoraContratada ? "feito" : "pendente";

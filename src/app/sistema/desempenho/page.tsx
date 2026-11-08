@@ -15,7 +15,7 @@ export default async function DesempenhoPage() {
   if (!user || user.role !== "SUPER_ADMIN") redirect("/");
 
   const perf = getPerfSnapshot();
-  const db = getDbInfo();
+  const db = await getDbInfo();
 
   return (
     <div className="mx-auto max-w-4xl">
