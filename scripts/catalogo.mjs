@@ -50,13 +50,15 @@ export async function garantirTabela(db) {
       atualizado_em    timestamptz NOT NULL DEFAULT now()
     )`);
   await db.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS lojas_hosts_idx ON lojas USING gin (hosts)`);
+  await db.$executeRawUnsafe(`ALTER TABLE lojas ADD COLUMN IF NOT EXISTS admin_pendente_cifrado text`);
 }
 
 /** Lojas com os bancos decifrados (sem os segredos). */
 export async function listarLojas(db) {
   await garantirTabela(db);
   const linhas = await db.$queryRawUnsafe(
-    `SELECT slug, nome, hosts, banco_cifrado, banco_direto_cifrado, usa_ambiente, status FROM lojas ORDER BY criado_em`,
+    `SELECT slug, nome, hosts, banco_cifrado, banco_direto_cifrado, usa_ambiente, status, admin_pendente_cifrado
+       FROM lojas ORDER BY criado_em`,
   );
   return linhas.map((l) => ({
     slug: l.slug,
@@ -66,7 +68,45 @@ export async function listarLojas(db) {
     status: l.status,
     databaseUrl: decifrar(l.banco_cifrado),
     databaseUrlDireta: l.banco_direto_cifrado ? decifrar(l.banco_direto_cifrado) : null,
+    // { admin: { nome, email, senhaHash }, empresa: { nomeFantasia, razaoSocial, cnpj } }
+    pendente: l.admin_pendente_cifrado ? JSON.parse(decifrar(l.admin_pendente_cifrado)) : null,
   }));
+}
+
+/**
+ * Loja nova (PREPARANDO) com o banco já migrado: cria o administrador inicial
+ * e os dados da empresa, e libera a loja. Idempotente — se o e-mail já
+ * existir no banco da loja, só libera.
+ */
+export async function concluirPreparo(db, loja) {
+  if (!loja.pendente) return false;
+  const { PrismaClient } = await import("@prisma/client");
+  const banco = new PrismaClient({ datasourceUrl: loja.databaseUrlDireta || loja.databaseUrl });
+  try {
+    const { admin, empresa } = loja.pendente;
+    const email = admin.email.toLowerCase().trim();
+    const existe = await banco.user.findUnique({ where: { email } });
+    if (!existe) {
+      await banco.user.create({ data: { name: admin.nome, email, passwordHash: admin.senhaHash, role: "ADMIN" } });
+    }
+    await banco.companySettings.upsert({
+      where: { id: "company" },
+      update: {},
+      create: {
+        id: "company",
+        nomeFantasia: empresa.nomeFantasia,
+        razaoSocial: empresa.razaoSocial || empresa.nomeFantasia,
+        cnpj: empresa.cnpj || null,
+      },
+    });
+  } finally {
+    await banco.$disconnect();
+  }
+  await db.$executeRaw`
+    UPDATE lojas SET admin_pendente_cifrado = NULL,
+      status = CASE WHEN status = 'PREPARANDO' THEN 'ATIVA' ELSE status END, atualizado_em = now()
+    WHERE slug = ${loja.slug}`;
+  return true;
 }
 
 export async function salvarLoja(db, d) {

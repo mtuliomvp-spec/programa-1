@@ -18,7 +18,11 @@ import { PrismaClient } from "@prisma/client";
  * nada aqui é usado.
  */
 
-export type LojaStatus = "ATIVA" | "SUSPENSA";
+/**
+ * PREPARANDO: criada no painel da plataforma, esperando a próxima publicação
+ * montar as tabelas e o administrador inicial (scripts/vercel-build.mjs).
+ */
+export type LojaStatus = "ATIVA" | "SUSPENSA" | "PREPARANDO";
 
 export type LojaCatalogo = {
   id: string;
@@ -38,6 +42,8 @@ export type LojaCatalogo = {
   usaAmbiente: boolean;
   status: LojaStatus;
   criadoEm: Date;
+  /** Administrador inicial ainda não criado no banco da loja. */
+  adminPendente: boolean;
 };
 
 export function catalogoUrl(): string | null {
@@ -103,6 +109,7 @@ async function pronto(): Promise<PrismaClient> {
         atualizado_em    timestamptz NOT NULL DEFAULT now()
       )`);
     await c.$executeRawUnsafe(`CREATE INDEX IF NOT EXISTS lojas_hosts_idx ON lojas USING gin (hosts)`);
+    await c.$executeRawUnsafe(`ALTER TABLE lojas ADD COLUMN IF NOT EXISTS admin_pendente_cifrado text`);
   })().catch((e) => {
     g.catalogoPronto = undefined;
     throw e;
@@ -122,6 +129,7 @@ type Linha = {
   usa_ambiente: boolean;
   status: string;
   criado_em: Date;
+  admin_pendente_cifrado: string | null;
 };
 
 function daLinha(l: Linha): LojaCatalogo {
@@ -134,8 +142,9 @@ function daLinha(l: Linha): LojaCatalogo {
     databaseUrlDireta: l.banco_direto_cifrado ? decifrar(l.banco_direto_cifrado) : null,
     segredos: l.segredos_cifrados ? (JSON.parse(decifrar(l.segredos_cifrados)) as Record<string, string>) : {},
     usaAmbiente: l.usa_ambiente,
-    status: l.status === "SUSPENSA" ? "SUSPENSA" : "ATIVA",
+    status: l.status === "SUSPENSA" || l.status === "PREPARANDO" ? l.status : "ATIVA",
     criadoEm: l.criado_em,
+    adminPendente: !!l.admin_pendente_cifrado,
   };
 }
 
@@ -145,7 +154,7 @@ export function slugValido(slug: string): boolean {
 }
 
 /** Subdomínios da própria plataforma — nunca viram loja. */
-export const SLUGS_RESERVADOS = new Set(["www", "app", "admin", "api", "painel", "demo", "assinar", "suporte", "mail"]);
+export const SLUGS_RESERVADOS = new Set(["www", "app", "admin", "api", "painel", "demo", "assinar", "suporte", "mail", "entrar", "sair"]);
 
 export function normalizarHost(host: string): string {
   return host.trim().toLowerCase().replace(/:\d+$/, "").replace(/\.$/, "");
@@ -202,4 +211,72 @@ export async function salvarLoja(dados: {
   const salva = await buscarLojaPorSlug(dados.slug);
   if (!salva) throw new Error("Loja não ficou gravada no catálogo.");
   return salva;
+}
+
+/** Administrador inicial que a publicação cria no banco da loja nova. */
+export type AdminInicial = { nome: string; email: string; senhaHash: string };
+
+/**
+ * Loja nova, criada pelo painel da plataforma: fica PREPARANDO até a próxima
+ * publicação aplicar as migrações no banco dela e criar o administrador.
+ */
+export async function criarLoja(dados: {
+  slug: string;
+  nome: string;
+  hosts?: string[];
+  databaseUrl: string;
+  databaseUrlDireta?: string | null;
+  admin: AdminInicial;
+  empresa: { razaoSocial: string; cnpj?: string | null };
+}): Promise<LojaCatalogo> {
+  if (!slugValido(dados.slug)) throw new Error(`Subdomínio inválido ou reservado: "${dados.slug}".`);
+  if (await buscarLojaPorSlug(dados.slug)) throw new Error(`Já existe uma loja com o subdomínio "${dados.slug}".`);
+  const c = await pronto();
+  const hosts = [...new Set((dados.hosts ?? []).map(normalizarHost).filter(Boolean))];
+  const pendente = cifrar(JSON.stringify({ admin: dados.admin, empresa: { ...dados.empresa, nomeFantasia: dados.nome } }));
+  await c.$executeRaw`
+    INSERT INTO lojas (id, slug, nome, hosts, banco_cifrado, banco_direto_cifrado, usa_ambiente, status, admin_pendente_cifrado)
+    VALUES (${randomUUID()}, ${dados.slug}, ${dados.nome}, ${hosts}, ${cifrar(dados.databaseUrl)},
+            ${dados.databaseUrlDireta ? cifrar(dados.databaseUrlDireta) : null}, false, 'PREPARANDO', ${pendente})`;
+  const nova = await buscarLojaPorSlug(dados.slug);
+  if (!nova) throw new Error("Loja não ficou gravada no catálogo.");
+  return nova;
+}
+
+/** Nome, domínios próprios e situação (a situação PREPARANDO não se escolhe). */
+export async function atualizarLoja(
+  slug: string,
+  dados: { nome?: string; hosts?: string[]; status?: "ATIVA" | "SUSPENSA" },
+): Promise<void> {
+  const atual = await buscarLojaPorSlug(slug);
+  if (!atual) throw new Error("Loja não encontrada.");
+  const c = await pronto();
+  const hosts = dados.hosts ? [...new Set(dados.hosts.map(normalizarHost).filter(Boolean))] : atual.hosts;
+  // Um domínio só pode ser de UMA loja.
+  for (const h of hosts) {
+    const dono = await buscarLojaPorHost(h);
+    if (dono && dono.slug !== slug) throw new Error(`O domínio ${h} já é da loja ${dono.slug}.`);
+  }
+  const status = atual.status === "PREPARANDO" ? "PREPARANDO" : (dados.status ?? atual.status);
+  await c.$executeRaw`
+    UPDATE lojas SET nome = ${dados.nome?.trim() || atual.nome}, hosts = ${hosts}, status = ${status},
+      atualizado_em = now()
+    WHERE slug = ${slug}`;
+}
+
+/**
+ * Grava segredos da loja (certificado do Renave, tokens...). Valor vazio ou
+ * null APAGA o segredo; os não citados ficam como estão.
+ */
+export async function atualizarSegredos(slug: string, mudancas: Record<string, string | null>): Promise<void> {
+  const atual = await buscarLojaPorSlug(slug);
+  if (!atual) throw new Error("Loja não encontrada.");
+  const segredos = { ...atual.segredos };
+  for (const [k, v] of Object.entries(mudancas)) {
+    if (v == null || v === "") delete segredos[k];
+    else segredos[k] = v;
+  }
+  const c = await pronto();
+  const cifrado = Object.keys(segredos).length ? cifrar(JSON.stringify(segredos)) : null;
+  await c.$executeRaw`UPDATE lojas SET segredos_cifrados = ${cifrado}, atualizado_em = now() WHERE slug = ${slug}`;
 }

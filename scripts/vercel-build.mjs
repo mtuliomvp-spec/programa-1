@@ -63,20 +63,25 @@ if (status !== 0) process.exit(status);
 // Uma loja que falhar derruba o build — publicar com um banco atrasado
 // quebraria aquela loja.
 if (process.env.CATALOGO_DATABASE_URL) {
-  const { abrirCatalogo, listarLojas } = await import("./catalogo.mjs");
+  const { abrirCatalogo, listarLojas, concluirPreparo } = await import("./catalogo.mjs");
   const db = abrirCatalogo();
   const lojas = await listarLojas(db);
-  await db.$disconnect();
   const feitos = new Set([url]);
   for (const loja of lojas) {
-    if (feitos.has(loja.databaseUrl)) continue;
-    feitos.add(loja.databaseUrl);
-    const s = migrar(`loja ${loja.slug}`, loja.databaseUrl, loja.databaseUrlDireta);
-    if (s !== 0) {
-      console.error(`\nERRO: migrações da loja ${loja.slug} falharam — build interrompido.`);
-      process.exit(s);
+    if (!feitos.has(loja.databaseUrl)) {
+      feitos.add(loja.databaseUrl);
+      const s = migrar(`loja ${loja.slug}`, loja.databaseUrl, loja.databaseUrlDireta);
+      if (s !== 0) {
+        await db.$disconnect();
+        console.error(`\nERRO: migrações da loja ${loja.slug} falharam — build interrompido.`);
+        process.exit(s);
+      }
     }
+    // Loja criada no painel da plataforma: com as tabelas prontas, cria o
+    // administrador inicial e libera a loja.
+    if (await concluirPreparo(db, loja)) console.log(`✓ Loja ${loja.slug} pronta (administrador criado).`);
   }
+  await db.$disconnect();
 }
 
 process.exit(0);

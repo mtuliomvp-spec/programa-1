@@ -12,19 +12,26 @@ import ChatAjuda from "@/components/ChatAjuda";
 import { situacaoDaLoja } from "@/lib/tenant";
 
 /** Endereço sem loja (multi-loja) ou loja desativada: aviso, não erro. */
-function AvisoDaLoja({ situacao }: { situacao: "sem-loja" | "suspensa" }) {
+const AVISOS = {
+  "sem-loja": [
+    "Nenhuma loja neste endereço",
+    "Confira o endereço digitado. Cada loja do Fincore360 tem o seu próprio endereço.",
+  ],
+  suspensa: ["Loja desativada", "O acesso a esta loja está desativado. Fale com o suporte do Fincore360."],
+  preparando: [
+    "Sua loja está sendo preparada",
+    "Estamos montando o sistema da sua loja. Isso leva alguns minutos — recarregue a página daqui a pouco.",
+  ],
+} as const;
+
+function AvisoDaLoja({ situacao }: { situacao: keyof typeof AVISOS }) {
+  const [titulo, texto] = AVISOS[situacao];
   return (
     <html lang="pt-BR" className="h-full antialiased">
       <body className="flex min-h-screen items-center justify-center bg-slate-50 p-6 text-slate-800">
         <div className="max-w-md rounded-xl border border-slate-200 bg-white p-6 text-center shadow-sm">
-          <p className="text-lg font-semibold">
-            {situacao === "sem-loja" ? "Nenhuma loja neste endereço" : "Loja desativada"}
-          </p>
-          <p className="mt-2 text-sm text-slate-600">
-            {situacao === "sem-loja"
-              ? "Confira o endereço digitado. Cada loja do Fincore360 tem o seu próprio endereço."
-              : "O acesso a esta loja está desativado. Fale com o suporte do Fincore360."}
-          </p>
+          <p className="text-lg font-semibold">{titulo}</p>
+          <p className="mt-2 text-sm text-slate-600">{texto}</p>
         </div>
       </body>
     </html>
@@ -33,7 +40,9 @@ function AvisoDaLoja({ situacao }: { situacao: "sem-loja" | "suspensa" }) {
 
 /** Título da aba com o nome da loja dos Parâmetros (cada instalação é de um cliente). */
 export async function generateMetadata(): Promise<Metadata> {
-  if ((await situacaoDaLoja()) !== "ok") return { title: "Fincore360" };
+  const situacao = await situacaoDaLoja();
+  if (situacao === "plataforma") return { title: "Fincore360 — Plataforma", robots: { index: false } };
+  if (situacao !== "ok") return { title: "Fincore360" };
   const { getCompany } = await import("@/lib/company");
   const nome = nomeDaLoja(await getCompany().catch(() => null));
   return {
@@ -53,6 +62,14 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const situacao = await situacaoDaLoja();
+  // Painel da plataforma: sem loja, sem moldura do sistema.
+  if (situacao === "plataforma") {
+    return (
+      <html lang="pt-BR" className="h-full antialiased">
+        <body className="min-h-screen bg-slate-50 text-slate-900">{children}</body>
+      </html>
+    );
+  }
   if (situacao !== "ok") return <AvisoDaLoja situacao={situacao} />;
   const user = await getSessionUser();
 

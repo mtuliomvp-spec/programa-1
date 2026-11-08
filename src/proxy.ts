@@ -43,6 +43,13 @@ function isValidToken(token: string | undefined, host: string): boolean {
 export default function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Endereço do painel da plataforma (admin.<domínio>): só existe o painel.
+  const dominio = process.env.CATALOGO_DATABASE_URL ? process.env.DOMINIO_PLATAFORMA?.trim().toLowerCase() : "";
+  if (dominio && hostDe(request) === `admin.${dominio}`) {
+    if (pathname === "/plataforma" || pathname.startsWith("/plataforma/")) return NextResponse.next();
+    return NextResponse.redirect(new URL("/plataforma", request.url));
+  }
+
   if (isValidToken(request.cookies.get(SESSION_COOKIE)?.value, hostDe(request))) {
     // já logado tentando abrir /login: manda para o dashboard
     if (pathname === "/login") {
@@ -62,6 +69,10 @@ export default function proxy(request: NextRequest) {
   // sessão de propósito — é por onde o fornecedor entra mesmo que o acesso da
   // loja esteja suspenso ou algo esteja errado com as contas.
   if (pathname === "/super" || pathname.startsWith("/super/")) return NextResponse.next();
+
+  // Painel da plataforma (cadastro das lojas): a própria tela exige a senha
+  // da plataforma e só existe no endereço admin.<domínio da plataforma>.
+  if (pathname === "/plataforma" || pathname.startsWith("/plataforma/")) return NextResponse.next();
 
   // Vitrine pública dos veículos à venda (inclui as fotos públicas).
   if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();

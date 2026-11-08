@@ -38,6 +38,13 @@ export class LojaSuspensa extends Error {
   }
 }
 
+export class LojaPreparando extends Error {
+  constructor(public readonly nome: string) {
+    super(`A loja ${nome} está sendo preparada.`);
+    this.name = "LojaPreparando";
+  }
+}
+
 export function modoMultiLoja(): boolean {
   return catalogoUrl() != null;
 }
@@ -114,6 +121,7 @@ export async function lojaAtual(): Promise<Loja> {
   const loja = await resolverHost(host);
   if (!loja) throw new LojaNaoEncontrada(host);
   if (loja.status === "SUSPENSA") throw new LojaSuspensa(loja.nome);
+  if (loja.status === "PREPARANDO") throw new LojaPreparando(loja.nome);
   return loja;
 }
 
@@ -121,13 +129,15 @@ export async function lojaAtual(): Promise<Loja> {
  * Situação do endereço acessado: "ok", "sem-loja" (nenhuma loja aqui) ou
  * "suspensa". A moldura do sistema usa para mostrar um aviso em vez de erro.
  */
-export async function situacaoDaLoja(): Promise<"ok" | "sem-loja" | "suspensa"> {
+export async function situacaoDaLoja(): Promise<"ok" | "sem-loja" | "suspensa" | "preparando" | "plataforma"> {
+  if (await ehPainelDaPlataforma()) return "plataforma";
   try {
     await lojaAtual();
     return "ok";
   } catch (e) {
     if (e instanceof LojaNaoEncontrada) return "sem-loja";
     if (e instanceof LojaSuspensa) return "suspensa";
+    if (e instanceof LojaPreparando) return "preparando";
     throw e;
   }
 }
@@ -142,4 +152,18 @@ export async function variavelDaLoja(nome: string): Promise<string | undefined> 
   const loja = await lojaAtual();
   if (loja.usaAmbiente) return process.env[nome];
   return loja.segredos[nome];
+}
+
+/**
+ * Endereço do painel da plataforma (o Fincore360, dono do sistema):
+ * `admin.<DOMINIO_PLATAFORMA>`. Ali não há loja — só o cadastro das lojas.
+ */
+export function hostDoPainel(): string | null {
+  const dominio = dominioPlataforma();
+  return modoMultiLoja() && dominio ? `admin.${dominio}` : null;
+}
+
+export async function ehPainelDaPlataforma(): Promise<boolean> {
+  const painel = hostDoPainel();
+  return !!painel && (await hostDaRequisicao()) === painel;
 }
