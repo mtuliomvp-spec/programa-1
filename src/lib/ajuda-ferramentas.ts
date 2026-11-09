@@ -45,13 +45,14 @@ const FERRAMENTAS: Ferramenta[] = [
     name: "pendencias",
     rotulo: "pendências",
     description:
-      "Lista as pendências da loja (as mesmas da tela Pendências): NF de retorno/seguro a emitir, financiamento/retorno/seguro a receber, contas vencidas, documentação de veículos vendidos, transferências, CRLV, vitrine, pré-vendas. Devolve por assunto a quantidade, o total e os itens mais antigos.",
+      "Lista as pendências da loja (as mesmas da tela Pendências): NF de retorno/seguro a emitir, financiamento/retorno/seguro a receber, contas vencidas, férias e rescisões, documentação de veículos vendidos, transferências, CRLV, vitrine, pré-vendas. Devolve por assunto a quantidade, o total e os itens mais antigos.",
     input_schema: { type: "object", properties: {} },
     pode: (u) => hasModuleAccess(u, "estoque") || hasModuleAccess(u, "financeiro"),
     run: async (u) => {
       const grupos = await getPendencias({
         estoque: hasModuleAccess(u, "estoque"),
         financeiro: hasModuleAccess(u, "financeiro"),
+        folha: can(u, "administrativo", "folha"),
       });
       return grupos.map((g) => ({
         assunto: g.titulo,

@@ -1146,13 +1146,13 @@ model PreSale {
   convertedSaleId            String?
   createdAt                  DateTime       @default(now())
   updatedAt                  DateTime       @updatedAt
-
-  @@index([customerId])
   // Quem GEROU a ficha (usuário logado no momento da criação). Editar não
   // muda: é o registro de quem abriu a negociação. Fichas de antes deste
   // controle ficam sem (nulo).
   createdById                String?
   createdByName              String?
+
+  @@index([customerId])
   @@map("pre_sales")
 }
 
@@ -1948,20 +1948,82 @@ model MonthlyClosing {
 
 // Funcionário da loja (folha de pagamento simplificada).
 model Employee {
-  id            String    @id @default(cuid())
+  id            String                @id @default(cuid())
   name          String
   role          String?
   cpf           String?
   pixKey        String?
   salary        Float
-  admissionDate DateTime  @default(now())
+  admissionDate DateTime              @default(now())
   dismissalDate DateTime?
-  active        Boolean   @default(true)
+  active        Boolean               @default(true)
   notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
+  vacations     EmployeeVacation[]
+  terminations  EmployeeTermination[]
 
   @@map("employees")
+}
+
+// Férias concedidas a um funcionário (o recibo vem da contabilidade). O período
+// aquisitivo é o de 12 meses a que as férias se referem; o sistema usa isso para
+// saber o que ainda falta gozar e quando as férias vencem (art. 134/137 da CLT).
+model EmployeeVacation {
+  id               String   @id @default(cuid())
+  employeeId       String
+  employee         Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  aquisitivoInicio DateTime
+  aquisitivoFim    DateTime
+  gozoInicio       DateTime
+  gozoFim          DateTime
+  // Dias de descanso (gozo) e dias vendidos (abono pecuniário, até 1/3).
+  dias             Int      @default(30)
+  abonoDias        Int      @default(0)
+  // Valores do recibo: bruto (férias + 1/3 + abono), descontos (INSS/IRRF) e líquido.
+  valorBruto       Float    @default(0)
+  descontos        Float    @default(0)
+  valorLiquido     Float    @default(0)
+  // Pagamento até 2 dias antes do início do gozo (art. 145 da CLT).
+  pagamentoAte     DateTime
+  // Conta a pagar do líquido (quando gerada pelo sistema).
+  payableId        String?  @unique
+  reciboNome       String?
+  reciboMime       String?
+  reciboDados      Bytes?
+  notes            String?
+  createdAt        DateTime @default(now())
+
+  @@index([employeeId])
+  @@map("employee_vacations")
+}
+
+// Rescisão do contrato de trabalho. Os valores oficiais vêm do TRCT da
+// contabilidade; o sistema guarda, gera as contas a pagar e desliga o funcionário.
+model EmployeeTermination {
+  id               String    @id @default(cuid())
+  employeeId       String
+  employee         Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  // SEM_JUSTA_CAUSA | PEDIDO_DEMISSAO | JUSTA_CAUSA | ACORDO | FIM_CONTRATO
+  tipo             String
+  // TRABALHADO | INDENIZADO | DISPENSADO | NAO_SE_APLICA
+  avisoPrevio      String    @default("NAO_SE_APLICA")
+  dataAviso        DateTime?
+  dataDesligamento DateTime
+  // Pagamento das verbas até 10 dias após o término (art. 477, § 6º, da CLT).
+  pagamentoAte     DateTime
+  valorLiquido     Float     @default(0)
+  multaFgts        Float     @default(0)
+  payableId        String?   @unique
+  multaPayableId   String?   @unique
+  arquivoNome      String?
+  arquivoMime      String?
+  arquivoDados     Bytes?
+  notes            String?
+  createdAt        DateTime  @default(now())
+
+  @@index([employeeId])
+  @@map("employee_terminations")
 }
 
 // Abastecimento de combustível da frota (guincho, test-drive...).

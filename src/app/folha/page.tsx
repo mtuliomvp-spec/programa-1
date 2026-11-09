@@ -1,4 +1,7 @@
+import Link from "next/link";
 import { prisma } from "@/lib/prisma";
+import { alertasDaFolha } from "@/lib/folha-alertas";
+import { periodoEmAberto, periodosAquisitivos, ROTULO_SITUACAO, TOM_SITUACAO } from "@/lib/ferias";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
 import { matchesSearch, inValueRange } from "@/lib/search";
@@ -26,7 +29,10 @@ export default async function FolhaPage({
   const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
 
   const [allEmployees, payrollItems] = await Promise.all([
-    prisma.employee.findMany({ orderBy: [{ active: "desc" }, { name: "asc" }] }),
+    prisma.employee.findMany({
+      orderBy: [{ active: "desc" }, { name: "asc" }],
+      include: { vacations: { select: { aquisitivoInicio: true, dias: true, abonoDias: true } } },
+    }),
     prisma.payable.findMany({
       where: { category: "SALARIO", employeeId: { not: null }, description: { contains: competencia } },
       orderBy: { description: "asc" },
@@ -41,6 +47,9 @@ export default async function FolhaPage({
   const active = employees.filter((e) => e.active);
   const monthlyTotal = active.reduce((s, e) => s + e.salary, 0);
   const payrollTotal = payrollItems.reduce((s, p) => s + p.amount, 0);
+  const alertas = await alertasDaFolha(now);
+  const feriasDe = (e: (typeof employees)[number]) =>
+    e.active ? periodoEmAberto(periodosAquisitivos(e.admissionDate, e.vacations, now, e.dismissalDate)) : null;
 
   return (
     <div>
@@ -70,6 +79,25 @@ export default async function FolhaPage({
         />
       </div>
 
+      {alertas.length ? (
+        <Card className="mb-4 border-l-4 border-l-amber-400">
+          <CardHeader title="Férias e rescisões" description="O que pede atenção agora." />
+          <ul className="divide-y divide-slate-100">
+            {alertas.map((a) => (
+              <li key={a.id}>
+                <Link href={a.href} className="flex items-start justify-between gap-3 px-5 py-2.5 text-sm hover:bg-slate-50">
+                  <span>
+                    <span className="font-medium text-slate-800">{a.titulo}</span>
+                    <span className="block text-xs text-slate-500">{a.detalhe}</span>
+                  </span>
+                  <Badge tone={a.tom}>{a.selo}</Badge>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="space-y-4 lg:col-span-2">
           <Card>
@@ -84,6 +112,7 @@ export default async function FolhaPage({
                     <Th>Cargo</Th>
                     <Th>PIX</Th>
                     <Th className="text-right">Salário</Th>
+                    <Th>Férias</Th>
                     <Th>Situação</Th>
                     <Th />
                   </Tr>
@@ -92,12 +121,27 @@ export default async function FolhaPage({
                   {employees.map((e) => (
                     <Tr key={e.id} className={!e.active ? "opacity-60" : undefined}>
                       <Td className="font-medium text-slate-900">
-                        {e.name}
+                        <Link href={`/folha/${e.id}`} className="text-blue-700 hover:underline">
+                          {e.name}
+                        </Link>
                         {e.cpf ? <span className="ml-1.5 text-xs text-slate-400">{e.cpf}</span> : null}
                       </Td>
                       <Td>{e.role || "—"}</Td>
                       <Td className="max-w-[160px] truncate">{e.pixKey || "—"}</Td>
                       <Td className="text-right tabular-nums">{formatCurrency(e.salary)}</Td>
+                      <Td>
+                        {(() => {
+                          const f = feriasDe(e);
+                          return f ? (
+                            <Link href={`/folha/${e.id}`}>
+                              <Badge tone={TOM_SITUACAO[f.situacao]}>{ROTULO_SITUACAO[f.situacao]}</Badge>
+                              <span className="block text-xs text-slate-400">iniciar até {formatDate(f.iniciarAte)}</span>
+                            </Link>
+                          ) : (
+                            <span className="text-xs text-slate-400">—</span>
+                          );
+                        })()}
+                      </Td>
                       <Td>
                         <Badge tone={e.active ? "success" : "default"}>
                           {e.active ? "Ativo" : `Desligado${e.dismissalDate ? ` em ${formatDate(e.dismissalDate)}` : ""}`}

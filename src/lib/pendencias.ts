@@ -49,13 +49,40 @@ const veiculoTxt = (v: { brand: string; model: string; plate: string }) =>
 export async function getPendencias(acesso: {
   estoque: boolean;
   financeiro: boolean;
+  /** Pode gerir a Folha (administrativo.folha): férias e rescisões. */
+  folha?: boolean;
 }): Promise<PendenciaGrupo[]> {
   const hoje = new Date();
-  const [fin, docs] = await Promise.all([
+  const [fin, docs, folha] = await Promise.all([
     acesso.financeiro ? pendenciasFinanceiras(hoje) : Promise.resolve([]),
     acesso.estoque ? pendenciasDocumentais(hoje) : Promise.resolve([]),
+    acesso.folha ? pendenciasDaFolha(hoje) : Promise.resolve([]),
   ]);
-  return [...fin, ...docs].filter((g) => g.itens.length > 0);
+  return [...fin, ...folha, ...docs].filter((g) => g.itens.length > 0);
+}
+
+/** Férias vencidas/perto de vencer e férias ou rescisões a pagar (a mesma conta da Folha). */
+async function pendenciasDaFolha(hoje: Date): Promise<PendenciaGrupo[]> {
+  const { alertasDaFolha } = await import("@/lib/folha-alertas");
+  const alertas = (await alertasDaFolha(hoje)).filter((a) => a.tom !== "info");
+  return [
+    {
+      key: "folha",
+      icone: "🏖️",
+      titulo: "Férias e rescisões",
+      comoResolver: "Conceda as férias antes do prazo (depois dele, pagamento em dobro) e pague férias e rescisões no prazo da CLT.",
+      tom: alertas.some((a) => a.tom === "danger") ? "danger" : "warning",
+      href: "/folha",
+      itens: alertas.map((a) => ({
+        id: a.id,
+        titulo: a.titulo,
+        detalhe: a.detalhe,
+        href: a.href,
+        valor: a.valor,
+        selo: { texto: a.selo, tom: a.tom },
+      })),
+    },
+  ];
 }
 
 async function pendenciasFinanceiras(hoje: Date): Promise<PendenciaGrupo[]> {
