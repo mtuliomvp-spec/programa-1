@@ -334,6 +334,10 @@ story += tela(
         "<b>Pagar em lote:</b> marque os títulos, escolha a conta que vai pagar e confirme — a data é "
         "a do caixa aberto.",
         "<b>Pagamento parcial:</b> informe quanto está pagando agora; o saldo continua em aberto.",
+        "<b>Pago sob solicitação:</b> títulos devidos que só se pagam quando alguém pede (ex.: despesas "
+        "de sócio) — marque e use “Recolher”. Eles vão para o grupo recolhido “Sob solicitação”, no fim "
+        "da tela, e saem do total atrasado e das Pendências; os da mesma recorrência vão junto. Ao "
+        "entrar num combo (a solicitação), voltam para a lista.",
         "Na tela de edição do título: anexe o <b>boleto</b> e use a leitura automática (valor e "
         "vencimento), anexe <b>outros documentos</b> e, se houve devolução ao fornecedor, use "
         "“Devolveu mercadoria?” para abater o valor da NF de devolução.",

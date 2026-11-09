@@ -320,6 +320,8 @@ async function recurringGenerated(leadDays: number): Promise<number> {
             referencePeriod,
             // Fatura de cartão: o título nasce detalhável (lançamentos dentro).
             cardInvoice: entry.cardInvoice,
+            // Pago só quando solicitado: nasce recolhido no Contas a pagar.
+            sobSolicitacao: entry.sobSolicitacao,
             notes: entry.notes,
           },
         });
