@@ -14,6 +14,7 @@ import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
 import { situacaoDocumental, seloCrlv, seloFotoCliente, TITULO_TRANSFERENCIA_DA_VENDA } from "@/lib/doc-owner";
+import { pagamentosDeTransferencia } from "@/lib/despachante";
 import type { StatusVeiculo } from "@prisma/client";
 
 export const dynamic = "force-dynamic";
@@ -275,6 +276,19 @@ export default async function EstoquePage({
   const emEstoque = rows.filter((v) => v.status !== "VENDIDO");
   const soldAt = (v: (typeof rows)[number]) => (v.sale?.saleDate ?? v.createdAt).getTime();
   const vendidos = rows.filter((v) => v.status === "VENDIDO").sort((a, b) => soldAt(b) - soldAt(a));
+
+  // "PDF despachante": os veículos da tela com o processo de transferência em
+  // aberto (o mesmo selo 🔄 do filtro), o mais antigo primeiro — é a lista de
+  // cobrança do despachante. Valor e data do pagamento saem do título/custo de
+  // transferência, buscados só para esses veículos.
+  const emTransferencia = rows
+    .filter((v) => seloCrlv(v).label.startsWith("🔄"))
+    .sort((a, b) => (a.sale?.saleDate ?? a.entryDate).getTime() - (b.sale?.saleDate ?? b.entryDate).getTime());
+  const pagamentoTransf = await pagamentosDeTransferencia(
+    emTransferencia.map((v) => ({ id: v.id, desde: v.status === "VENDIDO" ? (v.sale?.saleDate ?? null) : null })),
+  );
+  const nomeDaLoja = company?.razaoSocial || company?.nomeFantasia || "Loja";
+  const canValorTransf = canVerCusto || canVerAPagar;
 
   const totalValue = emEstoque.reduce((sum, v) => sum + v.salePrice, 0);
   const totalInvested = emEstoque.reduce((sum, v) => sum + v.invested, 0);
@@ -557,14 +571,27 @@ export default async function EstoquePage({
         filtersKey={`${params.status ?? ""}|${params.doc ?? ""}`}
         pdf={canPdfCusto}
         actions={
-          emEstoque.length > 0 ? (
-            <PrintButton
-              title="Estoque — ficha de venda"
-              mode="table"
-              rootSelector="#pdf-vendedor"
-              label="📄 PDF vendedor"
-              subtitle={`${emEstoque.length} veículo(s) disponível(is) para venda`}
-            />
+          emEstoque.length > 0 || emTransferencia.length > 0 ? (
+            <>
+              {emEstoque.length > 0 ? (
+                <PrintButton
+                  title="Estoque — ficha de venda"
+                  mode="table"
+                  rootSelector="#pdf-vendedor"
+                  label="📄 PDF vendedor"
+                  subtitle={`${emEstoque.length} veículo(s) disponível(is) para venda`}
+                />
+              ) : null}
+              {emTransferencia.length > 0 ? (
+                <PrintButton
+                  title="Transferências pendentes — despachante"
+                  mode="table"
+                  rootSelector="#pdf-despachante"
+                  label="📄 PDF despachante"
+                  subtitle={`${emTransferencia.length} transferência(s) de propriedade em aberto`}
+                />
+              ) : null}
+            </>
           ) : null
         }
         extra={
@@ -665,6 +692,60 @@ export default async function EstoquePage({
         PDF completo (data-no-pdf) — o PrintButton aponta direto para este id.
         Só os veículos disponíveis: carro vendido não entra em ficha de venda.
       */}
+      {/*
+        Origem do "PDF despachante": só o que o despachante precisa para a
+        cobrança das transferências em aberto — sem custo, preço ou margem.
+      */}
+      {emTransferencia.length > 0 ? (
+        <div id="pdf-despachante" data-no-pdf className="hidden print:hidden">
+          <table>
+            <thead>
+              <tr>
+                <th>Veículo</th>
+                <th>Placa</th>
+                <th>Renavam</th>
+                <th>Proprietário atual</th>
+                <th>Transferir para</th>
+                {canValorTransf ? <th className="text-right">Valor da transferência</th> : null}
+                <th>Pago ao despachante em</th>
+                <th className="text-right">Dias desde o pagamento</th>
+              </tr>
+            </thead>
+            <tbody>
+              {emTransferencia.map((v) => {
+                const pg = pagamentoTransf.get(v.id);
+                const comprador =
+                  v.status === "VENDIDO" && v.sale
+                    ? v.transferToName || v.sale.customer.name
+                    : v.transferToName || nomeDaLoja;
+                const docComprador =
+                  v.status === "VENDIDO" && v.sale?.customer.document && nameKey(comprador) === nameKey(v.sale.customer.name)
+                    ? ` (${v.sale.customer.document})`
+                    : "";
+                return (
+                  <tr key={v.id}>
+                    <td>{vehicleLabel(v.brand, v.model, v.version)}</td>
+                    <td>{v.plate}</td>
+                    <td>{v.renavam || "-"}</td>
+                    <td>{v.donoAtual || "Não informado (sem CRLV)"}</td>
+                    <td>{`${comprador}${docComprador}`}</td>
+                    {canValorTransf ? <td className="text-right">{pg ? formatCurrency(pg.valor) : "-"}</td> : null}
+                    <td>
+                      {pg?.pagoEm
+                        ? formatDate(pg.pagoEm)
+                        : pg
+                          ? `Em aberto${pg.vencimento ? ` (vence ${formatDate(pg.vencimento)})` : ""}`
+                          : "Não lançado"}
+                    </td>
+                    <td className="text-right">{pg?.pagoEm ? daysBetween(pg.pagoEm, now) : "-"}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
       {emEstoque.length > 0 ? (
         <div id="pdf-vendedor" data-no-pdf className="hidden print:hidden">
           <table>
