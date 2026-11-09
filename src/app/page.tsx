@@ -19,7 +19,7 @@ import DemoBanner from "@/components/DemoBanner";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { nomeDaLoja } from "@/lib/nome-loja";
-import { hasModuleAccess } from "@/lib/permissions";
+import { can, hasModuleAccess } from "@/lib/permissions";
 import { firstAccessibleHref } from "@/lib/nav";
 import { getPendencias } from "@/lib/pendencias";
 
@@ -78,6 +78,7 @@ export default async function DashboardPage() {
         ? getPendencias({
             estoque: hasModuleAccess(user, "estoque"),
             financeiro: hasModuleAccess(user, "financeiro"),
+            folha: can(user, "administrativo", "folha"),
           })
         : Promise.resolve([]),
     ]),

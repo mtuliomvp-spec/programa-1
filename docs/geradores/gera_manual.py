@@ -478,12 +478,20 @@ story += secao(
 )
 story += tela(
     "Folha de pagamento", "/folha",
-    "Funcionários, salários e encargos, com a folha do mês lançada no financeiro.",
+    "Funcionários, salários, férias e rescisões, com a folha do mês lançada no financeiro.",
     [
-        "“Novo funcionário”: dados, salário e situação.",
+        "“Novo funcionário”: dados, salário e data de admissão — ao salvar, abre a ficha dele.",
         "<b>“Gerar folha do mês”</b> cria as contas a pagar de cada um; o que já foi gerado fica "
-        "marcado.",
-        "Desligamentos mantêm o histórico, sem sumir dos meses anteriores.",
+        "marcado. Quem tem férias no mês leva o aviso para conferir o salário com a contabilidade.",
+        "<b>Ficha do funcionário</b> (clique no nome): períodos aquisitivos com o saldo de dias, até "
+        "quando começar o gozo e a situação — a gozar, vence logo ou vencida (dobro, art. 137 da CLT).",
+        "<b>Lançar férias:</b> anexe o recibo da contabilidade e use “Ler com IA” para preencher período, "
+        "gozo e valores. O líquido vira conta a pagar 2 dias antes do gozo, com o recibo anexado. Férias "
+        "tiradas antes do sistema entram sem conta, só para o saldo ficar certo.",
+        "<b>Rescisão:</b> tipo, aviso prévio e datas, com a estimativa das verbas e da multa do FGTS para "
+        "conferir o TRCT. Ao salvar, o funcionário é desligado e o líquido e a multa viram contas a pagar "
+        "com prazo de 10 dias (art. 477).",
+        "Férias vencendo, férias e rescisões a pagar aparecem no topo da Folha e em Pendências.",
     ],
 )
 story += tela(

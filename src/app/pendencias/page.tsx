@@ -27,6 +27,7 @@ export default async function PendenciasPage() {
     getPendencias({
       estoque: hasModuleAccess(user, "estoque"),
       financeiro: hasModuleAccess(user, "financeiro"),
+      folha: can(user, "administrativo", "folha"),
     }),
   );
   const total = grupos.reduce((s, g) => s + g.itens.length, 0);
