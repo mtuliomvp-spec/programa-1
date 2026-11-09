@@ -3952,3 +3952,45 @@ export async function cancelCostRefundAction(
   revalidatePath("/financeiro/a-receber");
   return { ok: true };
 }
+
+/**
+ * Troca o FORNECEDOR (ou o consignante) do veículo direto na ficha — só
+ * administrador. As contas a pagar do veículo que estavam no fornecedor antigo
+ * (a compra, a quitação…) passam para o novo, para a Ordem de Pagamento sair
+ * com os dados certos.
+ */
+export async function updateVehicleSupplierAction(
+  vehicleId: string,
+  supplierId: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  const { getSessionUser } = await import("@/lib/auth");
+  const { isAdminRole } = await import("@/lib/permissions");
+  const user = await getSessionUser();
+  if (!user || !isAdminRole(user.role)) return { ok: false, error: "Só o administrador pode trocar o fornecedor." };
+  const v = await prisma.vehicle.findUnique({
+    where: { id: vehicleId },
+    select: { id: true, supplierId: true, consigned: true },
+  });
+  if (!v) return { ok: false, error: "Veículo não encontrado." };
+  const novo = supplierId || null;
+  if (!novo && v.consigned) return { ok: false, error: "Veículo consignado precisa do proprietário (consignante)." };
+  if (novo) {
+    const existe = await prisma.supplier.findUnique({ where: { id: novo }, select: { id: true } });
+    if (!existe) return { ok: false, error: "Fornecedor não encontrado." };
+  }
+  if (novo === v.supplierId) return { ok: true };
+  await prisma.$transaction([
+    prisma.vehicle.update({ where: { id: vehicleId }, data: { supplierId: novo } }),
+    ...(v.supplierId
+      ? [
+          prisma.payable.updateMany({
+            where: { vehicleId, supplierId: v.supplierId },
+            data: { supplierId: novo },
+          }),
+        ]
+      : []),
+  ]);
+  revalidatePath(`/estoque/${vehicleId}`);
+  revalidarTelasDeVeiculo();
+  return { ok: true };
+}

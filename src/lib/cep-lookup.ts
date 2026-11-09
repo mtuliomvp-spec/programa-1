@@ -60,3 +60,18 @@ export async function lookupCep(input: string): Promise<CepLookupResult> {
     return { ok: false, error: "Não foi possível consultar o CEP agora. Tente novamente." };
   }
 }
+
+/**
+ * Endereço com CEP mas sem o código IBGE do município (a consulta do CNPJ pela
+ * ReceitaWS não traz o código; cadastros antigos também não têm): busca o
+ * código pelo CEP. Só usa o resultado se a UF bater — CEP digitado errado não
+ * pode pôr o município de outro estado na nota. Falhou a consulta, devolve o
+ * endereço como veio.
+ */
+export async function completarIbgePeloCep<T extends { cep: string; uf: string; ibge: string }>(end: T): Promise<T> {
+  if (/^\d{7}$/.test(end.ibge) || end.cep.replace(/\D/g, "").length !== 8) return end;
+  const r = await lookupCep(end.cep);
+  if (!r.ok || !r.data.ibge || !/^\d{7}$/.test(r.data.ibge)) return end;
+  if (end.uf && r.data.uf && end.uf.toUpperCase() !== r.data.uf.toUpperCase()) return end;
+  return { ...end, ibge: r.data.ibge, uf: end.uf || r.data.uf || "" };
+}

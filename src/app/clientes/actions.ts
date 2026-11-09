@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
+import { completarIbgePeloCep } from "@/lib/cep-lookup";
 import { enderecoDoForm, enderecoTexto, normalizarIe, type Endereco } from "@/lib/endereco";
 import { assertCan } from "@/lib/guards";
 import {
@@ -71,7 +72,9 @@ export async function createCustomerAction(_prev: PersonFormState, formData: For
   const parsed = schema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   // Endereço em campos (end_*): quando preenchido, o texto sai dele.
-  const end = enderecoDoForm(formData);
+  const lido = enderecoDoForm(formData);
+  // Sem o código IBGE do município (a NF-e exige): completa pelo CEP.
+  const end = lido ? await completarIbgePeloCep(lido) : null;
   const d = { ...parsed.data, address: end ? enderecoTexto(end) : parsed.data.address, endereco: end };
   // Trava contra duplicata: mesmo nome (ignorando acento/pontuação) ou mesmo
   // CPF/CNPJ já cadastrado.
@@ -105,7 +108,9 @@ export async function updateCustomerAction(_prev: PersonFormState, formData: For
   const parsed = updateSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
   // Endereço em campos (end_*): quando preenchido, o texto sai dele.
-  const end = enderecoDoForm(formData);
+  const lido = enderecoDoForm(formData);
+  // Sem o código IBGE do município (a NF-e exige): completa pelo CEP.
+  const end = lido ? await completarIbgePeloCep(lido) : null;
   const d = { ...parsed.data, address: end ? enderecoTexto(end) : parsed.data.address, endereco: end };
   // Trava contra duplicata, ignorando o próprio cadastro (salvar sem mudar o
   // nome não pode dar erro).

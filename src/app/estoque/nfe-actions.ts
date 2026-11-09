@@ -7,7 +7,7 @@ import { assertCan } from "@/lib/guards";
 import { getSessionUser } from "@/lib/auth";
 import { getCompany } from "@/lib/company";
 import { lerNfeConfig } from "@/lib/nfe-config";
-import { lerEndereco } from "@/lib/endereco";
+import { enderecoNfeDoCadastro } from "@/lib/endereco-ibge";
 import { montarNfeEntrada, montarNfeSaida, type EntradaResultado } from "@/lib/nfe-entrada";
 import {
   baixarArquivo,
@@ -122,17 +122,22 @@ async function anexarArquivos(notaId: string) {
 
 type Ajustes = { ncm?: string; descricao?: string; informacoes?: string; valor?: number };
 
-const pessoaNfe = (p: {
-  name: string;
-  document: string | null;
-  phone: string | null;
-  endereco: unknown;
-  inscricaoEstadual: string | null;
-}) => ({
+const pessoaNfe = async (
+  tipo: "fornecedor" | "cliente",
+  p: {
+    id: string;
+    name: string;
+    document: string | null;
+    phone: string | null;
+    endereco: unknown;
+    inscricaoEstadual: string | null;
+  },
+) => ({
   name: p.name,
   document: p.document,
   phone: p.phone,
-  endereco: lerEndereco(p.endereco),
+  // Sem o código IBGE: completa pelo CEP (e grava no cadastro).
+  endereco: await enderecoNfeDoCadastro(tipo, p.id, p.endereco),
   inscricaoEstadual: p.inscricaoEstadual,
 });
 
@@ -189,10 +194,10 @@ async function emitir(vehicleId: string, tipo: "ENTRADA" | "SAIDA", ajustes: Aju
   };
   const r: EntradaResultado =
     tipo === "ENTRADA"
-      ? montarNfeEntrada({ ...comum, vendedor: vehicle.supplier ? pessoaNfe(vehicle.supplier) : null })
+      ? montarNfeEntrada({ ...comum, vendedor: vehicle.supplier ? await pessoaNfe("fornecedor", vehicle.supplier) : null })
       : montarNfeSaida({
           ...comum,
-          comprador: vehicle.sale ? pessoaNfe(vehicle.sale.customer) : null,
+          comprador: vehicle.sale ? await pessoaNfe("cliente", vehicle.sale.customer) : null,
           venda: vehicle.sale,
           valor: ajustes.valor && ajustes.valor > 0 ? ajustes.valor : undefined,
         });

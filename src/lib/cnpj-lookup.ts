@@ -8,6 +8,8 @@
  * - CNPJ_API_URL_FALLBACK: template com {cnpj} (padrão ReceitaWS)
  */
 
+import { completarIbgePeloCep } from "@/lib/cep-lookup";
+
 export type CnpjData = {
   name?: string;
   fantasia?: string;
@@ -143,6 +145,8 @@ export async function lookupCnpj(input: string): Promise<CnpjLookupResult> {
     if (!data) {
       return { ok: false, error: "CNPJ não encontrado. Confira os números e tente de novo." };
     }
+    // Sem o código IBGE (a ReceitaWS não traz): completa pelo CEP — a NF-e exige.
+    if (data.endereco) data.endereco = await completarIbgePeloCep(data.endereco);
     return { ok: true, data };
   } catch {
     return { ok: false, error: "Não foi possível consultar o CNPJ agora. Tente novamente." };
