@@ -93,6 +93,7 @@ export default async function ContasAPagarPage({
           cardInvoice: true,
           discountAmount: true,
           discountUntil: true,
+          sobSolicitacao: true,
           referencePeriod: true,
           pendingPaymentDate: true,
           pendingPaymentAmount: true,
@@ -269,8 +270,16 @@ export default async function ContasAPagarPage({
       });
   }
 
+  // "Pago sob solicitação": devido, mas só pago quando alguém pede. Fica num
+  // grupo recolhido (fora da lista e do "Atrasado") até entrar num combo — a
+  // solicitação — quando volta para a lista como qualquer título.
+  const recolhido = (p: (typeof withStatus)[number]) => p.sobSolicitacao && !p.paymentCombo && p.effective !== "PAGO";
+  const idsRecolhidos = new Set(withStatus.filter(recolhido).map((p) => p.id));
   const totalPendente = withStatus.filter((p) => p.effective !== "PAGO").reduce((s, p) => s + p.amount, 0);
-  const totalAtrasado = withStatus.filter((p) => p.effective === "ATRASADO").reduce((s, p) => s + p.amount, 0);
+  const totalAtrasado = withStatus
+    .filter((p) => p.effective === "ATRASADO" && !idsRecolhidos.has(p.id))
+    .reduce((s, p) => s + p.amount, 0);
+  const totalRecolhido = withStatus.filter(recolhido).reduce((s, p) => s + p.amount, 0);
 
   // Data que decide se o desconto ainda vale: a do caixa aberto (é nela que a
   // baixa vai acontecer); sem caixa aberto, hoje.
@@ -418,6 +427,13 @@ export default async function ContasAPagarPage({
   // Contas em aberto (atrasadas e pendentes) primeiro; pagas por último. Ordenação
   // estável: dentro de cada grupo mantém o vencimento crescente (ordem do findMany).
   tableRows.sort((a, b) => (a.effective === "PAGO" ? 1 : 0) - (b.effective === "PAGO" ? 1 : 0));
+  // Os "sob solicitação" saem da lista principal para o grupo recolhido.
+  const rowsRecolhidas = tableRows.filter((r) => idsRecolhidos.has(r.id));
+  if (rowsRecolhidas.length) {
+    const principais = tableRows.filter((r) => !idsRecolhidos.has(r.id));
+    tableRows.length = 0;
+    tableRows.push(...principais);
+  }
 
   // Página de 100 linhas: a busca e os filtros continuam valendo sobre TODOS os
   // títulos — só o que vai para a tela é fatiado. Sem isso, milhares de linhas
@@ -469,7 +485,9 @@ export default async function ContasAPagarPage({
     <div>
       <PageHeader
         title="Contas a pagar"
-        description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}`}
+        description={`Pendente: ${formatCurrency(totalPendente)}${totalAtrasado > 0 ? ` · Atrasado: ${formatCurrency(totalAtrasado)}` : ""}${
+          totalRecolhido > 0 ? ` · Sob solicitação: ${formatCurrency(totalRecolhido)}` : ""
+        }`}
         action={
           /*
             Cada botão de arquivo tem a sua permissão: importar o lote do
@@ -626,6 +644,39 @@ export default async function ContasAPagarPage({
           </>
         )}
       </Card>
+
+      {rowsRecolhidas.length ? (
+        <Card className="mt-4 scroll-mt-4" id="sob-solicitacao">
+          <details>
+            <summary className="cursor-pointer px-5 py-3 text-sm font-semibold text-slate-800">
+              📥 Sob solicitação ({rowsRecolhidas.length}) ·{" "}
+              {formatCurrency(rowsRecolhidas.reduce((soma, r) => soma + r.amount, 0))}
+              <span className="ml-1 font-normal text-slate-500">
+                — devidos, mas pagos só quando alguém solicita
+              </span>
+            </summary>
+            <p className="px-5 pb-2 text-xs text-slate-500">
+              Ficam fora da lista e do total atrasado. Quando alguém solicita (o título entra num combo), ele volta para a
+              lista. Para devolver à mão, marque e use &quot;↩ Voltar para a lista&quot;.
+            </p>
+            <PayablesTable
+              recolhidos
+              rows={rowsRecolhidas}
+              accounts={accounts}
+              canPagar={canPagar}
+              canFixDate={canFixDate}
+              canManage={canManage}
+              canEdit={canEdit}
+              canCombo={canCombo}
+              canExcluir={canExcluir}
+              canEstornar={canEstornar}
+              cashboxDate={cashboxDate}
+              openCombos={openCombos}
+              substitutionData={substitutionData}
+            />
+          </details>
+        </Card>
+      ) : null}
 
       {devolucoes.length ? (
         <Card className="mt-4 scroll-mt-4 print:hidden" id="devolucoes">

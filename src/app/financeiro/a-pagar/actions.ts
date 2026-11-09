@@ -4138,3 +4138,40 @@ export async function anexarBoletosFornecedorAction(
   revalidatePath("/financeiro/a-pagar");
   return { ok: true, outcomes };
 }
+
+/**
+ * "Pago sob solicitação": títulos devidos que só são pagos quando alguém pede
+ * (ex.: despesas do sócio). Recolhe (ou devolve à lista) os títulos marcados.
+ * Título de recorrência leva a recorrência junto: os próximos já nascem
+ * recolhidos e os outros em aberto dela acompanham.
+ */
+export async function marcarSobSolicitacaoAction(
+  ids: string[],
+  valor: boolean,
+): Promise<{ ok: boolean; afetados?: number; error?: string }> {
+  try {
+    await assertCan("financeiro", "editar");
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Sem permissão." };
+  }
+  if (!ids.length) return { ok: false, error: "Nenhum título selecionado." };
+  const titulos = await prisma.payable.findMany({
+    where: { id: { in: ids }, status: { not: "PAGO" } },
+    select: { id: true, recurringId: true },
+  });
+  const recorrencias = [...new Set(titulos.map((t) => t.recurringId).filter((x): x is string => !!x))];
+  const [r1] = await prisma.$transaction([
+    prisma.payable.updateMany({
+      where: {
+        status: { not: "PAGO" },
+        OR: [{ id: { in: titulos.map((t) => t.id) } }, ...(recorrencias.length ? [{ recurringId: { in: recorrencias } }] : [])],
+      },
+      data: { sobSolicitacao: valor },
+    }),
+    prisma.recurringEntry.updateMany({ where: { id: { in: recorrencias } }, data: { sobSolicitacao: valor } }),
+  ]);
+  revalidatePath("/financeiro/a-pagar");
+  revalidatePath("/pendencias");
+  revalidatePath("/");
+  return { ok: true, afetados: r1.count };
+}

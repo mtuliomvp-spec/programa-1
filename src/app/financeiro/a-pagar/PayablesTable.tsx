@@ -14,6 +14,7 @@ import {
   deletePayablesAction,
   correctPaymentDateAction,
   type SkippedPayable,
+  marcarSobSolicitacaoAction,
 } from "./actions";
 import FixDateButton from "@/components/FixDateButton";
 import { addPayablesToComboAction } from "../combos/actions";
@@ -101,6 +102,7 @@ export default function PayablesTable({
   cashboxDate = null,
   openCombos = [],
   substitutionData = {},
+  recolhidos = false,
 }: {
   rows: PayableRow[];
   accounts: Account[];
@@ -121,6 +123,8 @@ export default function PayablesTable({
   // Por sócio com retirada de capital pendente: aplicações e substitutos, para
   // pagar com substituição da fatia aplicada.
   substitutionData?: SubstitutionData;
+  /** Tabela do grupo "Sob solicitação" (o botão em lote devolve à lista). */
+  recolhidos?: boolean;
 }) {
   const showEdit = canEdit ?? canManage;
   const router = useRouter();
@@ -160,6 +164,24 @@ export default function PayablesTable({
         "Nada foi pago ainda: o pagamento acontece quando o combo for quitado.",
       ]);
       router.refresh();
+    });
+  }
+
+  // Recolher / devolver à lista os "pagos sob solicitação".
+  const [recolhendo, startRecolher] = useTransition();
+  function recolher(valor: boolean) {
+    const ids = [...selected];
+    if (!ids.length) return;
+    setMsg(null);
+    startRecolher(async () => {
+      const r = await marcarSobSolicitacaoAction(ids, valor);
+      if (!r.ok) {
+        setMsg(r.error || "Não foi possível mudar os títulos.");
+        return;
+      }
+      setSelected(new Set());
+      // A lista é refeita no servidor (os títulos mudam de grupo): recarrega.
+      window.location.reload();
     });
   }
 
@@ -632,6 +654,21 @@ export default function PayablesTable({
                   </button>
                 ) : null}
               </>
+            ) : null}
+            {showEdit ? (
+              <button
+                type="button"
+                disabled={recolhendo}
+                onClick={() => recolher(!recolhidos)}
+                className="h-9 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                title={
+                  recolhidos
+                    ? "Volta os títulos para a lista principal"
+                    : "Devidos, mas pagos só quando alguém solicita: saem da lista e do total atrasado (os da mesma recorrência vão junto)"
+                }
+              >
+                {recolhendo ? "Movendo…" : recolhidos ? "↩ Voltar para a lista" : "📥 Recolher: pago sob solicitação"}
+              </button>
             ) : null}
             {canCombo && openCombos.length > 0 ? (
               <label className="flex flex-col gap-1 text-xs text-slate-500">

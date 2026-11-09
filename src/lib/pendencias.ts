@@ -120,7 +120,13 @@ async function pendenciasFinanceiras(hoje: Date): Promise<PendenciaGrupo[]> {
     prisma.notaServico.count(),
     prisma.companySettings.findUnique({ where: { id: "company" }, select: { nfeConfig: true } }),
     prisma.payable.findMany({
-      where: { status: { not: "PAGO" }, dueDate: { lt: hoje } },
+      // "Pago sob solicitação" fora (devido, mas só se paga quando pedido) —
+      // a não ser que já tenha entrado num combo, que é a solicitação.
+      where: {
+        status: { not: "PAGO" },
+        dueDate: { lt: hoje },
+        OR: [{ sobSolicitacao: false }, { paymentComboId: { not: null } }],
+      },
       orderBy: { dueDate: "asc" },
       select: { id: true, description: true, amount: true, dueDate: true, status: true },
     }),

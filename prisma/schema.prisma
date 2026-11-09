@@ -1394,6 +1394,10 @@ model Payable {
   // o título é reduzido para o valor com desconto.
   discountAmount          Float?
   discountUntil           DateTime?
+  // Devido, mas só pago quando alguém SOLICITA (ex.: despesas do sócio): fica
+  // num grupo recolhido do Contas a pagar e fora do "Atrasado" e das
+  // Pendências, até entrar num combo (a solicitação).
+  sobSolicitacao          Boolean             @default(false)
   // FILA DE ESPERA do caixa: o comprovante do banco já chegou (o dinheiro saiu),
   // mas o movimento de caixa ainda não alcançou o dia do pagamento. O título
   // fica PRÉ-LANÇADO com o que o comprovante diz — data, valor e conta
@@ -2083,6 +2087,8 @@ model RecurringEntry {
   // Antecipa o vencimento para o último dia útil quando o dia cai em fim de
   // semana ou feriado nacional (padrão de guias de impostos: DAS/FGTS/DARF).
   anticipateToBusinessDay Boolean               @default(false)
+  // Títulos gerados nascem "sob solicitação" (recolhidos no Contas a pagar).
+  sobSolicitacao          Boolean               @default(false)
   // Fatura de cartão de crédito: o título gerado nasce com lançamentos
   // detalháveis (a recorrência só marca o dia do pagamento; o valor de cada
   // mês vira a soma dos lançamentos digitados na fatura).
