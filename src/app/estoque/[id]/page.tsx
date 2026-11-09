@@ -886,6 +886,12 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               📜 Contrato de compra
             </LinkButton>
             <ParecerIAButton mode="vehicle" vehicleId={vehicle.id} variant="secondary" />
+            {/* Atalho para a venda do veículo, sem passar pela lista de vendas. */}
+            {vehicle.sale && vehicle.sale.status !== "CANCELADA" ? (
+              <LinkButton href={`/vendas/${vehicle.sale.id}`} variant="primary">
+                🧾 Ver venda
+              </LinkButton>
+            ) : null}
             {vehicle.status !== "VENDIDO" && canVender ? (
               openPreSale ? (
                 <LinkButton href={`/vendas/pre-vendas/${openPreSale.id}`} variant="primary">
@@ -1196,7 +1202,14 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               </Card>
             ) : (
               <Card>
-                <CardHeader title="Venda registrada" />
+                <CardHeader
+                  title="Venda registrada"
+                  action={
+                    <Link href={`/vendas/${vehicle.sale.id}`} className="text-sm font-medium text-blue-700 hover:underline">
+                      Abrir a venda →
+                    </Link>
+                  }
+                />
                 <div className="grid grid-cols-2 gap-x-4 gap-y-3 p-5 text-sm sm:grid-cols-3">
                   <InfoItem label="Cliente" value={vehicle.sale.customer.name} />
                   <InfoItem label="Data da venda" value={formatDate(vehicle.sale.saleDate)} />
