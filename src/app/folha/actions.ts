@@ -265,6 +265,9 @@ export async function registrarFeriasAction(
     if (conflito) return { error: "Já existem férias lançadas que se sobrepõem a esse período de gozo." };
 
     const recibo = await arquivoDoForm(formData, "arquivo");
+    // Comprovante bancário: só de quem pagou fora do sistema (pela conta a
+    // pagar, o comprovante vai na baixa).
+    const comprovante = gerarConta ? null : await arquivoDoForm(formData, "comprovante");
     if (gerarConta) await assertBooksBalanced();
 
     const periodoTxt = `${formatarDia(gozoInicio)} a ${formatarDia(gozoFim)}`;
@@ -320,6 +323,9 @@ export async function registrarFeriasAction(
           reciboNome: recibo?.nome ?? null,
           reciboMime: recibo?.mime ?? null,
           reciboDados: recibo?.dados ?? null,
+          comprovanteNome: comprovante?.nome ?? null,
+          comprovanteMime: comprovante?.mime ?? null,
+          comprovanteDados: comprovante?.dados ?? null,
           notes: String(formData.get("notes") || "").trim() || null,
         },
       });
@@ -328,7 +334,8 @@ export async function registrarFeriasAction(
     return {
       ok: gerarConta
         ? `Férias lançadas. Conta a pagar de ${brl(valorLiquido)} com vencimento em ${formatarDia(pagamentoAte)}.`
-        : "Férias registradas como pagas fora do sistema" + (recibo ? ", com o recibo anexado." : "."),
+        : "Férias registradas como pagas fora do sistema" +
+          (recibo && comprovante ? ", com recibo e comprovante." : recibo ? ", com o recibo anexado." : comprovante ? ", com o comprovante." : "."),
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível lançar as férias." };
@@ -336,40 +343,54 @@ export async function registrarFeriasAction(
 }
 
 /**
- * Anexa (ou troca) o recibo de férias já lançadas — ex.: férias pagas fora do
- * sistema. Havendo conta a pagar gerada, o recibo vai também para ela.
+ * Anexa (ou troca) um documento de férias ou rescisão já lançadas:
+ * - "recibo": recibo de férias / TRCT da contabilidade (havendo conta a pagar,
+ *   vai também para ela);
+ * - "comprovante": comprovante bancário de quem pagou FORA do sistema.
  */
-export async function anexarReciboFeriasAction(formData: FormData): Promise<{ error?: string }> {
+export async function anexarDocumentoFolhaAction(formData: FormData): Promise<{ error?: string; ok?: string }> {
   try {
     await assertCan("administrativo", "folha");
+    const tipo = String(formData.get("tipo") || "");
+    const campo = String(formData.get("campo") || "");
     const id = String(formData.get("id") || "");
-    const f = await prisma.employeeVacation.findUnique({ where: { id }, select: { id: true, employeeId: true, payableId: true } });
-    if (!f) return { error: "Férias não encontradas." };
-    const recibo = await arquivoDoForm(formData, "arquivo");
-    if (!recibo) return { error: "Escolha o arquivo do recibo." };
+    if (!["ferias", "rescisao"].includes(tipo) || !["recibo", "comprovante"].includes(campo)) {
+      return { error: "Documento inválido." };
+    }
+    const arquivo = await arquivoDoForm(formData, "arquivo");
+    if (!arquivo) return { error: "Escolha o arquivo." };
+    const reg =
+      tipo === "ferias"
+        ? await prisma.employeeVacation.findUnique({ where: { id }, select: { employeeId: true, payableId: true } })
+        : await prisma.employeeTermination.findUnique({ where: { id }, select: { employeeId: true, payableId: true } });
+    if (!reg) return { error: "Lançamento não encontrado." };
+    const dados =
+      campo === "comprovante"
+        ? { comprovanteNome: arquivo.nome, comprovanteMime: arquivo.mime, comprovanteDados: arquivo.dados }
+        : tipo === "ferias"
+          ? { reciboNome: arquivo.nome, reciboMime: arquivo.mime, reciboDados: arquivo.dados }
+          : { arquivoNome: arquivo.nome, arquivoMime: arquivo.mime, arquivoDados: arquivo.dados };
     await prisma.$transaction(async (tx) => {
-      await tx.employeeVacation.update({
-        where: { id },
-        data: { reciboNome: recibo.nome, reciboMime: recibo.mime, reciboDados: recibo.dados },
-      });
-      if (f.payableId) {
+      if (tipo === "ferias") await tx.employeeVacation.update({ where: { id }, data: dados });
+      else await tx.employeeTermination.update({ where: { id }, data: dados });
+      if (campo === "recibo" && reg.payableId) {
         await tx.payableAttachment.create({
           data: {
-            payableId: f.payableId,
+            payableId: reg.payableId,
             kind: "OUTRO",
-            description: "Recibo de férias",
-            filename: recibo.nome,
-            mimeType: recibo.mime,
-            size: recibo.dados.length,
-            data: recibo.dados,
+            description: tipo === "ferias" ? "Recibo de férias" : "Termo de rescisão (TRCT)",
+            filename: arquivo.nome,
+            mimeType: arquivo.mime,
+            size: arquivo.dados.length,
+            data: arquivo.dados,
           },
         });
       }
     });
-    revalidarFolha(f.employeeId);
-    return {};
+    revalidarFolha(reg.employeeId);
+    return { ok: campo === "comprovante" ? "Comprovante anexado." : "Documento anexado." };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Não foi possível anexar o recibo." };
+    return { error: e instanceof Error ? e.message : "Não foi possível anexar o arquivo." };
   }
 }
 

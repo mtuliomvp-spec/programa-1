@@ -201,6 +201,12 @@ export default function FeriasForm({
           <MoneyInput name="valorLiquido" defaultValue={valores.liquido ?? null} />
         </Field>
       </div>
+      {!gerarConta ? (
+        <Field label="Comprovante bancário do pagamento (opcional)">
+          <input name="comprovante" type="file" accept=".pdf,image/*" className="text-xs" />
+          <p className="mt-1 text-xs text-slate-500">PIX, TED ou transferência que pagou estas férias.</p>
+        </Field>
+      ) : null}
       <Field label="Observações">
         <Textarea name="notes" rows={2} />
       </Field>

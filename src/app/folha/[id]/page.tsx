@@ -18,7 +18,7 @@ import FeriasForm from "./FeriasForm";
 import RescisaoForm from "./RescisaoForm";
 import EditarFuncionario from "./EditarFuncionario";
 import ExcluirLancamento from "./ExcluirLancamento";
-import AnexarRecibo from "./AnexarRecibo";
+import AnexarDocumento from "./AnexarDocumento";
 import { usuariosParaFuncionario } from "@/lib/usuarios-funcionarios";
 
 export const dynamic = "force-dynamic";
@@ -46,13 +46,14 @@ export default async function FuncionarioPage({
           select: {
             id: true, aquisitivoInicio: true, aquisitivoFim: true, gozoInicio: true, gozoFim: true, dias: true,
             abonoDias: true, valorBruto: true, descontos: true, valorLiquido: true, pagamentoAte: true,
-            payableId: true, reciboNome: true, notes: true,
+            payableId: true, reciboNome: true, comprovanteNome: true, notes: true,
           },
         },
         terminations: {
           select: {
             id: true, tipo: true, avisoPrevio: true, dataAviso: true, dataDesligamento: true, pagamentoAte: true,
-            valorLiquido: true, multaFgts: true, payableId: true, multaPayableId: true, arquivoNome: true, notes: true,
+            valorLiquido: true, multaFgts: true, payableId: true, multaPayableId: true, arquivoNome: true,
+            comprovanteNome: true, notes: true,
           },
         },
       },
@@ -185,6 +186,19 @@ export default async function FuncionarioPage({
                               </a>
                             </>
                           ) : null}
+                          {v.comprovanteNome ? (
+                            <>
+                              {" · "}
+                              <a
+                                href={`/folha/arquivo/ferias/${v.id}?doc=comprovante`}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-blue-700 hover:underline"
+                              >
+                                comprovante
+                              </a>
+                            </>
+                          ) : null}
                         </span>
                       </Td>
                       <Td>
@@ -203,7 +217,14 @@ export default async function FuncionarioPage({
                       <Td className="text-right">
                         {podeGerir ? (
                           <span className="flex flex-col items-end gap-1.5">
-                            <AnexarRecibo id={v.id} temRecibo={!!v.reciboNome} />
+                            <AnexarDocumento tipo="ferias" campo="recibo" id={v.id} tem={!!v.reciboNome} />
+                            {v.payableId ? (
+                              <Link href="/financeiro/a-pagar" className="text-xs text-slate-500 hover:underline" title="Paga pelo sistema: o comprovante vai na baixa da conta">
+                                comprovante na baixa
+                              </Link>
+                            ) : (
+                              <AnexarDocumento tipo="ferias" campo="comprovante" id={v.id} tem={!!v.comprovanteNome} />
+                            )}
                             <ExcluirLancamento tipo="ferias" id={v.id} />
                           </span>
                         ) : null}
@@ -243,10 +264,27 @@ export default async function FuncionarioPage({
                       </a>
                     </>
                   ) : null}
+                  {rescisao.comprovanteNome ? (
+                    <>
+                      {" · "}
+                      <a
+                        href={`/folha/arquivo/rescisao/${rescisao.id}?doc=comprovante`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-blue-700 hover:underline"
+                      >
+                        comprovante
+                      </a>
+                    </>
+                  ) : null}
                 </p>
                 {rescisao.notes ? <p className="text-slate-500">{rescisao.notes}</p> : null}
                 {podeGerir ? (
-                  <div className="pt-2 text-right">
+                  <div className="flex flex-wrap items-start justify-end gap-4 pt-2">
+                    <AnexarDocumento tipo="rescisao" campo="recibo" id={rescisao.id} tem={!!rescisao.arquivoNome} />
+                    {rescisao.payableId ? null : (
+                      <AnexarDocumento tipo="rescisao" campo="comprovante" id={rescisao.id} tem={!!rescisao.comprovanteNome} />
+                    )}
                     <ExcluirLancamento tipo="rescisao" id={rescisao.id} />
                   </div>
                 ) : null}
