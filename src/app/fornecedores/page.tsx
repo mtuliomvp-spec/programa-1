@@ -111,6 +111,15 @@ export default async function FornecedoresPage({
                             Editar
                           </Link>
                         ) : null}
+                        {canUnificar ? (
+                          <Link
+                            href={`/fornecedores/unificar?de=${s.id}#manual`}
+                            className="text-sm font-medium text-blue-700 hover:underline"
+                            title="Juntar este cadastro a outro: os lançamentos passam para o que fica"
+                          >
+                            Unificar
+                          </Link>
+                        ) : null}
                         {canExcluir ? (
                           <DeleteRowButton id={s.id} action={deleteSupplierAction} confirmMessage={`Excluir o fornecedor ${s.name}?`} />
                         ) : null}

@@ -225,18 +225,29 @@ export async function quickCreateSupplierAction(input: {
   return { ok: true, ...result, customerId };
 }
 
-export async function deleteSupplierAction(id: string) {
+export async function deleteSupplierAction(id: string): Promise<{ error?: string } | void> {
   await assertCan("cadastros", "excluir");
   const supplier = await prisma.supplier.findUnique({ where: { id }, select: { userId: true } });
   if (supplier?.userId) {
-    throw new Error("Este fornecedor é um usuário do sistema. Gerencie-o na tela de Usuários.");
+    return { error: "Este fornecedor é um usuário do sistema. Gerencie-o na tela de Usuários." };
   }
-  const [vehicleCount, partCount] = await Promise.all([
-    prisma.vehicle.count({ where: { supplierId: id } }),
-    prisma.part.count({ where: { supplierId: id } }),
+  // Qualquer lançamento ligado impede a exclusão: as chaves são SetNull, e
+  // excluir deixaria títulos, recorrências e devoluções sem fornecedor.
+  const where = { supplierId: id };
+  const ligados = await Promise.all([
+    prisma.vehicle.count({ where }),
+    prisma.part.count({ where }),
+    prisma.payable.count({ where }),
+    prisma.recurringEntry.count({ where }),
+    prisma.purchaseRequest.count({ where }),
+    prisma.devolucaoCompra.count({ where }),
   ]);
-  if (vehicleCount > 0 || partCount > 0) {
-    throw new Error("Não é possível excluir um fornecedor com veículos ou peças vinculados.");
+  if (ligados.some((n) => n > 0)) {
+    return {
+      error:
+        "Este fornecedor tem lançamentos ligados (veículos, peças, contas a pagar, recorrências, solicitações ou devoluções). " +
+        "Para tirá-lo da lista sem perder nada, use Unificar: os lançamentos passam para o cadastro que fica.",
+    };
   }
   await prisma.supplier.delete({ where: { id } });
   revalidatePath("/fornecedores");

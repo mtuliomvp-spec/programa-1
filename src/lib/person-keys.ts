@@ -81,7 +81,17 @@ export function groupDuplicates<T extends DedupeRow>(rows: T[]): T[][] {
 
 /** Quantos duplicados existem hoje (para o aviso no cabeçalho das listagens). */
 export function countDuplicated(rows: DedupeRow[]): number {
-  return groupDuplicates(rows).reduce((sum, g) => sum + g.length, 0);
+  return groupDuplicates(rows)
+    .filter((g) => !ehMatrizEFilial(g))
+    .reduce((sum, g) => sum + g.length, 0);
+}
+
+/** Grupo só de matriz e filiais: CNPJs diferentes, todos da mesma raiz. */
+function ehMatrizEFilial(g: DedupeRow[]): boolean {
+  const docs = new Set(g.map((m) => docKey(m.document)).filter(Boolean) as string[]);
+  if (docs.size < 2) return false;
+  const raizes = new Set([...docs].map((d) => raizCnpj(d)));
+  return raizes.size === 1 && !raizes.has(null);
 }
 
 /**
@@ -113,8 +123,27 @@ export function bestNameVariant(names: string[]): string {
  *   um deles não resolve — tem de ser resolvido em Usuários.
  * - `DOCUMENTOS_DIFERENTES`: mesmo nome, CPF/CNPJ diferentes. Quase sempre são
  *   duas pessoas distintas (dois "José Silva"); unificar perderia dado.
+ * - `MATRIZ_FILIAL`: mesmo nome e CNPJs da mesma raiz (8 primeiros dígitos):
+ *   são matriz e filial(is) da mesma empresa — cadastros legítimos e
+ *   separados (cada estabelecimento tem seu CNPJ). Não é duplicidade.
  */
-export type BlockReason = "MULTIPLOS_USUARIOS" | "DOCUMENTOS_DIFERENTES" | null;
+export type BlockReason = "MULTIPLOS_USUARIOS" | "DOCUMENTOS_DIFERENTES" | "MATRIZ_FILIAL" | null;
+
+/** Raiz do CNPJ (8 primeiros dígitos): identifica a empresa, de matriz e filiais. */
+export function raizCnpj(doc: string | null | undefined): string | null {
+  const d = (doc || "").replace(/\D/g, "");
+  return d.length === 14 ? d.slice(0, 8) : null;
+}
+
+/**
+ * Os dois documentos são de pessoas/estabelecimentos DIFERENTES: ambos
+ * preenchidos e diferentes (CPFs diferentes, ou CNPJs de filiais distintas).
+ */
+export function documentosDiferentes(a: string | null | undefined, b: string | null | undefined): boolean {
+  const ka = docKey(a);
+  const kb = docKey(b);
+  return !!ka && !!kb && ka !== kb;
+}
 
 export type ScoredRow = DedupeRow & {
   isMirror: boolean;
@@ -128,7 +157,7 @@ export type ScoredRow = DedupeRow & {
 export function blockReason(members: ScoredRow[]): BlockReason {
   if (members.filter((m) => m.isMirror).length > 1) return "MULTIPLOS_USUARIOS";
   const docs = new Set(members.map((m) => docKey(m.document)).filter(Boolean));
-  if (docs.size > 1) return "DOCUMENTOS_DIFERENTES";
+  if (docs.size > 1) return ehMatrizEFilial(members) ? "MATRIZ_FILIAL" : "DOCUMENTOS_DIFERENTES";
   return null;
 }
 
