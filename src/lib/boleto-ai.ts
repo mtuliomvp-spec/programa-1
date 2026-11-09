@@ -39,6 +39,9 @@ const boletoSchema = z.object({
   // desconto legal da MULTA: aqui é uma condição do próprio boleto.
   desconto: z.number().nullable().optional(),
   descontoAte: z.string().nullable().optional(),
+  // Valor do documento impresso (campo "Valor do documento"), antes de
+  // qualquer desconto — confere se o VALOR lido já veio descontado.
+  valorDocumento: z.number().nullable().optional(),
   // Competência/referência do que o boleto cobra: o MÊS DE CONSUMO da conta de
   // luz, a mensalidade de setembro, a parcela do exercício. Não confundir com
   // o vencimento — a conta de agosto vence em setembro.
@@ -90,6 +93,7 @@ const BOLETO_ITEM_SCHEMA = {
     "linhaDigitavel",
     "desconto",
     "descontoAte",
+    "valorDocumento",
     "referencia",
     "placa",
     "renavam",
@@ -128,6 +132,11 @@ const BOLETO_ITEM_SCHEMA = {
       type: ["number", "null"],
       description:
         "abatimento em REAIS que o boleto concede por pagar dentro do prazo, quando impresso em texto (ex.: 'Desconto de R$ 150,00 até o vencimento' → 150). Percentual: converta para reais sobre o valor. null quando o boleto não oferece desconto",
+    },
+    valorDocumento: {
+      type: ["number", "null"],
+      description:
+        "o campo 'Valor do documento' impresso no boleto, em reais, sem tirar desconto nenhum; null se não houver esse campo",
     },
     descontoAte: {
       type: ["string", "null"],
@@ -194,7 +203,9 @@ const SYSTEM_PROMPT =
   "DESCONTOATE é a data limite (yyyy-mm-dd; 'até o vencimento' = a data de vencimento). " +
   "Não confunda com MULTA e MORA, que são acréscimos por atraso, nem com o desconto legal de " +
   "20% da multa de trânsito (esse continua em VALOR/VALORSEMDESCONTO). Sem condição de desconto " +
-  "impressa, os dois campos vão null. " +
+  "impressa, os dois campos vão null. Com desconto, VALOR é o valor CHEIO do documento (sem o " +
+  "desconto): 'Para pagamento até 07/11 receber R$ 990,99' num boleto de R$ 1.101,10 → VALOR 1101.10, " +
+  "DESCONTO 110.11. VALORDOCUMENTO é sempre o campo 'Valor do documento' impresso. " +
   "6) REFERÊNCIA: a competência do que está sendo cobrado — o mês de CONSUMO na conta de luz, água " +
   "ou telefone ('Referente a AGO/2026'), o mês da mensalidade, o exercício do IPVA. Copie como está " +
   "impresso. Cuidado: NÃO é o vencimento (a conta de agosto vence em setembro) nem a data de emissão. " +
@@ -310,7 +321,41 @@ export async function extractBoletos(base64: string, mimeType: string): Promise<
       if (linha.length >= 40) linhas.add(linha);
       pares.add(par);
     }
-    out.push({ ...b, tipo: normalizeTipo(b.tipo) });
+    out.push({ ...b, valor: valorCheio(b), tipo: normalizeTipo(b.tipo) });
   }
   return out;
+}
+
+/**
+ * Valor do documento codificado na linha digitável do boleto BANCÁRIO (47
+ * dígitos): os 10 últimos são o valor em centavos. Convênio (48 dígitos,
+ * começa com 8) tem outro formato e fica de fora.
+ */
+export function valorDaLinhaDigitavel(linha: string | null | undefined): number | null {
+  const d = (linha ?? "").replace(/\D/g, "");
+  if (d.length !== 47) return null;
+  const centavos = Number(d.slice(-10));
+  return centavos > 0 ? centavos / 100 : null;
+}
+
+/**
+ * O título guarda o valor CHEIO e o desconto é abatido na baixa. Se a leitura
+ * trouxe o valor JÁ descontado (o "receber R$ 990,99 até o dia 7" de um boleto
+ * de R$ 1.101,10), o desconto seria aplicado duas vezes — então, quando valor
+ * + desconto bate com o valor do documento (da linha digitável ou impresso),
+ * vale o valor do documento. Multa de trânsito tem regra própria e não entra.
+ */
+export function valorCheio(b: {
+  valor: number | null;
+  desconto?: number | null;
+  valorDocumento?: number | null;
+  linhaDigitavel?: string | null;
+  tipo: string | null;
+}): number | null {
+  const desconto = b.desconto ?? 0;
+  if (!(desconto > 0) || normalizeTipo(b.tipo) === "MULTA") return b.valor;
+  const documento = valorDaLinhaDigitavel(b.linhaDigitavel) ?? b.valorDocumento ?? null;
+  if (documento == null) return b.valor;
+  if (b.valor == null) return documento;
+  return Math.abs(b.valor + desconto - documento) <= 0.02 ? documento : b.valor;
 }
