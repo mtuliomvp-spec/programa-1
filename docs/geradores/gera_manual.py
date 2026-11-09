@@ -480,7 +480,9 @@ story += tela(
     "Folha de pagamento", "/folha",
     "Funcionários, salários, férias e rescisões, com a folha do mês lançada no financeiro.",
     [
-        "“Novo funcionário”: dados, salário e data de admissão — ao salvar, abre a ficha dele.",
+        "“Novo funcionário”: escolha um <b>usuário do sistema</b> (nome, CPF, PIX e cargo vêm do cadastro "
+        "dele e a ficha fica ligada) ou cadastre à mão; informe salário e data de admissão da carteira — "
+        "ao salvar, abre a ficha.",
         "<b>“Gerar folha do mês”</b> cria as contas a pagar de cada um; o que já foi gerado fica "
         "marcado. Quem tem férias no mês leva o aviso para conferir o salário com a contabilidade.",
         "<b>Ficha do funcionário</b> (clique no nome): períodos aquisitivos com o saldo de dias, até "

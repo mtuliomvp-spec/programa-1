@@ -451,6 +451,8 @@ model User {
   paymentCombos       PaymentCombo[]      @relation("UserPaymentCombos")
   // Fornecedor-espelho (todo usuário também pode ser escolhido como fornecedor).
   supplier            Supplier?           @relation("UserSupplier")
+  // Ficha de funcionário (Folha de pagamento) ligada a este usuário.
+  employee            Employee?           @relation("UserEmployee")
   // Perfil de acesso (modelo de permissões). Nulo = permissões manuais/admin.
   profileId           String?
   profile             Profile?            @relation(fields: [profileId], references: [id], onDelete: SetNull)
@@ -1960,6 +1962,9 @@ model Employee {
   notes         String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
+  // Usuário do sistema que é este funcionário (opcional, um para um).
+  userId        String?               @unique
+  user          User?                 @relation("UserEmployee", fields: [userId], references: [id], onDelete: SetNull)
   vacations     EmployeeVacation[]
   terminations  EmployeeTermination[]
 
