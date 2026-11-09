@@ -67,11 +67,55 @@ export default async function FuncionarioPage({
     ...e.vacations.map((v) => v.payableId),
     ...e.terminations.flatMap((t) => [t.payableId, t.multaPayableId]),
   ].filter((x): x is string => !!x);
-  const contas = new Map(
-    (await prisma.payable.findMany({ where: { id: { in: contaIds } }, select: { id: true, status: true, dueDate: true } })).map(
-      (c) => [c.id, effectivePayableStatus(c.status, c.dueDate)],
-    ),
+  const titulos = await prisma.payable.findMany({
+    where: { id: { in: contaIds } },
+    select: {
+      id: true,
+      status: true,
+      dueDate: true,
+      attachments: { where: { kind: "COMPROVANTE" }, select: { id: true }, orderBy: { createdAt: "desc" }, take: 1 },
+      paymentCombo: {
+        select: { attachments: { where: { kind: "COMPROVANTE" }, select: { id: true }, orderBy: { createdAt: "desc" }, take: 1 } },
+      },
+    },
+  });
+  const contas = new Map(titulos.map((c) => [c.id, effectivePayableStatus(c.status, c.dueDate)]));
+  // Comprovante da baixa: o do próprio título ou, pago em lote, o do combo.
+  const comprovanteDaBaixa = new Map(
+    titulos.map((c) => {
+      const doTitulo = c.attachments[0]?.id;
+      const doCombo = c.paymentCombo?.attachments[0]?.id;
+      return [
+        c.id,
+        doTitulo
+          ? `/financeiro/a-pagar/anexos/${doTitulo}`
+          : doCombo
+            ? `/financeiro/combos/anexos/${doCombo}`
+            : null,
+      ] as const;
+    }),
   );
+  /** Link do comprovante de uma conta paga pelo sistema (ou a Ordem de Pagamento, para anexá-lo). */
+  const linkComprovante = (pid: string) => {
+    const arquivo = comprovanteDaBaixa.get(pid);
+    if (arquivo) {
+      return (
+        <a href={arquivo} target="_blank" rel="noreferrer" className="whitespace-nowrap text-xs font-medium text-blue-700 hover:underline">
+          comprovante
+        </a>
+      );
+    }
+    const paga = contas.get(pid) === "PAGO";
+    return (
+      <Link
+        href={`/financeiro/a-pagar/${pid}/ordem`}
+        className="whitespace-nowrap text-xs text-slate-500 hover:underline"
+        title="Abre a Ordem de Pagamento desta conta, onde o comprovante é anexado"
+      >
+        {paga ? "📎 anexar comprovante (na conta)" : "pagar / anexar comprovante"}
+      </Link>
+    );
+  };
   const seloConta = (pid: string | null) => {
     if (!pid) return <Badge tone="success">paga fora do sistema</Badge>;
     const s = contas.get(pid);
@@ -219,9 +263,7 @@ export default async function FuncionarioPage({
                           <span className="flex flex-col items-end gap-1.5">
                             <AnexarDocumento tipo="ferias" campo="recibo" id={v.id} tem={!!v.reciboNome} />
                             {v.payableId ? (
-                              <Link href="/financeiro/a-pagar" className="text-xs text-slate-500 hover:underline" title="Paga pelo sistema: o comprovante vai na baixa da conta">
-                                comprovante na baixa
-                              </Link>
+                              linkComprovante(v.payableId)
                             ) : (
                               <AnexarDocumento tipo="ferias" campo="comprovante" id={v.id} tem={!!v.comprovanteNome} />
                             )}
@@ -282,6 +324,8 @@ export default async function FuncionarioPage({
                 {podeGerir ? (
                   <div className="flex flex-wrap items-start justify-end gap-4 pt-2">
                     <AnexarDocumento tipo="rescisao" campo="recibo" id={rescisao.id} tem={!!rescisao.arquivoNome} />
+                    {rescisao.payableId ? linkComprovante(rescisao.payableId) : null}
+                    {rescisao.multaPayableId ? linkComprovante(rescisao.multaPayableId) : null}
                     {rescisao.payableId ? null : (
                       <AnexarDocumento tipo="rescisao" campo="comprovante" id={rescisao.id} tem={!!rescisao.comprovanteNome} />
                     )}
