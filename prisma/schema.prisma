@@ -1996,6 +1996,11 @@ model EmployeeVacation {
   reciboNome       String?
   reciboMime       String?
   reciboDados      Bytes?
+  // Comprovante bancário do pagamento (férias pagas fora do sistema; pagas
+  // pelo sistema levam o comprovante na baixa da conta a pagar).
+  comprovanteNome  String?
+  comprovanteMime  String?
+  comprovanteDados Bytes?
   notes            String?
   createdAt        DateTime @default(now())
 
@@ -2024,6 +2029,9 @@ model EmployeeTermination {
   arquivoNome      String?
   arquivoMime      String?
   arquivoDados     Bytes?
+  comprovanteNome  String?
+  comprovanteMime  String?
+  comprovanteDados Bytes?
   notes            String?
   createdAt        DateTime  @default(now())
 
