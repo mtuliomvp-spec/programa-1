@@ -26,6 +26,7 @@ const schema = z.object({
   googleAdsLeadLabel: z.string().optional(),
   googleAnalyticsId: z.string().optional(),
   googleSiteVerification: z.string().optional(),
+  metaPixelId: z.string().optional(),
   anoFundacao: z.string().optional(),
   googleMapsUrl: z.string().optional(),
   aiProvider: z.string().optional(),
@@ -89,6 +90,11 @@ export async function saveCompanyAction(
   // Search Console: aceita só o código ou a meta tag inteira colada.
   const verif = (d.googleSiteVerification || "").trim();
   const googleSiteVerification = (verif.match(/content=["']([^"']+)["']/)?.[1] ?? verif).trim();
+  // Pixel da Meta: só números (o Gerenciador de Eventos mostra "ID do pixel").
+  const metaPixelId = (d.metaPixelId || "").replace(/\s/g, "");
+  if (metaPixelId && !/^\d{10,20}$/.test(metaPixelId)) {
+    return { error: "ID do Pixel da Meta inválido — são só números (ex.: 123456789012345), no Gerenciador de Eventos." };
+  }
   const ano = Number((d.anoFundacao || "").trim());
   const anoFundacao = Number.isInteger(ano) && ano >= 1900 && ano <= new Date().getFullYear() ? ano : null;
   // Link da loja no Google Maps (Perfil da Empresa › Compartilhar).
@@ -115,6 +121,7 @@ export async function saveCompanyAction(
     googleAdsLeadLabel: googleAdsLeadLabel || null,
     googleAnalyticsId: googleAnalyticsId || null,
     googleSiteVerification: googleSiteVerification || null,
+    metaPixelId: metaPixelId || null,
     anoFundacao,
     googleMapsUrl: googleMapsUrl || null,
     // Parecer IA e consulta por placa: só o Super Admin mexe. Provedor/modelo

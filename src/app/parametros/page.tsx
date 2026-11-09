@@ -6,6 +6,7 @@ import { getPlateToken } from "@/lib/api-keys";
 import { isAdminRole } from "@/lib/permissions";
 import { Card, CardHeader, PageHeader, LinkButton } from "@/components/ui";
 import CompanyForm from "./CompanyForm";
+import { getBaseUrl } from "@/lib/base-url";
 
 export const dynamic = "force-dynamic";
 
@@ -55,7 +56,7 @@ export default async function ParametrosPage() {
       <Card>
         <CardHeader title="Dados da empresa" />
         <div className="p-5">
-          <CompanyForm company={companyForClient} podeChaves={user.role === "SUPER_ADMIN"} />
+          <CompanyForm company={companyForClient} podeChaves={user.role === "SUPER_ADMIN"} linkSite={await getBaseUrl()} />
         </div>
       </Card>
     </div>

@@ -3,6 +3,7 @@ import { getCompany } from "@/lib/company";
 import { getSessionUser } from "@/lib/auth";
 import { getBaseUrl } from "@/lib/base-url";
 import GoogleTags from "./GoogleTags";
+import MetaPixel from "./MetaPixel";
 import { cidadeDaLoja } from "@/lib/loja-local";
 import { nomeDaLoja } from "@/lib/nome-loja";
 
@@ -69,11 +70,14 @@ export default async function VitrineLayout({ children }: { children: React.Reac
       />
       {children}
       {!user ? (
-        <GoogleTags
-          adsId={company?.googleAdsId ?? null}
-          leadLabel={company?.googleAdsLeadLabel ?? null}
-          analyticsId={company?.googleAnalyticsId ?? null}
-        />
+        <>
+          <GoogleTags
+            adsId={company?.googleAdsId ?? null}
+            leadLabel={company?.googleAdsLeadLabel ?? null}
+            analyticsId={company?.googleAnalyticsId ?? null}
+          />
+          <MetaPixel pixelId={company?.metaPixelId ?? null} />
+        </>
       ) : null}
     </>
   );

@@ -9,9 +9,11 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = await getBaseUrl();
   const vehicles = await getShowroomVehicles().catch(() => []);
   return [
-    { url: `${base}/vitrine`, changeFrequency: "daily", priority: 1 },
+    { url: `${base}/vitrine`, changeFrequency: "daily", priority: 1, lastModified: new Date() },
     ...vehicles.map((v) => ({
       url: `${base}/vitrine/${v.id}`,
+      // Data da postagem: o Google prioriza o que mudou (carro novo no ar).
+      ...(v.publishedAt ? { lastModified: v.publishedAt } : {}),
       changeFrequency: "daily" as const,
       priority: 0.8,
     })),

@@ -24,6 +24,7 @@ type Company = {
   googleAdsLeadLabel: string | null;
   googleAnalyticsId: string | null;
   googleSiteVerification: string | null;
+  metaPixelId: string | null;
   anoFundacao: number | null;
   googleMapsUrl: string | null;
   // Parecer IA: provedor/modelo aparecem; a chave NUNCA vem ao cliente (só o
@@ -42,8 +43,11 @@ type Company = {
 export default function CompanyForm({
   company,
   podeChaves,
+  linkSite,
 }: {
   company: Company;
+  /** Endereço público do site (onde fica a vitrine). */
+  linkSite: string;
   /** Domínio público e chaves de API são do dono do sistema (Super Admin). */
   podeChaves: boolean;
 }) {
@@ -225,6 +229,29 @@ export default function CompanyForm({
             ou desliga o seu.
           </span>
         </label>
+      </div>
+
+      <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-4">
+        <p className="mb-1 text-sm font-semibold text-slate-800">📣 Facebook e Instagram (vitrine)</p>
+        <p className="mb-3 text-xs text-slate-500">
+          O <strong>catálogo</strong> abaixo leva os carros da vitrine para o Facebook e o Instagram: cadastre o link no
+          Gerenciador de Comércio da Meta (<em>Catálogo › Fontes de dados › Feed de dados › Agendar</em>, todo dia) e os
+          anúncios de catálogo mostram cada carro com foto, preço e link para o anúncio no site. Entra o carro postado
+          na vitrine, em estoque, com foto e preço visível. Carro vendido sai do catálogo na próxima atualização.
+        </p>
+        <Field label="Link do catálogo (copie e cole na Meta)">
+          <Input readOnly value={`${linkSite}/vitrine/catalogo-meta.csv`} onFocus={(e) => e.currentTarget.select()} />
+        </Field>
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Pixel da Meta — ID (opcional)">
+            <Input name="metaPixelId" defaultValue={company.metaPixelId || ""} placeholder="123456789012345" inputMode="numeric" />
+          </Field>
+        </div>
+        <p className="mt-2 text-xs text-slate-500">
+          Com o Pixel, a Meta mede quem viu cada carro e cada clique no WhatsApp/telefone vira um <strong>lead</strong> —
+          é com isso que os anúncios aprendem a quem mostrar cada veículo. O ID fica no Gerenciador de Eventos (só
+          números); é público, não é senha.
+        </p>
       </div>
 
       <div className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-4">
