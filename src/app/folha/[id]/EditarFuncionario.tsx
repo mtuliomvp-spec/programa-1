@@ -1,19 +1,32 @@
 "use client";
 
-import { Button, Field, Input, Textarea } from "@/components/ui";
+import { Button, Field, Input, Select, Textarea } from "@/components/ui";
+import type { UsuarioFuncionario } from "@/lib/usuarios-funcionarios";
 import { updateEmployeeAction } from "../actions";
 import { useEnvio } from "./useEnvio";
 
 /** Dados do funcionário: a admissão é a base das férias e da rescisão. */
 export default function EditarFuncionario({
   e,
+  usuarios,
 }: {
-  e: { id: string; name: string; role: string | null; cpf: string | null; pixKey: string | null; salary: number; admissionDate: string; notes: string | null };
+  usuarios: UsuarioFuncionario[];
+  e: { id: string; userId: string | null; name: string; role: string | null; cpf: string | null; pixKey: string | null; salary: number; admissionDate: string; notes: string | null };
 }) {
   const { erro, pendente, aoEnviar } = useEnvio(updateEmployeeAction);
   return (
     <form onSubmit={aoEnviar} className="space-y-3">
       <input type="hidden" name="id" value={e.id} />
+      <Field label="Usuário do sistema">
+        <Select name="userId" defaultValue={e.userId ?? ""}>
+          <option value="">— sem usuário —</option>
+          {usuarios.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.name} · {u.email}
+            </option>
+          ))}
+        </Select>
+      </Field>
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Nome" required>
           <Input name="name" defaultValue={e.name} required />

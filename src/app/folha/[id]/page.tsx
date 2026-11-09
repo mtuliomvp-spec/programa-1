@@ -18,6 +18,7 @@ import FeriasForm from "./FeriasForm";
 import RescisaoForm from "./RescisaoForm";
 import EditarFuncionario from "./EditarFuncionario";
 import ExcluirLancamento from "./ExcluirLancamento";
+import { usuariosParaFuncionario } from "@/lib/usuarios-funcionarios";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +39,7 @@ export default async function FuncionarioPage({
     prisma.employee.findUnique({
       where: { id },
       include: {
+        user: { select: { name: true, email: true } },
         vacations: {
           orderBy: { gozoInicio: "desc" },
           select: {
@@ -57,6 +59,7 @@ export default async function FuncionarioPage({
     userCan("administrativo", "folha"),
   ]);
   if (!e) notFound();
+  const usuarios = podeGerir ? await usuariosParaFuncionario(e.id) : [];
 
   const contaIds = [
     ...e.vacations.map((v) => v.payableId),
@@ -95,6 +98,11 @@ export default async function FuncionarioPage({
           e.active ? "" : ` · desligado${e.dismissalDate ? ` em ${formatDate(e.dismissalDate)}` : ""}`
         }`}
       />
+      {e.user ? (
+        <p className="-mt-2 mb-4 text-sm text-slate-500">
+          👤 Usuário do sistema: <strong>{e.user.name}</strong> · {e.user.email}
+        </p>
+      ) : null}
       {ok ? (
         <p className="mb-4 rounded-lg bg-emerald-50 px-4 py-2.5 text-sm text-emerald-800">{ok.slice(0, 300)}</p>
       ) : null}
@@ -269,7 +277,9 @@ export default async function FuncionarioPage({
               <CardHeader title="Dados do funcionário" />
               <div className="p-5">
                 <EditarFuncionario
+                  usuarios={usuarios}
                   e={{
+                    userId: e.userId,
                     id: e.id,
                     name: e.name,
                     role: e.role,

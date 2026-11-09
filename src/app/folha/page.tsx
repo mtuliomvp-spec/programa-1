@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { alertasDaFolha } from "@/lib/folha-alertas";
+import { usuariosParaFuncionario } from "@/lib/usuarios-funcionarios";
 import { periodoEmAberto, periodosAquisitivos, ROTULO_SITUACAO, TOM_SITUACAO } from "@/lib/ferias";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { effectivePayableStatus } from "@/lib/status";
@@ -31,7 +32,10 @@ export default async function FolhaPage({
   const [allEmployees, payrollItems] = await Promise.all([
     prisma.employee.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
-      include: { vacations: { select: { aquisitivoInicio: true, dias: true, abonoDias: true } } },
+      include: {
+        vacations: { select: { aquisitivoInicio: true, dias: true, abonoDias: true } },
+        user: { select: { email: true } },
+      },
     }),
     prisma.payable.findMany({
       where: { category: "SALARIO", employeeId: { not: null }, description: { contains: competencia } },
@@ -47,7 +51,10 @@ export default async function FolhaPage({
   const active = employees.filter((e) => e.active);
   const monthlyTotal = active.reduce((s, e) => s + e.salary, 0);
   const payrollTotal = payrollItems.reduce((s, p) => s + p.amount, 0);
-  const alertas = await alertasDaFolha(now);
+  const [alertas, usuarios] = await Promise.all([
+    alertasDaFolha(now),
+    canManage ? usuariosParaFuncionario() : Promise.resolve([]),
+  ]);
   const feriasDe = (e: (typeof employees)[number]) =>
     e.active ? periodoEmAberto(periodosAquisitivos(e.admissionDate, e.vacations, now, e.dismissalDate)) : null;
 
@@ -125,6 +132,11 @@ export default async function FolhaPage({
                           {e.name}
                         </Link>
                         {e.cpf ? <span className="ml-1.5 text-xs text-slate-400">{e.cpf}</span> : null}
+                        {e.user ? (
+                          <span className="block text-xs font-normal text-slate-400" title="Ligado ao usuário do sistema">
+                            👤 {e.user.email}
+                          </span>
+                        ) : null}
                       </Td>
                       <Td>{e.role || "—"}</Td>
                       <Td className="max-w-[160px] truncate">{e.pixKey || "—"}</Td>
@@ -204,7 +216,7 @@ export default async function FolhaPage({
           <Card className="h-fit print:hidden">
             <CardHeader title="Novo funcionário" />
             <div className="p-5">
-              <EmployeeForm />
+              <EmployeeForm usuarios={usuarios} />
             </div>
           </Card>
         ) : null}

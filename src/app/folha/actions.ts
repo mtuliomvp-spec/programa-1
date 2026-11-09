@@ -18,7 +18,21 @@ const employeeSchema = z.object({
   salary: z.coerce.number().min(0, "Informe o salário"),
   admissionDate: z.string().min(1),
   notes: z.string().optional(),
+  // Usuário do sistema que é este funcionário ("" = nenhum).
+  userId: z.string().optional(),
 });
+
+/** Confere o usuário escolhido: existe e ainda não é de outro funcionário. */
+async function usuarioParaVincular(userId: string | undefined, employeeId?: string): Promise<string | null> {
+  const id = userId?.trim();
+  if (!id) return null;
+  const u = await prisma.user.findUnique({ where: { id }, select: { id: true, employee: { select: { id: true, name: true } } } });
+  if (!u) throw new Error("Usuário não encontrado.");
+  if (u.employee && u.employee.id !== employeeId) {
+    throw new Error(`Este usuário já está ligado ao funcionário ${u.employee.name}.`);
+  }
+  return u.id;
+}
 
 export type FolhaFormState = { error?: string };
 
@@ -33,8 +47,15 @@ export async function createEmployeeAction(
   }
   const parsed = employeeSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!parsed.success) return { error: parsed.error.issues[0]?.message || "Dados inválidos." };
+  let userId: string | null;
+  try {
+    userId = await usuarioParaVincular(parsed.data.userId);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
   const criado = await prisma.employee.create({
     data: {
+      userId,
       name: parsed.data.name,
       role: parsed.data.role || null,
       cpf: parsed.data.cpf || null,
@@ -137,9 +158,16 @@ export async function updateEmployeeAction(
   const id = String(formData.get("id") || "");
   const parsed = employeeSchema.safeParse(Object.fromEntries(formData.entries()));
   if (!id || !parsed.success) return { error: parsed.error?.issues[0]?.message || "Dados inválidos." };
+  let userId: string | null;
+  try {
+    userId = await usuarioParaVincular(parsed.data.userId, id);
+  } catch (e) {
+    return { error: (e as Error).message };
+  }
   await prisma.employee.update({
     where: { id },
     data: {
+      userId,
       name: parsed.data.name,
       role: parsed.data.role || null,
       cpf: parsed.data.cpf || null,
