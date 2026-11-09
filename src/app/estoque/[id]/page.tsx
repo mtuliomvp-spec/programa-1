@@ -6,6 +6,9 @@ import { Badge, Card, CardHeader, LinkButton, PageHeader, Table, Td, Th, Thead, 
 import DeleteVehicleButton from "./DeleteVehicleButton";
 import VehicleStatusActions from "./VehicleStatusActions";
 import VehicleKm from "./VehicleKm";
+import VehicleSupplier from "./VehicleSupplier";
+import { enderecoNfeDoCadastro } from "@/lib/endereco-ibge";
+import { isAdminRole } from "@/lib/permissions";
 import VehicleCostRefund from "./VehicleCostRefund";
 import RenaveCopyData, { type CampoRenave } from "./RenaveCopyData";
 import RenaveWsPanel, { type RenaveWsRegistro } from "./RenaveWsPanel";
@@ -122,6 +125,13 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
   });
 
   if (!vehicle) notFound();
+
+  // Trocar o fornecedor direto na ficha: só administrador (a lista só é
+  // carregada para ele).
+  const usuarioDaFicha = await getSessionUser();
+  const fornecedoresParaEditar = isAdminRole(usuarioDaFicha?.role)
+    ? await prisma.supplier.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true, document: true } })
+    : null;
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
   const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar, canRenaveWs] =
@@ -256,7 +266,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           name: vehicle.supplier.name,
           document: vehicle.supplier.document,
           phone: vehicle.supplier.phone,
-          endereco: lerEndereco(vehicle.supplier.endereco),
+          endereco: await enderecoNfeDoCadastro("fornecedor", vehicle.supplier.id, vehicle.supplier.endereco),
           inscricaoEstadual: vehicle.supplier.inscricaoEstadual,
         }
       : null,
@@ -302,7 +312,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
           name: vendaNfe.customer.name,
           document: vendaNfe.customer.document,
           phone: vendaNfe.customer.phone,
-          endereco: lerEndereco(vendaNfe.customer.endereco),
+          endereco: await enderecoNfeDoCadastro("cliente", vendaNfe.customer.id, vendaNfe.customer.endereco),
           inscricaoEstadual: vendaNfe.customer.inscricaoEstadual,
         },
         venda: vendaNfe,
@@ -944,9 +954,11 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <InfoItem label="Chassi" value={vehicle.chassi || "-"} />
               <InfoItem label="RENAVAM" value={vehicle.renavam || "-"} />
               <InfoItem label="Data de entrada" value={formatDate(vehicle.entryDate)} />
-              <InfoItem
+              <VehicleSupplier
+                vehicleId={vehicle.id}
                 label={vehicle.consigned ? "Proprietário (consignante)" : "Fornecedor"}
-                value={vehicle.supplier?.name || "-"}
+                supplier={vehicle.supplier ? { id: vehicle.supplier.id, name: vehicle.supplier.name } : null}
+                fornecedores={fornecedoresParaEditar}
               />
               {vehicle.consigned ? (
                 <InfoItem
