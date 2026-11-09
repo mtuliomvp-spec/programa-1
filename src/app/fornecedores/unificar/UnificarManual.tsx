@@ -28,6 +28,21 @@ export default function UnificarManual({ fornecedores, inicial }: { fornecedores
   const [pending, start] = useTransition();
   const fSome = fornecedores.find((f) => f.id === some);
   const fFica = fornecedores.find((f) => f.id === fica);
+  // Qualquer cadastro pode ir em qualquer campo. Escolher num campo o que já
+  // está no outro troca os dois de lugar.
+  function escolherSome(id: string) {
+    if (id && id === fica) setFica(some);
+    setSome(id);
+  }
+  function escolherFica(id: string) {
+    if (id && id === some) setSome(fica);
+    setFica(id);
+  }
+  function inverter() {
+    setSome(fica);
+    setFica(some);
+  }
+  const someEhUsuario = !!fSome?.usuario;
 
   async function unificar() {
     if (!fSome || !fFica) return;
@@ -50,32 +65,48 @@ export default function UnificarManual({ fornecedores, inicial }: { fornecedores
 
   return (
     <div className="space-y-3">
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid items-end gap-3 sm:grid-cols-[1fr_auto_1fr]">
         <Field label="Cadastro que SOME (vai ser incorporado)">
-          <Select value={some} onChange={(e) => setSome(e.target.value)}>
+          <Select value={some} onChange={(e) => escolherSome(e.target.value)}>
             <option value="">— escolha —</option>
-            {fornecedores
-              .filter((f) => !f.usuario)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {rotulo(f)}
-                </option>
-              ))}
+            {fornecedores.map((f) => (
+              <option key={f.id} value={f.id}>
+                {rotulo(f)}
+              </option>
+            ))}
           </Select>
         </Field>
+        <Button
+          type="button"
+          variant="secondary"
+          onClick={inverter}
+          disabled={!some && !fica}
+          title="Trocar: o que some passa a ficar, e vice-versa"
+        >
+          ⇄ Inverter
+        </Button>
         <Field label="Cadastro que FICA">
-          <Select value={fica} onChange={(e) => setFica(e.target.value)}>
+          <Select value={fica} onChange={(e) => escolherFica(e.target.value)}>
             <option value="">— escolha —</option>
-            {fornecedores
-              .filter((f) => f.id !== some)
-              .map((f) => (
-                <option key={f.id} value={f.id}>
-                  {rotulo(f)}
-                </option>
-              ))}
+            {fornecedores.map((f) => (
+              <option key={f.id} value={f.id}>
+                {rotulo(f)}
+              </option>
+            ))}
           </Select>
         </Field>
       </div>
+      {someEhUsuario ? (
+        <p className="text-sm text-amber-700">
+          «{fSome!.name}» é um usuário do sistema e não pode sumir. Clique em ⇄ Inverter para que ele seja o cadastro
+          que fica.
+        </p>
+      ) : fSome && fFica && fSome.lancamentos > fFica.lancamentos ? (
+        <p className="text-sm text-slate-500">
+          Dica: «{fSome.name}» tem mais lançamentos. Se ele é o cadastro mais completo, use ⇄ Inverter para que ele
+          fique.
+        </p>
+      ) : null}
       {fSome && fFica ? (
         <p className="rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
           <strong>{fSome.lancamentos}</strong> lançamento(s) de «{fSome.name}» passam para «<strong>{fFica.name}</strong>».
@@ -84,7 +115,7 @@ export default function UnificarManual({ fornecedores, inicial }: { fornecedores
         </p>
       ) : null}
       {erro ? <p className="text-sm text-rose-600">{erro}</p> : null}
-      <Button type="button" onClick={unificar} disabled={!fSome || !fFica || pending}>
+      <Button type="button" onClick={unificar} disabled={!fSome || !fFica || someEhUsuario || pending}>
         {pending ? "Unificando…" : "Unificar estes dois cadastros"}
       </Button>
     </div>
