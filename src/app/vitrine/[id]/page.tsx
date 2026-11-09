@@ -19,6 +19,7 @@ import VitrineGallery from "./VitrineGallery";
 import RegistraVisita from "./RegistraVisita";
 import FinancingSimulator from "./FinancingSimulator";
 import ShareButton from "../ShareButton";
+import { MetaViewContent } from "../MetaPixel";
 import ContatoWhatsApp from "../ContatoWhatsApp";
 import ThemeToggle from "../ThemeToggle";
 import { PublicFooter, FloatingWhatsApp, ThemeScript } from "../PublicChrome";
@@ -41,13 +42,25 @@ export async function generateMetadata({
   const showPrice = !v.adHiddenFields.includes("preco");
   const precoTitle = showPrice ? ` — ${formatCurrency(v.salePrice)}` : "";
   const cidade = cidadeDaLoja(company) ? ` em ${cidadeDaLoja(company)}` : "";
+  const description = `${titulo} à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}.${showPrice ? ` ${formatCurrency(v.salePrice)}.` : ""} Fale com a equipe pelo WhatsApp.`;
+  const url = `${base}/vitrine/${v.id}`;
+  const foto = v.photoIds[0] ? `${base}/vitrine/foto/${v.photoIds[0]}` : null;
   return {
     title: `${titulo}${precoTitle} — seminovo${cidade} | ${nome}`,
-    alternates: { canonical: `${base}/vitrine/${v.id}` },
-    description: `${titulo} à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}.${showPrice ? ` ${formatCurrency(v.salePrice)}.` : ""} Fale com a equipe pelo WhatsApp.`,
-    openGraph: v.photoIds[0]
-      ? { images: [`${base}/vitrine/foto/${v.photoIds[0]}`], title: `${titulo}${precoTitle}` }
-      : undefined,
+    alternates: { canonical: url },
+    description,
+    // Prévia do link no WhatsApp, Facebook e Instagram (foto grande, título
+    // com preço, descrição e o endereço do anúncio).
+    openGraph: {
+      type: "website",
+      url,
+      title: `${titulo}${precoTitle}`,
+      description,
+      siteName: nome,
+      locale: "pt_BR",
+      ...(foto ? { images: [{ url: foto, alt: titulo }] } : {}),
+    },
+    twitter: { card: foto ? "summary_large_image" : "summary", title: `${titulo}${precoTitle}`, description, ...(foto ? { images: [foto] } : {}) },
   };
 }
 
@@ -160,8 +173,12 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
   // busca e os anúncios de veículos.
   const anuncio = {
     "@context": "https://schema.org",
-    "@type": "Car",
+    // Product + Car: o Google só considera o anúncio para resultado de
+    // produto (preço na busca, aba Shopping) quando ele também é Product.
+    "@type": ["Product", "Car"],
     name: titulo,
+    sku: v.id,
+    description: `${titulo} seminovo à venda na ${nome}: ${v.km.toLocaleString("pt-BR")} km${v.color ? `, ${v.color}` : ""}${v.fuel ? `, ${v.fuel}` : ""}${v.transmission ? `, câmbio ${v.transmission.toLowerCase()}` : ""}.`,
     brand: { "@type": "Brand", name: v.brand },
     model: v.model,
     ...(versao ? { vehicleConfiguration: versao } : {}),
@@ -181,6 +198,8 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
             price: v.salePrice,
             priceCurrency: "BRL",
             availability: "https://schema.org/InStock",
+            itemCondition: "https://schema.org/UsedCondition",
+            url: `${base}/vitrine/${v.id}`,
             seller: { "@type": "AutoDealer", name: nome },
           },
         }
@@ -196,6 +215,8 @@ export default async function VitrineVeiculoPage({ params }: { params: Promise<{
       <ThemeScript />
       {/* Conta a visita a este anúncio (só visitante, não a equipe logada). */}
       <RegistraVisita alvo={v.id} />
+      {/* Pixel da Meta (só carrega para visitante): visita ligada ao item do catálogo. */}
+      <MetaViewContent id={v.id} nome={titulo} valor={showPrice ? v.salePrice : null} />
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-3 px-4 py-3">
           <Link href="/vitrine" className="text-sm font-medium text-slate-700 hover:underline dark:text-slate-300">

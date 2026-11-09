@@ -2290,6 +2290,10 @@ model CompanySettings {
   googleAdsLeadLabel       String?
   googleAnalyticsId        String?
   googleSiteVerification   String?
+  // Pixel da Meta (Facebook/Instagram): ID público (só números). Mede visitas
+  // aos anúncios (ViewContent, com o mesmo id do catálogo) e os leads
+  // (clique no WhatsApp/telefone) para os anúncios de catálogo.
+  metaPixelId              String?
   // Ano de fundação da loja (vai para os dados estruturados do Google e para o
   // texto da vitrine: "desde 2001").
   anoFundacao              Int?

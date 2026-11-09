@@ -7,7 +7,10 @@ export const dynamic = "force-dynamic";
 export default async function robots(): Promise<MetadataRoute.Robots> {
   const base = await getBaseUrl();
   return {
-    rules: [{ userAgent: "*", allow: ["/vitrine", "/vitrine/"], disallow: "/" }],
+    // "/$" libera só a página inicial do domínio (que leva à vitrine): sem
+    // ela, o Google não podia ler a home e mostrava o site sem descrição
+    // ("Nenhuma informação disponível para esta página").
+    rules: [{ userAgent: "*", allow: ["/$", "/vitrine"], disallow: "/" }],
     sitemap: `${base}/sitemap.xml`,
   };
 }
