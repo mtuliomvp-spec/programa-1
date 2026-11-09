@@ -3,6 +3,8 @@ import { requireAction } from "@/lib/guards";
 import { syncAllUserSuppliers } from "@/lib/user-supplier-link";
 import { findSupplierDuplicates } from "./detect";
 import MergeButton from "./MergeButton";
+import UnificarManual from "./UnificarManual";
+import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -19,14 +21,39 @@ const BLOCK_TEXT: Record<string, { title: string; body: string }> = {
   },
 };
 
-export default async function UnificarFornecedoresPage() {
+export default async function UnificarFornecedoresPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ de?: string; ok?: string }>;
+}) {
   await requireAction("cadastros", "unificar");
+  const { de, ok } = await searchParams;
   // Garante os fornecedores-espelho antes de decidir quem vence.
   await syncAllUserSuppliers();
   const groups = await findSupplierDuplicates();
   const mergeable = groups.filter((g) => !g.blocked);
   const blocked = groups.filter((g) => g.blocked);
   const moved = mergeable.reduce((sum, g) => sum + g.moved, 0);
+  // Lista para a unificação manual, com quantos lançamentos cada um tem.
+  const todos = await prisma.supplier.findMany({
+    orderBy: { name: "asc" },
+    select: {
+      id: true,
+      name: true,
+      document: true,
+      userId: true,
+      _count: {
+        select: { vehicles: true, parts: true, payables: true, recurring: true, purchaseRequests: true, devolucoes: true },
+      },
+    },
+  });
+  const opcoes = todos.map((f) => ({
+    id: f.id,
+    name: f.name,
+    document: f.document,
+    usuario: Boolean(f.userId),
+    lancamentos: Object.values(f._count).reduce((a, b) => a + b, 0),
+  }));
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -40,6 +67,22 @@ export default async function UnificarFornecedoresPage() {
         }
       />
 
+      {ok ? (
+        <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+          ✓ Unificado: {ok}.
+        </div>
+      ) : null}
+
+      <Card className="mb-4" id="manual">
+        <CardHeader
+          title="Unificar dois cadastros à mão"
+          description="Para o que a lista automática não pega: grafias diferentes (“Bradesco” e “Banco Bradesco S.A.”), nome abreviado, ou filial que você prefere juntar à matriz."
+        />
+        <div className="p-5">
+          <UnificarManual fornecedores={opcoes} inicial={de} />
+        </div>
+      </Card>
+
       <Card className="mb-4">
         <div className="space-y-2 p-5 text-sm text-slate-600">
           <p>
@@ -49,8 +92,12 @@ export default async function UnificarFornecedoresPage() {
           </p>
           <p>
             <strong>Nenhum lançamento é apagado.</strong> Veículos, peças, contas a pagar,
-            recorrências e solicitações de compra que estavam nos cadastros repetidos passam para o
+            recorrências, solicitações de compra e devoluções que estavam nos cadastros repetidos passam para o
             cadastro que fica. Só depois disso os repetidos, já vazios, são excluídos.
+          </p>
+          <p className="text-slate-500">
+            Matriz e filiais da mesma empresa (CNPJs com os mesmos 8 primeiros dígitos) são
+            cadastros separados e não aparecem como repetidos.
           </p>
           <p className="text-slate-500">
             Propostas antigas continuam com o nome do jeito que foi digitado — não tem problema:

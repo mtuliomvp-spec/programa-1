@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
-import { docKey, nameKey } from "@/lib/person-keys";
+import { docKey, documentosDiferentes, nameKey } from "@/lib/person-keys";
 
 /**
  * Consultas de identidade usadas pelas travas de cadastro: duas pessoas são a
@@ -31,7 +31,9 @@ export async function findSupplierByIdentity(
       where: { name: { equals: trimmed, mode: "insensitive" }, id: { not: excludeId } },
       select: { id: true, name: true, document: true, userId: true },
     });
-    if (fast) {
+    // Mesmo nome com outro CPF/CNPJ (ex.: filial da mesma empresa) não é
+    // duplicidade — cada estabelecimento tem o seu cadastro.
+    if (fast && !documentosDiferentes(fast.document, document)) {
       return { id: fast.id, name: fast.name, document: fast.document, isUser: Boolean(fast.userId) };
     }
   }
@@ -43,7 +45,9 @@ export async function findSupplierByIdentity(
   });
   const found = all.find(
     (s) =>
-      s.id !== excludeId && ((nk && nameKey(s.name) === nk) || (dk && docKey(s.document) === dk)),
+      s.id !== excludeId &&
+      ((nk && nameKey(s.name) === nk && !documentosDiferentes(s.document, document)) ||
+        (dk && docKey(s.document) === dk)),
   );
   return found
     ? { id: found.id, name: found.name, document: found.document, isUser: Boolean(found.userId) }
@@ -61,7 +65,9 @@ export async function findCustomerByIdentity(
       where: { name: { equals: trimmed, mode: "insensitive" }, id: { not: excludeId } },
       select: { id: true, name: true, document: true },
     });
-    if (fast) return { id: fast.id, name: fast.name, document: fast.document };
+    if (fast && !documentosDiferentes(fast.document, document)) {
+      return { id: fast.id, name: fast.name, document: fast.document };
+    }
   }
   const nk = nameKey(trimmed);
   const dk = docKey(document);
@@ -69,7 +75,9 @@ export async function findCustomerByIdentity(
   const all = await prisma.customer.findMany({ select: { id: true, name: true, document: true } });
   const found = all.find(
     (c) =>
-      c.id !== excludeId && ((nk && nameKey(c.name) === nk) || (dk && docKey(c.document) === dk)),
+      c.id !== excludeId &&
+      ((nk && nameKey(c.name) === nk && !documentosDiferentes(c.document, document)) ||
+        (dk && docKey(c.document) === dk)),
   );
   return found ? { id: found.id, name: found.name, document: found.document } : null;
 }
@@ -82,5 +90,5 @@ export function duplicateError(
   if (match.isUser) {
     return `«${match.name}» já existe como ${kind} porque é um usuário do sistema. Escolha-o na lista em vez de cadastrar de novo.`;
   }
-  return `Já existe o ${kind} «${match.name}» (mesmo nome ou mesmo CPF/CNPJ). Use o cadastro existente ou, se for outra pessoa, diferencie o nome.`;
+  return `Já existe o ${kind} «${match.name}» (mesmo nome ou mesmo CPF/CNPJ). Use o cadastro existente ou, se for outra pessoa (ou outra filial), informe o CPF/CNPJ dela.`;
 }

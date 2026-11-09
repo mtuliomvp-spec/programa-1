@@ -82,6 +82,9 @@ export async function findCustomerDuplicates(): Promise<CustomerGroup[]> {
 
   return groupDuplicates(members)
     .map(buildGroup)
+    // Matriz e filiais (mesma raiz de CNPJ) são cadastros legítimos: nem
+    // aparecem como repetidos.
+    .filter((g) => g.blocked !== "MATRIZ_FILIAL")
     .sort((a, b) => Number(Boolean(a.blocked)) - Number(Boolean(b.blocked)) || b.moved - a.moved);
 }
 

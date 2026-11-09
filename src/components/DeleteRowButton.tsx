@@ -10,7 +10,8 @@ export default function DeleteRowButton({
   confirmMessage = "Tem certeza que deseja excluir este registro?",
 }: {
   id: string;
-  action: (id: string) => Promise<void>;
+  /** Pode devolver `{ error }`: a mensagem chega inteira (erro lançado vira texto genérico em produção). */
+  action: (id: string) => Promise<void | { error?: string }>;
   confirmMessage?: string;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +22,8 @@ export default function DeleteRowButton({
     setError(null);
     startTransition(async () => {
       try {
-        await action(id);
+        const r = await action(id);
+        if (r && r.error) setError(r.error);
       } catch (err) {
         if (err instanceof Error && err.message === "NEXT_REDIRECT") return;
         setError(err instanceof Error ? err.message : "Não foi possível excluir.");
