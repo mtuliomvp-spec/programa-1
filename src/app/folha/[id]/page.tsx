@@ -18,6 +18,7 @@ import FeriasForm from "./FeriasForm";
 import RescisaoForm from "./RescisaoForm";
 import EditarFuncionario from "./EditarFuncionario";
 import ExcluirLancamento from "./ExcluirLancamento";
+import AnexarRecibo from "./AnexarRecibo";
 import { usuariosParaFuncionario } from "@/lib/usuarios-funcionarios";
 
 export const dynamic = "force-dynamic";
@@ -71,7 +72,7 @@ export default async function FuncionarioPage({
     ),
   );
   const seloConta = (pid: string | null) => {
-    if (!pid) return <span className="text-xs text-slate-400">sem conta</span>;
+    if (!pid) return <Badge tone="success">paga fora do sistema</Badge>;
     const s = contas.get(pid);
     return s ? <Badge tone={TOM_CONTA[s]}>{ROTULO_CONTA[s]}</Badge> : <span className="text-xs text-slate-400">conta excluída</span>;
   };
@@ -199,7 +200,14 @@ export default async function FuncionarioPage({
                         até {formatDate(v.pagamentoAte)}
                         <span className="block">{seloConta(v.payableId)}</span>
                       </Td>
-                      <Td className="text-right">{podeGerir ? <ExcluirLancamento tipo="ferias" id={v.id} /> : null}</Td>
+                      <Td className="text-right">
+                        {podeGerir ? (
+                          <span className="flex flex-col items-end gap-1.5">
+                            <AnexarRecibo id={v.id} temRecibo={!!v.reciboNome} />
+                            <ExcluirLancamento tipo="ferias" id={v.id} />
+                          </span>
+                        ) : null}
+                      </Td>
                     </Tr>
                   ))}
                 </tbody>

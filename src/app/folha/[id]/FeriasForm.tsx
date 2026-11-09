@@ -98,11 +98,45 @@ export default function FeriasForm({
   return (
     <form onSubmit={aoEnviar} className="space-y-3">
       <input type="hidden" name="employeeId" value={employeeId} />
+      {/* Primeiro a pergunta que muda o resto: estas férias já foram pagas? */}
+      {gerarConta ? <input type="hidden" name="gerarConta" value="on" /> : null}
+      <div className="grid gap-2 sm:grid-cols-2">
+        {[
+          {
+            pagar: false,
+            titulo: "Já paga fora do sistema",
+            texto: "Só registra os dias e anexa o recibo. Não cria conta a pagar.",
+          },
+          {
+            pagar: true,
+            titulo: "Pagar pelo sistema",
+            texto: "Lança o líquido em Contas a pagar, 2 dias antes do gozo.",
+          },
+        ].map((o) => (
+          <label
+            key={o.titulo}
+            className={`cursor-pointer rounded-lg border p-3 text-sm ${
+              gerarConta === o.pagar ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            <span className="flex items-center gap-2 font-medium text-slate-800">
+              <input type="radio" name="modoPagamento" checked={gerarConta === o.pagar} onChange={() => setGerarConta(o.pagar)} />
+              {o.titulo}
+            </span>
+            <span className="mt-0.5 block text-xs text-slate-500">{o.texto}</span>
+          </label>
+        ))}
+      </div>
+      {passado && gerarConta ? (
+        <p className="text-xs text-amber-700">
+          Estas férias já começaram ou passaram: se o funcionário já recebeu, escolha &quot;Já paga fora do sistema&quot;.
+        </p>
+      ) : null}
       <div className="rounded-lg border border-violet-200 bg-violet-50 p-3">
-        <p className="text-sm font-medium text-violet-900">📄 Recibo de férias da contabilidade (opcional)</p>
+        <p className="text-sm font-medium text-violet-900">📄 Recibo de férias da contabilidade</p>
         <p className="mt-0.5 text-xs text-violet-800">
-          Anexe o PDF ou a foto do recibo: a IA lê e preenche os campos abaixo. O recibo fica guardado na ficha e
-          anexado à conta a pagar.
+          Anexe o PDF ou a foto do recibo: a IA lê e preenche os campos abaixo. O recibo fica guardado na ficha
+          {gerarConta ? " e anexado à conta a pagar" : ""}.
         </p>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input ref={arquivoRef} name="arquivo" type="file" accept=".pdf,image/*" className="text-xs" />
@@ -163,33 +197,16 @@ export default function FeriasForm({
         <Field label="Descontos (INSS/IRRF)">
           <MoneyInput name="descontos" defaultValue={valores.descontos ?? null} />
         </Field>
-        <Field label="Líquido a pagar">
+        <Field label={gerarConta ? "Líquido a pagar" : "Líquido pago"}>
           <MoneyInput name="valorLiquido" defaultValue={valores.liquido ?? null} />
         </Field>
       </div>
-      <label className="flex items-start gap-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          name="gerarConta"
-          checked={gerarConta}
-          onChange={(e) => setGerarConta(e.target.checked)}
-          className="mt-1"
-        />
-        <span>
-          Lançar o líquido em Contas a pagar (vencimento 2 dias antes do gozo)
-          {passado ? (
-            <span className="block text-xs text-amber-700">
-              Férias já tiradas: se já foram pagas, deixe desmarcado — só o saldo de dias é registrado.
-            </span>
-          ) : null}
-        </span>
-      </label>
       <Field label="Observações">
         <Textarea name="notes" rows={2} />
       </Field>
       {erro ? <p className="text-sm text-rose-600">{erro}</p> : null}
       <Button type="submit" disabled={pendente || opcoes.length === 0}>
-        {pendente ? "Salvando…" : "Lançar férias"}
+        {pendente ? "Salvando…" : gerarConta ? "Lançar férias" : "Registrar férias pagas"}
       </Button>
     </form>
   );

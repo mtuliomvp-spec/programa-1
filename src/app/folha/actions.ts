@@ -328,10 +328,48 @@ export async function registrarFeriasAction(
     return {
       ok: gerarConta
         ? `Férias lançadas. Conta a pagar de ${brl(valorLiquido)} com vencimento em ${formatarDia(pagamentoAte)}.`
-        : "Férias lançadas.",
+        : "Férias registradas como pagas fora do sistema" + (recibo ? ", com o recibo anexado." : "."),
     };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível lançar as férias." };
+  }
+}
+
+/**
+ * Anexa (ou troca) o recibo de férias já lançadas — ex.: férias pagas fora do
+ * sistema. Havendo conta a pagar gerada, o recibo vai também para ela.
+ */
+export async function anexarReciboFeriasAction(formData: FormData): Promise<{ error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    const id = String(formData.get("id") || "");
+    const f = await prisma.employeeVacation.findUnique({ where: { id }, select: { id: true, employeeId: true, payableId: true } });
+    if (!f) return { error: "Férias não encontradas." };
+    const recibo = await arquivoDoForm(formData, "arquivo");
+    if (!recibo) return { error: "Escolha o arquivo do recibo." };
+    await prisma.$transaction(async (tx) => {
+      await tx.employeeVacation.update({
+        where: { id },
+        data: { reciboNome: recibo.nome, reciboMime: recibo.mime, reciboDados: recibo.dados },
+      });
+      if (f.payableId) {
+        await tx.payableAttachment.create({
+          data: {
+            payableId: f.payableId,
+            kind: "OUTRO",
+            description: "Recibo de férias",
+            filename: recibo.nome,
+            mimeType: recibo.mime,
+            size: recibo.dados.length,
+            data: recibo.dados,
+          },
+        });
+      }
+    });
+    revalidarFolha(f.employeeId);
+    return {};
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível anexar o recibo." };
   }
 }
 
