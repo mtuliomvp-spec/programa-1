@@ -6,11 +6,14 @@ import GoogleTags from "./GoogleTags";
 import MetaPixel from "./MetaPixel";
 import { cidadeDaLoja } from "@/lib/loja-local";
 import { nomeDaLoja } from "@/lib/nome-loja";
+import { arquivoDeVerificacaoGoogle } from "@/lib/google-verificacao";
 
 /** Verificação do Search Console (meta tag) para o domínio da vitrine. */
 export async function generateMetadata(): Promise<Metadata> {
   const company = await getCompany().catch(() => null);
-  return company?.googleSiteVerification ? { verification: { google: company.googleSiteVerification } } : {};
+  // Nome de arquivo (googleXXXX.html) é o outro método: servido em /googleXXXX.html.
+  const codigo = company?.googleSiteVerification;
+  return codigo && !arquivoDeVerificacaoGoogle(codigo) ? { verification: { google: codigo } } : {};
 }
 
 /**

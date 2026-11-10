@@ -74,6 +74,14 @@ export default function proxy(request: NextRequest) {
   // da plataforma e só existe no endereço admin.<domínio da plataforma>.
   if (pathname === "/plataforma" || pathname.startsWith("/plataforma/")) return NextResponse.next();
 
+  // Arquivo de verificação do Search Console (googleXXXX.html, na raiz do
+  // domínio): servido pela vitrine, que confere se é o da loja.
+  if (/^\/google[0-9a-f]{8,32}\.html$/i.test(pathname)) {
+    const destino = new URL("/vitrine/verificacao-google", request.url);
+    destino.searchParams.set("arquivo", pathname.slice(1).toLowerCase());
+    return NextResponse.rewrite(destino);
+  }
+
   // Vitrine pública dos veículos à venda (inclui as fotos públicas).
   if (pathname === "/vitrine" || pathname.startsWith("/vitrine/")) return NextResponse.next();
 
