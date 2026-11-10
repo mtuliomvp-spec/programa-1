@@ -314,6 +314,8 @@ export type ItemHoleriteLido = {
   totalVencimentos: number | null;
   totalDescontos: number | null;
   liquido: number;
+  /** Páginas do PDF com o holerite deste funcionário (1 = primeira). */
+  paginas: number[];
   /** Funcionário do cadastro que casa com o nome do holerite. */
   employeeId: string | null;
 };
@@ -360,7 +362,37 @@ const itemAplicarSchema = z.object({
   totalVencimentos: z.number().nullable(),
   totalDescontos: z.number().nullable(),
   liquido: z.number(),
+  paginas: z.array(z.number().int()).default([]),
 });
+
+/**
+ * Só o holerite DESTE funcionário: as páginas dele recortadas do PDF da
+ * contabilidade (que traz o de todos). Sem as páginas, só anexa o arquivo
+ * inteiro quando ele tem um holerite só — nunca o salário dos outros.
+ */
+async function holeriteDoFuncionario(
+  arquivo: NonNullable<Awaited<ReturnType<typeof arquivoDoForm>>>,
+  paginas: number[],
+  totalDeHolerites: number,
+): Promise<Awaited<ReturnType<typeof arquivoDoForm>>> {
+  if (arquivo.mime === "application/pdf") {
+    try {
+      const { PDFDocument } = await import("pdf-lib");
+      const origem = await PDFDocument.load(arquivo.dados, { ignoreEncryption: true });
+      const total = origem.getPageCount();
+      const idx = [...new Set(paginas)].filter((n) => n >= 1 && n <= total).sort((a, b) => a - b).map((n) => n - 1);
+      if (idx.length && idx.length < total) {
+        const novo = await PDFDocument.create();
+        for (const pg of await novo.copyPages(origem, idx)) novo.addPage(pg);
+        return { ...arquivo, dados: Buffer.from(await novo.save()) };
+      }
+      if (total === 1 || totalDeHolerites === 1) return arquivo;
+    } catch {
+      // PDF que o pdf-lib não abre: cai na regra abaixo.
+    }
+  }
+  return totalDeHolerites === 1 ? arquivo : null;
+}
 
 function nomeProprio(nome: string): string {
   const minusculas = new Set(["de", "da", "do", "das", "dos", "e"]);
@@ -414,8 +446,12 @@ export async function aplicarHoleriteAction(
           resultados.push({ ok: true, texto: `${e.name}: não recebe salário pela folha (só comissão) — ignorado.` });
           continue;
         }
-        const r = await aplicarLiquido(employeeId, competencia, item, arquivo);
-        resultados.push({ ok: !r.alerta, texto: r.texto });
+        const doc = arquivo ? await holeriteDoFuncionario(arquivo, item.paginas, itens.data.length) : null;
+        const r = await aplicarLiquido(employeeId, competencia, item, doc);
+        resultados.push({
+          ok: !r.alerta,
+          texto: r.texto + (arquivo && !doc ? " (PDF não anexado: não deu para separar a página deste funcionário.)" : ""),
+        });
         revalidatePath(`/folha/${employeeId}`);
       } catch (err) {
         resultados.push({ ok: false, texto: err instanceof Error ? err.message : `${item.nome}: falhou.` });
