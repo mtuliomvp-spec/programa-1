@@ -7,6 +7,10 @@ import CancelSaleButton from "./CancelSaleButton";
 import { userCan } from "@/lib/guards";
 import { sinaisForaDaVenda } from "@/lib/finance";
 import CorrigirSinalButton from "./CorrigirSinalButton";
+import PedirAvaliacao from "./PedirAvaliacao";
+import { getCompany } from "@/lib/company";
+import { nomeDaLoja } from "@/lib/nome-loja";
+import { displayName } from "@/lib/vehicle-display";
 
 export const dynamic = "force-dynamic";
 
@@ -33,11 +37,26 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
 
   // Só quem tem a permissão "Cancelar venda" vê o botão (a ação também é
   // bloqueada no servidor).
-  const [canCancel, canRegistrar, foraDaVenda] = await Promise.all([
+  const [canCancel, canRegistrar, foraDaVenda, company] = await Promise.all([
     userCan("vendas", "cancelar"),
     userCan("vendas", "registrar"),
     sinaisForaDaVenda(id),
+    getCompany().catch(() => null),
   ]);
+
+  // Pedido de avaliação no Google: mensagem pronta para o WhatsApp do comprador.
+  const reviewUrl = company?.googleReviewUrl ?? null;
+  const telCliente = (sale.customer.phone || "").replace(/\D/g, "");
+  const primeiroNome = sale.customer.name.trim().split(/\s+/)[0] ?? "";
+  const nomeFormatado = primeiroNome ? primeiroNome[0].toUpperCase() + primeiroNome.slice(1).toLowerCase() : "";
+  const msgAvaliacao =
+    `Olá${nomeFormatado ? `, ${nomeFormatado}` : ""}! Aqui é da ${nomeDaLoja(company)}. ` +
+    `Obrigado por comprar o seu ${displayName(sale.vehicle.brand, sale.vehicle.model)} com a gente! 🚗\n\n` +
+    `A sua opinião ajuda muito outras pessoas a nos encontrarem. Pode avaliar a loja no Google? Leva menos de 1 minuto:\n${reviewUrl ?? ""}`;
+  const linkAvaliacao =
+    reviewUrl && telCliente.length >= 10
+      ? `https://wa.me/${telCliente.startsWith("55") ? telCliente : `55${telCliente}`}?text=${encodeURIComponent(msgAvaliacao)}`
+      : null;
 
   const totalRecebido = sale.receivables.filter((r) => r.status === "RECEBIDO").reduce((s, r) => s + r.amount, 0);
   const referrals = parseReferrals(sale.referrals);
@@ -79,6 +98,14 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
               <LinkButton href={`/vendas/${sale.id}/troca`} variant="secondary">
                 🔁 Documento de troca
               </LinkButton>
+            ) : null}
+            {sale.status === "CONCLUIDA" ? (
+              <PedirAvaliacao
+                saleId={sale.id}
+                link={linkAvaliacao}
+                semLink={!reviewUrl}
+                pedidoEm={sale.reviewRequestedAt ? formatDate(sale.reviewRequestedAt) : null}
+              />
             ) : null}
             {canCancel && sale.status === "CONCLUIDA" ? <CancelSaleButton id={sale.id} /> : null}
             {canCancel && cancelamentoResidual ? <CancelSaleButton id={sale.id} mode="fix" /> : null}

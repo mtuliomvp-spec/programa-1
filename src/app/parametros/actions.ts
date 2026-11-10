@@ -27,6 +27,7 @@ const schema = z.object({
   googleAnalyticsId: z.string().optional(),
   googleSiteVerification: z.string().optional(),
   metaPixelId: z.string().optional(),
+  googleReviewUrl: z.string().optional(),
   anoFundacao: z.string().optional(),
   googleMapsUrl: z.string().optional(),
   aiProvider: z.string().optional(),
@@ -95,6 +96,17 @@ export async function saveCompanyAction(
   if (metaPixelId && !/^\d{10,20}$/.test(metaPixelId)) {
     return { error: "ID do Pixel da Meta inválido — são só números (ex.: 123456789012345), no Gerenciador de Eventos." };
   }
+  // Link de avaliação do Google ("Solicitar avaliações" no Perfil da Empresa).
+  const googleReviewUrl = (d.googleReviewUrl || "").trim();
+  if (
+    googleReviewUrl &&
+    !/^https:\/\/(g\.page|search\.google\.com|(www\.)?google\.[a-z.]+|maps\.app\.goo\.gl|goo\.gl|g\.co)\//i.test(googleReviewUrl)
+  ) {
+    return {
+      error:
+        "Link de avaliação inválido — no Perfil da Empresa, clique em \"Solicitar avaliações\" e copie o link (https://g.page/r/…/review).",
+    };
+  }
   const ano = Number((d.anoFundacao || "").trim());
   const anoFundacao = Number.isInteger(ano) && ano >= 1900 && ano <= new Date().getFullYear() ? ano : null;
   // Link da loja no Google Maps (Perfil da Empresa › Compartilhar).
@@ -122,6 +134,7 @@ export async function saveCompanyAction(
     googleAnalyticsId: googleAnalyticsId || null,
     googleSiteVerification: googleSiteVerification || null,
     metaPixelId: metaPixelId || null,
+    googleReviewUrl: googleReviewUrl || null,
     anoFundacao,
     googleMapsUrl: googleMapsUrl || null,
     // Parecer IA e consulta por placa: só o Super Admin mexe. Provedor/modelo
