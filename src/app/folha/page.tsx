@@ -16,6 +16,7 @@ import SalarioToggle from "./SalarioToggle";
 import AjustarSalario from "./AjustarSalario";
 import ImportarHolerite from "./ImportarHolerite";
 import PassarRecorrencia from "./PassarRecorrencia";
+import VincularVale from "./VincularVale";
 import {
   competenciaDe,
   competenciaValida,
@@ -250,10 +251,15 @@ export default async function FolhaPage({
                 <tbody>
                   {linhasFolha.map((e) => {
                     const s = salarios.get(e.id);
+                    // O que falta pagar: o próprio salário ou, se ele já foi pago, o vale
+                    // em aberto que vence primeiro (ex.: boleto do fornecedor).
+                    const emAberto = s
+                      ? [s.titulo, ...s.partes].filter((x) => x.status !== "PAGO").sort((a, b) => +a.dueDate - +b.dueDate)[0]
+                      : undefined;
                     const status = s
-                      ? s.aPagar <= 0.009
+                      ? s.aPagar <= 0.009 || !emAberto
                         ? "PAGO"
-                        : effectivePayableStatus(s.titulo.status === "PAGO" ? "PENDENTE" : s.titulo.status, s.titulo.dueDate)
+                        : effectivePayableStatus(emAberto.status, emAberto.dueDate)
                       : null;
                     return (
                       <Tr key={e.id}>
@@ -287,6 +293,12 @@ export default async function FolhaPage({
                         <Td className="text-right">
                           <span className="flex flex-col items-end gap-1">
                             {canManage ? <AjustarSalario employeeId={e.id} competencia={competencia} valor={s ? s.total : null} /> : null}
+                            {canManage && s ? <VincularVale employeeId={e.id} competencia={competencia} /> : null}
+                            {s && emAberto && emAberto.id !== s.titulo.id ? (
+                              <Link href={`/financeiro/a-pagar/${emAberto.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                                Vale a pagar em {formatDate(emAberto.dueDate)} →
+                              </Link>
+                            ) : null}
                             {s && s.titulo.status !== "PAGO" ? (
                               <Link href={`/financeiro/a-pagar/${s.titulo.id}`} className="text-xs font-medium text-blue-700 hover:underline">
                                 Pagar / dar vale →
