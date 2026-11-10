@@ -51,7 +51,7 @@ export default async function VendaDetalhePage({ params }: { params: Promise<{ i
   const nomeFormatado = primeiroNome ? primeiroNome[0].toUpperCase() + primeiroNome.slice(1).toLowerCase() : "";
   const msgAvaliacao =
     `Olá${nomeFormatado ? `, ${nomeFormatado}` : ""}! Aqui é da ${nomeDaLoja(company)}. ` +
-    `Obrigado por comprar o seu ${displayName(sale.vehicle.brand, sale.vehicle.model)} com a gente! 🚗\n\n` +
+    `Obrigado por comprar o seu ${displayName(sale.vehicle.brand, sale.vehicle.model)} com a gente!\n\n` +
     `A sua opinião ajuda muito outras pessoas a nos encontrarem. Pode avaliar a loja no Google? Leva menos de 1 minuto:\n${reviewUrl ?? ""}`;
   const linkAvaliacao =
     reviewUrl && telCliente.length >= 10
