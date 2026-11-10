@@ -197,7 +197,7 @@ async function aplicarLiquido(
   competencia: string,
   h: { totalVencimentos?: number | null; totalDescontos?: number | null; liquido: number },
   arquivo?: Awaited<ReturnType<typeof arquivoDoForm>>,
-): Promise<string> {
+): Promise<{ texto: string; alerta: boolean }> {
   const { salariosDaCompetencia } = await import("@/lib/folha");
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
@@ -211,6 +211,7 @@ async function aplicarLiquido(
   const atual = (await salariosDaCompetencia(competencia)).get(employeeId);
   let payableId: string;
   let resumo: string;
+  let alerta = false;
   if (!atual) {
     // Título novo: mesmas travas do "Gerar folha". Ajustar o valor de um título
     // que já existe é edição (como no Contas a pagar) e não passa por elas.
@@ -222,12 +223,31 @@ async function aplicarLiquido(
     const t = atual.titulo;
     const vales = r2(atual.total - t.amount);
     const saldo = r2(liquido - vales);
+    const notasCom = (extra: string) =>
+      [...(t.notes ?? "").split("\n").filter((l) => l.trim() && !l.startsWith("Holerite ")), extra].join("\n");
     if (t.status === "PAGO") {
-      if (Math.abs(saldo - t.amount) > 0.009) {
-        throw new Error(
-          `${employee.name}: o salário de ${competencia} já foi pago (${brl(atual.total)}). ` +
-            "Para mudar o valor, estorne o pagamento em Contas a pagar.",
-        );
+      // Mês já pago: o holerite entra como registro (anexo + observação) e o
+      // valor pago não muda. Diferença fica avisada para conferir.
+      const diferenca = r2(liquido - atual.total);
+      const divergente = Math.abs(diferenca) > 0.009;
+      await prisma.payable.update({
+        where: { id: t.id },
+        data: {
+          notes: notasCom(
+            divergente
+              ? `${linha} Pago ${brl(atual.total)} — diferença de ${brl(Math.abs(diferenca))} ${diferenca > 0 ? "a menos" : "a mais"} (conferir).`
+              : linha,
+          ),
+        },
+      });
+      payableId = t.id;
+      if (divergente) {
+        alerta = true;
+        resumo =
+          `${employee.name}: o holerite de ${competencia} é ${brl(liquido)}, mas foram pagos ${brl(atual.total)} ` +
+          `(${brl(Math.abs(diferenca))} ${diferenca > 0 ? "a menos" : "a mais"}). O valor pago não foi alterado — confira.`;
+      } else {
+        resumo = `${employee.name}: salário de ${competencia} já pago (${brl(liquido)}) — holerite registrado.`;
       }
     } else {
       if (t.paymentComboId || t.pendingPaymentDate) {
@@ -239,18 +259,12 @@ async function aplicarLiquido(
             "Confira os vales em Contas a pagar.",
         );
       }
+      await prisma.payable.update({ where: { id: t.id }, data: { amount: saldo, notes: notasCom(linha) } });
+      payableId = t.id;
+      resumo = vales
+        ? `${employee.name}: holerite ${brl(liquido)} − vales ${brl(vales)} = ${brl(saldo)} a pagar.`
+        : `${employee.name}: salário ajustado para ${brl(liquido)}.`;
     }
-    const notas = [
-      ...(t.notes ?? "")
-        .split("\n")
-        .filter((l) => l.trim() && !l.startsWith("Holerite ")),
-      linha,
-    ].join("\n");
-    await prisma.payable.update({ where: { id: t.id }, data: { amount: saldo, notes: notas } });
-    payableId = t.id;
-    resumo = vales
-      ? `${employee.name}: holerite ${brl(liquido)} − vales ${brl(vales)} = ${brl(saldo)} a pagar.`
-      : `${employee.name}: salário ajustado para ${brl(liquido)}.`;
   }
 
   if (arquivo) {
@@ -270,7 +284,7 @@ async function aplicarLiquido(
       }),
     ]);
   }
-  return resumo;
+  return { texto: resumo, alerta };
 }
 
 /** Ajuste manual: digita o líquido do holerite de um funcionário. */
@@ -285,9 +299,9 @@ export async function ajustarSalarioAction(
     if (!competenciaValida(competencia)) return { error: "Competência inválida." };
     const liquido = num(liquidoTexto);
     if (Number.isNaN(liquido) || liquido <= 0) return { error: "Informe o valor líquido do holerite." };
-    const ok = await aplicarLiquido(employeeId, competencia, { liquido });
+    const r = await aplicarLiquido(employeeId, competencia, { liquido });
     revalidarFolha(employeeId);
-    return { ok };
+    return r.alerta ? { error: r.texto } : { ok: r.texto };
   } catch (e) {
     return { error: e instanceof Error ? e.message : "Não foi possível ajustar o salário." };
   }
@@ -400,7 +414,8 @@ export async function aplicarHoleriteAction(
           resultados.push({ ok: true, texto: `${e.name}: não recebe salário pela folha (só comissão) — ignorado.` });
           continue;
         }
-        resultados.push({ ok: true, texto: await aplicarLiquido(employeeId, competencia, item, arquivo) });
+        const r = await aplicarLiquido(employeeId, competencia, item, arquivo);
+        resultados.push({ ok: !r.alerta, texto: r.texto });
         revalidatePath(`/folha/${employeeId}`);
       } catch (err) {
         resultados.push({ ok: false, texto: err instanceof Error ? err.message : `${item.nome}: falhou.` });
