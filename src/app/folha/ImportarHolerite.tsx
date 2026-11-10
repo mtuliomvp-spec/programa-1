@@ -80,6 +80,7 @@ export default function ImportarHolerite({ competenciaPadrao }: { competenciaPad
           totalVencimentos: l.totalVencimentos,
           totalDescontos: l.totalDescontos,
           liquido,
+          paginas: l.paginas,
         });
       }
       setErro(null);
@@ -203,7 +204,7 @@ export default function ImportarHolerite({ competenciaPadrao }: { competenciaPad
           </div>
           <p className="text-xs text-slate-500">
             O líquido vira o valor do salário da competência. Vales e adiantamentos já pagos são descontados do saldo a
-            pagar, e o PDF fica anexado ao título.
+            pagar, e cada título recebe só as páginas do holerite daquele funcionário.
           </p>
           <Button type="button" onClick={aplicar} disabled={pending}>
             {pending ? "Aplicando…" : "Aplicar na folha"}

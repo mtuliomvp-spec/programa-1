@@ -21,6 +21,7 @@ const itemSchema = z.object({
   totalVencimentos: z.number().nullable(),
   totalDescontos: z.number().nullable(),
   liquido: z.number(),
+  paginas: z.array(z.number().int()),
 });
 
 const holeriteSchema = z.object({
@@ -48,7 +49,7 @@ const JSON_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["nome", "cargo", "salarioBase", "totalVencimentos", "totalDescontos", "liquido"],
+        required: ["nome", "cargo", "salarioBase", "totalVencimentos", "totalDescontos", "liquido", "paginas"],
         properties: {
           nome: { type: "string", description: "nome completo do empregado como está no holerite" },
           cargo: { type: ["string", "null"], description: "cargo/função" },
@@ -56,6 +57,11 @@ const JSON_SCHEMA = {
           totalVencimentos: num("total de vencimentos/proventos"),
           totalDescontos: num("total de descontos (INSS, IRRF, vale...)"),
           liquido: { type: "number", description: "Valor Líquido a receber" },
+          paginas: {
+            type: "array",
+            items: { type: "integer" },
+            description: "páginas do arquivo (1 = primeira) que trazem o holerite DESTE empregado, incluindo as vias repetidas",
+          },
         },
       },
     },
@@ -66,8 +72,9 @@ const SYSTEM_PROMPT =
   "Você lê holerites brasileiros (demonstrativo de pagamento de salário) emitidos pela contabilidade. " +
   "Regras: 1) Um item por empregado: o PDF costuma trazer duas vias iguais de cada holerite — liste cada " +
   "empregado UMA vez. 2) Valores como número com ponto decimal (1.650,77 → 1650.77). 3) O líquido é o " +
-  "campo 'Valor Líquido'. 4) Competência no formato MM/AAAA, tirada do período do holerite. 5) Não invente: " +
-  "o que não estiver no documento vai null. 6) Responda somente com o JSON pedido.";
+  "campo 'Valor Líquido'. 4) Em 'paginas', liste as páginas do arquivo onde está o holerite de cada " +
+  "empregado (1 = primeira página). 5) Competência no formato MM/AAAA, tirada do período do holerite. 6) Não invente: " +
+  "o que não estiver no documento vai null. 7) Responda somente com o JSON pedido.";
 
 const IMAGENS = ["image/jpeg", "image/png", "image/gif", "image/webp"] as const;
 
