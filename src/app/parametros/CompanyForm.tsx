@@ -276,7 +276,7 @@ export default function CompanyForm({
             <Input
               name="googleSiteVerification"
               defaultValue={company.googleSiteVerification || ""}
-              placeholder="cole o código ou a meta tag inteira"
+              placeholder="código, meta tag ou nome do arquivo googleXXXX.html"
             />
           </Field>
           <Field label="Loja existe desde (ano)">

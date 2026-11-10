@@ -90,7 +90,13 @@ export async function saveCompanyAction(
   }
   // Search Console: aceita só o código ou a meta tag inteira colada.
   const verif = (d.googleSiteVerification || "").trim();
-  const googleSiteVerification = (verif.match(/content=["']([^"']+)["']/)?.[1] ?? verif).trim();
+  // Ou o NOME do arquivo HTML de verificação (googleXXXX.html), que o site
+  // passa a servir na raiz do domínio.
+  const googleSiteVerification = (
+    verif.match(/google[0-9a-f]{8,32}\.html/i)?.[0] ??
+    verif.match(/content=["']([^"']+)["']/)?.[1] ??
+    verif
+  ).trim();
   // Pixel da Meta: só números (o Gerenciador de Eventos mostra "ID do pixel").
   const metaPixelId = (d.metaPixelId || "").replace(/\s/g, "");
   if (metaPixelId && !/^\d{10,20}$/.test(metaPixelId)) {
