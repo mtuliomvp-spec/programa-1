@@ -11,7 +11,9 @@ export default async function robots(): Promise<MetadataRoute.Robots> {
     // ela, o Google não podia ler a home e mostrava o site sem descrição
     // ("Nenhuma informação disponível para esta página").
     // "/google*.html": arquivo de verificação do Search Console.
-    rules: [{ userAgent: "*", allow: ["/$", "/vitrine", "/google*.html"], disallow: "/" }],
+    // "/sitemap.xml": o próprio sitemap — o "Disallow: /" o bloqueava e o
+    // Search Console respondia "Não foi possível buscar o sitemap".
+    rules: [{ userAgent: "*", allow: ["/$", "/vitrine", "/google*.html", "/sitemap.xml"], disallow: "/" }],
     sitemap: `${base}/sitemap.xml`,
   };
 }
