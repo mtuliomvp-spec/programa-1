@@ -316,17 +316,18 @@ export default async function FolhaPage({
                             {canManage ? <AjustarSalario employeeId={e.id} competencia={competencia} valor={s ? s.total : null} /> : null}
                             {canManage && s ? <VincularVale employeeId={e.id} competencia={competencia} /> : null}
                             {s && emAberto && emAberto.id !== s.titulo.id ? (
-                              <Link href={`/financeiro/a-pagar/${emAberto.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                              <Link href={`/financeiro/a-pagar?q=${emAberto.orderNumber}`} className="text-xs font-medium text-blue-700 hover:underline">
                                 Vale a pagar em {formatDate(emAberto.dueDate)} →
                               </Link>
                             ) : null}
                             {s && s.titulo.status !== "PAGO" ? (
-                              <Link href={`/financeiro/a-pagar/${s.titulo.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                              <Link href={`/financeiro/a-pagar?q=${s.titulo.orderNumber}`} className="text-xs font-medium text-blue-700 hover:underline">
                                 Pagar / dar vale →
                               </Link>
-                            ) : s ? (
-                              <Link href={`/financeiro/a-pagar/${s.titulo.id}`} className="text-xs text-slate-500 hover:underline">
-                                Ver título →
+                            ) : null}
+                            {s ? (
+                              <Link href={`/financeiro/a-pagar/${s.titulo.id}/ordem`} className="text-xs text-slate-500 hover:underline">
+                                Ver título e holerite →
                               </Link>
                             ) : null}
                           </span>
