@@ -1301,6 +1301,8 @@ model Sale {
   // carro ainda está no nome do dono anterior (multa e ponto continuam caindo
   // para ele). Não confundir com transferCharged, que é só a cobrança.
   transferDoneAt             DateTime?
+  // Pedido de avaliação no Google enviado ao comprador (botão da venda).
+  reviewRequestedAt          DateTime?
   // Comissão do vendedor sobre o retorno da financeira (calculada no registro):
   // vira conta a pagar (Comissão) e reduz o resultado por competência.
   returnCommissionAmount     Float                @default(0)
@@ -2294,6 +2296,9 @@ model CompanySettings {
   // aos anúncios (ViewContent, com o mesmo id do catálogo) e os leads
   // (clique no WhatsApp/telefone) para os anúncios de catálogo.
   metaPixelId              String?
+  // Link público "Solicitar avaliações" do Perfil da Empresa no Google: o
+  // botão da venda manda ao comprador pelo WhatsApp.
+  googleReviewUrl          String?
   // Ano de fundação da loja (vai para os dados estruturados do Google e para o
   // texto da vitrine: "desde 2001").
   anoFundacao              Int?
