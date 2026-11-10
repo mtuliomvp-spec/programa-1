@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Button, Field, Input } from "@/components/ui";
 import {
   loginAction,
@@ -148,7 +148,8 @@ export default function LoginForm({ isSetup, next, loja }: { isSetup: boolean; n
 
   return (
     <div className="space-y-4">
-      <form action={loginFormAction} className="space-y-4">
+      <AvisoCookies voltouParaLogin={Boolean(next)} />
+      <form action={loginFormAction} onSubmit={marcarTentativa} className="space-y-4">
         {loginState.error ? (
           <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
             {loginState.error}
@@ -181,6 +182,81 @@ export default function LoginForm({ isSetup, next, loja }: { isSetup: boolean; n
           Esqueci a senha
         </button>
       </div>
+    </div>
+  );
+}
+
+const CHAVE_TENTATIVA = "fincore:login-em";
+
+/** Guarda a hora do envio do login (para perceber se a pessoa "caiu" logo depois). */
+function marcarTentativa() {
+  try {
+    sessionStorage.setItem(CHAVE_TENTATIVA, String(Date.now()));
+  } catch {
+    // Armazenamento bloqueado: o próprio AvisoCookies já acusa.
+  }
+}
+
+/** O navegador guarda cookies? (o acesso ao sistema depende do cookie de sessão) */
+function cookiesFuncionam(): boolean {
+  try {
+    if (!navigator.cookieEnabled) return false;
+    const teste = `fincore_teste=${Date.now()}`;
+    document.cookie = `${teste}; path=/; SameSite=Lax`;
+    const ok = document.cookie.includes(teste);
+    document.cookie = "fincore_teste=; path=/; max-age=0";
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Aviso de navegador que não guarda o acesso. Sintoma típico no celular: a
+ * pessoa entra, vê a primeira tela e, ao trocar de tela, volta para o login —
+ * o cookie da sessão não foi guardado (cookies bloqueados no Safari/Chrome ou
+ * navegador interno de outro app). Duas pistas: o teste de cookie falha, ou a
+ * pessoa voltou para cá poucos minutos depois de entrar.
+ */
+function AvisoCookies({ voltouParaLogin }: { voltouParaLogin: boolean }) {
+  const [motivo, setMotivo] = useState<"bloqueado" | "caiu" | null>(null);
+
+  useEffect(() => {
+    let caiu = false;
+    try {
+      const em = Number(sessionStorage.getItem(CHAVE_TENTATIVA) || 0);
+      caiu = voltouParaLogin && em > 0 && Date.now() - em < 10 * 60 * 1000;
+      sessionStorage.removeItem(CHAVE_TENTATIVA);
+    } catch {
+      // sessionStorage bloqueado também é sinal de cookies bloqueados.
+    }
+    const bloqueado = !cookiesFuncionam();
+    // Só depois de montar: o teste usa APIs do navegador.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setMotivo(bloqueado ? "bloqueado" : caiu ? "caiu" : null);
+  }, [voltouParaLogin]);
+
+  if (!motivo) return null;
+  return (
+    <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-700 dark:bg-amber-950/40 dark:text-amber-200">
+      <p className="font-semibold">
+        {motivo === "bloqueado"
+          ? "Este navegador está bloqueando os cookies — sem eles o sistema não guarda o seu acesso."
+          : "Você acabou de entrar e o sistema pediu o login de novo: o navegador não guardou o acesso."}
+      </p>
+      <ul className="mt-2 list-disc space-y-1 pl-5">
+        <li>
+          <strong>iPhone:</strong> Ajustes → Apps → Safari → desligue <em>Bloquear Todos os Cookies</em>.
+        </li>
+        <li>
+          <strong>Android (Chrome):</strong> ⋮ → Configurações → Configurações do site → Cookies de terceiros / Dados
+          do site → <em>Permitir</em>.
+        </li>
+        <li>
+          Se abriu pelo link do WhatsApp ou Instagram, toque em ⋯ e escolha <em>Abrir no navegador</em> (Safari ou
+          Chrome).
+        </li>
+      </ul>
     </div>
   );
 }
