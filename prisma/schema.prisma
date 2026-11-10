@@ -1965,6 +1965,9 @@ model Employee {
   admissionDate DateTime              @default(now())
   dismissalDate DateTime?
   active        Boolean               @default(true)
+  // Recebe SALÁRIO pela folha (o título mensal do holerite). Desligado = só
+  // comissão das vendas — férias e 13º continuam valendo normalmente.
+  recebeSalario Boolean               @default(true)
   notes         String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt

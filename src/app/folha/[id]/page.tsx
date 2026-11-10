@@ -19,6 +19,7 @@ import RescisaoForm from "./RescisaoForm";
 import EditarFuncionario from "./EditarFuncionario";
 import ExcluirLancamento from "./ExcluirLancamento";
 import AnexarDocumento from "./AnexarDocumento";
+import SalarioToggle from "../SalarioToggle";
 import { usuariosParaFuncionario } from "@/lib/usuarios-funcionarios";
 
 export const dynamic = "force-dynamic";
@@ -143,6 +144,16 @@ export default async function FuncionarioPage({
         description={`${e.role || "Sem cargo"} · admissão ${formatDate(e.admissionDate)} · salário ${formatCurrency(e.salary)}${
           e.active ? "" : ` · desligado${e.dismissalDate ? ` em ${formatDate(e.dismissalDate)}` : ""}`
         }`}
+        action={
+          <span className="flex flex-col items-end gap-1 text-xs text-slate-500">
+            Recebe salário pela folha
+            {podeGerir ? (
+              <SalarioToggle id={e.id} on={e.recebeSalario} />
+            ) : (
+              <span>{e.recebeSalario ? "Sim" : "Não — só comissão"}</span>
+            )}
+          </span>
+        }
       />
       {e.user ? (
         <p className="-mt-2 mb-4 text-sm text-slate-500">
