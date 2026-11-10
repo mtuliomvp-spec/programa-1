@@ -428,6 +428,125 @@ export async function aplicarHoleriteAction(
   }
 }
 
+export type TituloParaVale =
+  | { ok: true; id: string; orderNumber: number; descricao: string; valor: number; fornecedor: string | null; vencimento: string; pago: boolean }
+  | { ok: false; erro: string };
+
+/** Confere um título (pelo nº da ordem de pagamento) antes de virar vale do salário. */
+async function tituloParaVale(orderNumber: number, raizId: string): Promise<TituloParaVale> {
+  const t = await prisma.payable.findUnique({
+    where: { orderNumber },
+    select: {
+      id: true,
+      orderNumber: true,
+      description: true,
+      amount: true,
+      status: true,
+      dueDate: true,
+      partialOfId: true,
+      employeeId: true,
+      supplier: { select: { name: true } },
+      vehicleCost: { select: { id: true } },
+      vehicle: { select: { plate: true } },
+    },
+  });
+  if (!t) return { ok: false, erro: `Não achei a ordem de pagamento nº ${orderNumber}.` };
+  if (t.id === raizId) return { ok: false, erro: "Esse é o próprio título do salário." };
+  if (t.partialOfId && t.partialOfId !== raizId) {
+    return { ok: false, erro: "Esse título já é parte de outro pagamento (vale ou parcial de outro título)." };
+  }
+  if (t.vehicleCost || t.vehicle) {
+    return {
+      ok: false,
+      erro: `Esse título está ligado ao veículo${t.vehicle?.plate ? ` ${t.vehicle.plate}` : ""} (custo do carro). Tire o vínculo no Contas a pagar antes.`,
+    };
+  }
+  return {
+    ok: true,
+    id: t.id,
+    orderNumber: t.orderNumber,
+    descricao: t.description,
+    valor: t.amount,
+    fornecedor: t.supplier?.name ?? null,
+    vencimento: formatarDia(t.dueDate),
+    pago: t.status === "PAGO",
+  };
+}
+
+async function raizDoSalario(employeeId: string, competencia: string) {
+  const { competenciaValida, salariosDaCompetencia } = await import("@/lib/folha");
+  if (!competenciaValida(competencia)) throw new Error("Competência inválida.");
+  const s = (await salariosDaCompetencia(competencia)).get(employeeId);
+  if (!s) throw new Error(`O salário de ${competencia} ainda não foi lançado na folha.`);
+  return s;
+}
+
+/** Prévia do título que vai virar vale (o usuário confirma antes). */
+export async function buscarTituloParaValeAction(
+  employeeId: string,
+  competencia: string,
+  numero: string,
+): Promise<TituloParaVale> {
+  try {
+    await assertCan("administrativo", "folha");
+    const n = Number(String(numero).replace(/\D/g, ""));
+    if (!n) return { ok: false, erro: "Informe o nº da ordem de pagamento (aparece no Contas a pagar e no PDF da ordem)." };
+    const raiz = await raizDoSalario(employeeId, competencia);
+    return await tituloParaVale(n, raiz.titulo.id);
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : "Não foi possível buscar o título." };
+  }
+}
+
+/**
+ * Liga um título que já existe (ex.: compra que o funcionário fez em nome da
+ * loja, paga ao fornecedor) ao salário da competência como VALE: ele passa a
+ * contar como parte do salário — a folha soma salário + vales = holerite — e
+ * vira despesa de salário (categoria Salário, rótulo Vale), sem mudar valor,
+ * vencimento nem fornecedor.
+ */
+export async function vincularValeAction(
+  employeeId: string,
+  competencia: string,
+  numero: string,
+): Promise<{ ok?: string; error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    const raiz = await raizDoSalario(employeeId, competencia);
+    const t = await tituloParaVale(Number(String(numero).replace(/\D/g, "")), raiz.titulo.id);
+    if (!t.ok) return { error: t.erro };
+    const employee = await prisma.employee.findUnique({ where: { id: employeeId }, select: { name: true } });
+    await prisma.$transaction([
+      prisma.payable.update({
+        where: { id: t.id },
+        data: { partialOfId: raiz.titulo.id, employeeId, category: "SALARIO", categoryLabel: "Vale (adiantamento)" },
+      }),
+      prisma.payable.update({
+        where: { id: raiz.titulo.id },
+        data: {
+          notes: [
+            ...(raiz.titulo.notes ?? "")
+              .split("\n")
+              .map((l) => l.replace(/ Pago R\$ [^—]+— diferença de R\$ [\d.,]+ a (menos|mais) \(conferir\)\./, ""))
+              .filter((l) => l.trim()),
+            `Vale vinculado: ordem nº ${t.orderNumber}${t.fornecedor ? ` (${t.fornecedor})` : ""}, ${brl(t.valor)}, vence ${t.vencimento}.`,
+          ].join("\n"),
+        },
+      }),
+    ]);
+    revalidarFolha(employeeId);
+    revalidatePath(`/financeiro/a-pagar/${t.id}`);
+    const total = r2(raiz.total + t.valor);
+    return {
+      ok:
+        `Ordem nº ${t.orderNumber} (${brl(t.valor)}) vinculada como vale do salário de ${competencia} de ${employee?.name ?? "funcionário"}. ` +
+        `Salário + vales = ${brl(total)}.${t.pago ? "" : ` O título continua a pagar em ${t.vencimento}.`}`,
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível vincular o título." };
+  }
+}
+
 /**
  * Passa um salário que estava como RECORRÊNCIA no Contas a pagar para a folha:
  * a recorrência é encerrada e os títulos dela ganham o funcionário e a
