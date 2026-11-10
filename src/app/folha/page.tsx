@@ -20,6 +20,7 @@ import VincularVale from "./VincularVale";
 import {
   competenciaDe,
   competenciaValida,
+  liquidoDoHolerite,
   nomeCasa,
   normalizarNome,
   salariosDaCompetencia,
@@ -273,7 +274,27 @@ export default async function FolhaPage({
                             <span className="block text-xs font-normal text-amber-700">salário do cadastro — falta o holerite</span>
                           ) : null}
                         </Td>
-                        <Td className="text-right tabular-nums">{s ? formatCurrency(s.total) : "—"}</Td>
+                        <Td className="text-right tabular-nums">
+                          {(() => {
+                            if (!s) return "—";
+                            // O holerite manda: se os títulos (salário + vales) não somam o
+                            // líquido dele, a diferença aparece para vincular o vale que falta.
+                            const liq = liquidoDoHolerite(s.titulo.notes);
+                            const dif = liq === null ? 0 : Math.round((liq - s.total) * 100) / 100;
+                            return (
+                              <>
+                                {formatCurrency(liq ?? s.total)}
+                                {Math.abs(dif) > 0.009 ? (
+                                  <span className="block text-xs font-medium text-amber-700">
+                                    {dif > 0
+                                      ? `faltam ${formatCurrency(dif)} — vincule o vale`
+                                      : `pago ${formatCurrency(-dif)} a mais`}
+                                  </span>
+                                ) : null}
+                              </>
+                            );
+                          })()}
+                        </Td>
                         <Td className="text-right tabular-nums">
                           {s && s.pago > 0 ? formatCurrency(s.pago) : "—"}
                           {s && s.partes.length ? (

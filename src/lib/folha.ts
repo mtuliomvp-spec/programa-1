@@ -148,3 +148,11 @@ export async function salariosDaCompetencia(c: string): Promise<Map<string, Sala
   }
   return out;
 }
+
+/** Líquido gravado pelo holerite nas observações do título ("… líquido R$ 1.976,06."). */
+export function liquidoDoHolerite(notes: string | null | undefined): number | null {
+  const m = notes?.match(/Holerite \d{2}\/\d{4}:[^\n]*?líquido R\$\s?([\d.]+,\d{2})/);
+  if (!m) return null;
+  const n = Number(m[1].replace(/\./g, "").replace(",", "."));
+  return Number.isFinite(n) ? n : null;
+}
