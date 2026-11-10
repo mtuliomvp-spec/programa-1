@@ -535,7 +535,7 @@ export async function vincularValeAction(
       }),
     ]);
     revalidarFolha(employeeId);
-    revalidatePath(`/financeiro/a-pagar/${t.id}`);
+    revalidatePath(`/financeiro/a-pagar/${t.id}/ordem`);
     const total = r2(raiz.total + t.valor);
     return {
       ok:

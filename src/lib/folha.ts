@@ -65,6 +65,7 @@ export function nomeCasa(cadastro: string, holerite: string): boolean {
 
 type TituloFolha = {
   id: string;
+  orderNumber: number;
   description: string;
   amount: number;
   status: "PENDENTE" | "PAGO" | "ATRASADO";
@@ -89,6 +90,7 @@ export type SalarioDaFolha = {
 
 const SELECT_TITULO = {
   id: true,
+  orderNumber: true,
   description: true,
   amount: true,
   status: true,
