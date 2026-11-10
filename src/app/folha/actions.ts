@@ -79,67 +79,408 @@ export async function toggleEmployeeAction(id: string, active: boolean) {
   revalidatePath("/folha");
 }
 
-/** Gera a folha do mês corrente: uma conta a pagar por funcionário ativo,
- * com vencimento no dia 5 do mês seguinte. Idempotente por competência. */
-export async function generatePayrollAction(): Promise<{ created: number }> {
+/** Liga/desliga o salário pela folha (desligado = só comissão). */
+export async function setRecebeSalarioAction(id: string, recebeSalario: boolean) {
   await assertCan("administrativo", "folha");
-  await assertBooksBalanced();
-  await assertCashboxOpen();
-  const now = new Date();
-  const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
-  const dueDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 5, 12));
+  await prisma.employee.update({ where: { id }, data: { recebeSalario } });
+  revalidatePath("/folha");
+  revalidatePath(`/folha/${id}`);
+}
 
-  const employees = await prisma.employee.findMany({ where: { active: true } });
-  let created = 0;
-  // Férias que caem neste mês: o salário do mês muda (os dias de férias já
-  // foram pagos no recibo) — o título leva o aviso para conferir.
-  const inicioMes = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1, 0));
-  const fimMes = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59));
-  const feriasDoMes = await prisma.employeeVacation.findMany({
-    where: { gozoInicio: { lte: fimMes }, gozoFim: { gte: inicioMes } },
-    select: { employeeId: true, gozoInicio: true, gozoFim: true },
+const r2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Avisos de férias que caem no mês da competência (o salário do mês muda). */
+async function avisosDeFerias(competencia: string, employeeId: string): Promise<string[]> {
+  const [mes, ano] = competencia.split("/").map(Number);
+  const inicioMes = new Date(Date.UTC(ano, mes - 1, 1, 0));
+  const fimMes = new Date(Date.UTC(ano, mes, 0, 23, 59));
+  const ferias = await prisma.employeeVacation.findMany({
+    where: { employeeId, gozoInicio: { lte: fimMes }, gozoFim: { gte: inicioMes } },
+    select: { gozoInicio: true, gozoFim: true },
   });
+  return ferias.map(
+    (f) =>
+      `Férias de ${formatarDia(f.gozoInicio)} a ${formatarDia(f.gozoFim)} neste mês (pagas no recibo de férias): ` +
+      "confira o salário do mês com a contabilidade.",
+  );
+}
 
+/** Cria o título de salário da competência (valor = salário do cadastro até chegar o holerite). */
+async function criarTituloDeSalario(
+  employee: { id: string; name: string; salary: number; pixKey: string | null },
+  competencia: string,
+  amount: number,
+  linhaHolerite?: string,
+) {
+  const { descricaoDoSalario, vencimentoDoSalario } = await import("@/lib/folha");
   const adminCenterId = await structuralCenterId("ADMINISTRATIVO");
-  for (const employee of employees) {
-    if (employee.salary <= 0) continue;
-    const description = `Salário ${employee.name} - ${competencia}`;
-    const existing = await prisma.payable.findFirst({
-      where: { employeeId: employee.id, description },
-      select: { id: true },
-    });
-    if (existing) continue;
-    await prisma.payable.create({
-      data: {
-        description,
-        category: "SALARIO",
-        amount: employee.salary,
-        dueDate,
-        status: "PENDENTE",
-        employeeId: employee.id,
-        notes:
-          [
-            employee.pixKey ? `PIX: ${employee.pixKey}` : null,
-            ...feriasDoMes
-              .filter((f) => f.employeeId === employee.id)
-              .map(
-                (f) =>
-                  `Férias de ${formatarDia(f.gozoInicio)} a ${formatarDia(f.gozoFim)} neste mês (pagas no recibo de férias): ` +
-                  "confira o salário do mês com a contabilidade.",
-              ),
-          ]
-            .filter(Boolean)
-            .join(" ") || null,
-        costCenterId: adminCenterId,
-      },
-    });
-    created++;
+  const notas = [
+    employee.pixKey ? `PIX: ${employee.pixKey}` : null,
+    linhaHolerite ?? null,
+    ...(await avisosDeFerias(competencia, employee.id)),
+  ].filter(Boolean);
+  return prisma.payable.create({
+    data: {
+      description: descricaoDoSalario(employee.name, competencia),
+      category: "SALARIO",
+      amount: r2(amount),
+      dueDate: vencimentoDoSalario(competencia),
+      status: "PENDENTE",
+      employeeId: employee.id,
+      referencePeriod: competencia,
+      notes: notas.join("\n") || null,
+      costCenterId: adminCenterId,
+    },
+    select: { id: true },
+  });
+}
+
+/**
+ * Gera a folha da competência (padrão: mês corrente): um título por
+ * funcionário ativo que RECEBE SALÁRIO pela folha, vencendo no dia 5 do mês
+ * seguinte. Idempotente: quem já tem o salário da competência fica como está.
+ */
+export async function generatePayrollAction(competencia?: string): Promise<{ created: number; error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    const { competenciaDe, competenciaValida, salariosDaCompetencia } = await import("@/lib/folha");
+    const comp = competenciaValida(competencia) ? competencia : competenciaDe(new Date());
+    const [mes, ano] = comp.split("/").map(Number);
+    const fimMes = new Date(Date.UTC(ano, mes, 0, 23, 59));
+
+    const [employees, existentes] = await Promise.all([
+      prisma.employee.findMany({ where: { active: true, recebeSalario: true, admissionDate: { lte: fimMes } } }),
+      salariosDaCompetencia(comp),
+    ]);
+    let created = 0;
+    for (const employee of employees) {
+      if (employee.salary <= 0 || existentes.has(employee.id)) continue;
+      await criarTituloDeSalario(employee, comp, employee.salary);
+      created++;
+    }
+    revalidatePath("/folha");
+    revalidatePath("/financeiro/a-pagar");
+    revalidatePath("/");
+    return { created };
+  } catch (e) {
+    return { created: 0, error: e instanceof Error ? e.message : "Não foi possível gerar a folha." };
+  }
+}
+
+/** Linha das observações do título com o resumo do holerite. */
+function linhaDoHolerite(
+  competencia: string,
+  h: { totalVencimentos?: number | null; totalDescontos?: number | null; liquido: number },
+): string {
+  return (
+    `Holerite ${competencia}: ` +
+    [
+      h.totalVencimentos ? `vencimentos ${brl(h.totalVencimentos)}` : null,
+      h.totalDescontos ? `descontos ${brl(h.totalDescontos)}` : null,
+      `líquido ${brl(h.liquido)}`,
+    ]
+      .filter(Boolean)
+      .join(", ") +
+    "."
+  );
+}
+
+/**
+ * Põe o LÍQUIDO do holerite no salário da competência. Os vales já tirados
+ * (partes do título) continuam valendo: o saldo a pagar vira líquido − vales.
+ * Cria o título se a folha do mês ainda não foi gerada.
+ */
+async function aplicarLiquido(
+  employeeId: string,
+  competencia: string,
+  h: { totalVencimentos?: number | null; totalDescontos?: number | null; liquido: number },
+  arquivo?: Awaited<ReturnType<typeof arquivoDoForm>>,
+): Promise<string> {
+  const { salariosDaCompetencia } = await import("@/lib/folha");
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    select: { id: true, name: true, salary: true, pixKey: true },
+  });
+  if (!employee) throw new Error("Funcionário não encontrado.");
+  const liquido = r2(h.liquido);
+  if (!(liquido > 0)) throw new Error("Informe o valor líquido do holerite.");
+  const linha = linhaDoHolerite(competencia, h);
+
+  const atual = (await salariosDaCompetencia(competencia)).get(employeeId);
+  let payableId: string;
+  let resumo: string;
+  if (!atual) {
+    // Título novo: mesmas travas do "Gerar folha". Ajustar o valor de um título
+    // que já existe é edição (como no Contas a pagar) e não passa por elas.
+    await assertBooksBalanced();
+    await assertCashboxOpen();
+    payableId = (await criarTituloDeSalario(employee, competencia, liquido, linha)).id;
+    resumo = `${employee.name}: salário de ${competencia} lançado com ${brl(liquido)}.`;
+  } else {
+    const t = atual.titulo;
+    const vales = r2(atual.total - t.amount);
+    const saldo = r2(liquido - vales);
+    if (t.status === "PAGO") {
+      if (Math.abs(saldo - t.amount) > 0.009) {
+        throw new Error(
+          `${employee.name}: o salário de ${competencia} já foi pago (${brl(atual.total)}). ` +
+            "Para mudar o valor, estorne o pagamento em Contas a pagar.",
+        );
+      }
+    } else {
+      if (t.paymentComboId || t.pendingPaymentDate) {
+        throw new Error(`${employee.name}: o salário está num combo ou pré-lançado — ajuste o valor em Contas a pagar.`);
+      }
+      if (!(saldo > 0)) {
+        throw new Error(
+          `${employee.name}: os vales já tirados (${brl(vales)}) cobrem o holerite (${brl(liquido)}). ` +
+            "Confira os vales em Contas a pagar.",
+        );
+      }
+    }
+    const notas = [
+      ...(t.notes ?? "")
+        .split("\n")
+        .filter((l) => l.trim() && !l.startsWith("Holerite ")),
+      linha,
+    ].join("\n");
+    await prisma.payable.update({ where: { id: t.id }, data: { amount: saldo, notes: notas } });
+    payableId = t.id;
+    resumo = vales
+      ? `${employee.name}: holerite ${brl(liquido)} − vales ${brl(vales)} = ${brl(saldo)} a pagar.`
+      : `${employee.name}: salário ajustado para ${brl(liquido)}.`;
   }
 
-  revalidatePath("/folha");
-  revalidatePath("/financeiro/a-pagar");
-  revalidatePath("/");
-  return { created };
+  if (arquivo) {
+    const descricao = `Holerite ${competencia}`;
+    await prisma.$transaction([
+      prisma.payableAttachment.deleteMany({ where: { payableId, description: descricao } }),
+      prisma.payableAttachment.create({
+        data: {
+          payableId,
+          kind: "OUTRO",
+          description: descricao,
+          filename: arquivo.nome,
+          mimeType: arquivo.mime,
+          size: arquivo.dados.length,
+          data: arquivo.dados,
+        },
+      }),
+    ]);
+  }
+  return resumo;
+}
+
+/** Ajuste manual: digita o líquido do holerite de um funcionário. */
+export async function ajustarSalarioAction(
+  employeeId: string,
+  competencia: string,
+  liquidoTexto: string,
+): Promise<{ ok?: string; error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    const { competenciaValida } = await import("@/lib/folha");
+    if (!competenciaValida(competencia)) return { error: "Competência inválida." };
+    const liquido = num(liquidoTexto);
+    if (Number.isNaN(liquido) || liquido <= 0) return { error: "Informe o valor líquido do holerite." };
+    const ok = await aplicarLiquido(employeeId, competencia, { liquido });
+    revalidarFolha(employeeId);
+    return { ok };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível ajustar o salário." };
+  }
+}
+
+export type ItemHoleriteLido = {
+  nome: string;
+  cargo: string | null;
+  salarioBase: number | null;
+  totalVencimentos: number | null;
+  totalDescontos: number | null;
+  liquido: number;
+  /** Funcionário do cadastro que casa com o nome do holerite. */
+  employeeId: string | null;
+};
+
+export type LeituraHolerite =
+  | {
+      ok: true;
+      competencia: string | null;
+      itens: ItemHoleriteLido[];
+      funcionarios: { id: string; name: string; recebeSalario: boolean; active: boolean }[];
+    }
+  | { ok: false; erro: string };
+
+/** Lê o PDF de holerites da contabilidade e casa cada um com o cadastro. */
+export async function lerHoleriteAction(formData: FormData): Promise<LeituraHolerite> {
+  try {
+    await assertCan("administrativo", "folha");
+    const arq = await arquivoDoForm(formData, "arquivo");
+    if (!arq) return { ok: false, erro: "Escolha o arquivo do holerite." };
+    const [{ lerHolerite }, { nomeCasa }] = await Promise.all([import("@/lib/holerite-ai"), import("@/lib/folha")]);
+    const [lido, funcionarios] = await Promise.all([
+      lerHolerite(arq.dados.toString("base64"), arq.mime),
+      prisma.employee.findMany({
+        orderBy: [{ active: "desc" }, { name: "asc" }],
+        select: { id: true, name: true, recebeSalario: true, active: true },
+      }),
+    ]);
+    const itens = lido.itens.map((i) => ({
+      ...i,
+      employeeId: funcionarios.find((f) => f.active && nomeCasa(f.name, i.nome))?.id ?? null,
+    }));
+    return { ok: true, competencia: lido.competencia, itens, funcionarios };
+  } catch (e) {
+    return { ok: false, erro: e instanceof Error ? e.message : "Não foi possível ler o holerite." };
+  }
+}
+
+const itemAplicarSchema = z.object({
+  /** id do funcionário, "novo" (cadastrar) ou "" (ignorar). */
+  destino: z.string(),
+  nome: z.string(),
+  cargo: z.string().nullable(),
+  salarioBase: z.number().nullable(),
+  totalVencimentos: z.number().nullable(),
+  totalDescontos: z.number().nullable(),
+  liquido: z.number(),
+});
+
+function nomeProprio(nome: string): string {
+  const minusculas = new Set(["de", "da", "do", "das", "dos", "e"]);
+  return nome
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .map((p, i) => (i > 0 && minusculas.has(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
+/**
+ * Aplica o holerite conferido: cada item vai para o salário da competência do
+ * funcionário escolhido (cadastrando quem ainda não existe), com o PDF anexado
+ * ao título. Quem não recebe salário pela folha é pulado.
+ */
+export async function aplicarHoleriteAction(
+  formData: FormData,
+): Promise<{ resultados: { ok: boolean; texto: string }[]; error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    const { competenciaValida } = await import("@/lib/folha");
+    const competencia = String(formData.get("competencia") || "");
+    if (!competenciaValida(competencia)) return { resultados: [], error: "Informe a competência (MM/AAAA)." };
+    const itens = z.array(itemAplicarSchema).safeParse(JSON.parse(String(formData.get("itens") || "[]")));
+    if (!itens.success) return { resultados: [], error: "Itens do holerite inválidos." };
+    const arquivo = await arquivoDoForm(formData, "arquivo");
+
+    const resultados: { ok: boolean; texto: string }[] = [];
+    for (const item of itens.data) {
+      if (!item.destino) continue;
+      try {
+        let employeeId = item.destino;
+        if (employeeId === "novo") {
+          const novo = await prisma.employee.create({
+            data: {
+              name: nomeProprio(item.nome),
+              role: item.cargo ? nomeProprio(item.cargo) : null,
+              salary: r2(item.salarioBase ?? item.totalVencimentos ?? item.liquido),
+              admissionDate: new Date(),
+              notes: "Cadastrada pela importação do holerite — confira a data de admissão.",
+            },
+            select: { id: true, name: true },
+          });
+          employeeId = novo.id;
+          resultados.push({ ok: true, texto: `${novo.name} cadastrado(a) — confira a data de admissão na ficha.` });
+        }
+        const e = await prisma.employee.findUnique({ where: { id: employeeId }, select: { name: true, recebeSalario: true } });
+        if (!e) throw new Error("Funcionário não encontrado.");
+        if (!e.recebeSalario) {
+          resultados.push({ ok: true, texto: `${e.name}: não recebe salário pela folha (só comissão) — ignorado.` });
+          continue;
+        }
+        resultados.push({ ok: true, texto: await aplicarLiquido(employeeId, competencia, item, arquivo) });
+        revalidatePath(`/folha/${employeeId}`);
+      } catch (err) {
+        resultados.push({ ok: false, texto: err instanceof Error ? err.message : `${item.nome}: falhou.` });
+      }
+    }
+    revalidarFolha("");
+    return { resultados };
+  } catch (e) {
+    return { resultados: [], error: e instanceof Error ? e.message : "Não foi possível aplicar o holerite." };
+  }
+}
+
+/**
+ * Passa um salário que estava como RECORRÊNCIA no Contas a pagar para a folha:
+ * a recorrência é encerrada e os títulos dela ganham o funcionário e a
+ * competência (o vencimento no mês M é o salário de M−1). Os que ainda estão a
+ * pagar passam a aparecer na folha — e o "Gerar folha" não duplica.
+ */
+export async function passarRecorrenciaParaFolhaAction(
+  recurringId: string,
+  employeeId: string,
+): Promise<{ ok?: string; error?: string }> {
+  try {
+    await assertCan("administrativo", "folha");
+    const { competenciaPeloVencimento, descricaoDoSalario, salariosDaCompetencia } = await import("@/lib/folha");
+    const [rec, employee] = await Promise.all([
+      prisma.recurringEntry.findUnique({
+        where: { id: recurringId },
+        select: { id: true, description: true, amount: true, kind: true, categoryPagar: true },
+      }),
+      prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, name: true, salary: true } }),
+    ]);
+    if (!rec || rec.kind !== "PAGAR") return { error: "Recorrência não encontrada." };
+    if (!employee) return { error: "Escolha o funcionário." };
+
+    const titulos = await prisma.payable.findMany({
+      where: { recurringId, partialOfId: null },
+      select: { id: true, status: true, dueDate: true },
+      orderBy: { dueDate: "asc" },
+    });
+    let ligados = 0;
+    const pulados: string[] = [];
+    for (const t of titulos) {
+      const comp = competenciaPeloVencimento(t.dueDate);
+      const ja = (await salariosDaCompetencia(comp)).get(employeeId);
+      if (ja && ja.titulo.id !== t.id) {
+        pulados.push(comp);
+        continue;
+      }
+      await prisma.payable.update({
+        where: { id: t.id },
+        data: {
+          employeeId,
+          category: "SALARIO",
+          categoryLabel: null,
+          referencePeriod: comp,
+          ...(t.status === "PAGO" ? {} : { description: descricaoDoSalario(employee.name, comp) }),
+        },
+      });
+      // Vales já tirados desse título acompanham.
+      await prisma.payable.updateMany({ where: { partialOfId: t.id }, data: { employeeId } });
+      ligados++;
+    }
+    await prisma.$transaction([
+      prisma.recurringEntry.update({ where: { id: recurringId }, data: { active: false, endDate: new Date() } }),
+      prisma.employee.update({
+        where: { id: employeeId },
+        data: { recebeSalario: true, ...(employee.salary > 0 ? {} : { salary: rec.amount }) },
+      }),
+    ]);
+    revalidatePath("/financeiro/recorrentes");
+    revalidarFolha(employeeId);
+    return {
+      ok:
+        `"${rec.description}" encerrada e passada para a folha de ${employee.name} (${ligados} título(s) ligados).` +
+        (pulados.length ? ` Já havia salário na folha em ${pulados.join(", ")} — confira se não ficou em dobro.` : ""),
+    };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Não foi possível passar a recorrência para a folha." };
+  }
 }
 
 // ---------------------------------------------------------------------------

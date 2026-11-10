@@ -29,6 +29,7 @@ export const AI_FEATURES = {
   parecer: "Parecer IA",
   ajuda: "Chat de ajuda",
   trabalhista: "Recibo de férias / TRCT",
+  holerite: "Holerite da folha",
 } as const;
 
 export type AiFeature = keyof typeof AI_FEATURES;

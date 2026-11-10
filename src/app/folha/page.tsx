@@ -12,6 +12,19 @@ import { userCan } from "@/lib/guards";
 import EmployeeForm from "./EmployeeForm";
 import EmployeeRowActions from "./EmployeeRowActions";
 import GeneratePayrollButton from "./GeneratePayrollButton";
+import SalarioToggle from "./SalarioToggle";
+import AjustarSalario from "./AjustarSalario";
+import ImportarHolerite from "./ImportarHolerite";
+import PassarRecorrencia from "./PassarRecorrencia";
+import {
+  competenciaDe,
+  competenciaValida,
+  nomeCasa,
+  normalizarNome,
+  salariosDaCompetencia,
+  somaMeses,
+  vencimentoDoSalario,
+} from "@/lib/folha";
 
 export const dynamic = "force-dynamic";
 
@@ -21,15 +34,19 @@ const statusLabel = { PENDENTE: "Pendente", PAGO: "Pago", ATRASADO: "Atrasado" }
 export default async function FolhaPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; min?: string; max?: string }>;
+  searchParams: Promise<{ q?: string; min?: string; max?: string; comp?: string }>;
 }) {
-  const { q: qParam, min, max } = await searchParams;
+  const { q: qParam, min, max, comp } = await searchParams;
   const q = (qParam || "").trim();
   const canManage = await userCan("administrativo", "folha");
   const now = new Date();
-  const competencia = `${String(now.getUTCMonth() + 1).padStart(2, "0")}/${now.getUTCFullYear()}`;
+  // Até o dia 10 o que está na mesa é a folha do mês anterior (o holerite
+  // chega e o salário vence no dia 5); depois, a do mês corrente.
+  const competencia = competenciaValida(comp)
+    ? comp
+    : competenciaDe(new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (now.getUTCDate() <= 10 ? 1 : 0), 1, 12)));
 
-  const [allEmployees, payrollItems] = await Promise.all([
+  const [allEmployees, salarios, recorrencias] = await Promise.all([
     prisma.employee.findMany({
       orderBy: [{ active: "desc" }, { name: "asc" }],
       include: {
@@ -37,10 +54,19 @@ export default async function FolhaPage({
         user: { select: { email: true } },
       },
     }),
-    prisma.payable.findMany({
-      where: { category: "SALARIO", employeeId: { not: null }, description: { contains: competencia } },
-      orderBy: { description: "asc" },
-    }),
+    salariosDaCompetencia(competencia),
+    // Salários que ainda estão como recorrência no Contas a pagar.
+    canManage
+      ? prisma.recurringEntry.findMany({
+          where: {
+            active: true,
+            kind: "PAGAR",
+            OR: [{ categoryPagar: "SALARIO" }, { description: { contains: "salári", mode: "insensitive" } }],
+          },
+          select: { id: true, description: true, amount: true, dayOfMonth: true },
+          orderBy: { description: "asc" },
+        })
+      : Promise.resolve([]),
   ]);
 
   const employees = allEmployees.filter(
@@ -49,8 +75,20 @@ export default async function FolhaPage({
       inValueRange(e.salary, min, max),
   );
   const active = employees.filter((e) => e.active);
-  const monthlyTotal = active.reduce((s, e) => s + e.salary, 0);
-  const payrollTotal = payrollItems.reduce((s, p) => s + p.amount, 0);
+  const monthlyTotal = active.filter((e) => e.recebeSalario).reduce((s, e) => s + e.salary, 0);
+  // Linhas da folha: quem recebe salário (ativo) e quem já tem título na competência.
+  const linhasFolha = allEmployees.filter((e) => salarios.has(e.id) || (e.active && e.recebeSalario));
+  const soComissao = allEmployees.filter((e) => e.active && !e.recebeSalario && !salarios.has(e.id));
+  const folhaTotal = [...salarios.values()].reduce((s, x) => s + x.total, 0);
+  const folhaAPagar = [...salarios.values()].reduce((s, x) => s + x.aPagar, 0);
+  const sugestaoDe = (descricao: string) => {
+    const ativos = allEmployees.filter((e) => e.active);
+    const cheio = ativos.find((e) => nomeCasa(e.name, descricao));
+    if (cheio) return cheio.id;
+    const palavras = new Set(normalizarNome(descricao));
+    const porNome = ativos.filter((e) => palavras.has(normalizarNome(e.name)[0] ?? ""));
+    return porNome.length === 1 ? porNome[0].id : null;
+  };
   const [alertas, usuarios] = await Promise.all([
     alertasDaFolha(now),
     canManage ? usuariosParaFuncionario() : Promise.resolve([]),
@@ -63,7 +101,7 @@ export default async function FolhaPage({
       <PageHeader
         title="Folha de pagamento"
         description={`${active.length} funcionário(s) ativo(s) · folha mensal estimada: ${formatCurrency(monthlyTotal)}`}
-        action={canManage ? <GeneratePayrollButton /> : undefined}
+        action={canManage ? <ImportarHolerite competenciaPadrao={competencia} /> : undefined}
       />
 
       <ReportToolbar
@@ -78,11 +116,11 @@ export default async function FolhaPage({
 
       <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard label="Funcionários ativos" value={String(active.length)} />
-        <StatCard label="Folha mensal (salários)" value={formatCurrency(monthlyTotal)} />
+        <StatCard label="Folha mensal (salários do cadastro)" value={formatCurrency(monthlyTotal)} />
         <StatCard
-          label={`Folha gerada (${competencia})`}
-          value={payrollItems.length > 0 ? formatCurrency(payrollTotal) : "—"}
-          hint={payrollItems.length > 0 ? `${payrollItems.length} lançamento(s)` : "clique em Gerar folha do mês"}
+          label={`Folha de ${competencia} — a pagar`}
+          value={salarios.size > 0 ? formatCurrency(folhaAPagar) : "—"}
+          hint={salarios.size > 0 ? `de ${formatCurrency(folhaTotal)} (${salarios.size} salário(s))` : "folha ainda não gerada"}
         />
       </div>
 
@@ -140,7 +178,18 @@ export default async function FolhaPage({
                       </Td>
                       <Td>{e.role || "—"}</Td>
                       <Td className="max-w-[160px] truncate">{e.pixKey || "—"}</Td>
-                      <Td className="text-right tabular-nums">{formatCurrency(e.salary)}</Td>
+                      <Td className="text-right">
+                        <span className={`tabular-nums ${e.recebeSalario ? "" : "text-slate-400 line-through"}`}>
+                          {formatCurrency(e.salary)}
+                        </span>
+                        <span className="mt-1 flex justify-end">
+                          {canManage ? (
+                            <SalarioToggle id={e.id} on={e.recebeSalario} />
+                          ) : !e.recebeSalario ? (
+                            <span className="text-xs text-slate-500">Só comissão</span>
+                          ) : null}
+                        </span>
+                      </Td>
                       <Td>
                         {(() => {
                           const f = feriasDe(e);
@@ -172,44 +221,142 @@ export default async function FolhaPage({
           <Card>
             <CardHeader
               title={`Folha de ${competencia}`}
-              description="Salários lançados como contas a pagar (vencimento dia 5 do mês seguinte)"
+              description={`Salário = líquido do holerite · vence em ${formatDate(vencimentoDoSalario(competencia))} · vales e adiantamentos são pagamentos parciais do salário`}
+              action={
+                <span className="flex items-center gap-1 text-sm print:hidden">
+                  <Link href={`/folha?comp=${somaMeses(competencia, -1)}`} className="whitespace-nowrap rounded px-2 py-1 text-blue-700 hover:bg-slate-100">
+                    ‹ {somaMeses(competencia, -1)}
+                  </Link>
+                  <Link href={`/folha?comp=${somaMeses(competencia, 1)}`} className="whitespace-nowrap rounded px-2 py-1 text-blue-700 hover:bg-slate-100">
+                    {somaMeses(competencia, 1)} ›
+                  </Link>
+                </span>
+              }
             />
-            {payrollItems.length === 0 ? (
-              <p className="px-5 py-4 text-sm text-slate-500">
-                Folha ainda não gerada para este mês. Use o botão &quot;Gerar folha do mês&quot;.
-              </p>
+            {linhasFolha.length === 0 ? (
+              <p className="px-5 py-4 text-sm text-slate-500">Nenhum funcionário recebe salário pela folha.</p>
             ) : (
               <Table>
                 <Thead>
                   <Tr>
-                    <Th>Descrição</Th>
-                    <Th>Vencimento</Th>
-                    <Th className="text-right">Valor</Th>
+                    <Th>Funcionário</Th>
+                    <Th className="text-right">Holerite</Th>
+                    <Th className="text-right">Vales / pago</Th>
+                    <Th className="text-right">A pagar</Th>
                     <Th>Status</Th>
+                    <Th />
                   </Tr>
                 </Thead>
                 <tbody>
-                  {payrollItems.map((p) => {
-                    const effective = effectivePayableStatus(p.status, p.dueDate);
+                  {linhasFolha.map((e) => {
+                    const s = salarios.get(e.id);
+                    const status = s
+                      ? s.aPagar <= 0.009
+                        ? "PAGO"
+                        : effectivePayableStatus(s.titulo.status === "PAGO" ? "PENDENTE" : s.titulo.status, s.titulo.dueDate)
+                      : null;
                     return (
-                      <Tr key={p.id}>
-                        <Td className="font-medium text-slate-900">{p.description}</Td>
-                        <Td>{formatDate(p.dueDate)}</Td>
-                        <Td className="text-right tabular-nums">{formatCurrency(p.amount)}</Td>
+                      <Tr key={e.id}>
+                        <Td className="font-medium text-slate-900">
+                          <Link href={`/folha/${e.id}`} className="text-blue-700 hover:underline">
+                            {e.name}
+                          </Link>
+                          {s?.titulo.notes?.includes("Holerite ") ? (
+                            <span className="block text-xs font-normal text-emerald-700">✓ holerite lançado</span>
+                          ) : s ? (
+                            <span className="block text-xs font-normal text-amber-700">salário do cadastro — falta o holerite</span>
+                          ) : null}
+                        </Td>
+                        <Td className="text-right tabular-nums">{s ? formatCurrency(s.total) : "—"}</Td>
+                        <Td className="text-right tabular-nums">
+                          {s && s.pago > 0 ? formatCurrency(s.pago) : "—"}
+                          {s && s.partes.length ? (
+                            <span className="block text-xs text-slate-400">
+                              {s.partes.length} vale(s){s.partes.some((p) => p.status !== "PAGO") ? " · há vale a confirmar" : ""}
+                            </span>
+                          ) : null}
+                        </Td>
+                        <Td className="text-right font-semibold tabular-nums">{s ? formatCurrency(s.aPagar) : "—"}</Td>
                         <Td>
-                          <Badge tone={statusTone[effective]}>{statusLabel[effective]}</Badge>
+                          {status ? (
+                            <Badge tone={statusTone[status]}>{statusLabel[status]}</Badge>
+                          ) : (
+                            <span className="text-xs text-slate-400">não gerado</span>
+                          )}
+                        </Td>
+                        <Td className="text-right">
+                          <span className="flex flex-col items-end gap-1">
+                            {canManage ? <AjustarSalario employeeId={e.id} competencia={competencia} valor={s ? s.total : null} /> : null}
+                            {s && s.titulo.status !== "PAGO" ? (
+                              <Link href={`/financeiro/a-pagar/${s.titulo.id}`} className="text-xs font-medium text-blue-700 hover:underline">
+                                Pagar / dar vale →
+                              </Link>
+                            ) : s ? (
+                              <Link href={`/financeiro/a-pagar/${s.titulo.id}`} className="text-xs text-slate-500 hover:underline">
+                                Ver título →
+                              </Link>
+                            ) : null}
+                          </span>
                         </Td>
                       </Tr>
                     );
                   })}
+                  {salarios.size ? (
+                    <Tr>
+                      <Td className="font-semibold">Total</Td>
+                      <Td className="text-right font-semibold tabular-nums">{formatCurrency(folhaTotal)}</Td>
+                      <Td className="text-right tabular-nums">
+                        {formatCurrency([...salarios.values()].reduce((t, x) => t + x.pago, 0))}
+                      </Td>
+                      <Td className="text-right font-semibold tabular-nums">{formatCurrency(folhaAPagar)}</Td>
+                      <Td>{null}</Td>
+                      <Td>{null}</Td>
+                    </Tr>
+                  ) : null}
                 </tbody>
               </Table>
             )}
-            <p className="px-5 py-3 text-xs text-slate-400">
-              A baixa dos salários é feita em Contas a pagar (ou pela Conciliação bancária).
-              Adiantamentos e comissões podem ser lançados manualmente com a categoria Salário/Comissão.
-            </p>
+            {soComissao.length ? (
+              <p className="px-5 pt-3 text-xs text-slate-500">
+                Só comissão (fora da folha de salário): {soComissao.map((e) => e.name).join(", ")}. Férias e 13º continuam
+                na ficha de cada um.
+              </p>
+            ) : null}
+            <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 print:hidden">
+              <p className="max-w-xl text-xs text-slate-400">
+                Gere a folha para lançar o salário do cadastro; quando o contador mandar o holerite, importe o PDF (ou
+                ajuste o líquido à mão). Vale ou adiantamento: em &quot;Pagar / dar vale&quot;, use o pagamento parcial —
+                o saldo fica a pagar.
+              </p>
+              {canManage ? <GeneratePayrollButton competencia={competencia} /> : null}
+            </div>
           </Card>
+
+          {recorrencias.length ? (
+            <Card className="border-l-4 border-l-amber-400">
+              <CardHeader
+                title="Salários ainda lançados como recorrência"
+                description="Agora a folha cuida dos salários. Passe cada recorrência para a folha — ela é encerrada e os títulos dela entram na folha, sem lançar em dobro."
+              />
+              <ul className="divide-y divide-slate-100">
+                {recorrencias.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 text-sm">
+                    <span>
+                      <span className="font-medium text-slate-800">{r.description}</span>
+                      <span className="block text-xs text-slate-500">
+                        {formatCurrency(r.amount)} · todo dia {r.dayOfMonth}
+                      </span>
+                    </span>
+                    <PassarRecorrencia
+                      recurringId={r.id}
+                      sugestao={sugestaoDe(r.description)}
+                      funcionarios={allEmployees.filter((e) => e.active).map((e) => ({ id: e.id, name: e.name }))}
+                    />
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
         </div>
 
         {canManage ? (
