@@ -1,7 +1,7 @@
 "use client";
 
 import { quemRecebeLabel } from "@/lib/devolucao";
-import { startTransition, useActionState, useMemo, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { Button, Field, Input, Select, Textarea } from "@/components/ui";
 import { CHASSI_LENGTH, RENAVAM_LENGTH } from "@/lib/vehicle-doc";
 import BankInput from "@/components/BankInput";
@@ -108,7 +108,7 @@ const initialState: IntermediationFormState = {};
 /** Quem recebe a devolução (no refinanciamento é o próprio proprietário). */
 type Recebedor = "PROPRIETARIO" | "COMPRADOR" | "TERCEIRO";
 const SEM_BANCO: DadosBancarios = { bankName: "", bankAgency: "", bankAccount: "", bankAccountType: "", pixKey: "" };
-const CAMPOS_BANCO: [keyof DadosBancarios, string][] = [
+const CAMPOS_BANCO: [Exclude<keyof DadosBancarios, "origem">, string][] = [
   ["bankName", "buyerBankName"],
   ["bankAgency", "buyerBankAgency"],
   ["bankAccount", "buyerBankAccount"],
@@ -205,7 +205,7 @@ export default function IntermediationForm({
   const bancoAuto = useRef<DadosBancarios | null>(null);
   // O campo Banco tem estado próprio: troca de valor remontando com outra chave.
   const [bancoNome, setBancoNome] = useState({ valor: initial?.buyerBankName ?? "", n: 0 });
-  const [bancoMsg, setBancoMsg] = useState<string | null>(null);
+  const [bancoMsg, setBancoMsg] = useState<{ tone: "ok" | "aviso"; text: string } | null>(null);
   const aoTerceiro = !refinancing && refund > 0 && devolucaoPara === "TERCEIRO";
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
   const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
@@ -324,18 +324,56 @@ export default function IntermediationForm({
     setBancoNome((x) => ({ valor: novo.bankName, n: x.n + 1 }));
     bancoAuto.current = conhecido ? novo : null;
     const quem = para === "PROPRIETARIO" ? "do proprietário" : para === "TERCEIRO" ? "do terceiro" : "do comprador";
-    setBancoMsg(conhecido ? `Dados bancários ${quem} trazidos do cadastro de fornecedor. Confira antes de salvar.` : null);
+    setBancoMsg(
+      conhecido
+        ? {
+            tone: "ok",
+            text:
+              `Dados bancários ${quem} trazidos do cadastro de fornecedor` +
+              (conhecido.origem === "nome" ? " (achado pelo nome — o cadastro está sem CPF/CNPJ)" : "") +
+              ". Confira antes de salvar.",
+          }
+        : null,
+    );
+  }
+
+  /** Guarda a conta achada para `para`; aplica se for ele quem recebe, ou avisa que não há conta. */
+  function registrarBanco(para: Recebedor, banco: DadosBancarios | null, doc: string) {
+    bancosConhecidos.current[para] = banco;
+    if (recebedorAtual() !== para) return;
+    if (banco) {
+      aplicarBanco(para);
+      return;
+    }
+    const vazia = CAMPOS_BANCO.every(([, campo]) => !readField(campo));
+    if (vazia) {
+      setBancoMsg({
+        tone: "aviso",
+        text: `Nenhuma conta cadastrada para ${doc}: o cadastro de fornecedor com esse CPF/CNPJ não existe ou está sem dados bancários. Digite abaixo.`,
+      });
+    }
   }
 
   /** Busca a conta cadastrada de uma pessoa pelo CPF/CNPJ e aplica se for ela quem recebe. */
-  function buscarBanco(para: Recebedor, doc: string) {
+  function buscarBanco(para: Recebedor, doc: string, nome?: string) {
     if (!doc.trim()) return;
     startTransition(async () => {
-      const r = await findPersonByDocument(doc);
-      bancosConhecidos.current[para] = r.found ? r.banco : null;
-      if (recebedorAtual() === para) aplicarBanco(para);
+      const r = await findPersonByDocument(doc, nome);
+      registrarBanco(para, r.found ? r.banco : null, doc);
     });
   }
+
+  // Operação já salva (edição): a conta cadastrada do proprietário fica
+  // disponível sem precisar redigitar o CPF/CNPJ — e entra se os campos de
+  // dados bancários estiverem vazios.
+  const buscouInicial = useRef(false);
+  useEffect(() => {
+    if (buscouInicial.current) return;
+    buscouInicial.current = true;
+    const doc = initial?.ownerDocument;
+    if (doc) buscarBanco("PROPRIETARIO", doc, initial?.ownerName);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Preenche os dados do proprietário a partir de um cliente já cadastrado.
   function handlePickOwnerCustomer(id: string) {
@@ -348,7 +386,7 @@ export default function IntermediationForm({
     setField("ownerPhone", c.phone ?? undefined);
     setField("ownerAddress", c.address ?? undefined);
     setOwnerMsg({ tone: "ok", text: `Proprietário preenchido com o cliente ${c.name}.` });
-    if (c.document) buscarBanco("PROPRIETARIO", c.document);
+    if (c.document) buscarBanco("PROPRIETARIO", c.document, c.name);
   }
 
   // Ao sair do CPF/CNPJ, reaproveita um cadastro já existente (cliente OU
@@ -358,9 +396,8 @@ export default function IntermediationForm({
     const doc = readField("ownerDocument");
     if (!doc) return;
     startOwnerLookup(async () => {
-      const r = await findPersonByDocument(doc);
-      bancosConhecidos.current.PROPRIETARIO = r.found ? r.banco : null;
-      if (recebedorAtual() === "PROPRIETARIO") aplicarBanco("PROPRIETARIO");
+      const r = await findPersonByDocument(doc, readField("ownerName"));
+      registrarBanco("PROPRIETARIO", r.found ? r.banco : null, doc);
       if (!r.found) return;
       if (!readField("ownerName")) {
         setField("ownerName", r.data.name);
@@ -474,6 +511,9 @@ export default function IntermediationForm({
       return;
     }
     setOwnerMsg(null);
+    // A Receita não tem conta bancária: ela vem do cadastro de fornecedor —
+    // independe de a consulta na Receita dar certo.
+    buscarBanco("PROPRIETARIO", doc, readField("ownerName") || undefined);
     startOwnerLookup(async () => {
       const r = await lookupCnpjAction(doc);
       if (!r.ok) {
@@ -1096,7 +1136,11 @@ export default function IntermediationForm({
             <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
           </Field>
         </div>
-        {bancoMsg ? <p className="text-xs font-medium text-emerald-700">{bancoMsg}</p> : null}
+        {bancoMsg ? (
+          <p className={`text-xs font-medium ${bancoMsg.tone === "ok" ? "text-emerald-700" : "text-amber-700"}`}>
+            {bancoMsg.text}
+          </p>
+        ) : null}
       </fieldset>
 
       {/* Quitação do financiamento anterior: parte do valor financiado paga o

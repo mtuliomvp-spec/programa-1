@@ -2,7 +2,7 @@
 
 import { prisma } from "@/lib/prisma";
 import { canUseFormLookup } from "@/lib/guards";
-import { docKey } from "@/lib/person-keys";
+import { docKey, nameKey } from "@/lib/person-keys";
 import { lerEndereco, type Endereco } from "@/lib/endereco";
 
 export type PersonLookup =
@@ -27,6 +27,8 @@ export type PersonLookup =
     };
 
 export type DadosBancarios = {
+  /** Como o fornecedor foi achado: pelo CPF/CNPJ ou, sem documento no cadastro, pelo nome. */
+  origem?: "documento" | "nome";
   bankName: string;
   bankAgency: string;
   bankAccount: string;
@@ -40,7 +42,18 @@ export type DadosBancarios = {
  * reaproveitar os dados. Assim, ao cadastrar um fornecedor cujo documento já é
  * de um cliente (ou o contrário), os mesmos dados são trazidos.
  */
-export async function findPersonByDocument(documentRaw: string): Promise<PersonLookup> {
+/** Nome de empresa sem o tipo societário: "MEGA RENT A CAR LTDA ME" = "Mega Rent a Car Ltda". */
+function nomeEmpresaKey(nome: string | null | undefined): string {
+  const sem = (nome || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[.\/&-]/g, " ")
+    .replace(/\b(ltda|me|epp|eireli|mei|s ?a|cia|limitada)\b/g, " ");
+  return nameKey(sem);
+}
+
+export async function findPersonByDocument(documentRaw: string, nomeRaw?: string): Promise<PersonLookup> {
   const document = (documentRaw || "").trim();
   if (!document) return { found: false };
   // Consulta de dados cadastrais: exige permissão de criar/editar em algum
@@ -70,12 +83,22 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
     }),
   ]);
   const customer = customers.find((c) => docKey(c.document) === key) ?? null;
-  const supplier = suppliers.find((s) => docKey(s.document) === key) ?? null;
-  const person = customer ?? supplier;
-  if (!person) return { found: false };
+  const supplierDoc = suppliers.find((s) => docKey(s.document) === key) ?? null;
+  // Fornecedor cadastrado SEM CPF/CNPJ (comum em cadastro rápido): casa pelo
+  // nome da pessoa — o informado na tela ou o do cliente achado —, ignorando
+  // LTDA/ME/EPP. Só quando há exatamente um candidato.
+  let supplier = supplierDoc;
+  if (!supplier) {
+    const nomes = new Set([nomeEmpresaKey(nomeRaw), nomeEmpresaKey(customer?.name)].filter((k) => k.length >= 4));
+    const candidatos = suppliers.filter((s) => !docKey(s.document) && nomes.has(nomeEmpresaKey(s.name)));
+    if (candidatos.length === 1) supplier = candidatos[0];
+  }
+  const person = customer ?? supplierDoc ?? null;
+  if (!person && !supplier) return { found: false };
   const banco: DadosBancarios | null =
     supplier && (supplier.bankName || supplier.bankAccount || supplier.pixKey)
       ? {
+          origem: supplierDoc ? "documento" : "nome",
           bankName: supplier.bankName ?? "",
           bankAgency: supplier.bankAgency ?? "",
           bankAccount: supplier.bankAccount ?? "",
@@ -84,18 +107,19 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
         }
       : null;
 
+  const quem = person ?? supplier!;
   return {
     found: true,
     source: customer ? "cliente" : "fornecedor",
     data: {
-      name: person.name,
-      document: person.document ?? "",
+      name: quem.name,
+      document: quem.document || document,
       // O cliente achado primeiro pode estar incompleto: o que faltar vem do
       // cadastro de fornecedor da mesma pessoa.
-      phone: person.phone || supplier?.phone || "",
-      email: person.email || supplier?.email || "",
-      address: person.address || supplier?.address || "",
-      endereco: lerEndereco(person.endereco) ?? lerEndereco(supplier?.endereco ?? null),
+      phone: quem.phone || supplier?.phone || "",
+      email: quem.email || supplier?.email || "",
+      address: quem.address || supplier?.address || "",
+      endereco: lerEndereco(quem.endereco) ?? lerEndereco(supplier?.endereco ?? null),
     },
     banco,
   };
