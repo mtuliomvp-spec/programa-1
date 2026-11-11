@@ -497,6 +497,29 @@ export function seloCrlv({
   return { label: "⚠ CRLV pendente", tone: "warning" };
 }
 
+/**
+ * Selo da comunicação de venda de um veículo vendido:
+ *  - "✓ Comunicação de venda": comprovante anexado;
+ *  - "✕ Sem comunicação (já transferido)": não foi feita, mas o carro já está
+ *    no nome do comprador — não dá mais para comunicar, então deixa de ser
+ *    pendência (cinza), sem esconder que a comunicação não existe;
+ *  - "⚠ Comunicação pendente": não foi feita e ainda dá tempo.
+ */
+export function seloComunicacao(
+  d: Pick<SituacaoDocumental, "hasComunicacao" | "transferDoneAt">,
+  pendente = "⚠ Comunicação pendente",
+): { label: string; tone: "success" | "warning" | "default"; title?: string } {
+  if (d.hasComunicacao) return { label: "✓ Comunicação de venda", tone: "success" };
+  if (d.transferDoneAt) {
+    return {
+      label: "✕ Sem comunicação (já transferido)",
+      tone: "default",
+      title: "A comunicação de venda não foi feita, mas o veículo já foi transferido ao comprador — não há mais como comunicar.",
+    };
+  }
+  return { label: pendente, tone: "warning" };
+}
+
 /** Selo da foto do cliente: anexada, abonada (dispensada) ou pendente. */
 export function seloFotoCliente(d: Pick<SituacaoDocumental, "hasFotoCliente" | "fotoClienteAbonada">): {
   label: string;

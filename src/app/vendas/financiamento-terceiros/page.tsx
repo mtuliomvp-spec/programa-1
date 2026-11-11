@@ -8,6 +8,7 @@ import {
   houseNameKeys,
   situacaoDocumental,
   seloCrlv,
+  seloComunicacao,
   seloFotoCliente,
   TITULO_TRANSFERENCIA_DA_VENDA,
   type SituacaoDocumental,
@@ -61,9 +62,9 @@ function SelosDaOperacao({
         // do despachante que acerta o título já lançado no Contas a pagar.
         <Badge tone="warning">⚠ Orçamento transf. pendente</Badge>
       ) : null}
-      <Badge tone={doc.hasComunicacao ? "success" : "warning"}>
-        {doc.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
-      </Badge>
+      <span title={seloComunicacao(doc).title}>
+        <Badge tone={seloComunicacao(doc).tone}>{seloComunicacao(doc).label}</Badge>
+      </span>
       <Badge tone={seloFotoCliente(doc).tone}>{seloFotoCliente(doc).label}</Badge>
       {/* Refinanciamento não transfere nada: o veículo continua com o
           proprietário, que é o próprio financiado. */}
@@ -101,6 +102,8 @@ function docMatch(doc: SituacaoDocumental, refinancing: boolean, filtro: string 
       return doc.hasAtpv;
     case "COMUNICADO":
       return doc.hasComunicacao;
+    case "SEM_COMUNICACAO":
+      return !doc.hasComunicacao;
     // Parado: nem transferido, nem com processo correndo (orçamento, título do
     // despachante ou marca manual).
     case "SEM_PROCESSO":
@@ -257,6 +260,7 @@ export default async function FinanciamentoTerceirosListPage({
               <option value="CRLV_PENDENTE">CRLV pendente</option>
               <option value="ATPV">Com ATPV-e</option>
               <option value="COMUNICADO">Comunicado venda</option>
+              <option value="SEM_COMUNICACAO">Sem comunicação de venda</option>
               <option value="SEM_PROCESSO">Sem processo de transferência</option>
             </Select>
           </label>
