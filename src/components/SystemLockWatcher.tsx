@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toggleSystemLockAction } from "@/app/sistema/actions";
+import { APP_BUILD_ID } from "@/lib/app-version";
 
 /**
  * Bloqueio do sistema (modo manutenção, estilo Agrasty):
@@ -10,7 +11,14 @@ import { toggleSystemLockAction } from "@/app/sistema/actions";
  * - admin bloqueado: faixa vermelha fixa no topo com atalho para desbloquear;
  * - demais usuários: overlay cobrindo toda a tela;
  * - ao desbloquear, quem estava sob o overlay recarrega automaticamente
- *   (garante voltar já na versão nova após um deploy).
+ *   (garante voltar já na versão nova após um deploy);
+ * - SISTEMA ATUALIZADO com a tela aberta (a publicação do servidor não é a
+ *   desta tela): faixa pedindo para recarregar. Os botões de uma tela antiga
+ *   chamam funções que a versão nova não tem — sem o aviso, o clique caía na
+ *   página de erro sem gravar nada. No celular a aba volta do segundo plano
+ *   com a tela de ontem, por isso a consulta também roda ao voltar para a aba.
+ *   Não recarrega sozinho: quem saiu para buscar o comprovante no app do banco
+ *   perderia o que já tinha preenchido.
  */
 export default function SystemLockWatcher({
   initialLocked,
@@ -24,19 +32,37 @@ export default function SystemLockWatcher({
   const prevLocked = useRef(initialLocked);
   const [pending, startTransition] = useTransition();
   const [msg, setMsg] = useState<string | null>(null);
+  /** Versão publicada no servidor, quando não é a desta tela. */
+  const [novaVersao, setNovaVersao] = useState<string | null>(null);
 
   useEffect(() => {
-    const timer = setInterval(async () => {
+    async function consultar() {
       try {
         const r = await fetch("/api/system-lock", { cache: "no-store" });
         if (!r.ok) return;
-        const data = (await r.json()) as { locked: boolean };
+        const data = (await r.json()) as { locked: boolean; build?: string; versao?: string };
         setLocked(data.locked);
+        if (data.build && APP_BUILD_ID !== "dev" && data.build !== APP_BUILD_ID) {
+          setNovaVersao(data.versao ?? "nova");
+        }
       } catch {
         // rede indisponível: mantém o último estado conhecido
       }
-    }, 10_000);
-    return () => clearInterval(timer);
+    }
+    const timer = setInterval(consultar, 10_000);
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") void consultar();
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    window.addEventListener("pageshow", aoVoltar);
+    window.addEventListener("focus", aoVoltar);
+    void consultar();
+    return () => {
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", aoVoltar);
+      window.removeEventListener("pageshow", aoVoltar);
+      window.removeEventListener("focus", aoVoltar);
+    };
   }, []);
 
   useEffect(() => {
@@ -61,7 +87,27 @@ export default function SystemLockWatcher({
     });
   }
 
-  if (!locked) return null;
+  if (!locked) {
+    if (!novaVersao) return null;
+    return (
+      <div
+        role="alert"
+        className="fixed inset-x-0 top-0 z-[90] flex flex-wrap items-center justify-center gap-x-3 gap-y-1 bg-amber-500 px-4 py-2 text-center text-sm font-semibold text-slate-950 shadow"
+      >
+        <span>
+          🔄 O sistema foi atualizado{novaVersao !== "nova" ? ` (Versão ${novaVersao})` : ""}. Recarregue a página antes de
+          continuar — nesta tela antiga os botões podem não gravar.
+        </span>
+        <button
+          type="button"
+          onClick={() => window.location.reload()}
+          className="rounded-lg bg-slate-950 px-3 py-1 text-xs font-bold text-white hover:bg-slate-800"
+        >
+          Recarregar agora
+        </button>
+      </div>
+    );
+  }
 
   if (isAdmin) {
     return (
