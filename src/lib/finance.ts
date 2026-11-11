@@ -4100,6 +4100,8 @@ export async function desmembrarPagamentoParcial(id: string, amountToPay: number
       capitalBeneficiaryId: true,
       beneficiaryUserId: true,
       employeeId: true,
+      imovelId: true,
+      referencePeriod: true,
       notes: true,
       cardInvoice: true,
       paymentComboId: true,
@@ -4134,6 +4136,10 @@ export async function desmembrarPagamentoParcial(id: string, amountToPay: number
         capitalBeneficiaryId: p.capitalBeneficiaryId,
         beneficiaryUserId: p.beneficiaryUserId,
         employeeId: p.employeeId,
+        // A parte paga continua sendo do mesmo imóvel e da mesma competência
+        // (sem isso o pagamento parcial sumia da ficha do imóvel).
+        imovelId: p.imovelId,
+        referencePeriod: p.referencePeriod,
         notes: p.notes,
         // De onde a parte saiu: no combo, se ela sair do combo, volta a se
         // juntar ao saldo (em vez de ficar um título solto de "parcial").
