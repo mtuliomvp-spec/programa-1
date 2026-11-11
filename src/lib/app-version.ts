@@ -4,6 +4,8 @@
  */
 export const APP_VERSION = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
 export const APP_BUILD_DATE = process.env.NEXT_PUBLIC_APP_BUILD_DATE || "";
+/** Identidade da publicação: muda a cada deploy (a tela aberta compara com a do servidor). */
+export const APP_BUILD_ID = process.env.NEXT_PUBLIC_APP_BUILD_ID || "dev";
 
 /** "Versão 362" (ou "Versão 7d1da6c" / "Versão dev" fora de um merge de PR). */
 export function versaoLabel(): string {
