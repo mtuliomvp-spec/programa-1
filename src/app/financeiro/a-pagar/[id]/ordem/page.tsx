@@ -17,6 +17,7 @@ import PayableAttachments from "./PayableAttachments";
 import CopyBarcode from "@/components/CopyBarcode";
 import CopyPixKey from "@/components/CopyPixKey";
 import { formatBarcodeLine } from "@/lib/barcode-line";
+import { liquidoDoHolerite, partesDoSalario } from "@/lib/folha";
 
 export const dynamic = "force-dynamic";
 
@@ -216,8 +217,43 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     ]);
   }
 
+  // Salário com adiantamentos/vales: a ordem do SALDO mostra cada parte (data
+  // e valor) até fechar o total do salário — e confere com o holerite.
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const partes =
+    payable.category === "SALARIO" && payable.employeeId && !payable.partialOfId ? await partesDoSalario(payable.id) : [];
+  const composicaoRows: [string, string][] = [];
+  if (partes.length) {
+    // Rótulo curto (cabe na coluna do PDF); data e fornecedor vão no valor.
+    for (const pt of partes) {
+      composicaoRows.push([
+        `${pt.vinculado ? "Vale" : "Adiantamento"} nº ${pt.orderNumber}`,
+        `${formatCurrency(pt.valor)} — ${pt.pago ? `pago em ${formatDate(pt.data)}` : `a pagar, vence ${formatDate(pt.data)}`}` +
+          (pt.vinculado && pt.fornecedor ? ` (${pt.fornecedor})` : ""),
+      ]);
+    }
+    composicaoRows.push([
+      "Saldo (esta ordem)",
+      `${formatCurrency(payable.amount)}` +
+        (payable.status === "PAGO" && payable.paymentDate ? ` — pago em ${formatDate(payable.paymentDate)}` : ""),
+    ]);
+    const total = r2(payable.amount + partes.reduce((t, pt) => t + pt.valor, 0));
+    composicaoRows.push(["Total do salário", formatCurrency(total)]);
+    const liq = liquidoDoHolerite(payable.notes);
+    if (liq !== null) {
+      const dif = r2(liq - total);
+      composicaoRows.push([
+        "Líquido do holerite",
+        Math.abs(dif) > 0.009
+          ? `${formatCurrency(liq)} (diferença de ${formatCurrency(Math.abs(dif))} ${dif > 0 ? "a menos" : "a mais"})`
+          : `${formatCurrency(liq)} (confere)`,
+      ]);
+    }
+  }
+
   const sections: OrdemPdfData["sections"] = [
     { title: "Dados do título", rows: tituloRows },
+    ...(composicaoRows.length ? [{ title: "Composição do salário", rows: composicaoRows }] : []),
     { title: beneTitle, rows: fornecedorRows },
     { title: "Dados para pagamento", rows: pagamentoRows },
   ];
@@ -265,6 +301,14 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
             <Row key={label} label={label} value={value} />
           ))}
         </Section>
+
+        {composicaoRows.length ? (
+          <Section title="Composição do salário">
+            {composicaoRows.map(([label, value], i) => (
+              <Row key={i} label={label} value={value} strong={label === "Total do salário"} />
+            ))}
+          </Section>
+        ) : null}
 
         <div className="mb-4 flex items-center justify-between rounded-lg bg-slate-50 px-4 py-3">
           <span className="text-sm font-semibold uppercase tracking-wide text-slate-500">

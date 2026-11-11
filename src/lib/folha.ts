@@ -158,3 +158,57 @@ export function liquidoDoHolerite(notes: string | null | undefined): number | nu
   const n = Number(m[1].replace(/\./g, "").replace(",", "."));
   return Number.isFinite(n) ? n : null;
 }
+
+export type ParteDoSalario = {
+  id: string;
+  orderNumber: number;
+  descricao: string;
+  valor: number;
+  pago: boolean;
+  /** Pagamento (se pago) ou vencimento. */
+  data: Date;
+  fornecedor: string | null;
+  /** Vale vinculado (título de terceiro, ex.: boleto de fornecedor) × adiantamento (pagamento parcial). */
+  vinculado: boolean;
+};
+
+/**
+ * Adiantamentos e vales de um título de salário (todas as partes que saíram
+ * dele, inclusive parte de parte), em ordem de data — para a ordem de
+ * pagamento do saldo mostrar como se chega ao total do salário.
+ */
+export async function partesDoSalario(raizId: string): Promise<ParteDoSalario[]> {
+  const out: ParteDoSalario[] = [];
+  let fronteira = [raizId];
+  while (fronteira.length) {
+    const filhos = await prisma.payable.findMany({
+      where: { partialOfId: { in: fronteira } },
+      select: {
+        id: true,
+        orderNumber: true,
+        description: true,
+        amount: true,
+        status: true,
+        paymentDate: true,
+        dueDate: true,
+        categoryLabel: true,
+        supplier: { select: { name: true } },
+      },
+    });
+    for (const f of filhos) {
+      const pago = f.status === "PAGO";
+      out.push({
+        id: f.id,
+        orderNumber: f.orderNumber,
+        descricao: f.description,
+        valor: f.amount,
+        pago,
+        data: pago ? (f.paymentDate ?? f.dueDate) : f.dueDate,
+        fornecedor: f.supplier?.name ?? null,
+        vinculado: f.categoryLabel === "Vale (adiantamento)" && !/\(pagamento parcial\)$/.test(f.description),
+      });
+    }
+    fronteira = filhos.map((f) => f.id);
+  }
+  return out.sort((a, b) => +a.data - +b.data || a.orderNumber - b.orderNumber);
+}
