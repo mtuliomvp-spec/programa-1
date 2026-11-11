@@ -18,7 +18,22 @@ export type PersonLookup =
         address: string;
         endereco: Endereco | null;
       };
+      /**
+       * Dados bancários do cadastro de FORNECEDOR com esse documento (o cliente
+       * não guarda conta). Vem mesmo quando a pessoa foi achada como cliente:
+       * quem é cliente e fornecedor tem a conta no cadastro de fornecedor.
+       */
+      banco: DadosBancarios | null;
     };
+
+export type DadosBancarios = {
+  bankName: string;
+  bankAgency: string;
+  bankAccount: string;
+  /** "corrente" | "poupanca" | "" (como no cadastro de fornecedor). */
+  bankAccountType: string;
+  pixKey: string;
+};
 
 /**
  * Procura uma pessoa já cadastrada (cliente OU fornecedor) pelo CPF/CNPJ, para
@@ -39,13 +54,35 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
   const [customers, suppliers] = await Promise.all([
     prisma.customer.findMany({ select: { name: true, document: true, phone: true, email: true, address: true, endereco: true } }),
     prisma.supplier.findMany({
-      select: { name: true, document: true, phone: true, email: true, address: true, endereco: true },
+      select: {
+        name: true,
+        document: true,
+        phone: true,
+        email: true,
+        address: true,
+        endereco: true,
+        bankName: true,
+        bankAgency: true,
+        bankAccount: true,
+        bankAccountType: true,
+        pixKey: true,
+      },
     }),
   ]);
   const customer = customers.find((c) => docKey(c.document) === key) ?? null;
   const supplier = suppliers.find((s) => docKey(s.document) === key) ?? null;
   const person = customer ?? supplier;
   if (!person) return { found: false };
+  const banco: DadosBancarios | null =
+    supplier && (supplier.bankName || supplier.bankAccount || supplier.pixKey)
+      ? {
+          bankName: supplier.bankName ?? "",
+          bankAgency: supplier.bankAgency ?? "",
+          bankAccount: supplier.bankAccount ?? "",
+          bankAccountType: supplier.bankAccountType ?? "",
+          pixKey: supplier.pixKey ?? "",
+        }
+      : null;
 
   return {
     found: true,
@@ -53,10 +90,13 @@ export async function findPersonByDocument(documentRaw: string): Promise<PersonL
     data: {
       name: person.name,
       document: person.document ?? "",
-      phone: person.phone ?? "",
-      email: person.email ?? "",
-      address: person.address ?? "",
-      endereco: lerEndereco(person.endereco),
+      // O cliente achado primeiro pode estar incompleto: o que faltar vem do
+      // cadastro de fornecedor da mesma pessoa.
+      phone: person.phone || supplier?.phone || "",
+      email: person.email || supplier?.email || "",
+      address: person.address || supplier?.address || "",
+      endereco: lerEndereco(person.endereco) ?? lerEndereco(supplier?.endereco ?? null),
     },
+    banco,
   };
 }

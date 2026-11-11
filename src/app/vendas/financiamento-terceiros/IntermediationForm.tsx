@@ -12,7 +12,8 @@ import NewSupplierInline from "@/components/NewSupplierInline";
 import { lookupPlateAction } from "@/app/estoque/actions";
 import { lookupCnpjAction } from "@/app/cnpj-actions";
 import { lookupCepAction } from "@/app/cep-actions";
-import { findPersonByDocument } from "@/app/person-lookup";
+import { findPersonByDocument, type DadosBancarios } from "@/app/person-lookup";
+import { nomeDoBanco } from "@/lib/banks";
 import { toDateInputValue, formatCurrency } from "@/lib/format";
 import { computeReturn, retornoLabel, RETORNO_NIVEIS } from "@/lib/retorno";
 import {
@@ -104,6 +105,29 @@ function toDateBr(iso: string): string {
 
 const initialState: IntermediationFormState = {};
 
+/** Quem recebe a devolução (no refinanciamento é o próprio proprietário). */
+type Recebedor = "PROPRIETARIO" | "COMPRADOR" | "TERCEIRO";
+const SEM_BANCO: DadosBancarios = { bankName: "", bankAgency: "", bankAccount: "", bankAccountType: "", pixKey: "" };
+const CAMPOS_BANCO: [keyof DadosBancarios, string][] = [
+  ["bankName", "buyerBankName"],
+  ["bankAgency", "buyerBankAgency"],
+  ["bankAccount", "buyerBankAccount"],
+  ["bankAccountType", "buyerBankAccountType"],
+  ["pixKey", "buyerPixKey"],
+];
+
+/** Conta do cadastro (fornecedor) no formato dos campos deste formulário. */
+function bancoParaTela(b: DadosBancarios): DadosBancarios {
+  const tipo = b.bankAccountType.toLowerCase();
+  return {
+    bankName: nomeDoBanco(b.bankName),
+    bankAgency: b.bankAgency,
+    bankAccount: b.bankAccount,
+    bankAccountType: tipo.startsWith("poup") ? "Conta poupança" : tipo.startsWith("corr") ? "Conta corrente" : "",
+    pixKey: b.pixKey,
+  };
+}
+
 export default function IntermediationForm({
   customers,
   financers,
@@ -170,6 +194,18 @@ export default function IntermediationForm({
   // rótulo acompanha a escolha para ninguém digitar a conta do comprador
   // quando quem recebe é o vendedor.
   const quemRecebe = quemRecebeLabel(devolucaoPara);
+  // Contas já cadastradas (fornecedor) de quem pode receber a devolução, e a
+  // que o sistema pôs nos campos — só esta pode ser trocada sozinha quando muda
+  // quem recebe; o que o usuário digitou nunca é sobrescrito.
+  const bancosConhecidos = useRef<Record<Recebedor, DadosBancarios | null>>({
+    PROPRIETARIO: null,
+    COMPRADOR: null,
+    TERCEIRO: null,
+  });
+  const bancoAuto = useRef<DadosBancarios | null>(null);
+  // O campo Banco tem estado próprio: troca de valor remontando com outra chave.
+  const [bancoNome, setBancoNome] = useState({ valor: initial?.buyerBankName ?? "", n: 0 });
+  const [bancoMsg, setBancoMsg] = useState<string | null>(null);
   const aoTerceiro = !refinancing && refund > 0 && devolucaoPara === "TERCEIRO";
   const [commission, setCommission] = useState(initial?.commissionAmount ?? 0);
   const [transferCharged, setTransferCharged] = useState(Boolean(initial?.transferCharged));
@@ -252,12 +288,53 @@ export default function IntermediationForm({
   function setField(name: string, value: string | undefined) {
     if (!value) return;
     const el = formRef.current?.elements.namedItem(name);
-    if (el instanceof HTMLInputElement) el.value = value;
+    if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.value = value;
   }
 
   function readField(name: string): string {
     const el = formRef.current?.elements.namedItem(name);
-    return el instanceof HTMLInputElement ? el.value.trim() : "";
+    return el instanceof HTMLInputElement || el instanceof HTMLSelectElement ? el.value.trim() : "";
+  }
+
+  function recebedorAtual(): Recebedor {
+    if (refinancing) return "PROPRIETARIO";
+    const v = readField("devolucaoPara");
+    return v === "PROPRIETARIO" || v === "TERCEIRO" ? v : "COMPRADOR";
+  }
+
+  /**
+   * Põe nos campos de dados bancários a conta cadastrada de quem recebe a
+   * devolução. Só mexe se os campos estão vazios ou ainda com a conta que o
+   * próprio sistema trouxe (ex.: trocou de "Comprador" para "Proprietário").
+   */
+  function aplicarBanco(para: Recebedor) {
+    const tela = Object.fromEntries(CAMPOS_BANCO.map(([k, campo]) => [k, readField(campo)])) as DadosBancarios;
+    const vazia = CAMPOS_BANCO.every(([k]) => !tela[k]);
+    const auto = bancoAuto.current;
+    const doSistema = auto != null && CAMPOS_BANCO.every(([k]) => tela[k] === auto[k]);
+    if (!vazia && !doSistema) return;
+    const conhecido = bancosConhecidos.current[para];
+    const novo = conhecido ? bancoParaTela(conhecido) : doSistema ? SEM_BANCO : null;
+    if (!novo) return;
+    for (const [k, campo] of CAMPOS_BANCO) {
+      if (k === "bankName") continue;
+      const el = formRef.current?.elements.namedItem(campo);
+      if (el instanceof HTMLInputElement || el instanceof HTMLSelectElement) el.value = novo[k];
+    }
+    setBancoNome((x) => ({ valor: novo.bankName, n: x.n + 1 }));
+    bancoAuto.current = conhecido ? novo : null;
+    const quem = para === "PROPRIETARIO" ? "do proprietário" : para === "TERCEIRO" ? "do terceiro" : "do comprador";
+    setBancoMsg(conhecido ? `Dados bancários ${quem} trazidos do cadastro de fornecedor. Confira antes de salvar.` : null);
+  }
+
+  /** Busca a conta cadastrada de uma pessoa pelo CPF/CNPJ e aplica se for ela quem recebe. */
+  function buscarBanco(para: Recebedor, doc: string) {
+    if (!doc.trim()) return;
+    startTransition(async () => {
+      const r = await findPersonByDocument(doc);
+      bancosConhecidos.current[para] = r.found ? r.banco : null;
+      if (recebedorAtual() === para) aplicarBanco(para);
+    });
   }
 
   // Preenche os dados do proprietário a partir de um cliente já cadastrado.
@@ -271,6 +348,7 @@ export default function IntermediationForm({
     setField("ownerPhone", c.phone ?? undefined);
     setField("ownerAddress", c.address ?? undefined);
     setOwnerMsg({ tone: "ok", text: `Proprietário preenchido com o cliente ${c.name}.` });
+    if (c.document) buscarBanco("PROPRIETARIO", c.document);
   }
 
   // Ao sair do CPF/CNPJ, reaproveita um cadastro já existente (cliente OU
@@ -281,6 +359,8 @@ export default function IntermediationForm({
     if (!doc) return;
     startOwnerLookup(async () => {
       const r = await findPersonByDocument(doc);
+      bancosConhecidos.current.PROPRIETARIO = r.found ? r.banco : null;
+      if (recebedorAtual() === "PROPRIETARIO") aplicarBanco("PROPRIETARIO");
       if (!r.found) return;
       if (!readField("ownerName")) {
         setField("ownerName", r.data.name);
@@ -288,7 +368,10 @@ export default function IntermediationForm({
       }
       if (!readField("ownerPhone")) setField("ownerPhone", r.data.phone);
       if (!readField("ownerAddress")) setField("ownerAddress", r.data.address);
-      setOwnerMsg({ tone: "ok", text: `Cadastro encontrado (${r.source}): dados trazidos.` });
+      setOwnerMsg({
+        tone: "ok",
+        text: `Cadastro encontrado (${r.source}): dados trazidos${r.banco ? ", inclusive os dados bancários" : ""}.`,
+      });
     });
   }
 
@@ -641,6 +724,7 @@ export default function IntermediationForm({
                 setField("ownerDocument", details?.document);
                 setField("ownerPhone", details?.phone);
                 setField("ownerAddress", details?.address);
+                if (details?.document) buscarBanco("PROPRIETARIO", details.document);
                 if (refinancing && customerId) {
                   setCustomerList((prev) =>
                     prev.some((x) => x.id === customerId) ? prev : [...prev, { id: customerId, name }],
@@ -763,7 +847,10 @@ export default function IntermediationForm({
             name="refinancing"
             value="true"
             checked={refinancing}
-            onChange={(e) => setRefinancing(e.target.checked)}
+            onChange={(e) => {
+              setRefinancing(e.target.checked);
+              aplicarBanco(e.target.checked ? "PROPRIETARIO" : (devolucaoPara as Recebedor));
+            }}
             className="mt-0.5 h-4 w-4 rounded border-slate-300"
           />
           <span>
@@ -793,7 +880,12 @@ export default function IntermediationForm({
                   name="customerId"
                   required
                   value={customerId}
-                  onChange={setCustomerId}
+                  onChange={(id) => {
+                    setCustomerId(id);
+                    const doc = customerList.find((c) => c.id === id)?.document;
+                    if (doc) buscarBanco("COMPRADOR", doc);
+                    else bancosConhecidos.current.COMPRADOR = null;
+                  }}
                   options={customerList.map((c) => ({ id: c.id, label: c.name, detail: c.document }))}
                   placeholder="Digite o nome ou CPF/CNPJ do cliente"
                 />
@@ -849,7 +941,10 @@ export default function IntermediationForm({
               <Select
                 name="devolucaoPara"
                 value={devolucaoPara}
-                onChange={(e) => setDevolucaoPara(e.target.value)}
+                onChange={(e) => {
+                  setDevolucaoPara(e.target.value);
+                  aplicarBanco(e.target.value as Recebedor);
+                }}
                 disabled={refund <= 0}
               >
                 <option value="COMPRADOR">Comprador (cliente)</option>
@@ -959,6 +1054,7 @@ export default function IntermediationForm({
                 <Input
                   name="devolucaoTerceiroDocumento"
                   required
+                  onBlur={(e) => buscarBanco("TERCEIRO", e.target.value)}
                   inputMode="numeric"
                   defaultValue={initial?.devolucaoTerceiroDocumento ?? ""}
                   placeholder="000.000.000-00"
@@ -977,8 +1073,9 @@ export default function IntermediationForm({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Banco">
             <BankInput
+              key={`banco-${bancoNome.n}`}
               name="buyerBankName"
-              defaultValue={initial?.buyerBankName ?? ""}
+              defaultValue={bancoNome.valor}
               placeholder={refinancing ? "Banco do financiado" : `Banco do ${quemRecebe}`}
             />
           </Field>
@@ -999,6 +1096,7 @@ export default function IntermediationForm({
             <Input name="buyerPixKey" defaultValue={initial?.buyerPixKey ?? ""} placeholder="CPF, e-mail, telefone ou chave aleatória" />
           </Field>
         </div>
+        {bancoMsg ? <p className="text-xs font-medium text-emerald-700">{bancoMsg}</p> : null}
       </fieldset>
 
       {/* Quitação do financiamento anterior: parte do valor financiado paga o
