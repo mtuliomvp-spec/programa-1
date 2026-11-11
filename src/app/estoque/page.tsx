@@ -14,7 +14,13 @@ import PendingCostLink from "./PendingCostLink";
 import { userCan } from "@/lib/guards";
 import { visitasPorVeiculo } from "@/lib/showroom-visits";
 import { nameKey } from "@/lib/person-keys";
-import { situacaoDocumental, seloCrlv, seloFotoCliente, TITULO_TRANSFERENCIA_DA_VENDA } from "@/lib/doc-owner";
+import {
+  situacaoDocumental,
+  seloCrlv,
+  seloComunicacao,
+  seloFotoCliente,
+  TITULO_TRANSFERENCIA_DA_VENDA,
+} from "@/lib/doc-owner";
 import { pagamentosDeTransferencia } from "@/lib/despachante";
 import type { StatusVeiculo } from "@prisma/client";
 
@@ -235,6 +241,9 @@ export default async function EstoquePage({
         return v.renavePendentes > 0;
       case "COMUNICADO":
         return v.hasComunicacao;
+      // Vendido sem comunicação: pendentes (ainda dá) e os já transferidos sem ela.
+      case "SEM_COMUNICACAO":
+        return v.status === "VENDIDO" && !v.hasComunicacao;
       // Vendido e parado: nem transferido, nem com processo de transferência
       // correndo (orçamento, título do despachante ou marca manual).
       case "VENDIDO_SEM_PROCESSO":
@@ -392,9 +401,9 @@ export default async function EstoquePage({
               <Badge tone="default">✓ Renave abonado</Badge>
             ) : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
-            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação de venda pendente"}
-            </Badge>
+            <span title={seloComunicacao(v).title}>
+              <Badge tone={seloComunicacao(v).tone}>{seloComunicacao(v, "⚠ Comunicação de venda pendente").label}</Badge>
+            </span>
             <Badge tone={seloFotoCliente(v).tone}>{seloFotoCliente(v).label}</Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
@@ -527,9 +536,9 @@ export default async function EstoquePage({
         ) : null}
         {v.status === "VENDIDO" ? (
           <span className="mt-1 flex flex-col items-start gap-1">
-            <Badge tone={v.hasComunicacao ? "success" : "warning"}>
-              {v.hasComunicacao ? "✓ Comunicação de venda" : "⚠ Comunicação pendente"}
-            </Badge>
+            <span title={seloComunicacao(v).title}>
+              <Badge tone={seloComunicacao(v).tone}>{seloComunicacao(v).label}</Badge>
+            </span>
             <Badge tone={seloFotoCliente(v).tone}>{seloFotoCliente(v).label}</Badge>
             <Badge tone={v.transferDoneAt ? "success" : "danger"}>
               {v.transferDoneAt
@@ -626,6 +635,7 @@ export default async function EstoquePage({
                 <option value="ATPV">Com ATPV-e</option>
                 <option value="RENAVE_PENDENTE">Renave: dados faltando</option>
                 <option value="COMUNICADO">Comunicado venda</option>
+                <option value="SEM_COMUNICACAO">Vendido — sem comunicação de venda</option>
                 <option value="VENDIDO_SEM_PROCESSO">Vendido — sem processo de transferência</option>
               </Select>
             </label>

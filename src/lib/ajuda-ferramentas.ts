@@ -146,7 +146,13 @@ const FERRAMENTAS: Ferramenta[] = [
             : undefined,
           documento: seloCrlv(s).label,
           emNomeDe: s.donoAtual ?? undefined,
-          comunicacaoDeVenda: vendido ? (s.hasComunicacao ? "anexada" : "pendente") : undefined,
+          comunicacaoDeVenda: vendido
+            ? s.hasComunicacao
+              ? "anexada"
+              : s.transferDoneAt
+                ? "não feita (já transferido ao comprador — não há mais como comunicar)"
+                : "pendente"
+            : undefined,
           fotoDoCliente: vendido ? seloFotoCliente(s).label : undefined,
           venda: v.sale
             ? {
