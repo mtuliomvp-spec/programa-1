@@ -228,14 +228,24 @@ export default async function OrdemPagamentoPage({ params }: { params: Promise<{
     for (const pt of partes) {
       composicaoRows.push([
         `${pt.vinculado ? "Vale" : "Adiantamento"} nº ${pt.orderNumber}`,
-        `${formatCurrency(pt.valor)} — ${pt.pago ? `pago em ${formatDate(pt.data)}` : `a pagar, vence ${formatDate(pt.data)}`}` +
+        `${formatCurrency(pt.valor)} — ${
+          pt.pago
+            ? `pago em ${formatDate(pt.data)}`
+            : pt.naFila
+              ? `pago em ${formatDate(pt.data)} (aguarda o ok do caixa)`
+              : `a pagar, vence ${formatDate(pt.data)}`
+        }` +
           (pt.vinculado && pt.fornecedor ? ` (${pt.fornecedor})` : ""),
       ]);
     }
     composicaoRows.push([
       "Saldo (esta ordem)",
       `${formatCurrency(payable.amount)}` +
-        (payable.status === "PAGO" && payable.paymentDate ? ` — pago em ${formatDate(payable.paymentDate)}` : ""),
+        (payable.status === "PAGO" && payable.paymentDate
+          ? ` — pago em ${formatDate(payable.paymentDate)}`
+          : payable.pendingPaymentDate
+            ? ` — pago em ${formatDate(payable.pendingPaymentDate)} (aguarda o ok do caixa)`
+            : ""),
     ]);
     const total = r2(payable.amount + partes.reduce((t, pt) => t + pt.valor, 0));
     composicaoRows.push(["Total do salário", formatCurrency(total)]);

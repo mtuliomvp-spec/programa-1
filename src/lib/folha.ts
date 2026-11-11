@@ -165,7 +165,12 @@ export type ParteDoSalario = {
   descricao: string;
   valor: number;
   pago: boolean;
-  /** Pagamento (se pago) ou vencimento. */
+  /**
+   * Pagamento informado pelo "Já paguei" que espera o ok do caixa: o dinheiro
+   * já saiu (nesta data), mas a baixa ainda não foi confirmada.
+   */
+  naFila: boolean;
+  /** Pagamento (se pago ou na fila do caixa) ou vencimento. */
   data: Date;
   fornecedor: string | null;
   /** Vale vinculado (título de terceiro, ex.: boleto de fornecedor) × adiantamento (pagamento parcial). */
@@ -190,6 +195,7 @@ export async function partesDoSalario(raizId: string): Promise<ParteDoSalario[]>
         amount: true,
         status: true,
         paymentDate: true,
+        pendingPaymentDate: true,
         dueDate: true,
         categoryLabel: true,
         supplier: { select: { name: true } },
@@ -197,13 +203,15 @@ export async function partesDoSalario(raizId: string): Promise<ParteDoSalario[]>
     });
     for (const f of filhos) {
       const pago = f.status === "PAGO";
+      const naFila = !pago && f.pendingPaymentDate != null;
       out.push({
         id: f.id,
         orderNumber: f.orderNumber,
         descricao: f.description,
         valor: f.amount,
         pago,
-        data: pago ? (f.paymentDate ?? f.dueDate) : f.dueDate,
+        naFila,
+        data: pago ? (f.paymentDate ?? f.dueDate) : naFila ? f.pendingPaymentDate! : f.dueDate,
         fornecedor: f.supplier?.name ?? null,
         vinculado: f.categoryLabel === "Vale (adiantamento)" && !/\(pagamento parcial\)$/.test(f.description),
       });
