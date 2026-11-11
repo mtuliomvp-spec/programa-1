@@ -227,6 +227,8 @@ export type RenaveVeiculo = {
   renaveSaidaTitulo: TituloNegocio | null;
   renaveSaidaProtocolo: string | null;
   exitNfeKey: string | null;
+  /** Vendido com as pendências do Renave ABONADAS (dispensadas). */
+  renaveAbonadoEm?: Date | null;
 };
 
 export type Pendencia = {
@@ -376,6 +378,11 @@ export function pendenciasRenave(v: RenaveVeiculo): Pendencia[] {
   return p;
 }
 
+/** Pendências do Renave dispensadas: só vale para veículo vendido. */
+export function renaveAbonado(v: Pick<RenaveVeiculo, "status" | "renaveAbonadoEm">): boolean {
+  return v.status === "VENDIDO" && !!v.renaveAbonadoEm;
+}
+
 /**
  * Separa o que a loja resolve do que depende do Renave estar no ar. Enquanto o
  * DETRAN do estado não opera, cobrar protocolo é cobrar o impossível.
@@ -392,6 +399,9 @@ export function separarPendencias(lista: Pendencia[]): { loja: Pendencia[]; rena
  * ele, só as que estão ao alcance da loja.
  */
 export function pendenciasCobraveis(v: RenaveVeiculo, renaveOperando: boolean): Pendencia[] {
+  // Vendido com o Renave abonado: nada mais a cobrar (o livro ainda mostra
+  // o que faltou, mas o selo e os filtros deixam de acusar).
+  if (renaveAbonado(v)) return [];
   const lista = pendenciasRenave(v);
   return renaveOperando ? lista : lista.filter((p) => p.depende === "loja");
 }

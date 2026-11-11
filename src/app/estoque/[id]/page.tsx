@@ -42,8 +42,11 @@ import VehicleCrlv from "./VehicleCrlv";
 import VehicleAtpv from "./VehicleAtpv";
 import { detectarFaseAtpv, faseDaDescricao, numeroDaDescricao, pdfAssinado, type FaseAtpv } from "@/lib/atpv-fases";
 import VehicleRenave, { type DocumentoDoVeiculo, type RenaveDados } from "./VehicleRenave";
+import AbonarRenave from "../AbonarRenave";
 import {
   pendenciasRenave,
+  pendenciasCobraveis,
+  renaveAbonado,
   diasParaAtpvConsignacao,
   detranOperando,
   RENAVE_PRAZO_PADRAO,
@@ -134,7 +137,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
     : null;
 
   // Permissões granulares: cada controle de ação só aparece para quem pode.
-  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar, canRenaveWs] =
+  const [canEditar, canExcluir, canCustos, canDebitos, canPublicar, canVender, canComunicacao, canCrlv, canOpenPayable, canFoto, canLucro, canSinal, canAtpv, canOrcamento, canBoletos, canTransferencia, canKm, canSituacao, canRenave, canNfe, canNfeCancelar, canRenaveWs, canAbonarRenave] =
     await Promise.all([
       userCan("estoque", "editar"),
       userCan("estoque", "excluir"),
@@ -158,6 +161,7 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
       userCan("estoque", "nfe"),
       userCan("estoque", "nfecancelar"),
       userCan("estoque", "renavews"),
+      userCan("estoque", "abonarrenave"),
     ]);
 
   // Visitas ao anúncio na vitrine (mostradas no cartão de fotos).
@@ -1428,6 +1432,27 @@ export default async function VeiculoDetalhePage({ params }: { params: Promise<{
               <div className="px-5 pt-4">
                 <RenaveJanelaAviso />
               </div>
+              {renaveAbonado(vehicle) ? (
+                <div className="mx-5 mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                  <span>
+                    ✓ <strong>Renave abonado</strong>
+                    {vehicle.renaveAbonadoEm ? ` em ${formatDate(vehicle.renaveAbonadoEm)}` : ""}
+                    {vehicle.renaveAbonadoPor ? ` por ${vehicle.renaveAbonadoPor}` : ""} — as pendências abaixo não
+                    acusam mais no estoque.
+                  </span>
+                  {canAbonarRenave ? <AbonarRenave vehicleIds={[vehicle.id]} desfazer /> : null}
+                </div>
+              ) : canAbonarRenave &&
+                vehicle.status === "VENDIDO" &&
+                pendenciasCobraveis(vehicle, detranOperando(renaveCompany.detranRenaveStatus)).length > 0 ? (
+                <div className="mx-5 mt-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+                  <span>
+                    Vendido com pendência do Renave. Se a entrada/saída não vai mais ser registrada (ex.: venda de
+                    antes da implantação), abone para o selo parar de acusar.
+                  </span>
+                  <AbonarRenave vehicleIds={[vehicle.id]} />
+                </div>
+              ) : null}
               <VehicleRenave
                 dados={renaveDados}
                 documentos={renaveDocumentos}

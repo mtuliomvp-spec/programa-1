@@ -92,6 +92,7 @@ export const REGRAS: Record<string, Record<string, Regra>> = {
     renavam: "digitos",
     docOwnerName: "pessoa",
     fotoClienteAbonadaPor: "pessoa",
+    renaveAbonadoPor: "pessoa",
     transferToName: "pessoa",
     crvNumber: "digitos",
     crvSecurityCode: "digitos",

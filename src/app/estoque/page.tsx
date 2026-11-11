@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { timed } from "@/lib/perf";
-import { pendenciasCobraveis, detranOperando } from "@/lib/renave";
+import { pendenciasCobraveis, detranOperando, renaveAbonado } from "@/lib/renave";
+import AbonarRenave from "./AbonarRenave";
 import { prisma } from "@/lib/prisma";
 import { formatCurrency, formatDate } from "@/lib/format";
 import { matchesSearch, inDateRange, inValueRange } from "@/lib/search";
@@ -82,10 +83,11 @@ export default async function EstoquePage({
   // Duas permissões separadas: uma para VER o custo aqui na lista e outra para
   // LEVAR esse custo para fora no PDF. Quem não tem a primeira também não vê
   // custo no PDF, porque ele é montado a partir desta mesma tabela.
-  const [canVerCusto, canPdfCusto, canVerAPagar] = await Promise.all([
+  const [canVerCusto, canPdfCusto, canVerAPagar, canAbonarRenave] = await Promise.all([
     userCan("estoque", "vercusto"),
     userCan("estoque", "pdfcusto"),
     userCan("financeiro", "visualizar"),
+    userCan("estoque", "abonarrenave"),
   ]);
 
   const [vehicles, openPreSales, company, beneficiaryNames] = await timed("tela: estoque", () =>
@@ -386,6 +388,8 @@ export default async function EstoquePage({
             {v.hasAtpv ? <Badge tone="success">✓ ATPV-e</Badge> : null}
             {v.renavePendentes > 0 ? (
               <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
+            ) : renaveAbonado(v) ? (
+              <Badge tone="default">✓ Renave abonado</Badge>
             ) : null}
             {v.hasTransferQuote ? <Badge tone="success">✓ Orçamento transf.</Badge> : null}
             <Badge tone={v.hasComunicacao ? "success" : "warning"}>
@@ -503,6 +507,10 @@ export default async function EstoquePage({
           <span className="mt-1 block" title="Faltam dados para escriturar no Renave (só aviso)">
             <Badge tone="warning">📒 Renave: {v.renavePendentes} dado(s)</Badge>
           </span>
+        ) : renaveAbonado(v) ? (
+          <span className="mt-1 block" title={v.renaveAbonadoPor ? `Abonado por ${v.renaveAbonadoPor}` : undefined}>
+            <Badge tone="default">✓ Renave abonado</Badge>
+          </span>
         ) : null}
         {v.hasTransferQuote ? (
           <span className="mt-1 block">
@@ -538,6 +546,8 @@ export default async function EstoquePage({
 
   // A divisória só aparece quando os dois grupos existem na tela.
   const showDivider = emEstoque.length > 0 && vendidos.length > 0;
+  // Vendidos da lista que ainda acusam Renave: dá para abonar todos de uma vez.
+  const vendidosRenavePendente = canAbonarRenave ? vendidos.filter((v) => v.renavePendentes > 0) : [];
 
   return (
     <div>
@@ -637,6 +647,18 @@ export default async function EstoquePage({
         </Card>
       ) : (
         <>
+          {vendidosRenavePendente.length > 0 ? (
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 print:hidden">
+              <p className="text-xs text-amber-900">
+                <strong>
+                  📒 {vendidosRenavePendente.length} veículo(s) vendido(s) com pendência do Renave.
+                </strong>{" "}
+                Vendido antes da implantação não tem mais entrada nem saída a registrar: abone para o selo parar de
+                acusar (nada é apagado; dá para desfazer na ficha do veículo).
+              </p>
+              <AbonarRenave vehicleIds={vendidosRenavePendente.map((v) => v.id)} todos />
+            </div>
+          ) : null}
           {/*
             Celular e tablet: cards. O tablet (Samsung, ~1200 px) ainda perde
             256 px para o menu lateral, e a tabela de 8 colunas não cabe no que
