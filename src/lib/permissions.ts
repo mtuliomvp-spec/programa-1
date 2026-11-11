@@ -34,6 +34,7 @@ export const MODULES: ModuleConfig[] = [
       { acao: "renave", label: "Renave: preencher dados e ler a NF-e" },
       // Cada movimentação no Renave é cobrada pelo SERPRO e vale juridicamente.
       { acao: "renavews", label: "Renave: registrar entrada/saída direto no SERPRO (cobrado)" },
+      { acao: "abonarrenave", label: "Renave: abonar pendências de veículos vendidos" },
       // Documento fiscal com valor legal: liberado à parte, sem herdar de outra permissão.
       { acao: "nfe", label: "Emitir NF-e (nota fiscal de entrada/saída do veículo)" },
       { acao: "nfecancelar", label: "Cancelar NF-e emitida" },

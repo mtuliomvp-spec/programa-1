@@ -631,6 +631,11 @@ model Vehicle {
   // de antes da rotina da foto). Guarda quando e quem abonou.
   fotoClienteAbonadaEm         DateTime?
   fotoClienteAbonadaPor        String?
+  // Renave ABONADO: as pendências de escrituração de um veículo VENDIDO foram
+  // dispensadas (ex.: vendido antes da implantação — não há mais entrada nem
+  // saída a registrar). Guarda quando e quem abonou; desfazer volta a cobrar.
+  renaveAbonadoEm              DateTime?
+  renaveAbonadoPor             String?
   // Para quem o veículo será transferido, lido do campo "Cliente" do
   // orçamento/recibo do despachante (nulo = para o nome da própria loja).
   transferToName               String?
